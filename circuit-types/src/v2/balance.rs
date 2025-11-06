@@ -52,3 +52,23 @@ pub struct Balance {
     /// The amount of the token in the balance
     pub amount: Amount,
 }
+
+impl Balance {
+    /// Create a new balance with zero values
+    pub fn new(
+        mint: Address,
+        owner: Address,
+        relayer_fee_recipient: Address,
+        one_time_authority: Address,
+    ) -> Self {
+        Self {
+            mint,
+            owner,
+            relayer_fee_recipient,
+            one_time_authority,
+            relayer_fee_balance: 0,
+            protocol_fee_balance: 0,
+            amount: 0,
+        }
+    }
+}

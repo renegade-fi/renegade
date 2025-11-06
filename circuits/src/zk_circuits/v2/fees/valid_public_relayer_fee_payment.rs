@@ -5,9 +5,7 @@
 //! needed.
 
 use circuit_macros::circuit_type;
-use circuit_types::balance::{
-    BalanceShare, BalanceShareVar, DarkpoolStateBalance, DarkpoolStateBalanceVar,
-};
+use circuit_types::balance::{BalanceShareVar, DarkpoolStateBalance, DarkpoolStateBalanceVar};
 use circuit_types::merkle::{MerkleOpening, MerkleRoot};
 use circuit_types::note::Note;
 use circuit_types::traits::{BaseType, CircuitBaseType, CircuitVarType};
@@ -46,30 +44,27 @@ impl<const MERKLE_HEIGHT: usize> ValidPublicRelayerFeePayment<MERKLE_HEIGHT> {
 
         // Verify the state transition of the balance
         let old_balance_private_shares = ShareGadget::compute_complementary_shares(
-            &witness.old_balance_public_shares,
+            &witness.old_balance.public_share,
             &witness.old_balance.inner,
             cs,
         )?;
 
-        let (new_balance, new_balance_private_shares, new_balance_public_shares) =
-            Self::compute_post_payment_balance(
-                &old_balance_private_shares,
-                statement,
-                witness,
-                cs,
-            )?;
+        let (new_balance, new_balance_private_shares) = Self::compute_post_payment_balance(
+            &old_balance_private_shares,
+            statement,
+            witness,
+            cs,
+        )?;
 
         // Verify state element rotation
         let mut rotation_args = StateElementRotationArgs {
             old_version: witness.old_balance.clone(),
             old_private_share: old_balance_private_shares,
-            old_public_share: witness.old_balance_public_shares.clone(),
             old_opening: witness.old_balance_opening.clone(),
             merkle_root: statement.merkle_root,
             nullifier: statement.old_balance_nullifier,
             new_version: new_balance,
             new_private_share: new_balance_private_shares,
-            new_public_share: new_balance_public_shares,
             new_commitment: statement.new_balance_commitment,
             recovery_id: statement.recovery_id,
         };
@@ -107,11 +102,10 @@ impl<const MERKLE_HEIGHT: usize> ValidPublicRelayerFeePayment<MERKLE_HEIGHT> {
         statement: &ValidPublicRelayerFeePaymentStatementVar,
         witness: &ValidPublicRelayerFeePaymentWitnessVar<MERKLE_HEIGHT>,
         cs: &mut PlonkCircuit,
-    ) -> Result<(DarkpoolStateBalanceVar, BalanceShareVar, BalanceShareVar), CircuitError> {
+    ) -> Result<(DarkpoolStateBalanceVar, BalanceShareVar), CircuitError> {
         // Update the balance
         let mut new_balance = witness.old_balance.clone();
         let mut new_balance_private_shares = old_balance_private_shares.clone();
-        let mut new_balance_public_shares = witness.old_balance_public_shares.clone();
 
         // Re-encrypt the relayer fee balance field as it's changed
         new_balance.inner.relayer_fee_balance = cs.zero();
@@ -121,14 +115,14 @@ impl<const MERKLE_HEIGHT: usize> ValidPublicRelayerFeePayment<MERKLE_HEIGHT> {
             cs,
         )?;
         new_balance_private_shares.relayer_fee_balance = new_fee_private_share;
-        new_balance_public_shares.relayer_fee_balance = new_fee_public_share;
+        new_balance.public_share.relayer_fee_balance = new_fee_public_share;
         EqGadget::constrain_eq(
             &new_fee_public_share,
             &statement.new_relayer_fee_balance_share,
             cs,
         )?;
 
-        Ok((new_balance, new_balance_private_shares, new_balance_public_shares))
+        Ok((new_balance, new_balance_private_shares))
     }
 }
 
@@ -142,8 +136,6 @@ impl<const MERKLE_HEIGHT: usize> ValidPublicRelayerFeePayment<MERKLE_HEIGHT> {
 pub struct ValidPublicRelayerFeePaymentWitness<const MERKLE_HEIGHT: usize> {
     /// The old balance
     pub old_balance: DarkpoolStateBalance,
-    /// The old public shares of the balance
-    pub old_balance_public_shares: BalanceShare,
     /// The opening of the old balance to the Merkle root
     pub old_balance_opening: MerkleOpening<MERKLE_HEIGHT>,
 }
@@ -209,7 +201,7 @@ impl<const MERKLE_HEIGHT: usize> SingleProverCircuit
 pub mod test_helpers {
     use alloy_primitives::Address;
     use circuit_types::{
-        balance::{Balance, BalanceShare, DarkpoolStateBalance},
+        balance::{Balance, DarkpoolStateBalance},
         note::Note,
     };
     use constants::Scalar;
@@ -220,9 +212,7 @@ pub mod test_helpers {
         zk_circuits::v2::fees::valid_public_relayer_fee_payment::{
             SizedValidPublicRelayerFeePayment, SizedValidPublicRelayerFeePaymentWitness,
         },
-        zk_gadgets::test_helpers::{
-            create_merkle_opening, create_random_shares, create_state_wrapper,
-        },
+        zk_gadgets::test_helpers::{create_merkle_opening, create_state_wrapper},
     };
 
     use super::ValidPublicRelayerFeePaymentStatement;
@@ -263,13 +253,8 @@ pub mod test_helpers {
     pub fn create_dummy_witness_statement_with_balance(
         old_balance: DarkpoolStateBalance,
     ) -> (SizedValidPublicRelayerFeePaymentWitness, ValidPublicRelayerFeePaymentStatement) {
-        // Create valid complementary shares for the old balance
-        let (old_balance_private_shares, old_balance_public_shares) =
-            create_random_shares::<BalanceShare>(&old_balance.inner);
-
         // Compute commitment, nullifier, and Merkle opening for the old balance
-        let old_balance_commitment =
-            old_balance.compute_commitment(&old_balance_private_shares, &old_balance_public_shares);
+        let old_balance_commitment = old_balance.compute_commitment();
         let old_balance_nullifier = old_balance.compute_nullifier();
         let (merkle_root, old_balance_opening) =
             create_merkle_opening::<MERKLE_HEIGHT>(old_balance_commitment);
@@ -278,30 +263,21 @@ pub mod test_helpers {
         let note = create_note(&old_balance.inner);
 
         // Create the new balance with relayer fee balance = 0
-        let (mut new_balance, new_private_shares, new_public_shares) = create_new_balance(
-            &old_balance,
-            &old_balance_private_shares,
-            &old_balance_public_shares,
-        );
+        let mut new_balance = create_new_balance(&old_balance);
 
         // Compute recovery_id, which will advance the recovery stream
         let recovery_id = new_balance.compute_recovery_id();
-        let new_balance_commitment =
-            new_balance.compute_commitment(&new_private_shares, &new_public_shares);
+        let new_balance_commitment = new_balance.compute_commitment();
 
         // Build the witness and statement
-        let witness = SizedValidPublicRelayerFeePaymentWitness {
-            old_balance,
-            old_balance_public_shares,
-            old_balance_opening,
-        };
+        let witness = SizedValidPublicRelayerFeePaymentWitness { old_balance, old_balance_opening };
 
         let statement = ValidPublicRelayerFeePaymentStatement {
             merkle_root,
             old_balance_nullifier,
             new_balance_commitment,
             recovery_id,
-            new_relayer_fee_balance_share: new_public_shares.relayer_fee_balance,
+            new_relayer_fee_balance_share: new_balance.public_share.relayer_fee_balance,
             note,
         };
 
@@ -325,21 +301,13 @@ pub mod test_helpers {
     ///
     /// Returns the new balance, the new private shares, and the new public
     /// shares.
-    fn create_new_balance(
-        old_balance: &DarkpoolStateBalance,
-        old_private_shares: &BalanceShare,
-        old_public_shares: &BalanceShare,
-    ) -> (DarkpoolStateBalance, BalanceShare, BalanceShare) {
+    fn create_new_balance(old_balance: &DarkpoolStateBalance) -> DarkpoolStateBalance {
         let mut new_balance = old_balance.clone();
-        let mut new_balance_private_shares = old_private_shares.clone();
-        let mut new_balance_public_shares = old_public_shares.clone();
+        new_balance.inner.relayer_fee_balance = 0;
+        let new_fee_balance_public_share = new_balance.stream_cipher_encrypt(&Scalar::zero());
+        new_balance.public_share.relayer_fee_balance = new_fee_balance_public_share;
 
-        let (new_fee_balance_private_share, new_fee_balance_public_share) =
-            new_balance.stream_cipher_encrypt(&Scalar::zero());
-        new_balance_private_shares.relayer_fee_balance = new_fee_balance_private_share;
-        new_balance_public_shares.relayer_fee_balance = new_fee_balance_public_share;
-
-        (new_balance, new_balance_private_shares, new_balance_public_shares)
+        new_balance
     }
 }
 

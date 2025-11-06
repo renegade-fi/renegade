@@ -5,7 +5,7 @@
 
 use circuit_macros::circuit_type;
 use circuit_types::balance::{
-    BalanceShare, BalanceShareVar, BalanceVar, DarkpoolStateBalance, DarkpoolStateBalanceVar,
+    BalanceShareVar, BalanceVar, DarkpoolStateBalance, DarkpoolStateBalanceVar,
 };
 use circuit_types::merkle::{MerkleOpening, MerkleRoot};
 use circuit_types::traits::{BaseType, CircuitBaseType, CircuitVarType};
@@ -49,23 +49,21 @@ impl<const MERKLE_HEIGHT: usize> ValidWithdrawal<MERKLE_HEIGHT> {
 
         // 3. Build and verify the new balance
         // Recover the old balance public shares
-        let old_public = &witness.old_balance_public_shares;
+        let old_public = &witness.old_balance.public_share;
         let old_private =
             ShareGadget::compute_complementary_shares(old_public, &witness.old_balance.inner, cs)?;
-        let (new_balance, new_private_share, new_public_share) =
+        let (new_balance, new_private_share) =
             Self::build_and_verify_new_balance(&old_private, statement, witness, cs)?;
 
         // 3. Verify wallet rotation
         let mut rotation_args = StateElementRotationArgs {
             old_version: witness.old_balance.clone(),
             old_private_share: old_private,
-            old_public_share: old_public.clone(),
             old_opening: witness.old_balance_opening.clone(),
             merkle_root: statement.merkle_root,
             nullifier: statement.old_balance_nullifier,
             new_version: new_balance,
             new_private_share,
-            new_public_share,
             new_commitment: statement.new_balance_commitment,
             recovery_id: statement.recovery_id,
         };
@@ -122,13 +120,12 @@ impl<const MERKLE_HEIGHT: usize> ValidWithdrawal<MERKLE_HEIGHT> {
         statement: &ValidWithdrawalStatementVar,
         witness: &ValidWithdrawalWitnessVar<MERKLE_HEIGHT>,
         cs: &mut PlonkCircuit,
-    ) -> Result<(DarkpoolStateBalanceVar, BalanceShareVar, BalanceShareVar), CircuitError> {
+    ) -> Result<(DarkpoolStateBalanceVar, BalanceShareVar), CircuitError> {
         let old_balance = &witness.old_balance;
         let mut new_balance = old_balance.clone();
 
         // Apply the withdrawal to the amount in the balance
         let mut new_balance_private_shares = old_balance_private_shares.clone();
-        let mut new_balance_public_shares = witness.old_balance_public_shares.clone();
         new_balance.inner.amount = cs.sub(old_balance.inner.amount, statement.withdrawal.amount)?;
 
         // Re-encrypt the amount field as it's changed
@@ -139,10 +136,10 @@ impl<const MERKLE_HEIGHT: usize> ValidWithdrawal<MERKLE_HEIGHT> {
                 cs,
             )?;
         new_balance_private_shares.amount = new_amount_private_share;
-        new_balance_public_shares.amount = new_amount_public_share;
+        new_balance.public_share.amount = new_amount_public_share;
         EqGadget::constrain_eq(&new_amount_public_share, &statement.new_amount_share, cs)?;
 
-        Ok((new_balance, new_balance_private_shares, new_balance_public_shares))
+        Ok((new_balance, new_balance_private_shares))
     }
 }
 
@@ -156,8 +153,6 @@ impl<const MERKLE_HEIGHT: usize> ValidWithdrawal<MERKLE_HEIGHT> {
 pub struct ValidWithdrawalWitness<const MERKLE_HEIGHT: usize> {
     /// The old balance
     pub old_balance: DarkpoolStateBalance,
-    /// The old public shares of the balance
-    pub old_balance_public_shares: BalanceShare,
     /// The opening of the old balance to the Merkle root
     pub old_balance_opening: MerkleOpening<MERKLE_HEIGHT>,
 }
@@ -215,7 +210,7 @@ impl<const MERKLE_HEIGHT: usize> SingleProverCircuit for ValidWithdrawal<MERKLE_
 #[cfg(any(test, feature = "test_helpers"))]
 pub mod test_helpers {
     use circuit_types::{
-        balance::{Balance, BalanceShare, DarkpoolStateBalance},
+        balance::{Balance, DarkpoolStateBalance},
         withdrawal::Withdrawal,
     };
     use constants::Scalar;
@@ -223,9 +218,7 @@ pub mod test_helpers {
     use crate::{
         test_helpers::{check_constraints_satisfied, random_address, random_amount},
         zk_circuits::v2::valid_withdrawal::{SizedValidWithdrawal, SizedValidWithdrawalWitness},
-        zk_gadgets::test_helpers::{
-            create_merkle_opening, create_random_shares, create_state_wrapper,
-        },
+        zk_gadgets::test_helpers::{create_merkle_opening, create_state_wrapper},
     };
 
     use super::{ValidWithdrawalStatement, ValidWithdrawalWitness};
@@ -277,13 +270,8 @@ pub mod test_helpers {
         withdrawal: Withdrawal,
         old_balance: &DarkpoolStateBalance,
     ) -> (SizedValidWithdrawalWitness, ValidWithdrawalStatement) {
-        // Create valid complementary shares for the old balance
-        let (old_balance_private_shares, old_balance_public_shares) =
-            create_random_shares::<BalanceShare>(&old_balance.inner);
-
         // Compute commitment, nullifier, and Merkle opening for the old balance
-        let old_balance_commitment =
-            old_balance.compute_commitment(&old_balance_private_shares, &old_balance_public_shares);
+        let old_balance_commitment = old_balance.compute_commitment();
         let old_balance_nullifier = old_balance.compute_nullifier();
         let (merkle_root, old_balance_opening) =
             create_merkle_opening::<MERKLE_HEIGHT>(old_balance_commitment);
@@ -295,27 +283,16 @@ pub mod test_helpers {
         // To compute the new amount share, we need to simulate the stream cipher
         // encryption.
         let new_amount_scalar = Scalar::from(new_balance.inner.amount);
-        let (new_amount_private_share, new_amount_public_share) =
-            new_balance.stream_cipher_encrypt(&new_amount_scalar);
-
-        // Compute a commitment to the new balance
-        let mut new_private_shares = old_balance_private_shares.clone();
-        let mut new_public_shares = old_balance_public_shares.clone();
-        new_public_shares.amount = new_amount_public_share;
-        new_private_shares.amount = new_amount_private_share;
+        let new_amount_public_share = new_balance.stream_cipher_encrypt(&new_amount_scalar);
+        new_balance.public_share.amount = new_amount_public_share;
 
         // Compute recovery_id, which will advance the recovery stream
         let recovery_id = new_balance.compute_recovery_id();
-        let new_balance_commitment =
-            new_balance.compute_commitment(&new_private_shares, &new_public_shares);
+        let new_balance_commitment = new_balance.compute_commitment();
 
         // Build the witness and statement
-        let witness = ValidWithdrawalWitness {
-            old_balance: old_balance.clone(),
-            old_balance_public_shares,
-            old_balance_opening,
-        };
-
+        let witness =
+            ValidWithdrawalWitness { old_balance: old_balance.clone(), old_balance_opening };
         let statement = ValidWithdrawalStatement {
             withdrawal,
             merkle_root,

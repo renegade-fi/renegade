@@ -4,7 +4,7 @@ use circuit_types::{
     csprng::PoseidonCSPRNG,
     merkle::MerkleOpening,
     state_wrapper::StateWrapper,
-    traits::{BaseType, CircuitBaseType, SecretShareType},
+    traits::{BaseType, CircuitBaseType, SecretShareBaseType},
 };
 use constants::Scalar;
 use itertools::Itertools;
@@ -18,17 +18,22 @@ use crate::test_helpers::random_scalars_vec;
 // ------------------
 
 /// Create a state wrapper for a given state element
-pub fn create_state_wrapper<V: CircuitBaseType>(state: V) -> StateWrapper<V> {
+pub fn create_state_wrapper<V>(state: V) -> StateWrapper<V>
+where
+    V: SecretShareBaseType + CircuitBaseType,
+    V::ShareType: CircuitBaseType,
+{
     let mut rng = thread_rng();
     let recovery_seed = Scalar::random(&mut rng);
     let share_seed = Scalar::random(&mut rng);
+    let (_, public_share) = create_random_shares::<V>(&state);
 
     let mut recovery_stream = PoseidonCSPRNG::new(recovery_seed);
     let mut share_stream = PoseidonCSPRNG::new(share_seed);
     recovery_stream.index = rng.r#gen();
     share_stream.index = rng.r#gen();
 
-    StateWrapper { recovery_stream, share_stream, inner: state }
+    StateWrapper { recovery_stream, share_stream, inner: state, public_share }
 }
 
 // ----------------
@@ -38,14 +43,14 @@ pub fn create_state_wrapper<V: CircuitBaseType>(state: V) -> StateWrapper<V> {
 /// Create a random sharing of the given type
 ///
 /// Returns a tuple of the private and public shares
-pub fn create_random_shares<V: SecretShareType>(v: &V::Base) -> (V, V) {
+pub fn create_random_shares<V: SecretShareBaseType>(v: &V) -> (V::ShareType, V::ShareType) {
     let values = v.to_scalars();
     let private_shares = random_scalars_vec(values.len());
     let public_shares = values.iter().zip(private_shares.iter()).map(|(v, s)| v - s).collect_vec();
 
     // Deserialize
-    let private = V::from_scalars(&mut private_shares.into_iter());
-    let public = V::from_scalars(&mut public_shares.into_iter());
+    let private = V::ShareType::from_scalars(&mut private_shares.into_iter());
+    let public = V::ShareType::from_scalars(&mut public_shares.into_iter());
     (private, public)
 }
 
