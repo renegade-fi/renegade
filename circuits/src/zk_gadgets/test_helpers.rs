@@ -24,16 +24,20 @@ where
     V::ShareType: CircuitBaseType,
 {
     let mut rng = thread_rng();
-    let recovery_seed = Scalar::random(&mut rng);
-    let share_seed = Scalar::random(&mut rng);
     let (_, public_share) = create_random_shares::<V>(&state);
-
-    let mut recovery_stream = PoseidonCSPRNG::new(recovery_seed);
-    let mut share_stream = PoseidonCSPRNG::new(share_seed);
+    let mut recovery_stream = random_csprng();
+    let mut share_stream = random_csprng();
     recovery_stream.index = rng.r#gen();
     share_stream.index = rng.r#gen();
 
     StateWrapper { recovery_stream, share_stream, inner: state, public_share }
+}
+
+/// Build a random CSPRNG
+pub fn random_csprng() -> PoseidonCSPRNG {
+    let mut rng = thread_rng();
+    let seed = Scalar::random(&mut rng);
+    PoseidonCSPRNG::new(seed)
 }
 
 // ----------------

@@ -71,4 +71,9 @@ impl Balance {
             amount: 0,
         }
     }
+
+    /// Create a new balance with the given amount
+    pub fn with_amount(self, amount: Amount) -> Self {
+        Self { amount, ..self }
+    }
 }
