@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 
 use std::fmt::Debug;
 
-use crate::traits::BaseType;
+use crate::traits::{BaseType, SecretShareBaseType};
 use crate::{csprng::PoseidonCSPRNG, traits::SecretShareType};
 use constants::Scalar;
 
@@ -34,7 +34,8 @@ use {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StateWrapper<T>
 where
-    T: CircuitBaseType,
+    T: SecretShareBaseType + CircuitBaseType,
+    T::ShareType: CircuitBaseType,
 {
     /// The recovery identifier CSPRNG
     pub recovery_stream: PoseidonCSPRNG,
@@ -42,24 +43,43 @@ where
     pub share_stream: PoseidonCSPRNG,
     /// The state element
     pub inner: T,
+    /// The public shares of the state element
+    pub public_share: T::ShareType,
 }
 
 impl<T> StateWrapper<T>
 where
-    T: CircuitBaseType,
+    T: SecretShareBaseType + CircuitBaseType,
+    T::ShareType: CircuitBaseType,
 {
+    // --- Secret Shares --- //
+
+    /// Compute the private shares of the state element
+    pub fn private_shares(&self) -> T::ShareType {
+        let val_scalars = self.inner.to_scalars();
+        let public_scalars = self.public_share.to_scalars();
+        let private_scalars = val_scalars
+            .iter()
+            .zip(public_scalars.iter())
+            .map(|(val, public)| val - public)
+            .collect_vec();
+
+        T::ShareType::from_scalars(&mut private_scalars.into_iter())
+    }
+
+    /// Compute the public shares of the state element
+    pub fn public_share(&self) -> T::ShareType {
+        self.public_share.clone()
+    }
+
+    // --- Commitments --- //
+
     /// Compute a commitment to the private shares of a state element
-    pub fn compute_private_commitment<V: crate::traits::SecretShareType>(
-        &self,
-        private_share: &V,
-    ) -> Scalar
-    where
-        T: BaseType,
-    {
+    pub fn compute_private_commitment(&self) -> Scalar {
         // Build a list of inputs
         let num_inputs = T::NUM_SCALARS + 2 * PoseidonCSPRNG::NUM_SCALARS;
         let mut inputs = Vec::with_capacity(num_inputs);
-        inputs.extend(private_share.to_scalars());
+        inputs.extend(self.private_shares().to_scalars());
         inputs.extend(self.recovery_stream.to_scalars());
         inputs.extend(self.share_stream.to_scalars());
 
@@ -69,11 +89,8 @@ where
 
     /// Compute a commitment to a state element given a commitment to the
     /// private shares and public shares
-    pub fn compute_commitment_from_private<V: crate::traits::SecretShareType>(
-        private_commitment: Scalar,
-        public_share: &V,
-    ) -> Scalar {
-        let public_scalars = public_share.to_scalars();
+    pub fn compute_commitment_from_private(&self, private_commitment: Scalar) -> Scalar {
+        let public_scalars = self.public_share().to_scalars();
         let mut public_comm = public_scalars[0];
         for share in public_scalars.iter().skip(1) {
             public_comm = compute_poseidon_hash(&[public_comm, *share]);
@@ -83,19 +100,13 @@ where
     }
 
     /// Compute a commitment to a value
-    pub fn compute_commitment<V: crate::traits::SecretShareType>(
-        &self,
-        private_share: &V,
-        public_share: &V,
-    ) -> Scalar
-    where
-        T: BaseType,
-    {
-        // Compute the commitment to the private shares then append the public shares to
-        // it
-        let private_commitment = self.compute_private_commitment(private_share);
-        Self::compute_commitment_from_private(private_commitment, public_share)
+    pub fn compute_commitment(&self) -> Scalar {
+        // Compute the commitment to the private shares then append the public shares
+        let private_commitment = self.compute_private_commitment();
+        self.compute_commitment_from_private(private_commitment)
     }
+
+    // --- Nullifiers --- //
 
     /// Compute a nullifier for a state element
     ///
@@ -116,6 +127,8 @@ where
         let recovery_stream_seed = self.recovery_stream.seed;
         compute_poseidon_hash(&[recovery_id, recovery_stream_seed])
     }
+
+    // --- Recovery IDs --- //
 
     /// Compute a recovery identifier for a state element
     ///
@@ -139,13 +152,15 @@ where
         self.recovery_stream.get_ith(index)
     }
 
+    // --- Stream Cipher --- //
+
     /// Encrypt a sequence of values using the share stream
     ///
     /// Returns the private shares (one-time pads) and the public shares
     /// (ciphertext)
     ///
     /// This method mutates the share stream state by advancing the index.
-    pub fn stream_cipher_encrypt<V: SecretShareType>(&mut self, value: &V::Base) -> (V, V) {
+    pub fn stream_cipher_encrypt<V: SecretShareType>(&mut self, value: &V::Base) -> V {
         // Generate one time pads for each value
         let value_scalars = value.to_scalars();
         let share_stream = &mut self.share_stream;
@@ -156,9 +171,7 @@ where
             value_scalars.iter().zip(pads.iter()).map(|(value, pad)| value - pad).collect_vec();
 
         // Deserialize
-        let private_shares = V::from_scalars(&mut pads.into_iter());
-        let public_shares = V::from_scalars(&mut ciphertexts.into_iter());
-        (private_shares, public_shares)
+        V::from_scalars(&mut ciphertexts.into_iter())
     }
 
     /// Encrypt a sequence of values using the share stream without mutating the
@@ -170,7 +183,7 @@ where
     /// This method does not mutate the share stream state; it is useful for
     /// for peeking at what the encryption would produce without advancing the
     /// stream.
-    pub fn peek_stream_cipher_encrypt<V: SecretShareType>(&self, value: &V::Base) -> (V, V) {
+    pub fn peek_stream_cipher_encrypt<V: SecretShareType>(&self, value: &V::Base) -> V {
         // Generate one time pads for each value using get_ith without mutating
         let value_scalars = value.to_scalars();
         let start_index = self.share_stream.index;
@@ -183,9 +196,7 @@ where
             value_scalars.iter().zip(pads.iter()).map(|(value, pad)| value - pad).collect_vec();
 
         // Deserialize
-        let private_shares = V::from_scalars(&mut pads.into_iter());
-        let public_shares = V::from_scalars(&mut ciphertexts.into_iter());
-        (private_shares, public_shares)
+        V::from_scalars(&mut ciphertexts.into_iter())
     }
 }
 
@@ -203,9 +214,11 @@ mod test {
     ///
     /// For these tests the inner type is unimportant; so we use a `Scalar`
     pub fn random_state_wrapper() -> StateWrapper<Scalar> {
+        let mut rng = thread_rng();
         let recovery_stream = random_csprng_state();
         let share_stream = random_csprng_state();
-        StateWrapper { recovery_stream, share_stream, inner: Scalar::zero() }
+        let public_share = Scalar::random(&mut rng);
+        StateWrapper { recovery_stream, share_stream, inner: Scalar::zero(), public_share }
     }
 
     /// Create a random csprng state
@@ -245,17 +258,10 @@ mod test {
 
         // Compute the encryption in both ways
         let mut wrapper = random_state_wrapper();
-        let (peeked_private, peeked_public) =
-            wrapper.peek_stream_cipher_encrypt::<[Scalar; N]>(&values_arr);
-        let (computed_private, computed_public) =
-            wrapper.stream_cipher_encrypt::<[Scalar; N]>(&values_arr);
+        let peeked_public = wrapper.peek_stream_cipher_encrypt::<[Scalar; N]>(&values_arr);
+        let computed_public = wrapper.stream_cipher_encrypt::<[Scalar; N]>(&values_arr);
 
-        // Check that the private and public shares match
-        assert_eq!(
-            peeked_private.to_scalars(),
-            computed_private.to_scalars(),
-            "peek_stream_cipher_encrypt private shares should match stream_cipher_encrypt"
-        );
+        // Check that the public shares match
         assert_eq!(
             peeked_public.to_scalars(),
             computed_public.to_scalars(),

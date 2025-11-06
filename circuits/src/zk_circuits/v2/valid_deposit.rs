@@ -5,7 +5,7 @@
 use circuit_macros::circuit_type;
 use circuit_types::{
     PlonkCircuit,
-    balance::{BalanceShare, BalanceShareVar, DarkpoolStateBalance, DarkpoolStateBalanceVar},
+    balance::{BalanceShareVar, DarkpoolStateBalance, DarkpoolStateBalanceVar},
     deposit::Deposit,
     merkle::{MerkleOpening, MerkleRoot},
     traits::{BaseType, CircuitBaseType, CircuitVarType},
@@ -49,13 +49,13 @@ impl<const MERKLE_HEIGHT: usize> ValidDeposit<MERKLE_HEIGHT> {
 
         // Recover the implied private shares from the base type
         let old_balance_private_shares = ShareGadget::compute_complementary_shares(
-            &witness.old_balance_public_shares,
+            &witness.old_balance.public_share,
             &witness.old_balance.inner,
             cs,
         )?;
 
         // Update the balance
-        let (new_balance, new_private_share, new_public_share) =
+        let (new_balance, new_private_share) =
             Self::create_new_balance(&old_balance_private_shares, statement, witness, cs)?;
 
         // Use the rotation gadget to verify the old balance and compute the new
@@ -63,13 +63,11 @@ impl<const MERKLE_HEIGHT: usize> ValidDeposit<MERKLE_HEIGHT> {
         let mut rotation_args = StateElementRotationArgs {
             old_version: witness.old_balance.clone(),
             old_private_share: old_balance_private_shares,
-            old_public_share: witness.old_balance_public_shares.clone(),
             old_opening: witness.old_balance_opening.clone(),
             merkle_root: statement.merkle_root,
             nullifier: statement.old_balance_nullifier,
             new_version: new_balance,
             new_private_share,
-            new_public_share,
             new_commitment: statement.new_balance_commitment,
             recovery_id: statement.recovery_id,
         };
@@ -102,11 +100,10 @@ impl<const MERKLE_HEIGHT: usize> ValidDeposit<MERKLE_HEIGHT> {
         statement: &ValidDepositStatementVar,
         witness: &ValidDepositWitnessVar<MERKLE_HEIGHT>,
         cs: &mut PlonkCircuit,
-    ) -> Result<(DarkpoolStateBalanceVar, BalanceShareVar, BalanceShareVar), CircuitError> {
+    ) -> Result<(DarkpoolStateBalanceVar, BalanceShareVar), CircuitError> {
         // Update the balance
         let mut new_balance = witness.old_balance.clone();
         let mut new_balance_private_share = old_balance_private_shares.clone();
-        let mut new_balance_public_share = witness.old_balance_public_shares.clone();
 
         // Add the deposit amount to the balance and validate that it is not too large
         new_balance.inner.amount = cs.add(new_balance.inner.amount, statement.deposit.amount)?;
@@ -122,10 +119,10 @@ impl<const MERKLE_HEIGHT: usize> ValidDeposit<MERKLE_HEIGHT> {
                 cs,
             )?;
         new_balance_private_share.amount = new_amount_private_share;
-        new_balance_public_share.amount = new_amount_public_share;
+        new_balance.public_share.amount = new_amount_public_share;
         cs.enforce_equal(new_amount_public_share, statement.new_amount_share)?;
 
-        Ok((new_balance, new_balance_private_share, new_balance_public_share))
+        Ok((new_balance, new_balance_private_share))
     }
 }
 
@@ -139,8 +136,6 @@ impl<const MERKLE_HEIGHT: usize> ValidDeposit<MERKLE_HEIGHT> {
 pub struct ValidDepositWitness<const MERKLE_HEIGHT: usize> {
     /// The old balance
     pub old_balance: DarkpoolStateBalance,
-    /// The old public shares of the balance
-    pub old_balance_public_shares: BalanceShare,
     /// The opening of the old balance to the Merkle root
     pub old_balance_opening: MerkleOpening<MERKLE_HEIGHT>,
 }
@@ -163,7 +158,6 @@ pub struct ValidDepositStatement {
     /// The nullifier of the previous balance
     pub old_balance_nullifier: Nullifier,
     /// The commitment to the new balance
-    /// TODO: Decide whether this is a full or partial commitment
     pub new_balance_commitment: Commitment,
     /// The new recovery identifier of the balance
     ///
@@ -205,18 +199,13 @@ impl<const MERKLE_HEIGHT: usize> SingleProverCircuit for ValidDeposit<MERKLE_HEI
 #[cfg(any(test, feature = "test_helpers"))]
 pub mod test_helpers {
     use alloy_primitives::Address;
-    use circuit_types::{
-        balance::{Balance, BalanceShare},
-        deposit::Deposit,
-    };
+    use circuit_types::{balance::Balance, deposit::Deposit};
     use constants::Scalar;
 
     use crate::{
         test_helpers::{check_constraints_satisfied, random_address, random_amount},
         zk_circuits::valid_deposit::{SizedValidDeposit, SizedValidDepositWitness},
-        zk_gadgets::test_helpers::{
-            create_merkle_opening, create_random_shares, create_state_wrapper,
-        },
+        zk_gadgets::test_helpers::{create_merkle_opening, create_state_wrapper},
     };
 
     use super::{ValidDepositStatement, ValidDepositWitness};
@@ -258,13 +247,8 @@ pub mod test_helpers {
             amount: random_amount(),
         });
 
-        // Create valid complementary shares for the old balance
-        let (old_balance_private_shares, old_balance_public_shares) =
-            create_random_shares::<BalanceShare>(&old_balance.inner);
-
         // Compute commitment, nullifier, and Merkle opening for the old balance
-        let old_balance_commitment =
-            old_balance.compute_commitment(&old_balance_private_shares, &old_balance_public_shares);
+        let old_balance_commitment = old_balance.compute_commitment();
         let old_balance_nullifier = old_balance.compute_nullifier();
         let (merkle_root, old_balance_opening) =
             create_merkle_opening::<MERKLE_HEIGHT>(old_balance_commitment);
@@ -276,24 +260,15 @@ pub mod test_helpers {
         // To compute the new amount share, we need to simulate the stream cipher
         // encryption.
         let new_amount_scalar = Scalar::from(new_balance.inner.amount);
-        let (new_amount_private_share, new_amount_public_share) =
-            new_balance.stream_cipher_encrypt(&new_amount_scalar);
-
-        // Compute a commitment to the new balance
-        let mut new_private_shares = old_balance_private_shares.clone();
-        let mut new_public_shares = old_balance_public_shares.clone();
-        new_public_shares.amount = new_amount_public_share;
-        new_private_shares.amount = new_amount_private_share;
+        let new_amount_public_share = new_balance.stream_cipher_encrypt(&new_amount_scalar);
+        new_balance.public_share.amount = new_amount_public_share;
 
         // Compute recovery_id, which will advance the recovery stream
         let recovery_id = new_balance.compute_recovery_id();
-        let new_balance_commitment =
-            new_balance.compute_commitment(&new_private_shares, &new_public_shares);
+        let new_balance_commitment = new_balance.compute_commitment();
 
         // Build the witness and statement
-        let witness =
-            ValidDepositWitness { old_balance, old_balance_public_shares, old_balance_opening };
-
+        let witness = ValidDepositWitness { old_balance, old_balance_opening };
         let statement = ValidDepositStatement {
             deposit,
             merkle_root,
@@ -425,7 +400,7 @@ mod test {
     #[test]
     fn test_invalid_old_balance_public_shares() {
         let (mut witness, statement) = create_dummy_witness_statement();
-        witness.old_balance_public_shares.amount = random_scalar();
+        witness.old_balance.public_share.amount = random_scalar();
 
         // Apply circuit constraints
         assert!(!test_helpers::check_constraints(&witness, &statement));

@@ -7,7 +7,8 @@
 use circuit_macros::circuit_type;
 use circuit_types::{
     Commitment, PlonkCircuit,
-    balance::{BalanceShare, BalanceShareVar, BalanceVar, DarkpoolStateBalance},
+    balance::{Balance, BalanceShare, BalanceShareVar, BalanceVar, DarkpoolStateBalanceVar},
+    csprng::PoseidonCSPRNG,
     deposit::{Deposit, DepositVar},
     traits::{BaseType, CircuitBaseType, CircuitVarType},
 };
@@ -42,25 +43,20 @@ impl ValidBalanceCreate {
     ) -> Result<(), CircuitError> {
         // 1. Validate the deposit and the new balance
         Self::validate_deposit(statement, witness, cs)?;
-        Self::validate_new_balance(&witness.balance.inner, &statement.deposit, cs)?;
+        Self::validate_new_balance(&witness.balance, &statement.deposit, cs)?;
 
         // 2. Encrypt the new balance using the state element's allocated stream cipher
-        let (private_share, public_share) =
+        let (mut new_balance, private_share) =
             Self::verify_balance_encryption(witness, statement, cs)?;
 
         // 3. Compute the recovery identifier for the new balance
-        let recovery_id = RecoveryIdGadget::compute_recovery_id(&mut witness.balance, cs)?;
+        let recovery_id = RecoveryIdGadget::compute_recovery_id(&mut new_balance, cs)?;
         EqGadget::constrain_eq(&recovery_id, &statement.recovery_id, cs)?;
 
         // 4. Compute the commitment to the new balance
         // This must be done after encrypting and computing the recovery identifier so
         // that we commit to the updated stream states for the CSPRNGs
-        let commitment = CommitmentGadget::compute_commitment(
-            &private_share,
-            &public_share,
-            &witness.balance,
-            cs,
-        )?;
+        let commitment = CommitmentGadget::compute_commitment(&new_balance, &private_share, cs)?;
         EqGadget::constrain_eq(&commitment, &statement.balance_commitment, cs)?;
 
         Ok(())
@@ -73,7 +69,7 @@ impl ValidBalanceCreate {
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
         let deposit = &statement.deposit;
-        let balance = &witness.balance.inner;
+        let balance = &witness.balance;
 
         // 1. The deposit amount must not exceed the amount bitlength
         AmountGadget::constrain_valid_amount(deposit.amount, cs)?;
@@ -104,20 +100,31 @@ impl ValidBalanceCreate {
 
     /// Encrypt the new balance and verify that it matches the statement
     ///
-    /// Returns the public and private shares of the balance
+    /// Creates a `DarkpoolStateBalanceVar` from the witness balance and returns
+    /// it along with the private share of the balance
     fn verify_balance_encryption(
         witness: &mut ValidBalanceCreateWitnessVar,
         statement: &ValidBalanceCreateStatementVar,
         cs: &mut PlonkCircuit,
-    ) -> Result<(BalanceShareVar, BalanceShareVar), CircuitError> {
+    ) -> Result<(DarkpoolStateBalanceVar, BalanceShareVar), CircuitError> {
         // 1. Encrypt the balance with the stream cipher
-        let balance = &mut witness.balance;
+        let balance = &witness.balance;
         let (private_share, public_share) =
-            StreamCipherGadget::encrypt(&balance.inner, &mut balance.share_stream, cs)?;
+            StreamCipherGadget::encrypt(balance, &mut witness.initial_share_stream, cs)?;
 
         // 2. Verify that the encrypted balance matches the statement
         EqGadget::constrain_eq(&public_share, &statement.new_balance_share, cs)?;
-        Ok((private_share, public_share))
+
+        // 3. Create the balance state element
+        // The share stream has been mutated by the stream cipher gadget as expected, so
+        // this balance contains the updated share stream state
+        let balance = DarkpoolStateBalanceVar {
+            recovery_stream: witness.initial_recovery_stream.clone(),
+            share_stream: witness.initial_share_stream.clone(),
+            inner: balance.clone(),
+            public_share,
+        };
+        Ok((balance, private_share))
     }
 }
 
@@ -129,8 +136,12 @@ impl ValidBalanceCreate {
 #[circuit_type(serde, singleprover_circuit)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ValidBalanceCreateWitness {
+    /// The initial balance share CSPRNG
+    pub initial_share_stream: PoseidonCSPRNG,
+    /// The initial recovery identifier CSPRNG
+    pub initial_recovery_stream: PoseidonCSPRNG,
     /// The balance being created
-    pub balance: DarkpoolStateBalance,
+    pub balance: Balance,
 }
 
 // -----------------------------
@@ -237,25 +248,31 @@ pub mod test_helpers {
         balance_inner: &Balance,
     ) -> (ValidBalanceCreateWitness, ValidBalanceCreateStatement) {
         // Create the witness balance with initial stream states
-        let pre_update_balance = create_state_wrapper(balance_inner.clone());
-        let mut balance = pre_update_balance.clone();
+        let balance = create_state_wrapper(balance_inner.clone());
+        let mut new_balance = balance.clone();
 
         // Encrypt the entire balance using the stream cipher
-        let (balance_private_shares, balance_public_shares) =
-            balance.stream_cipher_encrypt::<BalanceShare>(balance_inner);
-        let recovery_id = balance.compute_recovery_id();
+        let balance_public_shares =
+            new_balance.stream_cipher_encrypt::<BalanceShare>(balance_inner);
+        new_balance.public_share = balance_public_shares;
+        let recovery_id = new_balance.compute_recovery_id();
 
         // Compute commitment to the balance
-        let balance_commitment =
-            balance.compute_commitment(&balance_private_shares, &balance_public_shares);
+        let balance_commitment = new_balance.compute_commitment();
 
         // Build the witness and statement using the pre-update balance
-        let witness = ValidBalanceCreateWitness { balance: pre_update_balance };
+        let new_balance_share = new_balance.public_share();
+        let witness = ValidBalanceCreateWitness {
+            initial_share_stream: balance.share_stream,
+            initial_recovery_stream: balance.recovery_stream,
+            balance: balance.inner,
+        };
+
         let statement = ValidBalanceCreateStatement {
             deposit,
             balance_commitment,
             recovery_id,
-            new_balance_share: balance_public_shares,
+            new_balance_share,
         };
 
         (witness, statement)

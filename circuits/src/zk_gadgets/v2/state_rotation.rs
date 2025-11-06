@@ -4,7 +4,7 @@ use circuit_types::{
     PlonkCircuit,
     merkle::MerkleOpeningVar,
     state_wrapper::StateWrapperVar,
-    traits::{CircuitVarType, SecretShareVarType},
+    traits::{CircuitBaseType, SecretShareBaseType},
 };
 use mpc_relation::{Variable, errors::CircuitError, traits::Circuit};
 
@@ -14,14 +14,16 @@ use crate::zk_gadgets::{
 };
 
 /// The arguments to a state element rotation gadget
-pub struct StateElementRotationArgs<V: SecretShareVarType, const MERKLE_HEIGHT: usize> {
+pub struct StateElementRotationArgs<V, const MERKLE_HEIGHT: usize>
+where
+    V: CircuitBaseType + SecretShareBaseType,
+    V::ShareType: CircuitBaseType,
+{
     // --- Old Version --- //
     /// The old version of the state element
-    pub old_version: StateWrapperVar<<V::Base as CircuitVarType>::BaseType>,
+    pub old_version: StateWrapperVar<V>,
     /// The old private share of the state element
-    pub old_private_share: V,
-    /// The old public share of the state element
-    pub old_public_share: V,
+    pub old_private_share: <V::ShareType as CircuitBaseType>::VarType,
     /// The opening of the old version to the Merkle root
     pub old_opening: MerkleOpeningVar<MERKLE_HEIGHT>,
     /// The Merkle root to which the old version opens
@@ -31,11 +33,9 @@ pub struct StateElementRotationArgs<V: SecretShareVarType, const MERKLE_HEIGHT: 
 
     // --- New Version --- //
     /// The new version of the state element
-    pub new_version: StateWrapperVar<<V::Base as CircuitVarType>::BaseType>,
+    pub new_version: StateWrapperVar<V>,
     /// The new private share of the state element
-    pub new_private_share: V,
-    /// The new public share of the state element
-    pub new_public_share: V,
+    pub new_private_share: <V::ShareType as CircuitBaseType>::VarType,
     /// The commitment to the new version of the state element
     pub new_commitment: Variable,
     /// The new recovery identifier of the state element
@@ -53,22 +53,24 @@ impl<const MERKLE_HEIGHT: usize> StateElementRotationGadget<MERKLE_HEIGHT> {
     /// 2. Compute a nullifier for the old version
     /// 3. Compute the recovery identifier for the new version
     /// 4. Compute a commitment to the new version of the state element
-    pub fn rotate_version<V: SecretShareVarType>(
+    pub fn rotate_version<V>(
         args: &mut StateElementRotationArgs<V, MERKLE_HEIGHT>,
         cs: &mut PlonkCircuit,
-    ) -> Result<(), CircuitError> {
+    ) -> Result<(), CircuitError>
+    where
+        V: CircuitBaseType + SecretShareBaseType,
+        V::ShareType: CircuitBaseType,
+    {
         // Compute the recovery identifier for the new version and constrain it to the
         // given value
         let new_recovery_id = RecoveryIdGadget::compute_recovery_id(&mut args.new_version, cs)?;
         cs.enforce_equal(new_recovery_id, args.recovery_id)?;
 
         let (old_commitment, new_commitment) =
-            CommitmentGadget::compute_commitments_with_shared_prefix(
+            CommitmentGadget::compute_commitments_with_shared_prefix::<V>(
                 &args.old_private_share,
-                &args.old_public_share,
                 &args.old_version,
                 &args.new_private_share,
-                &args.new_public_share,
                 &args.new_version,
                 cs,
             )?;
@@ -103,9 +105,7 @@ mod test {
     use rand::{Rng, thread_rng};
     use std::ops::Add;
 
-    use crate::zk_gadgets::test_helpers::{
-        create_merkle_opening, create_random_shares, create_state_wrapper,
-    };
+    use crate::zk_gadgets::test_helpers::{create_merkle_opening, create_state_wrapper};
 
     use super::*;
 
@@ -142,16 +142,15 @@ mod test {
 
     /// A native version of the state element rotation args
     #[derive(Clone)]
-    struct NativeStateElementRotationArgs<V: SecretShareType, const MERKLE_HEIGHT: usize>
+    struct NativeStateElementRotationArgs<V, const MERKLE_HEIGHT: usize>
     where
-        V::Base: CircuitBaseType,
+        V: CircuitBaseType + SecretShareBaseType,
+        V::ShareType: CircuitBaseType,
     {
         /// The old version of the state element
-        old_version: StateWrapper<V::Base>,
+        old_version: StateWrapper<V>,
         /// The old private share of the state element
-        old_private_share: V,
-        /// The old public share of the state element
-        old_public_share: V,
+        old_private_share: V::ShareType,
         /// The opening of the old version to the Merkle root
         old_opening: MerkleOpening<MERKLE_HEIGHT>,
         /// The Merkle root to which the old version opens
@@ -159,11 +158,9 @@ mod test {
         /// The nullifier of the old version
         nullifier: Scalar,
         /// The new version of the state element
-        new_version: StateWrapper<V::Base>,
+        new_version: StateWrapper<V>,
         /// The new private share of the state element
-        new_private_share: V,
-        /// The new public share of the state element
-        new_public_share: V,
+        new_private_share: V::ShareType,
         /// The commitment to the new version of the state element
         new_commitment: Scalar,
         /// The new recovery identifier of the state element
@@ -181,19 +178,17 @@ mod test {
 
     /// Create a rotation bundle and allocate it in a constraint system
     fn create_and_allocate_rotation_bundle()
-    -> (PlonkCircuit, StateElementRotationArgs<TestStateElementShareVar, MERKLE_HEIGHT>) {
+    -> (PlonkCircuit, StateElementRotationArgs<TestStateElement, MERKLE_HEIGHT>) {
         let bundle = create_rotation_bundle();
         let mut cs = PlonkCircuit::new_turbo_plonk();
         let args = StateElementRotationArgs {
             old_version: bundle.old_version.create_witness(&mut cs),
             old_private_share: bundle.old_private_share.create_witness(&mut cs),
-            old_public_share: bundle.old_public_share.create_witness(&mut cs),
             old_opening: bundle.old_opening.create_witness(&mut cs),
             merkle_root: bundle.merkle_root.create_witness(&mut cs),
             nullifier: bundle.nullifier.create_witness(&mut cs),
             new_version: bundle.new_version.create_witness(&mut cs),
             new_private_share: bundle.new_private_share.create_witness(&mut cs),
-            new_public_share: bundle.new_public_share.create_witness(&mut cs),
             new_commitment: bundle.new_commitment.create_witness(&mut cs),
             recovery_id: bundle.recovery_id.create_witness(&mut cs),
         };
@@ -202,25 +197,17 @@ mod test {
     }
 
     /// Generate a valid rotation bundle
-    fn create_rotation_bundle()
-    -> NativeStateElementRotationArgs<TestStateElementShare, MERKLE_HEIGHT> {
+    fn create_rotation_bundle() -> NativeStateElementRotationArgs<TestStateElement, MERKLE_HEIGHT> {
         let old_elt = create_random_state_element();
         let new_elt = create_random_state_element();
         let old_version = create_state_wrapper(old_elt.clone());
         let mut new_version = create_state_wrapper(new_elt.clone());
         let new_version_copy = new_version.clone();
 
-        let (old_private_share, old_public_share): (TestStateElementShare, TestStateElementShare) =
-            create_random_shares(&old_elt);
-        let (new_private_share, new_public_share): (TestStateElementShare, TestStateElementShare) =
-            create_random_shares(&new_elt);
-
         // Compute commitments to the old and new shares
         let new_recovery_id = new_version.compute_recovery_id();
-        let old_share_commitment =
-            old_version.compute_commitment(&old_private_share, &old_public_share);
-        let new_share_commitment =
-            new_version.compute_commitment(&new_private_share, &new_public_share);
+        let old_share_commitment = old_version.compute_commitment();
+        let new_share_commitment = new_version.compute_commitment();
 
         // Create an opening for the old version
         let (root, old_opening) = create_merkle_opening(old_share_commitment);
@@ -229,14 +216,12 @@ mod test {
         let old_nullifier = old_version.compute_nullifier();
         NativeStateElementRotationArgs {
             old_version: old_version.clone(),
-            old_private_share,
-            old_public_share,
+            old_private_share: old_version.private_shares(),
             old_opening,
             merkle_root: root,
             nullifier: old_nullifier,
             new_version: new_version_copy,
-            new_private_share: new_private_share.clone(),
-            new_public_share: new_public_share.clone(),
+            new_private_share: new_version.private_shares(),
             new_commitment: new_share_commitment,
             recovery_id: new_recovery_id,
         }
@@ -297,10 +282,10 @@ mod test {
         let (mut cs, mut args) = create_and_allocate_rotation_bundle();
 
         // Modify a random share
-        let mut shares = args.old_public_share.to_vars();
+        let mut shares = args.old_version.public_share.to_vars();
         let random_index = rng.r#gen_range(0..shares.len());
         shares[random_index] = allocate_random_scalar(&mut cs);
-        args.old_public_share =
+        args.old_version.public_share =
             TestStateElementShareVar::from_vars(&mut shares.into_iter(), &mut cs);
 
         // Apply the constraints and check that they are not satisfied
@@ -337,10 +322,10 @@ mod test {
         let (mut cs, mut args) = create_and_allocate_rotation_bundle();
 
         // Modify a random share
-        let mut shares = args.new_public_share.to_vars();
+        let mut shares = args.new_version.public_share.to_vars();
         let random_index = rng.r#gen_range(0..shares.len());
         shares[random_index] = allocate_random_scalar(&mut cs);
-        args.new_public_share =
+        args.new_version.public_share =
             TestStateElementShareVar::from_vars(&mut shares.into_iter(), &mut cs);
 
         // Apply the constraints and check that they are not satisfied

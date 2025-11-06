@@ -1,6 +1,10 @@
 //! Gadget for computing nullifiers of state elements
 
-use circuit_types::{PlonkCircuit, state_wrapper::StateWrapperVar, traits::CircuitBaseType};
+use circuit_types::{
+    PlonkCircuit,
+    state_wrapper::StateWrapperVar,
+    traits::{CircuitBaseType, SecretShareBaseType},
+};
 use mpc_relation::{Variable, errors::CircuitError, traits::Circuit};
 
 use crate::zk_gadgets::{csprng::CSPRNGGadget, poseidon::PoseidonHashGadget};
@@ -15,10 +19,14 @@ impl NullifierGadget {
     /// This recovery identifier was emitted on the last update of the element.
     /// So if the current index in the recovery stream is `i`, the recovery
     /// identifier in question is the value at index `i - 1`.
-    pub fn compute_nullifier<V: CircuitBaseType>(
+    pub fn compute_nullifier<V>(
         element: &StateWrapperVar<V>,
         cs: &mut PlonkCircuit,
-    ) -> Result<Variable, CircuitError> {
+    ) -> Result<Variable, CircuitError>
+    where
+        V: CircuitBaseType + SecretShareBaseType,
+        V::ShareType: CircuitBaseType,
+    {
         let last_idx = cs.sub(element.recovery_stream.index, cs.one())?;
         let recovery_id = CSPRNGGadget::get_ith(&element.recovery_stream, last_idx, cs)?;
 

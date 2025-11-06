@@ -63,11 +63,14 @@ mod test {
         let mut state_var = state.create_witness(&mut cs);
 
         // Generate test data to encrypt
-        const N: usize = 1;
+        const N: usize = 10;
         let values = random_scalars_array::<N>();
         let values_var = values.create_witness(&mut cs);
-        let (expected_private, expected_public) =
-            state.stream_cipher_encrypt::<[Scalar; N]>(&values);
+        let expected_public = state.stream_cipher_encrypt::<[Scalar; N]>(&values);
+        let mut expected_private = [Scalar::zero(); N];
+        for (i, (v, p)) in values.into_iter().zip(expected_public.into_iter()).enumerate() {
+            expected_private[i] = v - p;
+        }
 
         // Encrypt in a constraint system
         let (private_share, public_share) = StreamCipherGadget::encrypt::<[Variable; N]>(

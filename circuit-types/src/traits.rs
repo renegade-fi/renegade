@@ -300,9 +300,9 @@ pub trait SecretShareType: Sized + BaseType {
 }
 
 /// Implementing types represent a secret share allocated in a constraint system
-pub trait SecretShareVarType: Sized + CircuitVarType {
+pub trait SecretShareVarType: Sized + CircuitVarType<BaseType: SecretShareType> {
     /// The base type that this secret share is a representation of
-    type Base: CircuitVarType;
+    type Base: CircuitVarType<BaseType: SecretShareBaseType>;
 
     /// Apply an additive blinder to each element of the secret shares
     fn blind<C: Circuit<ScalarField>>(self, blinder: Variable, circuit: &mut C) -> Self {

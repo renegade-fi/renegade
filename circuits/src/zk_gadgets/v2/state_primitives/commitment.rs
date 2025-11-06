@@ -27,7 +27,7 @@
 use circuit_types::{
     PlonkCircuit,
     state_wrapper::StateWrapperVar,
-    traits::{CircuitVarType, SecretShareVarType},
+    traits::{CircuitBaseType, CircuitVarType, SecretShareBaseType},
 };
 use mpc_relation::{Variable, errors::CircuitError, traits::Circuit};
 
@@ -40,7 +40,7 @@ use crate::zk_gadgets::poseidon::PoseidonHashGadget;
 /// determine whether two variables represent the same value. This method does
 /// not capture shared prefixes which come from two different variables assigned
 /// to the same value.
-fn determine_shared_prefix_length<V: SecretShareVarType>(share1: &V, share2: &V) -> usize {
+fn determine_shared_prefix_length<V: CircuitVarType>(share1: &V, share2: &V) -> usize {
     let share1_vars = share1.to_vars();
     let share2_vars = share2.to_vars();
     assert_eq!(share1_vars.len(), share2_vars.len());
@@ -65,23 +65,30 @@ impl CommitmentGadget {
     // ---------------------
 
     /// Compute the commitment to an abstract state element
-    pub fn compute_commitment<V: SecretShareVarType>(
-        private_share: &V,
-        public_share: &V,
-        element: &StateWrapperVar<<V::Base as CircuitVarType>::BaseType>,
+    pub fn compute_commitment<T>(
+        element: &StateWrapperVar<T>,
+        private_share: &<T::ShareType as CircuitBaseType>::VarType,
         cs: &mut PlonkCircuit,
-    ) -> Result<Variable, CircuitError> {
+    ) -> Result<Variable, CircuitError>
+    where
+        T: CircuitBaseType + SecretShareBaseType,
+        T::ShareType: CircuitBaseType,
+    {
         // Serialize the commitment input
         let private_commitment = Self::compute_private_commitment(private_share, element, cs)?;
-        Self::compute_commitment_from_private(private_commitment, public_share, cs)
+        Self::compute_commitment_from_private::<T>(private_commitment, &element.public_share, cs)
     }
 
     /// Compute the commitment to the private shares of a state element
-    fn compute_private_commitment<V: SecretShareVarType>(
-        private_share: &V,
-        element: &StateWrapperVar<<V::Base as CircuitVarType>::BaseType>,
+    fn compute_private_commitment<T>(
+        private_share: &<T::ShareType as CircuitBaseType>::VarType,
+        element: &StateWrapperVar<T>,
         cs: &mut PlonkCircuit,
-    ) -> Result<Variable, CircuitError> {
+    ) -> Result<Variable, CircuitError>
+    where
+        T: CircuitBaseType + SecretShareBaseType,
+        T::ShareType: CircuitBaseType,
+    {
         let mut hasher = PoseidonHashGadget::new(cs.zero());
         hasher.batch_absorb(&private_share.to_vars(), cs)?;
         hasher.batch_absorb(&element.recovery_stream.to_vars(), cs)?;
@@ -103,11 +110,15 @@ impl CommitmentGadget {
     /// into the commitment. This allows us to pre-commit to a state element
     /// e.g. before a match and then commit only to the updated shares after
     /// their values are determined.
-    fn compute_commitment_from_private<V: SecretShareVarType>(
+    fn compute_commitment_from_private<T>(
         private_commitment: Variable,
-        public_share: &V,
+        public_share: &<T::ShareType as CircuitBaseType>::VarType,
         cs: &mut PlonkCircuit,
-    ) -> Result<Variable, CircuitError> {
+    ) -> Result<Variable, CircuitError>
+    where
+        T: CircuitBaseType + SecretShareBaseType,
+        T::ShareType: CircuitBaseType,
+    {
         let public_share_vars = public_share.to_vars();
         let public_commitment = Self::compute_resumable_commitment(&public_share_vars, cs)?;
 
@@ -127,15 +138,17 @@ impl CommitmentGadget {
     /// This primitive is useful in state rotation circuits, where frequently
     /// only one or a handful of shares change between two versions of a state
     /// element which we need commitments for.
-    pub fn compute_commitments_with_shared_prefix<V: SecretShareVarType>(
-        private_share1: &V,
-        public_share1: &V,
-        element1: &StateWrapperVar<<V::Base as CircuitVarType>::BaseType>,
-        private_share2: &V,
-        public_share2: &V,
-        element2: &StateWrapperVar<<V::Base as CircuitVarType>::BaseType>,
+    pub fn compute_commitments_with_shared_prefix<T>(
+        private_share1: &<T::ShareType as CircuitBaseType>::VarType,
+        element1: &StateWrapperVar<T>,
+        private_share2: &<T::ShareType as CircuitBaseType>::VarType,
+        element2: &StateWrapperVar<T>,
         cs: &mut PlonkCircuit,
-    ) -> Result<(Variable, Variable), CircuitError> {
+    ) -> Result<(Variable, Variable), CircuitError>
+    where
+        T: CircuitBaseType + SecretShareBaseType,
+        T::ShareType: CircuitBaseType,
+    {
         let (private_comm1, private_comm2) = Self::compute_private_commitments_with_shared_prefix(
             private_share1,
             private_share2,
@@ -143,8 +156,11 @@ impl CommitmentGadget {
             element2,
             cs,
         )?;
-        let (public_comm1, public_comm2) =
-            Self::compute_public_commitments_with_shared_prefix(public_share1, public_share2, cs)?;
+        let (public_comm1, public_comm2) = Self::compute_public_commitments_with_shared_prefix::<T>(
+            &element1.public_share,
+            &element2.public_share,
+            cs,
+        )?;
 
         // Combine the commitments
         let mut hasher1 = PoseidonHashGadget::new(cs.zero());
@@ -160,13 +176,17 @@ impl CommitmentGadget {
     /// This primitive is useful in state rotation circuits, where frequently
     /// only one or a handful of shares change between two versions of a state
     /// element which we need commitments for.
-    fn compute_private_commitments_with_shared_prefix<V: SecretShareVarType>(
-        private_share_1: &V,
-        private_share_2: &V,
-        elt1: &StateWrapperVar<<V::Base as CircuitVarType>::BaseType>,
-        elt2: &StateWrapperVar<<V::Base as CircuitVarType>::BaseType>,
+    fn compute_private_commitments_with_shared_prefix<T>(
+        private_share_1: &<T::ShareType as CircuitBaseType>::VarType,
+        private_share_2: &<T::ShareType as CircuitBaseType>::VarType,
+        elt1: &StateWrapperVar<T>,
+        elt2: &StateWrapperVar<T>,
         cs: &mut PlonkCircuit,
-    ) -> Result<(Variable, Variable), CircuitError> {
+    ) -> Result<(Variable, Variable), CircuitError>
+    where
+        T: CircuitBaseType + SecretShareBaseType,
+        T::ShareType: CircuitBaseType,
+    {
         let prefix_length = determine_shared_prefix_length(private_share_1, private_share_2);
 
         // Compute the commitment to the shared prefix
@@ -205,11 +225,15 @@ impl CommitmentGadget {
     /// element which we need commitments for.
     ///
     /// In the public case, we use a "resumable" commitment pattern
-    fn compute_public_commitments_with_shared_prefix<V: SecretShareVarType>(
-        public_share_1: &V,
-        public_share_2: &V,
+    fn compute_public_commitments_with_shared_prefix<T>(
+        public_share_1: &<T::ShareType as CircuitBaseType>::VarType,
+        public_share_2: &<T::ShareType as CircuitBaseType>::VarType,
         cs: &mut PlonkCircuit,
-    ) -> Result<(Variable, Variable), CircuitError> {
+    ) -> Result<(Variable, Variable), CircuitError>
+    where
+        T: CircuitBaseType + SecretShareBaseType,
+        T::ShareType: CircuitBaseType,
+    {
         let prefix_length = determine_shared_prefix_length(public_share_1, public_share_2);
 
         // Compute the commitment to the shared prefix
@@ -290,25 +314,19 @@ mod test {
     #[test]
     fn test_commitment_gadget() -> Result<()> {
         // Generate test data
-        let private_share = random_scalars_array();
-        let public_share = random_scalars_array();
-        let combined = private_share.add_shares(&public_share);
-        let element = create_state_wrapper::<TestStateElt>(combined);
-        let expected_commitment = element.compute_commitment(&private_share, &public_share);
+        let state_element = random_scalars_array();
+        let element = create_state_wrapper::<TestStateElt>(state_element);
+        let private_share = element.private_shares();
+        let expected_commitment = element.compute_commitment();
 
         // Allocate in a constraint system
         let mut cs = PlonkCircuit::new_turbo_plonk();
-        let private_share_var = private_share.create_witness(&mut cs);
-        let public_share_var = public_share.create_witness(&mut cs);
         let element_var = element.create_witness(&mut cs);
+        let private_share_var = private_share.create_witness(&mut cs);
         let expected_commitment_var = expected_commitment.create_witness(&mut cs);
 
-        let commitment = CommitmentGadget::compute_commitment(
-            &private_share_var,
-            &public_share_var,
-            &element_var,
-            &mut cs,
-        )?;
+        let commitment =
+            CommitmentGadget::compute_commitment(&element_var, &private_share_var, &mut cs)?;
         EqGadget::constrain_eq(&commitment, &expected_commitment_var, &mut cs)?;
 
         // Check satisfiability
@@ -319,25 +337,19 @@ mod test {
     /// Test the commitment gadget with no shared prefix
     #[test]
     fn test_commitment_gadget_with_no_shared_prefix() -> Result<()> {
-        // Generate two completely independent elements and shares
-        let private_share1 = random_scalars_array();
-        let public_share1 = random_scalars_array();
-        let private_share2 = random_scalars_array();
-        let public_share2 = random_scalars_array();
-
-        let combined_1 = private_share1.add_shares(&public_share1);
-        let combined_2 = private_share2.add_shares(&public_share2);
-        let elt1 = create_state_wrapper::<TestStateElt>(combined_1);
-        let elt2 = create_state_wrapper::<TestStateElt>(combined_2);
-        let expected_commitment1 = elt1.compute_commitment(&private_share1, &public_share1);
-        let expected_commitment2 = elt2.compute_commitment(&private_share2, &public_share2);
+        let state1 = random_scalars_array();
+        let state2 = random_scalars_array();
+        let elt1 = create_state_wrapper::<TestStateElt>(state1);
+        let elt2 = create_state_wrapper::<TestStateElt>(state2);
+        let private_share1 = elt1.private_shares();
+        let private_share2 = elt2.private_shares();
+        let expected_commitment1 = elt1.compute_commitment();
+        let expected_commitment2 = elt2.compute_commitment();
 
         // Allocate in a constraint system
         let mut cs = PlonkCircuit::new_turbo_plonk();
         let private_share1_var = private_share1.create_witness(&mut cs);
-        let public_share1_var = public_share1.create_witness(&mut cs);
         let private_share2_var = private_share2.create_witness(&mut cs);
-        let public_share2_var = public_share2.create_witness(&mut cs);
 
         let element1_var = elt1.create_witness(&mut cs);
         let element2_var = elt2.create_witness(&mut cs);
@@ -346,10 +358,8 @@ mod test {
 
         let (commitment1, commitment2) = CommitmentGadget::compute_commitments_with_shared_prefix(
             &private_share1_var,
-            &public_share1_var,
             &element1_var,
             &private_share2_var,
-            &public_share2_var,
             &element2_var,
             &mut cs,
         )?;
@@ -383,10 +393,12 @@ mod test {
 
         let combined_1 = private_share1.add_shares(&public_share1);
         let combined_2 = private_share2.add_shares(&public_share2);
-        let elt1 = create_state_wrapper::<TestStateElt>(combined_1);
-        let elt2 = create_state_wrapper::<TestStateElt>(combined_2);
-        let expected_commitment1 = elt1.compute_commitment(&private_share1, &public_share1);
-        let expected_commitment2 = elt2.compute_commitment(&private_share2, &public_share2);
+        let mut elt1 = create_state_wrapper::<TestStateElt>(combined_1);
+        let mut elt2 = create_state_wrapper::<TestStateElt>(combined_2);
+        elt1.public_share = public_share1;
+        elt2.public_share = public_share2;
+        let expected_commitment1 = elt1.compute_commitment();
+        let expected_commitment2 = elt2.compute_commitment();
 
         // Allocate in a constraint system
         let mut cs = PlonkCircuit::new_turbo_plonk();
@@ -404,17 +416,17 @@ mod test {
         private_share2_var[..private_prefix_length].copy_from_slice(&shared_private_vars);
         public_share2_var[..public_prefix_length].copy_from_slice(&shared_public_vars);
 
-        let element1_var = elt1.create_witness(&mut cs);
-        let element2_var = elt2.create_witness(&mut cs);
+        let mut element1_var = elt1.create_witness(&mut cs);
+        let mut element2_var = elt2.create_witness(&mut cs);
+        element1_var.public_share = public_share1_var;
+        element2_var.public_share = public_share2_var;
         let expected_commitment1_var = expected_commitment1.create_witness(&mut cs);
         let expected_commitment2_var = expected_commitment2.create_witness(&mut cs);
 
         let (commitment1, commitment2) = CommitmentGadget::compute_commitments_with_shared_prefix(
             &private_share1_var,
-            &public_share1_var,
             &element1_var,
             &private_share2_var,
-            &public_share2_var,
             &element2_var,
             &mut cs,
         )?;
