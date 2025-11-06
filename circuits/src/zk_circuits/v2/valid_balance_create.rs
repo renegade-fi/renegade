@@ -191,10 +191,7 @@ impl SingleProverCircuit for ValidBalanceCreate {
 
 #[cfg(any(test, feature = "test_helpers"))]
 pub mod test_helpers {
-    use circuit_types::{
-        balance::{Balance, BalanceShare},
-        deposit::Deposit,
-    };
+    use circuit_types::{balance::Balance, deposit::Deposit};
 
     use crate::{
         test_helpers::{check_constraints_satisfied, random_address, random_amount},
@@ -252,8 +249,7 @@ pub mod test_helpers {
         let mut new_balance = balance.clone();
 
         // Encrypt the entire balance using the stream cipher
-        let balance_public_shares =
-            new_balance.stream_cipher_encrypt::<BalanceShare>(balance_inner);
+        let balance_public_shares = new_balance.stream_cipher_encrypt::<Balance>(balance_inner);
         new_balance.public_share = balance_public_shares;
         let recovery_id = new_balance.compute_recovery_id();
 

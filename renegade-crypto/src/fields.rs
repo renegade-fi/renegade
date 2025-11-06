@@ -3,7 +3,7 @@
 
 use std::ops::Neg;
 
-use alloy_primitives::{Address, U160};
+use alloy_primitives::{Address, U160, U256};
 use ark_ec::CurveGroup;
 use ark_ff::PrimeField;
 use bigdecimal::BigDecimal;
@@ -51,6 +51,14 @@ pub fn scalar_to_address(a: &Scalar) -> Address {
     // Convert to address
     let u160 = U160::from_be_slice(&address_bytes);
     Address::from(u160)
+}
+
+/// Convert a scalar to a U256
+pub fn scalar_to_u256(a: &Scalar) -> U256 {
+    let bytes = a.to_bytes_be();
+    let mut u256_bytes = [0u8; U256::BYTES];
+    u256_bytes.copy_from_slice(&bytes[bytes.len() - U256::BYTES..]);
+    U256::from_be_bytes(u256_bytes)
 }
 
 /// Convert a scalar to a BabyJubJub scalar
@@ -125,13 +133,19 @@ pub fn bigint_to_scalar_bits<const D: usize>(a: &BigInt) -> Vec<Scalar> {
     res
 }
 
-// ------------------------------
-// | Conversions from Addresses |
-// ------------------------------
+// --------------------------------
+// | Conversions from Alloy Types |
+// --------------------------------
 
 /// Convert an Address to a scalar
 pub fn address_to_scalar(a: &Address) -> Scalar {
     Scalar::from_be_bytes_mod_order(&a.0.0)
+}
+
+/// Convert a U256 to a scalar
+pub fn u256_to_scalar(a: &U256) -> Scalar {
+    let bytes: [u8; U256::BYTES] = a.to_be_bytes();
+    Scalar::from_be_bytes_mod_order(&bytes)
 }
 
 // ---------------------------------------

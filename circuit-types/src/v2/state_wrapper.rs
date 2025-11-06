@@ -17,8 +17,8 @@ use serde::{Deserialize, Serialize};
 
 use std::fmt::Debug;
 
+use crate::csprng::PoseidonCSPRNG;
 use crate::traits::{BaseType, SecretShareBaseType};
-use crate::{csprng::PoseidonCSPRNG, traits::SecretShareType};
 use constants::Scalar;
 
 #[cfg(feature = "proof-system-types")]
@@ -52,6 +52,20 @@ where
     T: SecretShareBaseType + CircuitBaseType,
     T::ShareType: CircuitBaseType,
 {
+    // --- Constructor --- //
+
+    /// Create a new state wrapper
+    ///
+    /// This method will generate public shares for the element and modify the
+    /// stream cipher states to do so
+    pub fn new(inner: T, share_stream_seed: Scalar, recovery_stream_seed: Scalar) -> Self {
+        let recovery_stream = PoseidonCSPRNG::new(recovery_stream_seed);
+        let mut share_stream = PoseidonCSPRNG::new(share_stream_seed);
+        let public_share = share_stream.stream_cipher_encrypt(&inner);
+
+        Self { recovery_stream, share_stream, inner, public_share }
+    }
+
     // --- Secret Shares --- //
 
     /// Compute the private shares of the state element
@@ -156,47 +170,21 @@ where
 
     /// Encrypt a sequence of values using the share stream
     ///
-    /// Returns the private shares (one-time pads) and the public shares
-    /// (ciphertext)
+    /// Returns the public shares (ciphertext)
     ///
     /// This method mutates the share stream state by advancing the index.
-    pub fn stream_cipher_encrypt<V: SecretShareType>(&mut self, value: &V::Base) -> V {
-        // Generate one time pads for each value
-        let value_scalars = value.to_scalars();
-        let share_stream = &mut self.share_stream;
-        let pads = share_stream.take(value_scalars.len()).collect_vec();
-
-        // Advance the index after collecting the values
-        let ciphertexts =
-            value_scalars.iter().zip(pads.iter()).map(|(value, pad)| value - pad).collect_vec();
-
-        // Deserialize
-        V::from_scalars(&mut ciphertexts.into_iter())
+    pub fn stream_cipher_encrypt<V: SecretShareBaseType>(&mut self, value: &V) -> V::ShareType {
+        self.share_stream.stream_cipher_encrypt(value)
     }
 
-    /// Encrypt a sequence of values using the share stream without mutating the
-    /// stream state
+    /// Encrypt a sequence of values using the share stream
     ///
-    /// Returns the private shares (one-time pads) and the public shares
-    /// (ciphertext) that would be generated from the current stream position.
+    /// Returns the public shares (ciphertext)
     ///
-    /// This method does not mutate the share stream state; it is useful for
-    /// for peeking at what the encryption would produce without advancing the
-    /// stream.
-    pub fn peek_stream_cipher_encrypt<V: SecretShareType>(&self, value: &V::Base) -> V {
-        // Generate one time pads for each value using get_ith without mutating
-        let value_scalars = value.to_scalars();
-        let start_index = self.share_stream.index;
-        let pads: Vec<Scalar> = (0..value_scalars.len())
-            .map(|i| self.share_stream.get_ith(start_index + i as u64))
-            .collect_vec();
-
-        // Compute ciphertexts
-        let ciphertexts =
-            value_scalars.iter().zip(pads.iter()).map(|(value, pad)| value - pad).collect_vec();
-
-        // Deserialize
-        V::from_scalars(&mut ciphertexts.into_iter())
+    /// This method does not mutate the share stream state by advancing the
+    /// index.
+    pub fn peek_stream_cipher_encrypt<V: SecretShareBaseType>(&self, value: &V) -> V::ShareType {
+        self.share_stream.peek_stream_cipher_encrypt(value)
     }
 }
 
@@ -244,28 +232,6 @@ mod test {
         assert_eq!(
             peeked_id, computed_id,
             "peek_recovery_id should return the same value as compute_recovery_id"
-        );
-    }
-
-    /// Test that peek_stream_cipher_encrypt returns the same values as
-    /// stream_cipher_encrypt would before mutation
-    #[test]
-    fn test_peek_stream_cipher_encrypt_matches_compute() {
-        const N: usize = 10;
-        let mut rng = thread_rng();
-        let values = (0..N).map(|_| Scalar::random(&mut rng)).collect_vec();
-        let values_arr = <[Scalar; N]>::from_scalars(&mut values.into_iter());
-
-        // Compute the encryption in both ways
-        let mut wrapper = random_state_wrapper();
-        let peeked_public = wrapper.peek_stream_cipher_encrypt::<[Scalar; N]>(&values_arr);
-        let computed_public = wrapper.stream_cipher_encrypt::<[Scalar; N]>(&values_arr);
-
-        // Check that the public shares match
-        assert_eq!(
-            peeked_public.to_scalars(),
-            computed_public.to_scalars(),
-            "peek_stream_cipher_encrypt public shares should match stream_cipher_encrypt"
         );
     }
 }
