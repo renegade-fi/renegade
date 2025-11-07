@@ -1,4 +1,5 @@
-//! Tests the process of proving and verifying an `INTENT ONLY FIRST FILL VALIDITY` circuit
+//! Tests the process of proving and verifying an `INTENT ONLY FIRST FILL
+//! VALIDITY` circuit
 #![allow(incomplete_features)]
 #![allow(missing_docs)]
 
