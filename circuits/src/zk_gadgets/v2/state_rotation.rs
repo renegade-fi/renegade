@@ -105,7 +105,7 @@ mod test {
     use rand::{Rng, thread_rng};
     use std::ops::Add;
 
-    use crate::zk_gadgets::test_helpers::{create_merkle_opening, create_state_wrapper};
+    use crate::test_helpers::{create_merkle_opening, create_random_state_wrapper};
 
     use super::*;
 
@@ -200,8 +200,8 @@ mod test {
     fn create_rotation_bundle() -> NativeStateElementRotationArgs<TestStateElement, MERKLE_HEIGHT> {
         let old_elt = create_random_state_element();
         let new_elt = create_random_state_element();
-        let old_version = create_state_wrapper(old_elt.clone());
-        let mut new_version = create_state_wrapper(new_elt.clone());
+        let old_version = create_random_state_wrapper(old_elt.clone());
+        let mut new_version = create_random_state_wrapper(new_elt.clone());
         let new_version_copy = new_version.clone();
 
         // Compute commitments to the old and new shares

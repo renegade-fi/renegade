@@ -222,11 +222,13 @@ pub mod test_helpers {
     use rand::thread_rng;
 
     use crate::{
-        test_helpers::{check_constraints_satisfied, random_address, random_amount},
+        test_helpers::{
+            check_constraints_satisfied, create_merkle_opening, create_random_state_wrapper,
+            random_address, random_amount,
+        },
         zk_circuits::v2::fees::valid_private_relayer_fee_payment::{
             SizedValidPrivateRelayerFeePayment, SizedValidPrivateRelayerFeePaymentWitness,
         },
-        zk_gadgets::test_helpers::{create_merkle_opening, create_state_wrapper},
     };
 
     use super::ValidPrivateRelayerFeePaymentStatement;
@@ -251,7 +253,7 @@ pub mod test_helpers {
     pub fn create_dummy_witness_statement()
     -> (SizedValidPrivateRelayerFeePaymentWitness, ValidPrivateRelayerFeePaymentStatement) {
         // The balance from which relayer fees are paid
-        let old_balance = create_state_wrapper(Balance {
+        let old_balance = create_random_state_wrapper(Balance {
             mint: random_address(),
             relayer_fee_recipient: random_address(),
             owner: random_address(),
@@ -333,8 +335,9 @@ pub mod test_helpers {
 #[cfg(test)]
 mod test {
 
-    use crate::test_helpers::{random_address, random_amount, random_scalar};
-    use crate::zk_gadgets::test_helpers::create_state_wrapper;
+    use crate::test_helpers::{
+        create_random_state_wrapper, random_address, random_amount, random_scalar,
+    };
 
     use super::test_helpers::create_dummy_witness_statement_with_balance;
     use super::*;
@@ -367,7 +370,7 @@ mod test {
     #[test]
     #[allow(non_snake_case)]
     fn test_invalid__zero_relayer_fee_balance() {
-        let balance = create_state_wrapper(Balance {
+        let balance = create_random_state_wrapper(Balance {
             mint: random_address(),
             relayer_fee_recipient: random_address(),
             owner: random_address(),

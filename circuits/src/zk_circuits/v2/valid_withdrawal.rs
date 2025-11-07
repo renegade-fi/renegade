@@ -216,9 +216,11 @@ pub mod test_helpers {
     use constants::Scalar;
 
     use crate::{
-        test_helpers::{check_constraints_satisfied, random_address, random_amount},
+        test_helpers::{
+            check_constraints_satisfied, create_merkle_opening, create_random_state_wrapper,
+            random_address, random_amount, random_withdrawal,
+        },
         zk_circuits::v2::valid_withdrawal::{SizedValidWithdrawal, SizedValidWithdrawalWitness},
-        zk_gadgets::test_helpers::{create_merkle_opening, create_state_wrapper},
     };
 
     use super::{ValidWithdrawalStatement, ValidWithdrawalWitness};
@@ -242,7 +244,7 @@ pub mod test_helpers {
     /// Construct a witness and statement with valid data
     pub fn create_witness_statement() -> (SizedValidWithdrawalWitness, ValidWithdrawalStatement) {
         // Create a withdrawal that matches the balance's mint and owner
-        let withdrawal = create_random_withdrawal();
+        let withdrawal = random_withdrawal();
         create_witness_statement_with_withdrawal(withdrawal)
     }
 
@@ -252,7 +254,7 @@ pub mod test_helpers {
     ) -> (SizedValidWithdrawalWitness, ValidWithdrawalStatement) {
         // Create an old balance matching the withdrawal's token and owner
         // Ensure the balance amount is at least as large as the withdrawal amount
-        let old_balance = create_state_wrapper(Balance {
+        let old_balance = create_random_state_wrapper(Balance {
             mint: withdrawal.token,
             owner: withdrawal.to,
             relayer_fee_recipient: random_address(),
@@ -303,18 +305,13 @@ pub mod test_helpers {
         };
         (witness, statement)
     }
-
-    /// Build a random withdrawal
-    pub fn create_random_withdrawal() -> Withdrawal {
-        Withdrawal { to: random_address(), token: random_address(), amount: random_amount() }
-    }
 }
 
 #[cfg(test)]
 mod test {
     use crate::{
-        test_helpers::{random_address, random_amount, random_scalar},
-        zk_gadgets::test_helpers::create_state_wrapper,
+        test_helpers::create_random_state_wrapper,
+        test_helpers::{random_address, random_amount, random_scalar, random_withdrawal},
     };
 
     use super::*;
@@ -348,8 +345,8 @@ mod test {
     #[test]
     fn test_valid_full_withdrawal() {
         // Create a balance with the exact withdrawal amount
-        let withdrawal = test_helpers::create_random_withdrawal();
-        let balance = create_state_wrapper(Balance {
+        let withdrawal = random_withdrawal();
+        let balance = create_random_state_wrapper(Balance {
             mint: withdrawal.token,
             owner: withdrawal.to,
             relayer_fee_recipient: random_address(),
@@ -371,7 +368,7 @@ mod test {
     /// Test the case in which the withdrawal amount is zero
     #[test]
     fn test_invalid_withdrawal_amount() {
-        let mut withdrawal = test_helpers::create_random_withdrawal();
+        let mut withdrawal = random_withdrawal();
         withdrawal.amount = 0;
         let (witness, statement) =
             test_helpers::create_witness_statement_with_withdrawal(withdrawal);
@@ -383,7 +380,7 @@ mod test {
     /// amount
     #[test]
     fn test_invalid_withdrawal_amount_too_large() {
-        let mut withdrawal = test_helpers::create_random_withdrawal();
+        let mut withdrawal = random_withdrawal();
         withdrawal.amount = max_amount() + 1;
         let (witness, statement) =
             test_helpers::create_witness_statement_with_withdrawal(withdrawal);
@@ -437,8 +434,8 @@ mod test {
     #[test]
     fn test_invalid_withdrawal_outstanding_fees() {
         let mut rng = thread_rng();
-        let withdrawal = test_helpers::create_random_withdrawal();
-        let mut balance = create_state_wrapper(Balance {
+        let withdrawal = random_withdrawal();
+        let mut balance = create_random_state_wrapper(Balance {
             mint: withdrawal.token,
             owner: withdrawal.to,
             relayer_fee_recipient: random_address(),

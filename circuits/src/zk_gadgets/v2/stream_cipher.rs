@@ -47,11 +47,9 @@ mod test {
     use mpc_relation::traits::Circuit;
 
     use crate::{
+        test_helpers::create_random_state_wrapper,
         test_helpers::random_scalars_array,
-        zk_gadgets::{
-            comparators::EqGadget, stream_cipher::StreamCipherGadget,
-            test_helpers::create_state_wrapper,
-        },
+        zk_gadgets::{comparators::EqGadget, stream_cipher::StreamCipherGadget},
     };
 
     /// Test that the encrypt gadget aligns with the native implementation
@@ -59,7 +57,7 @@ mod test {
     fn test_encrypt() -> Result<()> {
         // Create a state wrapper, the inner type is unimportant for this test
         let mut cs = PlonkCircuit::new_turbo_plonk();
-        let mut state = create_state_wrapper(Balance::default());
+        let mut state = create_random_state_wrapper(Balance::default());
         let mut state_var = state.create_witness(&mut cs);
 
         // Generate test data to encrypt

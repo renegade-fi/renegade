@@ -194,11 +194,13 @@ pub mod test_helpers {
     use circuit_types::{balance::Balance, deposit::Deposit};
 
     use crate::{
-        test_helpers::{check_constraints_satisfied, random_address, random_amount},
+        test_helpers::{
+            check_constraints_satisfied, create_random_state_wrapper, random_address,
+            random_deposit,
+        },
         zk_circuits::v2::valid_balance_create::{
             ValidBalanceCreate, ValidBalanceCreateStatement, ValidBalanceCreateWitness,
         },
-        zk_gadgets::test_helpers::create_state_wrapper,
     };
 
     // -----------
@@ -217,7 +219,7 @@ pub mod test_helpers {
     /// Construct a witness and statement with valid data
     pub fn create_witness_statement() -> (ValidBalanceCreateWitness, ValidBalanceCreateStatement) {
         // Create a deposit that matches the balance's mint and owner
-        let deposit = create_random_deposit();
+        let deposit = random_deposit();
         create_witness_statement_with_deposit(deposit)
     }
 
@@ -245,7 +247,7 @@ pub mod test_helpers {
         balance_inner: &Balance,
     ) -> (ValidBalanceCreateWitness, ValidBalanceCreateStatement) {
         // Create the witness balance with initial stream states
-        let balance = create_state_wrapper(balance_inner.clone());
+        let balance = create_random_state_wrapper(balance_inner.clone());
         let mut new_balance = balance.clone();
 
         // Encrypt the entire balance using the stream cipher
@@ -273,16 +275,11 @@ pub mod test_helpers {
 
         (witness, statement)
     }
-
-    /// Build a random deposit
-    pub fn create_random_deposit() -> Deposit {
-        Deposit { from: random_address(), token: random_address(), amount: random_amount() }
-    }
 }
 
 #[cfg(test)]
 mod test {
-    use crate::test_helpers::{random_address, random_amount, random_scalar};
+    use crate::test_helpers::{random_address, random_amount, random_deposit, random_scalar};
 
     use super::*;
     use circuit_types::{balance::Balance, traits::SingleProverCircuit};
@@ -311,7 +308,7 @@ mod test {
     /// Test a valid balance creation with a zero'd out deposit
     #[test]
     fn test_valid_balance_create_with_zeroed_out_deposit() {
-        let mut deposit = test_helpers::create_random_deposit();
+        let mut deposit = random_deposit();
         deposit.amount = 0;
         let (witness, statement) = test_helpers::create_witness_statement_with_deposit(deposit);
         assert!(test_helpers::check_constraints(&witness, &statement));
@@ -332,7 +329,7 @@ mod test {
     #[test]
     fn test_invalid_balance_fees() {
         let mut rng = thread_rng();
-        let deposit = test_helpers::create_random_deposit();
+        let deposit = random_deposit();
         let mut balance = Balance {
             mint: deposit.token,
             owner: deposit.from,

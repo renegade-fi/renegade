@@ -155,6 +155,12 @@ path = "benches/v2/valid_note_redemption.rs"
 harness = false
 required-features = ["test_helpers"]
 
+[[bench]]
+name = "intent_only_first_fill"
+path = "benches/v2/intent_only_first_fill.rs"
+harness = false
+required-features = ["test_helpers"]
+
 [dependencies]
 # === Cryptography + Arithmetic === #
 alloy-primitives = { workspace = true }

@@ -17,6 +17,3 @@ pub mod select;
 
 mod v2;
 pub use v2::*;
-
-#[cfg(any(test, feature = "test_helpers"))]
-pub mod test_helpers;

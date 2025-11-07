@@ -209,10 +209,10 @@ pub mod test_helpers {
 
     use crate::{
         test_helpers::{check_constraints_satisfied, random_address, random_amount},
+        test_helpers::{create_merkle_opening, create_random_state_wrapper},
         zk_circuits::v2::fees::valid_public_protocol_fee_payment::{
             SizedValidPublicProtocolFeePayment, SizedValidPublicProtocolFeePaymentWitness,
         },
-        zk_gadgets::test_helpers::{create_merkle_opening, create_state_wrapper},
     };
 
     use super::ValidPublicProtocolFeePaymentStatement;
@@ -237,7 +237,7 @@ pub mod test_helpers {
     pub fn create_dummy_witness_statement()
     -> (SizedValidPublicProtocolFeePaymentWitness, ValidPublicProtocolFeePaymentStatement) {
         // The balance from which protocol fees are paid
-        let old_balance = create_state_wrapper(Balance {
+        let old_balance = create_random_state_wrapper(Balance {
             mint: random_address(),
             relayer_fee_recipient: Address::ZERO,
             owner: random_address(),
@@ -315,8 +315,7 @@ pub mod test_helpers {
 #[cfg(test)]
 mod test {
 
-    use crate::test_helpers::{random_address, random_amount};
-    use crate::zk_gadgets::test_helpers::create_state_wrapper;
+    use crate::test_helpers::{create_random_state_wrapper, random_address, random_amount};
 
     use super::test_helpers::create_dummy_witness_statement_with_balance;
     use super::*;
@@ -349,7 +348,7 @@ mod test {
     #[test]
     #[allow(non_snake_case)]
     fn test_invalid__zero_protocol_fee_balance() {
-        let balance = create_state_wrapper(Balance {
+        let balance = create_random_state_wrapper(Balance {
             mint: random_address(),
             relayer_fee_recipient: Address::ZERO,
             owner: random_address(),
