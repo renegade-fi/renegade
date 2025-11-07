@@ -216,8 +216,11 @@ pub mod test_helpers {
 
 #[cfg(test)]
 mod test {
+    use crate::test_helpers::{max_amount, random_address, random_intent, random_scalar};
+
     use super::*;
-    use circuit_types::traits::SingleProverCircuit;
+    use circuit_types::{fixed_point::FixedPoint, max_price, traits::SingleProverCircuit};
+    use rand::{Rng, thread_rng};
 
     /// A helper to print the number of constraints in the circuit
     ///
@@ -237,5 +240,75 @@ mod test {
     fn test_valid_intent_only_first_fill_constraints() {
         let (witness, statement) = test_helpers::create_witness_statement();
         assert!(test_helpers::check_constraints(&witness, &statement));
+    }
+
+    // --- Intent Validation Tests --- //
+
+    /// Test the case in which the intent's amount is too large
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_intent__amount_too_large() {
+        let mut intent = random_intent();
+        intent.amount_in = max_amount() + 1;
+
+        let (witness, statement) = test_helpers::create_witness_statement_with_intent(&intent);
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the intent's price is too large
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_intent__price_too_large() {
+        let mut intent = random_intent();
+        intent.min_price = max_price() + FixedPoint::from_integer(1);
+
+        let (witness, statement) = test_helpers::create_witness_statement_with_intent(&intent);
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the intent's owner does not match the statement
+    /// owner
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_intent__owner_does_not_match_statement_owner() {
+        let (witness, mut statement) = test_helpers::create_witness_statement();
+        statement.owner = random_address();
+
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which a public share is modified in the statement
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_intent__public_share_modified() {
+        let mut rng = thread_rng();
+        let (witness, mut statement) = test_helpers::create_witness_statement();
+
+        let mut public_share = statement.intent_public_share.to_scalars();
+        let random_index = rng.gen_range(0..public_share.len());
+        public_share[random_index] = random_scalar();
+        statement.intent_public_share = IntentShare::from_scalars(&mut public_share.into_iter());
+
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    // --- Recovery ID and Commitment Tests --- //
+
+    /// Test the case in which the recovery ID is modified
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_recovery_id() {
+        let (witness, mut statement) = test_helpers::create_witness_statement();
+        statement.recovery_id = random_scalar();
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the commitment is modified
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_commitment() {
+        let (witness, mut statement) = test_helpers::create_witness_statement();
+        statement.intent_partial_commitment = random_scalar();
+        assert!(!test_helpers::check_constraints(&witness, &statement));
     }
 }
