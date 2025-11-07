@@ -2,7 +2,7 @@
 #![allow(clippy::missing_docs_in_private_items)]
 #![allow(missing_docs)]
 
-use constants::{Scalar, ScalarField};
+use constants::{MERKLE_HEIGHT, Scalar, ScalarField};
 use serde::{Deserialize, Serialize};
 
 use crate::{deserialize_array, serialize_array};
@@ -16,6 +16,9 @@ use {
 
 /// A type alias for readability
 pub type MerkleRoot = Scalar;
+
+/// A merkle opening with a default sizing parameter
+pub type SizedMerkleOpening = MerkleOpening<MERKLE_HEIGHT>;
 
 /// A fully specified merkle opening from hashed leaf to root
 #[cfg_attr(feature = "proof-system-types", circuit_type(serde, singleprover_circuit))]

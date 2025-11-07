@@ -203,9 +203,9 @@ pub mod test_helpers {
     use constants::Scalar;
 
     use crate::{
-        test_helpers::{check_constraints_satisfied, random_address, random_amount},
+        test_helpers::{check_constraints_satisfied, random_amount, random_deposit},
+        test_helpers::{create_merkle_opening, create_random_state_wrapper},
         zk_circuits::valid_deposit::{SizedValidDeposit, SizedValidDepositWitness},
-        zk_gadgets::test_helpers::{create_merkle_opening, create_state_wrapper},
     };
 
     use super::{ValidDepositStatement, ValidDepositWitness};
@@ -229,7 +229,7 @@ pub mod test_helpers {
     /// Construct a witness and statement with valid data
     pub fn create_dummy_witness_statement() -> (SizedValidDepositWitness, ValidDepositStatement) {
         // Create a deposit that matches the balance's mint and owner
-        let deposit = create_random_deposit();
+        let deposit = random_deposit();
         create_dummy_witness_statement_with_deposit(deposit)
     }
 
@@ -237,7 +237,7 @@ pub mod test_helpers {
     pub fn create_dummy_witness_statement_with_deposit(
         deposit: Deposit,
     ) -> (SizedValidDepositWitness, ValidDepositStatement) {
-        let old_balance = create_state_wrapper(Balance {
+        let old_balance = create_random_state_wrapper(Balance {
             mint: deposit.token,
             relayer_fee_recipient: Address::ZERO,
             owner: deposit.from,
@@ -280,23 +280,16 @@ pub mod test_helpers {
 
         (witness, statement)
     }
-
-    /// Build a random deposit
-    pub fn create_random_deposit() -> Deposit {
-        Deposit { from: random_address(), token: random_address(), amount: random_amount() }
-    }
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
     use crate::{
-        test_helpers::{random_address, random_scalar},
+        test_helpers::{random_address, random_deposit, random_scalar},
         zk_circuits::{
             v2::valid_deposit::test_helpers::create_dummy_witness_statement,
-            valid_deposit::test_helpers::{
-                create_dummy_witness_statement_with_deposit, create_random_deposit,
-            },
+            valid_deposit::test_helpers::create_dummy_witness_statement_with_deposit,
         },
     };
     use circuit_types::{max_amount, traits::SingleProverCircuit};
@@ -339,7 +332,7 @@ mod test {
     /// Test the case in which the deposit amount is too large
     #[test]
     fn test_invalid_deposit_amount() {
-        let mut deposit = create_random_deposit();
+        let mut deposit = random_deposit();
         deposit.amount = max_amount() + 1;
         let (witness, statement) = create_dummy_witness_statement_with_deposit(deposit);
 
@@ -374,7 +367,7 @@ mod test {
     /// Test the case in which the deposit overflows the balance's amount
     #[test]
     fn test_invalid_deposit_overflow() {
-        let mut deposit = create_random_deposit();
+        let mut deposit = random_deposit();
         deposit.amount = max_amount() - 1; // Valid amount, but will overflow
         let (witness, statement) = create_dummy_witness_statement_with_deposit(deposit);
 

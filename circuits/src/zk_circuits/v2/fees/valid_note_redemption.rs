@@ -125,11 +125,11 @@ pub mod test_helpers {
     use circuit_types::note::Note;
 
     use crate::{
+        test_helpers::create_merkle_opening,
         test_helpers::{check_constraints_satisfied, random_address, random_amount},
         zk_circuits::v2::fees::valid_note_redemption::{
             SizedValidNoteRedemption, SizedValidNoteRedemptionWitness,
         },
-        zk_gadgets::test_helpers::create_merkle_opening,
     };
 
     use super::ValidNoteRedemptionStatement;

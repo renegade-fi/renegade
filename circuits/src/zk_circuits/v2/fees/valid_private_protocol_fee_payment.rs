@@ -242,10 +242,10 @@ pub mod test_helpers {
             check_constraints_satisfied, random_address, random_amount,
             random_elgamal_encryption_key,
         },
+        test_helpers::{create_merkle_opening, create_random_state_wrapper},
         zk_circuits::v2::fees::valid_private_protocol_fee_payment::{
             SizedValidPrivateProtocolFeePayment, SizedValidPrivateProtocolFeePaymentWitness,
         },
-        zk_gadgets::test_helpers::{create_merkle_opening, create_state_wrapper},
     };
 
     use super::ValidPrivateProtocolFeePaymentStatement;
@@ -274,7 +274,7 @@ pub mod test_helpers {
         let protocol_encryption_key = random_elgamal_encryption_key();
 
         // The address to which protocol fees are paid
-        let old_balance = create_state_wrapper(Balance {
+        let old_balance = create_random_state_wrapper(Balance {
             mint: random_address(),
             relayer_fee_recipient: Address::ZERO,
             owner: random_address(),

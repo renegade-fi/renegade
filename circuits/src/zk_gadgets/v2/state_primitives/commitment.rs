@@ -80,7 +80,7 @@ impl CommitmentGadget {
     }
 
     /// Compute the commitment to the private shares of a state element
-    fn compute_private_commitment<T>(
+    pub fn compute_private_commitment<T>(
         private_share: &<T::ShareType as CircuitBaseType>::VarType,
         element: &StateWrapperVar<T>,
         cs: &mut PlonkCircuit,
@@ -299,8 +299,8 @@ mod test {
     use rand::{distributions::uniform::SampleRange, thread_rng};
 
     use crate::{
-        test_helpers::{random_scalars_array, random_scalars_vec},
-        zk_gadgets::{comparators::EqGadget, test_helpers::create_state_wrapper},
+        test_helpers::{create_random_state_wrapper, random_scalars_array, random_scalars_vec},
+        zk_gadgets::comparators::EqGadget,
     };
 
     use super::*;
@@ -315,7 +315,7 @@ mod test {
     fn test_commitment_gadget() -> Result<()> {
         // Generate test data
         let state_element = random_scalars_array();
-        let element = create_state_wrapper::<TestStateElt>(state_element);
+        let element = create_random_state_wrapper::<TestStateElt>(state_element);
         let private_share = element.private_shares();
         let expected_commitment = element.compute_commitment();
 
@@ -339,8 +339,8 @@ mod test {
     fn test_commitment_gadget_with_no_shared_prefix() -> Result<()> {
         let state1 = random_scalars_array();
         let state2 = random_scalars_array();
-        let elt1 = create_state_wrapper::<TestStateElt>(state1);
-        let elt2 = create_state_wrapper::<TestStateElt>(state2);
+        let elt1 = create_random_state_wrapper::<TestStateElt>(state1);
+        let elt2 = create_random_state_wrapper::<TestStateElt>(state2);
         let private_share1 = elt1.private_shares();
         let private_share2 = elt2.private_shares();
         let expected_commitment1 = elt1.compute_commitment();
@@ -393,8 +393,8 @@ mod test {
 
         let combined_1 = private_share1.add_shares(&public_share1);
         let combined_2 = private_share2.add_shares(&public_share2);
-        let mut elt1 = create_state_wrapper::<TestStateElt>(combined_1);
-        let mut elt2 = create_state_wrapper::<TestStateElt>(combined_2);
+        let mut elt1 = create_random_state_wrapper::<TestStateElt>(combined_1);
+        let mut elt2 = create_random_state_wrapper::<TestStateElt>(combined_2);
         elt1.public_share = public_share1;
         elt2.public_share = public_share2;
         let expected_commitment1 = elt1.compute_commitment();

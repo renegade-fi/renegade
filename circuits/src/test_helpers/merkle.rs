@@ -1,66 +1,9 @@
-//! Test helpers for ZK gadgets
+//! Merkle tree helpers for testing
 
-use circuit_types::{
-    csprng::PoseidonCSPRNG,
-    merkle::MerkleOpening,
-    state_wrapper::StateWrapper,
-    traits::{BaseType, CircuitBaseType, SecretShareBaseType},
-};
+use circuit_types::merkle::MerkleOpening;
 use constants::Scalar;
 use itertools::Itertools;
-use rand::{Rng, thread_rng};
 use renegade_crypto::hash::compute_poseidon_hash;
-
-use crate::test_helpers::random_scalars_vec;
-
-// ------------------
-// | State Elements |
-// ------------------
-
-/// Create a state wrapper for a given state element
-pub fn create_state_wrapper<V>(state: V) -> StateWrapper<V>
-where
-    V: SecretShareBaseType + CircuitBaseType,
-    V::ShareType: CircuitBaseType,
-{
-    let mut rng = thread_rng();
-    let (_, public_share) = create_random_shares::<V>(&state);
-    let mut recovery_stream = random_csprng();
-    let mut share_stream = random_csprng();
-    recovery_stream.index = rng.r#gen();
-    share_stream.index = rng.r#gen();
-
-    StateWrapper { recovery_stream, share_stream, inner: state, public_share }
-}
-
-/// Build a random CSPRNG
-pub fn random_csprng() -> PoseidonCSPRNG {
-    let mut rng = thread_rng();
-    let seed = Scalar::random(&mut rng);
-    PoseidonCSPRNG::new(seed)
-}
-
-// ----------------
-// | Secret Share |
-// ----------------
-
-/// Create a random sharing of the given type
-///
-/// Returns a tuple of the private and public shares
-pub fn create_random_shares<V: SecretShareBaseType>(v: &V) -> (V::ShareType, V::ShareType) {
-    let values = v.to_scalars();
-    let private_shares = random_scalars_vec(values.len());
-    let public_shares = values.iter().zip(private_shares.iter()).map(|(v, s)| v - s).collect_vec();
-
-    // Deserialize
-    let private = V::ShareType::from_scalars(&mut private_shares.into_iter());
-    let public = V::ShareType::from_scalars(&mut public_shares.into_iter());
-    (private, public)
-}
-
-// ----------
-// | Merkle |
-// ----------
 
 /// Create a Merkle opening for a single leaf
 ///

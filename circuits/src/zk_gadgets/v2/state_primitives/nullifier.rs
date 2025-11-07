@@ -46,7 +46,7 @@ mod test {
 
     use super::*;
 
-    use crate::zk_gadgets::{comparators::EqGadget, test_helpers::create_state_wrapper};
+    use crate::{test_helpers::create_random_state_wrapper, zk_gadgets::comparators::EqGadget};
 
     /// Test the nullifier gadget's consistency with the native implementation
     #[test]
@@ -55,7 +55,7 @@ mod test {
 
         // The inner type is unimportant for this test
         let scalar = Scalar::random(&mut rng);
-        let elt = create_state_wrapper(scalar);
+        let elt = create_random_state_wrapper(scalar);
         let nullifier = elt.compute_nullifier();
 
         // Check against the gadget
