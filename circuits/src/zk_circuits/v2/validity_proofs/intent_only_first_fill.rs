@@ -199,7 +199,7 @@ pub mod test_helpers {
 
         // Get shares from the initial (pre-mutation) state
         let private_shares = initial_intent.private_shares();
-        let new_intent_share = initial_intent.public_share();
+        let intent_public_share = initial_intent.public_share();
 
         // Build the witness with the pre-mutation state
         let witness = IntentOnlyFirstFillValidityWitness { intent: initial_intent, private_shares };
@@ -207,7 +207,7 @@ pub mod test_helpers {
             owner: intent.owner,
             intent_partial_commitment,
             recovery_id,
-            new_intent_share,
+            intent_public_share,
         };
 
         (witness, statement)
