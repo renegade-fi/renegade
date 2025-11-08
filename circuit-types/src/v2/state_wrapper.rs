@@ -29,6 +29,10 @@ use {
     mpc_relation::{Variable, traits::Circuit},
 };
 
+// -----------------
+// | State Wrapper |
+// -----------------
+
 /// A wrapper type for state elements allocated in the darkpool
 #[cfg_attr(feature = "proof-system-types", circuit_type(serde, singleprover_circuit))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -88,6 +92,22 @@ where
 
     // --- Commitments --- //
 
+    /// Compute a commitment to a value
+    pub fn compute_commitment(&self) -> Scalar {
+        // Compute the commitment to the private shares then append the public shares
+        let private_commitment = self.compute_private_commitment();
+        self.compute_commitment_from_private(private_commitment)
+    }
+
+    /// Compute a partial commitment to a state element
+    ///
+    /// Returns the private commitment and the partial public commitment
+    pub fn compute_partial_commitment(&self, num_shares: usize) -> PartialCommitment {
+        let private_commitment = self.compute_private_commitment();
+        let partial_public_commitment = self.compute_partial_public_commitment(num_shares);
+        PartialCommitment { private_commitment, partial_public_commitment }
+    }
+
     /// Compute a commitment to the private shares of a state element
     pub fn compute_private_commitment(&self) -> Scalar {
         // Build a list of inputs
@@ -103,7 +123,7 @@ where
 
     /// Compute a commitment to a state element given a commitment to the
     /// private shares and public shares
-    pub fn compute_commitment_from_private(&self, private_commitment: Scalar) -> Scalar {
+    fn compute_commitment_from_private(&self, private_commitment: Scalar) -> Scalar {
         let public_scalars = self.public_share().to_scalars();
         let mut public_comm = public_scalars[0];
         for share in public_scalars.iter().skip(1) {
@@ -113,11 +133,16 @@ where
         compute_poseidon_hash(&[private_commitment, public_comm])
     }
 
-    /// Compute a commitment to a value
-    pub fn compute_commitment(&self) -> Scalar {
-        // Compute the commitment to the private shares then append the public shares
-        let private_commitment = self.compute_private_commitment();
-        self.compute_commitment_from_private(private_commitment)
+    /// Compute a partial public commitment to a state element
+    fn compute_partial_public_commitment(&self, num_shares: usize) -> Scalar {
+        assert!(num_shares >= 1, "num_shares must be at least 1");
+        let public_scalars = self.public_share.to_scalars();
+        let mut public_comm = public_scalars[0];
+        for share in public_scalars[1..num_shares].iter() {
+            public_comm = compute_poseidon_hash(&[public_comm, *share]);
+        }
+
+        public_comm
     }
 
     // --- Nullifiers --- //
@@ -187,6 +212,28 @@ where
         self.share_stream.peek_stream_cipher_encrypt(value)
     }
 }
+
+// ----------------------
+// | Partial Commitment |
+// ----------------------
+
+/// A partial commitment to a state element
+///
+/// Because the structure of a commitment ultimately involves
+/// H(private_commitment || public_commitment), a partial commitment must store
+/// the full private commitment and the partial public commitment
+#[cfg_attr(feature = "proof-system-types", circuit_type(serde, singleprover_circuit))]
+#[derive(Debug, Clone)]
+pub struct PartialCommitment {
+    /// The private commitment
+    pub private_commitment: Scalar,
+    /// The partial public commitment
+    pub partial_public_commitment: Scalar,
+}
+
+// ---------
+// | Tests |
+// ---------
 
 #[cfg(test)]
 mod test {
