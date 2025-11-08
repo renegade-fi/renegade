@@ -5,6 +5,7 @@ pub mod csprng;
 pub mod deposit;
 pub mod intent;
 pub mod note;
+pub mod settlement_obligation;
 pub mod state_wrapper;
 pub mod withdrawal;
 

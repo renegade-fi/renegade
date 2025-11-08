@@ -24,9 +24,11 @@
 //!   easily resume the commitment by hashing the remaining shares into the
 //!   commitment
 
+use std::cmp;
+
 use circuit_types::{
     PlonkCircuit,
-    state_wrapper::StateWrapperVar,
+    state_wrapper::{PartialCommitmentVar, StateWrapperVar},
     traits::{CircuitBaseType, CircuitVarType, SecretShareBaseType},
 };
 use mpc_relation::{Variable, errors::CircuitError, traits::Circuit};
@@ -126,6 +128,54 @@ impl CommitmentGadget {
         let mut hasher = PoseidonHashGadget::new(cs.zero());
         hasher.batch_absorb(&[private_commitment, public_commitment], cs)?;
         hasher.squeeze(cs)
+    }
+
+    // -----------------------
+    // | Partial Commitments |
+    // -----------------------
+
+    /// Compute a partial commitment to a state element
+    ///
+    /// A partial commitment is a commitment to the private shares, stream
+    /// states, and a subset of the public shares
+    ///
+    /// We compute partial commitments so that we can resume the commitment in
+    /// the smart contracts.
+    ///
+    /// Returns the commitment to the private shares and the partial commitment
+    /// to the public shares.
+    pub fn compute_partial_commitment<T>(
+        num_public_shares: usize,
+        private_share: &<T::ShareType as CircuitBaseType>::VarType,
+        element: &StateWrapperVar<T>,
+        cs: &mut PlonkCircuit,
+    ) -> Result<PartialCommitmentVar, CircuitError>
+    where
+        T: CircuitBaseType + SecretShareBaseType,
+        T::ShareType: CircuitBaseType,
+    {
+        let private_commitment = Self::compute_private_commitment(private_share, element, cs)?;
+        let partial_public_commitment = Self::compute_partial_public_commitment::<T>(
+            num_public_shares,
+            &element.public_share,
+            cs,
+        )?;
+
+        Ok(PartialCommitmentVar { private_commitment, partial_public_commitment })
+    }
+
+    /// Compute a partial commitment to the public shares of a state element
+    fn compute_partial_public_commitment<T>(
+        num_shares: usize,
+        public_shares: &<T::ShareType as CircuitBaseType>::VarType,
+        cs: &mut PlonkCircuit,
+    ) -> Result<Variable, CircuitError>
+    where
+        T: CircuitBaseType + SecretShareBaseType,
+        T::ShareType: CircuitBaseType,
+    {
+        let share_vars = public_shares.to_vars();
+        Self::compute_resumable_commitment(&share_vars[..num_shares], cs)
     }
 
     // -----------------------------
@@ -261,6 +311,111 @@ impl CommitmentGadget {
         Ok((comm1, comm2))
     }
 
+    // -------------------------------------
+    // | Shared Prefix Partial Commitments |
+    // -------------------------------------
+
+    /// Commit to two state elements which share a prefix
+    ///
+    /// We compute a full commitment to the first state element and a partial
+    /// commitment to the second state element.
+    ///
+    /// This is a common pattern in rotating a state element for a match
+    /// settlement, wherein some public shares of the new state element are yet
+    /// to be determined at the time of the commitment. We pre-commit up front
+    /// to as much of the state element as possible, and allow the verifier to
+    /// resume the commitment.
+    pub fn compute_partial_commitments_with_shared_prefix<T>(
+        num_shares: usize,
+        private_share_1: &<T::ShareType as CircuitBaseType>::VarType,
+        element1: &StateWrapperVar<T>,
+        private_share_2: &<T::ShareType as CircuitBaseType>::VarType,
+        element2: &StateWrapperVar<T>,
+        cs: &mut PlonkCircuit,
+    ) -> Result<(Variable, PartialCommitmentVar), CircuitError>
+    where
+        T: CircuitBaseType + SecretShareBaseType,
+        T::ShareType: CircuitBaseType,
+    {
+        let (private_comm1, private_comm2) = Self::compute_private_commitments_with_shared_prefix(
+            private_share_1,
+            private_share_2,
+            element1,
+            element2,
+            cs,
+        )?;
+
+        let (public_comm1, public_comm2) =
+            Self::compute_public_partial_commitments_with_shared_prefix::<T>(
+                num_shares,
+                &element1.public_share,
+                &element2.public_share,
+                cs,
+            )?;
+
+        // Combine the first element's commitment into a full commitment
+        let mut hasher = PoseidonHashGadget::new(cs.zero());
+        let full_comm = hasher.hash(&[private_comm1, public_comm1], cs)?;
+        let partial_comm = PartialCommitmentVar {
+            private_commitment: private_comm2,
+            partial_public_commitment: public_comm2,
+        };
+
+        Ok((full_comm, partial_comm))
+    }
+
+    /// Commit to the full public shares of the first element and only partially
+    /// to the second state element.
+    ///
+    /// This is similar to the implementation above for full public commitments
+    /// except that the number of shares is limited
+    fn compute_public_partial_commitments_with_shared_prefix<T>(
+        num_shares: usize,
+        public_share_1: &<T::ShareType as CircuitBaseType>::VarType,
+        public_share_2: &<T::ShareType as CircuitBaseType>::VarType,
+        cs: &mut PlonkCircuit,
+    ) -> Result<(Variable, Variable), CircuitError>
+    where
+        T: CircuitBaseType + SecretShareBaseType,
+        T::ShareType: CircuitBaseType,
+    {
+        assert!(
+            num_shares <= T::NUM_SCALARS,
+            "num_shares must not exceed the number of scalars in the share type",
+        );
+
+        // Determine the shared prefix length; capped at the number of shares we
+        // intend to hash for the partial commitment
+        let mut prefix_length = determine_shared_prefix_length(public_share_1, public_share_2);
+        prefix_length = cmp::min(prefix_length, num_shares);
+
+        // Split the shares and compute the shared prefix commitment
+        let share1_vars = public_share_1.to_vars();
+        let share2_vars = public_share_2.to_vars();
+        let shared_prefix = share1_vars[..prefix_length].to_vec();
+        let share1_non_prefix = share1_vars[prefix_length..].to_vec();
+        let share2_non_prefix = share2_vars[prefix_length..num_shares].to_vec();
+
+        // Compute the resumable commitment to the shared prefix only once
+        // Handle the case where the shared prefix is empty by prepending no values to
+        // the hash input
+        let (mut share1_values, mut share2_values) = if prefix_length > 0 {
+            let partial_comm = Self::compute_resumable_commitment(&shared_prefix, cs)?;
+            (vec![partial_comm], vec![partial_comm])
+        } else {
+            (vec![], vec![])
+        };
+
+        // Combine the partial commitment with the remaining values for each share
+        share1_values.extend_from_slice(&share1_non_prefix);
+        share2_values.extend_from_slice(&share2_non_prefix);
+
+        // Compute the final commitments
+        let comm1 = Self::compute_resumable_commitment(&share1_values, cs)?;
+        let comm2 = Self::compute_resumable_commitment(&share2_values, cs)?;
+        Ok((comm1, comm2))
+    }
+
     // -----------
     // | Helpers |
     // -----------
@@ -288,6 +443,10 @@ impl CommitmentGadget {
         Ok(comm)
     }
 }
+
+// ---------
+// | Tests |
+// ---------
 
 #[cfg(test)]
 mod test {
@@ -432,6 +591,112 @@ mod test {
         )?;
         EqGadget::constrain_eq(&commitment1, &expected_commitment1_var, &mut cs)?;
         EqGadget::constrain_eq(&commitment2, &expected_commitment2_var, &mut cs)?;
+
+        // Check satisfiability
+        assert!(cs.check_circuit_satisfiability(&[]).is_ok());
+        Ok(())
+    }
+
+    /// Test the partial commitment gadget
+    #[test]
+    fn test_partial_commitment() -> Result<()> {
+        let mut rng = thread_rng();
+
+        // Generate test data
+        let state_element = random_scalars_array();
+        let element = create_random_state_wrapper::<TestStateElt>(state_element);
+        let private_share = element.private_shares();
+        let num_shares = (1..=N).sample_single(&mut rng);
+
+        // Compute expected values
+        let expected_partial_commitment = element.compute_partial_commitment(num_shares);
+
+        // Allocate in a constraint system
+        let mut cs = PlonkCircuit::new_turbo_plonk();
+        let element_var = element.create_witness(&mut cs);
+        let private_share_var = private_share.create_witness(&mut cs);
+        let expected_partial_commitment_var = expected_partial_commitment.create_witness(&mut cs);
+
+        let partial_commitment_var = CommitmentGadget::compute_partial_commitment::<TestStateElt>(
+            num_shares,
+            &private_share_var,
+            &element_var,
+            &mut cs,
+        )?;
+        EqGadget::constrain_eq(&partial_commitment_var, &expected_partial_commitment_var, &mut cs)?;
+
+        // Check satisfiability
+        assert!(cs.check_circuit_satisfiability(&[]).is_ok());
+        Ok(())
+    }
+
+    /// Test the partial commitment gadget with shared prefix
+    #[test]
+    fn test_partial_commitment_with_shared_prefix() -> Result<()> {
+        let mut rng = thread_rng();
+
+        // Generate shared prefixes
+        let public_prefix_length = (0..N).sample_single(&mut rng);
+        let private_prefix_length = (0..N).sample_single(&mut rng);
+        let shared_public_prefix = random_scalars_vec(public_prefix_length);
+        let shared_private_prefix = random_scalars_vec(private_prefix_length);
+
+        // Generate shares with duplicated values
+        let mut private_share1 = random_scalars_array();
+        let mut private_share2 = random_scalars_array();
+        let mut public_share1 = random_scalars_array();
+        let mut public_share2 = random_scalars_array();
+        private_share1[..private_prefix_length].copy_from_slice(&shared_private_prefix);
+        private_share2[..private_prefix_length].copy_from_slice(&shared_private_prefix);
+        public_share1[..public_prefix_length].copy_from_slice(&shared_public_prefix);
+        public_share2[..public_prefix_length].copy_from_slice(&shared_public_prefix);
+
+        let combined_1 = private_share1.add_shares(&public_share1);
+        let combined_2 = private_share2.add_shares(&public_share2);
+        let mut elt1 = create_random_state_wrapper::<TestStateElt>(combined_1);
+        let mut elt2 = create_random_state_wrapper::<TestStateElt>(combined_2);
+        elt1.public_share = public_share1;
+        elt2.public_share = public_share2;
+
+        // Compute expected values
+        let expected_full_commitment = elt1.compute_commitment();
+        let num_shares = (1..=N).sample_single(&mut rng);
+        let expected_partial_commitment = elt2.compute_partial_commitment(num_shares);
+
+        // Allocate in a constraint system
+        let mut cs = PlonkCircuit::new_turbo_plonk();
+        let shared_public_vars =
+            shared_public_prefix.iter().map(|v| v.create_witness(&mut cs)).collect_vec();
+        let shared_private_vars =
+            shared_private_prefix.iter().map(|v| v.create_witness(&mut cs)).collect_vec();
+
+        let mut private_share1_var = private_share1.create_witness(&mut cs);
+        let mut public_share1_var = public_share1.create_witness(&mut cs);
+        let mut private_share2_var = private_share2.create_witness(&mut cs);
+        let mut public_share2_var = public_share2.create_witness(&mut cs);
+        private_share1_var[..private_prefix_length].copy_from_slice(&shared_private_vars);
+        public_share1_var[..public_prefix_length].copy_from_slice(&shared_public_vars);
+        private_share2_var[..private_prefix_length].copy_from_slice(&shared_private_vars);
+        public_share2_var[..public_prefix_length].copy_from_slice(&shared_public_vars);
+
+        let mut element1_var = elt1.create_witness(&mut cs);
+        let mut element2_var = elt2.create_witness(&mut cs);
+        element1_var.public_share = public_share1_var;
+        element2_var.public_share = public_share2_var;
+        let expected_full_commitment_var = expected_full_commitment.create_witness(&mut cs);
+        let expected_partial_commitment_var = expected_partial_commitment.create_witness(&mut cs);
+
+        let (full_comm_var, partial_comm_var) =
+            CommitmentGadget::compute_partial_commitments_with_shared_prefix::<TestStateElt>(
+                num_shares,
+                &private_share1_var,
+                &element1_var,
+                &private_share2_var,
+                &element2_var,
+                &mut cs,
+            )?;
+        EqGadget::constrain_eq(&full_comm_var, &expected_full_commitment_var, &mut cs)?;
+        EqGadget::constrain_eq(&partial_comm_var, &expected_partial_commitment_var, &mut cs)?;
 
         // Check satisfiability
         assert!(cs.check_circuit_satisfiability(&[]).is_ok());
