@@ -40,7 +40,7 @@ pub struct Intent {
     /// The owner of the intent, an EOA
     pub owner: Address,
     /// The minimum price at which a party may settle a partial fill
-    /// This is in units of `outToken/inToken`
+    /// This is in units of `out_token/in_token`
     pub min_price: FixedPoint,
     /// The amount of the input token to trade
     pub amount_in: Amount,
