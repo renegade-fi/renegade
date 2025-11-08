@@ -62,8 +62,8 @@ pub fn random_address() -> Address {
 
 /// Generate a random price
 pub fn random_price() -> FixedPoint {
-    let min_price = 1.0e-18;
-    let max_price = 1.0e18;
+    let min_price = 1.0e-12;
+    let max_price = 1.0e12;
     let price_f64 = thread_rng().gen_range(min_price..max_price);
 
     FixedPoint::from_f64_round_down(price_f64)
