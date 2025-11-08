@@ -102,6 +102,22 @@ impl FixedPointGadget {
 
     // === Arithmetic Ops === //
 
+    /// Multiply a fixed point variable by an integer
+    ///
+    /// We fixed point value's representation is already scaled by 2^M, so we
+    /// can simply multiply the two values together.
+    ///
+    /// SAFETY: Assumes that the integer and fixed point values have been
+    /// constrained such that the result will not overflow the scalar field.
+    pub fn mul_integer(
+        lhs: FixedPointVar,
+        rhs: Variable,
+        cs: &mut PlonkCircuit,
+    ) -> Result<FixedPointVar, CircuitError> {
+        let repr = cs.mul(lhs.repr, rhs)?;
+        Ok(FixedPointVar { repr })
+    }
+
     /// Computes the closest integral value less than the given fixed point
     /// variable and constraints this value to be correctly computed.
     ///
@@ -187,6 +203,7 @@ mod test {
     use test_helpers::mpc_network::execute_mock_mpc;
 
     use crate::zk_gadgets::fixed_point::MultiproverFixedPointGadget;
+    use crate::{test_helpers::random_amount, zk_gadgets::comparators::EqGadget};
 
     use super::FixedPointGadget;
 
@@ -302,6 +319,51 @@ mod test {
         cs.enforce_equal(floor_res, floor_var).unwrap();
 
         // Validate constraints
+        assert!(cs.check_circuit_satisfiability(&[]).is_ok());
+    }
+
+    /// Tests the mul_integer method
+    #[test]
+    fn test_mul_integer() {
+        let mut rng = thread_rng();
+
+        // Test case 1: Multiply a fixed point by an integer
+        // Use integer fixed points to avoid floating point precision issues
+        let f64_value: f64 = rng.gen_range(0.0..1000.);
+        let fp_value = FixedPoint::from_f64_round_down(f64_value);
+        let integer: Scalar = random_amount().into();
+        let expected_value = fp_value * integer;
+
+        let mut cs = PlonkCircuit::new_turbo_plonk();
+        let fp_var = fp_value.create_witness(&mut cs);
+        let int_var = integer.create_witness(&mut cs);
+        let expected_var = expected_value.create_witness(&mut cs);
+        let result = FixedPointGadget::mul_integer(fp_var, int_var, &mut cs).unwrap();
+
+        // Constrain the result to equal the expected value
+        EqGadget::constrain_eq(&result, &expected_var, &mut cs).unwrap();
+        assert!(cs.check_circuit_satisfiability(&[]).is_ok());
+
+        // Test case 2: Multiply by zero
+        let mut cs = PlonkCircuit::new_turbo_plonk();
+        let fp_var = fp_value.create_witness(&mut cs);
+        let zero_var = 0u64.create_witness(&mut cs);
+
+        let result = FixedPointGadget::mul_integer(fp_var, zero_var, &mut cs).unwrap();
+        let zero_fp = FixedPoint::from_integer(0).create_witness(&mut cs);
+
+        EqGadget::constrain_eq(&result, &zero_fp, &mut cs).unwrap();
+        assert!(cs.check_circuit_satisfiability(&[]).is_ok());
+
+        // Test case 3: Multiply by one
+        let mut cs = PlonkCircuit::new_turbo_plonk();
+        let fp_var = fp_value.create_witness(&mut cs);
+        let one_var = 1u64.create_witness(&mut cs);
+
+        let result = FixedPointGadget::mul_integer(fp_var, one_var, &mut cs).unwrap();
+
+        // Result should equal the original fixed point
+        EqGadget::constrain_eq(&result, &fp_var, &mut cs).unwrap();
         assert!(cs.check_circuit_satisfiability(&[]).is_ok());
     }
 
