@@ -8,19 +8,30 @@ use alloy_primitives::Address;
 use circuit_macros::circuit_type;
 use circuit_types::{
     Commitment, PlonkCircuit,
-    intent::{DarkpoolStateIntent, DarkpoolStateIntentVar, IntentShare},
+    csprng::PoseidonCSPRNG,
+    intent::{DarkpoolStateIntentVar, Intent, IntentShare},
     traits::{BaseType, CircuitBaseType, CircuitVarType},
 };
-use constants::{Scalar, ScalarField};
+use constants::{MERKLE_HEIGHT, Scalar, ScalarField};
 use mpc_plonk::errors::PlonkError;
-use mpc_relation::{Variable, errors::CircuitError, traits::Circuit};
+use mpc_relation::{
+    Variable,
+    errors::CircuitError,
+    proof_linking::{GroupLayout, LinkableCircuit},
+    traits::Circuit,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::{
     SingleProverCircuit,
+    zk_circuits::settlement::{
+        INTENT_ONLY_PUBLIC_SETTLEMENT_LINK,
+        intent_only_public_settlement::IntentOnlyPublicSettlementCircuit,
+    },
     zk_gadgets::{
         bitlength::{AmountGadget, PriceGadget},
         comparators::EqGadget,
+        shares::ShareGadget,
         state_primitives::{CommitmentGadget, RecoveryIdGadget},
     },
 };
@@ -40,39 +51,58 @@ impl IntentOnlyFirstFillValidityCircuit {
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
         // 1. Validate the intent
-        Self::validate_intent(&witness.intent, statement, cs)?;
+        let mut intent = Self::build_and_validate_intent(witness, statement, cs)?;
+
+        // 2. Validate that the witness' public share of the amount matches the
+        //    statement's public share
+        // We must do this to ensure that the value proof-linked into the settlement
+        // circuit is valid and consistent with the statement's public shares.
+        EqGadget::constrain_eq(
+            &witness.new_amount_public_share,
+            &statement.intent_public_share.amount_in,
+            cs,
+        )?;
 
         // 2. Compute the recovery identifier for the new intent
-        let recovery_id = RecoveryIdGadget::compute_recovery_id(&mut witness.intent, cs)?;
+        let recovery_id = RecoveryIdGadget::compute_recovery_id(&mut intent, cs)?;
         EqGadget::constrain_eq(&recovery_id, &statement.recovery_id, cs)?;
 
         // 3. Compute the commitment to the private shares only
-        // This must be done after encrypting and computing the recovery identifier so
-        // that we commit to the updated stream states for the CSPRNGs
-        let private_commitment = CommitmentGadget::compute_private_commitment(
-            &witness.private_shares,
-            &witness.intent,
-            cs,
-        )?;
+        let private_commitment =
+            CommitmentGadget::compute_private_commitment(&witness.private_shares, &intent, cs)?;
         EqGadget::constrain_eq(&private_commitment, &statement.intent_partial_commitment, cs)?;
 
         Ok(())
     }
 
-    /// Validate the intent
-    fn validate_intent(
-        intent: &DarkpoolStateIntentVar,
+    /// Validate the intent and construct its state element wrapper
+    fn build_and_validate_intent(
+        witness: &IntentOnlyFirstFillValidityWitnessVar,
         statement: &IntentOnlyFirstFillValidityStatementVar,
         cs: &mut PlonkCircuit,
-    ) -> Result<(), CircuitError> {
+    ) -> Result<DarkpoolStateIntentVar, CircuitError> {
+        let intent = &witness.intent;
+
         // The intent amount and minimum price must be of valid bitlengths
-        AmountGadget::constrain_valid_amount(intent.inner.amount_in, cs)?;
-        PriceGadget::constrain_valid_price(intent.inner.min_price, cs)?;
+        AmountGadget::constrain_valid_amount(intent.amount_in, cs)?;
+        PriceGadget::constrain_valid_price(intent.min_price, cs)?;
 
         // The intent owner must match the statement owner
-        EqGadget::constrain_eq(&intent.inner.owner, &statement.owner, cs)?;
-        EqGadget::constrain_eq(&intent.public_share, &statement.intent_public_share, cs)?;
-        Ok(())
+        EqGadget::constrain_eq(&intent.owner, &statement.owner, cs)?;
+
+        // Compute the public shares of the intent
+        let public_share =
+            ShareGadget::compute_complementary_shares(&witness.private_shares, intent, cs)?;
+        EqGadget::constrain_eq(&public_share, &statement.intent_public_share, cs)?;
+
+        // Build the state element wrapper
+        let state_wrapper = DarkpoolStateIntentVar {
+            inner: intent.clone(),
+            share_stream: witness.initial_intent_share_stream.clone(),
+            recovery_stream: witness.initial_intent_recovery_stream.clone(),
+            public_share,
+        };
+        Ok(state_wrapper)
     }
 }
 
@@ -93,7 +123,19 @@ pub struct IntentOnlyFirstFillValidityWitness {
     /// For this reason, we do not need to verify the intent's encryption here.
     /// This is bundled into the commitment which the owner signs. Thereby the
     /// encryption is authorized by the user.
-    pub intent: DarkpoolStateIntent,
+    #[link_groups = "intent_only_public_settlement"]
+    pub intent: Intent,
+    /// The public share of the intent's `amount_in` field
+    ///
+    /// Places here in the witness to enable proof linking between this
+    /// circuit's witness and the `INTENT ONLY PUBLIC SETTLEMENT` circuit's
+    /// witness.
+    #[link_groups = "intent_only_public_settlement"]
+    pub new_amount_public_share: Scalar,
+    /// The initial intent share CSPRNG
+    pub initial_intent_share_stream: PoseidonCSPRNG,
+    /// The initial intent recovery stream
+    pub initial_intent_recovery_stream: PoseidonCSPRNG,
     /// The private shares of the intent
     pub private_shares: IntentShare,
 }
@@ -140,6 +182,18 @@ impl SingleProverCircuit for IntentOnlyFirstFillValidityCircuit {
 
     fn name() -> String {
         "Intent Only First Fill Validity".to_string()
+    }
+
+    /// INTENT ONLY FIRST FILL VALIDITY has one proof linking group:
+    /// - intent_only_public_settlement: The linking group between INTENT ONLY
+    ///   FIRST FILL VALIDITY and INTENT ONLY PUBLIC SETTLEMENT. This group is
+    ///   placed by the settlement circuit, so we inherit its layout here.
+    fn proof_linking_groups() -> Result<Vec<(String, Option<GroupLayout>)>, PlonkError> {
+        let layout = IntentOnlyPublicSettlementCircuit::<MERKLE_HEIGHT>::get_circuit_layout()?;
+        let settlement_group = layout.get_group_layout(INTENT_ONLY_PUBLIC_SETTLEMENT_LINK);
+        let group_name = INTENT_ONLY_PUBLIC_SETTLEMENT_LINK.to_string();
+
+        Ok(vec![(group_name, Some(settlement_group))])
     }
 
     fn apply_constraints(
@@ -200,9 +254,16 @@ pub mod test_helpers {
         // Get shares from the initial (pre-mutation) state
         let private_shares = initial_intent.private_shares();
         let intent_public_share = initial_intent.public_share();
+        let new_amount_public_share = intent_public_share.amount_in;
 
         // Build the witness with the pre-mutation state
-        let witness = IntentOnlyFirstFillValidityWitness { intent: initial_intent, private_shares };
+        let witness = IntentOnlyFirstFillValidityWitness {
+            intent: initial_intent.inner,
+            initial_intent_share_stream: initial_intent.share_stream,
+            initial_intent_recovery_stream: initial_intent.recovery_stream,
+            new_amount_public_share,
+            private_shares,
+        };
         let statement = IntentOnlyFirstFillValidityStatement {
             owner: intent.owner,
             intent_partial_commitment,
@@ -288,6 +349,17 @@ mod test {
         let random_index = rng.gen_range(0..public_share.len());
         public_share[random_index] = random_scalar();
         statement.intent_public_share = IntentShare::from_scalars(&mut public_share.into_iter());
+
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the public share of the amount is not correctly
+    /// set in the witness
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_intent__public_share_amount_not_correctly_set() {
+        let (mut witness, statement) = test_helpers::create_witness_statement();
+        witness.new_amount_public_share = random_scalar();
 
         assert!(!test_helpers::check_constraints(&witness, &statement));
     }
