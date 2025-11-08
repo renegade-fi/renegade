@@ -5,6 +5,7 @@
 //! we need to prove its existence via a Merkle opening rather than owner
 //! authorization.
 
+use alloy_primitives::Address;
 use circuit_macros::circuit_type;
 use circuit_types::{
     Nullifier, PlonkCircuit,
@@ -38,6 +39,12 @@ use crate::{
         stream_cipher::StreamCipherGadget,
     },
 };
+
+/// The number of shares in the partial commitment which this circuit computes
+///
+/// We omit the `amount_in` share (last share of the `Intent` type) as this will
+/// be updated in the match settlement.
+const PARTIAL_COMMITMENT_SIZE: usize = IntentShare::NUM_SCALARS - 1;
 
 // ----------------------
 // | Circuit Definition |
@@ -73,6 +80,7 @@ impl<const MERKLE_HEIGHT: usize> IntentOnlyValidityCircuit<MERKLE_HEIGHT> {
             &witness.new_amount_public_share,
             cs,
         )?;
+        EqGadget::constrain_eq(&new_intent.inner.owner, &statement.owner, cs)?;
 
         // 4. Verify state rotation (Merkle proof, nullifier, recovery_id, commitment)
         // We compute only a partial commitment to the new intent here as the
@@ -80,7 +88,6 @@ impl<const MERKLE_HEIGHT: usize> IntentOnlyValidityCircuit<MERKLE_HEIGHT> {
         // commit to all shares except the `amount_in` share and allow the contracts to
         // resume the commitment. See [`CommitmentGadget::compute_partial_commitment`]
         // for more detail.
-        let num_shares = IntentShare::NUM_SCALARS - 1;
         let mut rotation_args = StateElementRotationArgsWithPartialCommitment {
             old_version: witness.old_intent.clone(),
             old_private_share: old_private_shares,
@@ -93,7 +100,7 @@ impl<const MERKLE_HEIGHT: usize> IntentOnlyValidityCircuit<MERKLE_HEIGHT> {
             recovery_id: statement.recovery_id,
         };
         StateElementRotationGadget::rotate_version_with_partial_commitment(
-            num_shares,
+            PARTIAL_COMMITMENT_SIZE,
             &mut rotation_args,
             cs,
         )?;
@@ -169,6 +176,12 @@ pub type SizedIntentOnlyValidityWitness = IntentOnlyValidityWitness<MERKLE_HEIGH
 #[circuit_type(singleprover_circuit)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct IntentOnlyValidityStatement {
+    /// The owner of the intent
+    ///
+    /// We leak this here as the intent is capitalized by a public balance. We
+    /// must ensure that the balance which capitalizes the intent is held by the
+    /// owner
+    pub owner: Address,
     /// The Merkle root to which the old intent opens
     pub merkle_root: MerkleRoot,
     /// The nullifier of the old intent
@@ -223,13 +236,18 @@ impl<const MERKLE_HEIGHT: usize> SingleProverCircuit for IntentOnlyValidityCircu
 
 #[cfg(any(test, feature = "test_helpers"))]
 pub mod test_helpers {
-    use circuit_types::{intent::Intent, traits::BaseType};
-    use constants::Scalar;
+    use circuit_types::intent::Intent;
 
     use crate::{
-        test_helpers::{check_constraints_satisfied, create_merkle_opening, random_intent},
-        zk_circuits::v2::validity_proofs::intent_only::{
-            IntentOnlyValidityCircuit, IntentOnlyValidityStatement, IntentOnlyValidityWitness,
+        test_helpers::{
+            check_constraints_satisfied, create_merkle_opening, create_random_state_wrapper,
+            random_intent,
+        },
+        zk_circuits::{
+            v2::validity_proofs::intent_only::{
+                IntentOnlyValidityCircuit, IntentOnlyValidityStatement, IntentOnlyValidityWitness,
+            },
+            validity_proofs::intent_only::PARTIAL_COMMITMENT_SIZE,
         },
     };
 
@@ -257,16 +275,8 @@ pub mod test_helpers {
     pub fn create_witness_statement_with_intent<const MERKLE_HEIGHT: usize>(
         intent: Intent,
     ) -> (IntentOnlyValidityWitness<MERKLE_HEIGHT>, IntentOnlyValidityStatement) {
-        use crate::test_helpers::create_random_state_wrapper;
-
         // Create the old intent with initial stream states
-        // Use create_random_state_wrapper to ensure the recovery stream has been
-        // advanced (for subsequent fills, the intent must have been updated at
-        // least once)
-        let mut old_intent = create_random_state_wrapper(intent.clone());
-
-        // Advance the recovery stream once to simulate a previous update
-        old_intent.compute_recovery_id();
+        let old_intent = create_random_state_wrapper(intent.clone());
 
         // Compute commitment and nullifier for the old intent
         let old_intent_commitment = old_intent.compute_commitment();
@@ -276,22 +286,19 @@ pub mod test_helpers {
         let (merkle_root, old_intent_opening) =
             create_merkle_opening::<MERKLE_HEIGHT>(old_intent_commitment);
 
-        // Create a new intent by cloning and re-encrypting amount_in
+        // Create a new intent which re-encrypts the `amount_in` field
         let mut new_intent = old_intent.clone();
-
-        // Re-encrypt the amount_in field to get a new public share
-        let new_amount_scalar = Scalar::from(new_intent.inner.amount_in);
-        let new_amount_public_share = new_intent.stream_cipher_encrypt(&new_amount_scalar);
+        let new_amount = new_intent.inner.amount_in;
+        let new_amount_public_share = new_intent.stream_cipher_encrypt(&new_amount);
         new_intent.public_share.amount_in = new_amount_public_share;
 
         // Compute recovery_id and commitment for the new intent
-        // Note: StateElementRotationGadget computes a full commitment, so we need to
-        // compute the full commitment here, not just the private commitment
         let recovery_id = new_intent.compute_recovery_id();
-        let num_shares = Intent::NUM_SCALARS - 1;
-        let new_intent_partial_commitment = new_intent.compute_partial_commitment(num_shares);
+        let new_intent_partial_commitment =
+            new_intent.compute_partial_commitment(PARTIAL_COMMITMENT_SIZE);
 
         // Build the witness and statement
+        let owner = intent.owner;
         let witness = IntentOnlyValidityWitness {
             old_intent,
             old_intent_opening,
@@ -299,6 +306,7 @@ pub mod test_helpers {
             new_amount_public_share,
         };
         let statement = IntentOnlyValidityStatement {
+            owner,
             merkle_root,
             old_intent_nullifier,
             new_intent_partial_commitment,
@@ -311,7 +319,7 @@ pub mod test_helpers {
 
 #[cfg(test)]
 mod test {
-    use crate::test_helpers::random_scalar;
+    use crate::test_helpers::{random_address, random_scalar};
 
     use super::*;
     use circuit_types::traits::SingleProverCircuit;
@@ -364,6 +372,16 @@ mod test {
     fn test_invalid_intent__modified_amount_public_share() {
         let (mut witness, statement) = test_helpers::create_witness_statement::<MERKLE_HEIGHT>();
         witness.new_amount_public_share = random_scalar();
+        assert!(!test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
+    }
+
+    /// Test the case in which the statement owner does not match the intent
+    /// owner
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_intent__modified_owner() {
+        let (witness, mut statement) = test_helpers::create_witness_statement::<MERKLE_HEIGHT>();
+        statement.owner = random_address();
         assert!(!test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
     }
 }

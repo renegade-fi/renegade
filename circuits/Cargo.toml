@@ -161,6 +161,18 @@ path = "benches/v2/intent_only_first_fill.rs"
 harness = false
 required-features = ["test_helpers"]
 
+[[bench]]
+name = "intent_only"
+path = "benches/v2/intent_only.rs"
+harness = false
+required-features = ["test_helpers"]
+
+[[bench]]
+name = "intent_only_public_settlement"
+path = "benches/v2/intent_only_public_settlement.rs"
+harness = false
+required-features = ["test_helpers"]
+
 [dependencies]
 # === Cryptography + Arithmetic === #
 alloy-primitives = { workspace = true }
