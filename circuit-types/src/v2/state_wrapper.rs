@@ -223,7 +223,7 @@ where
 /// H(private_commitment || public_commitment), a partial commitment must store
 /// the full private commitment and the partial public commitment
 #[cfg_attr(feature = "proof-system-types", circuit_type(serde, singleprover_circuit))]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PartialCommitment {
     /// The private commitment
     pub private_commitment: Scalar,
