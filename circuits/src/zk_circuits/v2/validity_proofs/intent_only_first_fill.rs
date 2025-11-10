@@ -9,7 +9,7 @@ use circuit_macros::circuit_type;
 use circuit_types::{
     Commitment, PlonkCircuit,
     csprng::PoseidonCSPRNG,
-    intent::{DarkpoolStateIntentVar, Intent, IntentShare, PreMatchIntentShare},
+    intent::{DarkpoolStateIntentVar, Intent, IntentShare},
     traits::{BaseType, CircuitBaseType, CircuitVarType},
 };
 use constants::{MERKLE_HEIGHT, Scalar, ScalarField};
@@ -91,8 +91,7 @@ impl IntentOnlyFirstFillValidityCircuit {
         // Compute the public shares of the intent
         let public_share =
             ShareGadget::compute_complementary_shares(&witness.private_shares, intent, cs)?;
-        let pre_match_share = ShareGadget::build_pre_match_intent_share(&public_share);
-        EqGadget::constrain_eq(&pre_match_share, &statement.intent_public_share, cs)?;
+        EqGadget::constrain_eq(&public_share, &statement.intent_public_share, cs)?;
 
         // Build the state element wrapper
         let state_wrapper = DarkpoolStateIntentVar {
@@ -167,7 +166,7 @@ pub struct IntentOnlyFirstFillValidityStatement {
     /// The encrypted intent; i.e. the public shares of the intent without the
     /// `amount_in` field. The `amount_in` field is leaked after it's been
     /// updated by the settlement circuit.
-    pub intent_public_share: PreMatchIntentShare,
+    pub intent_public_share: IntentShare,
 }
 
 // ---------------------
@@ -266,7 +265,7 @@ pub mod test_helpers {
             owner: intent.owner,
             intent_partial_commitment,
             recovery_id,
-            intent_public_share: intent_public_share.into(),
+            intent_public_share,
         };
 
         (witness, statement)
@@ -346,8 +345,7 @@ mod test {
         let mut public_share = statement.intent_public_share.to_scalars();
         let random_index = rng.gen_range(0..public_share.len());
         public_share[random_index] = random_scalar();
-        statement.intent_public_share =
-            PreMatchIntentShare::from_scalars(&mut public_share.into_iter());
+        statement.intent_public_share = IntentShare::from_scalars(&mut public_share.into_iter());
 
         assert!(!test_helpers::check_constraints(&witness, &statement));
     }
