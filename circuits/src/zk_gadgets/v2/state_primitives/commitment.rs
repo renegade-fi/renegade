@@ -112,7 +112,7 @@ impl CommitmentGadget {
     /// into the commitment. This allows us to pre-commit to a state element
     /// e.g. before a match and then commit only to the updated shares after
     /// their values are determined.
-    fn compute_commitment_from_private<T>(
+    pub fn compute_commitment_from_private<T>(
         private_commitment: Variable,
         public_share: &<T::ShareType as CircuitBaseType>::VarType,
         cs: &mut PlonkCircuit,
@@ -226,7 +226,7 @@ impl CommitmentGadget {
     /// This primitive is useful in state rotation circuits, where frequently
     /// only one or a handful of shares change between two versions of a state
     /// element which we need commitments for.
-    fn compute_private_commitments_with_shared_prefix<T>(
+    pub fn compute_private_commitments_with_shared_prefix<T>(
         private_share_1: &<T::ShareType as CircuitBaseType>::VarType,
         private_share_2: &<T::ShareType as CircuitBaseType>::VarType,
         elt1: &StateWrapperVar<T>,
