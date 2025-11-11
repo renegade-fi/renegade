@@ -23,7 +23,7 @@ use serde::{Deserialize, Serialize};
 
 use super::INTENT_AND_BALANCE_PUBLIC_SETTLEMENT_LINK;
 use crate::{
-    SingleProverCircuit,
+    SingleProverCircuit, print_wire,
     zk_gadgets::{
         comparators::{EqGadget, GreaterThanEqGadget},
         fixed_point::FixedPointGadget,
@@ -240,15 +240,14 @@ impl<const MERKLE_HEIGHT: usize> SingleProverCircuit
 #[cfg(any(test, feature = "test_helpers"))]
 pub mod test_helpers {
     use circuit_types::{
-        Amount,
         balance::{Balance, PostMatchBalance, PostMatchBalanceShare},
         intent::Intent,
+        settlement_obligation::SettlementObligation,
     };
     use constants::Scalar;
 
     use crate::{
         test_helpers::{
-            compute_min_amount_out as shared_compute_min_amount_out,
             create_settlement_obligation_with_balance, random_address, random_amount,
             random_intent, random_scalar,
         },
@@ -320,30 +319,43 @@ pub mod test_helpers {
         let settlement_obligation =
             create_settlement_obligation_with_balance(intent, balance.amount);
 
+        create_witness_statement_with_intent_balance_and_obligation::<MERKLE_HEIGHT>(
+            intent,
+            balance,
+            settlement_obligation,
+        )
+    }
+
+    /// Create a witness and statement for a given intent, balance, and
+    /// settlement obligation
+    pub fn create_witness_statement_with_intent_balance_and_obligation<
+        const MERKLE_HEIGHT: usize,
+    >(
+        intent: &Intent,
+        balance: &Balance,
+        settlement_obligation: SettlementObligation,
+    ) -> (
+        IntentAndBalancePublicSettlementWitness<MERKLE_HEIGHT>,
+        IntentAndBalancePublicSettlementStatement,
+    ) {
         // Create the intent amount public shares
         let pre_settlement_amount_public_share = random_scalar();
         let new_amount_public_share =
             pre_settlement_amount_public_share - Scalar::from(settlement_obligation.amount_in);
 
         // Create the balance post-match shares
-        let pre_settlement_post_match = PostMatchBalance::from(balance.clone());
         let pre_settlement_balance_shares = PostMatchBalanceShare {
-            amount: Scalar::from(pre_settlement_post_match.amount),
-            relayer_fee_balance: Scalar::from(pre_settlement_post_match.relayer_fee_balance),
-            protocol_fee_balance: Scalar::from(pre_settlement_post_match.protocol_fee_balance),
+            amount: random_scalar(),
+            relayer_fee_balance: random_scalar(),
+            protocol_fee_balance: random_scalar(),
         };
 
         // Create the new balance shares after settlement
-        let new_balance_amount = balance.amount - settlement_obligation.amount_in;
-        let new_post_match = PostMatchBalance {
-            amount: new_balance_amount,
-            relayer_fee_balance: pre_settlement_post_match.relayer_fee_balance,
-            protocol_fee_balance: pre_settlement_post_match.protocol_fee_balance,
-        };
+        let amount_in = Scalar::from(settlement_obligation.amount_in);
         let new_balance_public_shares = PostMatchBalanceShare {
-            amount: Scalar::from(new_post_match.amount),
-            relayer_fee_balance: Scalar::from(new_post_match.relayer_fee_balance),
-            protocol_fee_balance: Scalar::from(new_post_match.protocol_fee_balance),
+            amount: pre_settlement_balance_shares.amount - amount_in,
+            relayer_fee_balance: pre_settlement_balance_shares.relayer_fee_balance,
+            protocol_fee_balance: pre_settlement_balance_shares.protocol_fee_balance,
         };
 
         let witness = IntentAndBalancePublicSettlementWitness {
@@ -360,18 +372,27 @@ pub mod test_helpers {
 
         (witness, statement)
     }
-
-    /// Compute the minimum amount out for a given intent and amount in
-    pub fn compute_min_amount_out(intent: &Intent, amount_in: Amount) -> Amount {
-        shared_compute_min_amount_out(intent, amount_in)
-    }
 }
 
 #[cfg(test)]
 mod test {
+    use crate::{
+        test_helpers::{
+            compute_min_amount_out, create_settlement_obligation_with_balance, random_address,
+            random_bounded_intent, random_scalar,
+        },
+        zk_circuits::settlement::intent_and_balance_public_settlement::test_helpers::create_matching_balance_for_intent,
+    };
+
     use super::*;
-    use circuit_types::traits::SingleProverCircuit;
+    use circuit_types::{Amount, traits::SingleProverCircuit};
     use constants::MERKLE_HEIGHT;
+    use rand::{Rng, thread_rng};
+
+    /// The maximum input amount for intents; this leaves room for the whole
+    /// intent to be executed at sampled prices; i.e. `amount_out` does not
+    /// violate `AMOUNT_BITS` bounds.
+    const MAX_AMOUNT_IN: Amount = 1u128 << (AMOUNT_BITS / 2);
 
     /// A helper to print the number of constraints in the circuit
     ///
@@ -392,5 +413,138 @@ mod test {
     fn test_valid_intent_and_balance_public_settlement_constraints() {
         let (witness, statement) = test_helpers::create_witness_statement::<MERKLE_HEIGHT>();
         assert!(test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
+    }
+
+    /// Test the case in which the intent is fully matched
+    #[test]
+    fn test_valid_intent_and_balance_public_settlement_constraints_full_match() {
+        let intent = random_bounded_intent(MAX_AMOUNT_IN);
+        let mut balance = create_matching_balance_for_intent(&intent);
+        balance.amount = intent.amount_in;
+        let mut obligation = create_settlement_obligation_with_balance(&intent, balance.amount);
+        obligation.amount_out = compute_min_amount_out(&intent, obligation.amount_in);
+
+        let (witness, statement) =
+            test_helpers::create_witness_statement_with_intent_balance_and_obligation::<
+                MERKLE_HEIGHT,
+            >(&intent, &balance, obligation);
+        assert!(test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
+    }
+
+    /// Test the case in which the balance undercapitalizes the obligation
+    #[test]
+    fn test_valid_intent_and_balance_public_settlement_constraints_undercapitalized() {
+        let intent = random_bounded_intent(MAX_AMOUNT_IN);
+        let mut balance = create_matching_balance_for_intent(&intent);
+        balance.amount = intent.amount_in / 2;
+        let obligation = create_settlement_obligation_with_balance(&intent, balance.amount);
+
+        let (witness, statement) =
+            test_helpers::create_witness_statement_with_intent_balance_and_obligation::<
+                MERKLE_HEIGHT,
+            >(&intent, &balance, obligation);
+        assert!(test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
+    }
+
+    // --- Invalid Test Cases --- //
+
+    /// Test the case in which the obligation pair doesn't match that of the
+    /// intent
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_obligation__pair_mismatch() {
+        let mut rng = thread_rng();
+        let (witness, mut statement) = test_helpers::create_witness_statement::<MERKLE_HEIGHT>();
+
+        if rng.gen_bool(0.5) {
+            statement.settlement_obligation.input_token = random_address();
+        } else {
+            statement.settlement_obligation.output_token = random_address();
+        }
+        assert!(!test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
+    }
+
+    /// Test the case in which the obligation attempts to settle more than the
+    /// intent's size
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_obligation__amount_in_exceeds_intent_size() {
+        let intent = random_bounded_intent(MAX_AMOUNT_IN);
+        let mut balance = create_matching_balance_for_intent(&intent);
+        balance.amount = intent.amount_in + 1; // Fully capitalize the intent   
+        let mut obligation = create_settlement_obligation_with_balance(&intent, balance.amount);
+        obligation.amount_in = intent.amount_in + 1;
+        obligation.amount_out = compute_min_amount_out(&intent, obligation.amount_in);
+
+        // Check that the constraints are not satisfied
+        let (witness, statement) =
+            test_helpers::create_witness_statement_with_intent_balance_and_obligation::<
+                MERKLE_HEIGHT,
+            >(&intent, &balance, obligation);
+        assert!(!test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
+    }
+
+    /// Test the case in which the obligation attempts to settle at a worse
+    /// price than the intent's min price
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_obligation__amount_out_violates_min_price() {
+        let intent = random_bounded_intent(MAX_AMOUNT_IN);
+        let mut balance = create_matching_balance_for_intent(&intent);
+        balance.amount = intent.amount_in;
+        let mut obligation = create_settlement_obligation_with_balance(&intent, balance.amount);
+        obligation.amount_out = compute_min_amount_out(&intent, obligation.amount_in) - 1;
+
+        // Check that the constraints are not satisfied
+        let (witness, statement) =
+            test_helpers::create_witness_statement_with_intent_balance_and_obligation::<
+                MERKLE_HEIGHT,
+            >(&intent, &balance, obligation);
+        assert!(!test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
+    }
+
+    /// Test an undercapitalized obligation
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_obligation__undercapitalized() {
+        let intent = random_bounded_intent(MAX_AMOUNT_IN);
+        let mut balance = create_matching_balance_for_intent(&intent);
+        balance.amount = intent.amount_in - 1;
+        let mut obligation = create_settlement_obligation_with_balance(&intent, balance.amount);
+        obligation.amount_in = intent.amount_in;
+
+        // Check that the constraints are not satisfied
+        let (witness, statement) =
+            test_helpers::create_witness_statement_with_intent_balance_and_obligation::<
+                MERKLE_HEIGHT,
+            >(&intent, &balance, obligation);
+        assert!(!test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
+    }
+
+    // --- Invalid State Updates --- //
+
+    /// Test the case in which the intent's amount public share is modified
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_update__intent_amount_public_share_modified() {
+        let (witness, mut statement) = test_helpers::create_witness_statement::<MERKLE_HEIGHT>();
+        statement.new_amount_public_share = random_scalar();
+        assert!(!test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
+    }
+
+    /// Test the case in which the balance's public shares are modified
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_update__balance_public_shares_modified() {
+        let mut rng = thread_rng();
+        let (witness, mut statement) = test_helpers::create_witness_statement::<MERKLE_HEIGHT>();
+
+        let mut balance_scalars = statement.new_balance_public_shares.to_scalars();
+        let idx = rng.gen_range(0..balance_scalars.len());
+        balance_scalars[idx] = random_scalar();
+        statement.new_balance_public_shares =
+            PostMatchBalanceShare::from_scalars(&mut balance_scalars.into_iter());
+
+        assert!(!test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
     }
 }
