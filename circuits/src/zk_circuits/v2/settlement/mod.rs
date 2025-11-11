@@ -13,3 +13,7 @@ pub mod intent_only_public_settlement;
 /// The group name for the INTENT ONLY (FIRST FILL) VALIDITY <-> INTENT ONLY
 /// PUBLIC SETTLEMENT link
 pub const INTENT_ONLY_PUBLIC_SETTLEMENT_LINK: &str = "intent_only_public_settlement";
+
+/// The group name for the INTENT AND BALANCE (FIRST FILL) VALIDITY <-> INTENT
+/// AND BALANCE PUBLIC SETTLEMENT link
+pub const INTENT_AND_BALANCE_PUBLIC_SETTLEMENT_LINK: &str = "intent_and_balance_public_settlement";

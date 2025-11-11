@@ -407,12 +407,7 @@ impl<const MERKLE_HEIGHT: usize> SingleProverCircuit
     ///   SETTLEMENT. This group is placed by the settlement circuit, so we
     ///   inherit its layout here.
     fn proof_linking_groups() -> Result<Vec<(String, Option<GroupLayout>)>, PlonkError> {
-        // TODO: Once IntentAndBalancePublicSettlementCircuit is implemented, uncomment
-        // the code below to inherit the layout from the settlement circuit.
-        // let layout =
-        // IntentAndBalancePublicSettlementCircuit::<MERKLE_HEIGHT>::get_circuit_layout()?
-        // ; let settlement_group =
-        // layout.get_group_layout(INTENT_AND_BALANCE_PUBLIC_SETTLEMENT_LINK);
+        // TODO: Implement this correctly
         let group_name = INTENT_AND_BALANCE_PUBLIC_SETTLEMENT_LINK.to_string();
 
         // For now, we place the group ourselves (the settlement circuit will inherit
@@ -436,7 +431,7 @@ impl<const MERKLE_HEIGHT: usize> SingleProverCircuit
 #[cfg(any(test, feature = "test_helpers"))]
 pub mod test_helpers {
     use circuit_types::{
-        balance::{Balance, PostMatchBalance},
+        balance::{Balance, DarkpoolStateBalance, PostMatchBalance},
         intent::{Intent, PreMatchIntentShare},
     };
     use renegade_crypto::{fields::address_to_scalar, hash::compute_poseidon_hash};
@@ -484,6 +479,16 @@ pub mod test_helpers {
         intent: &Intent,
     ) -> (SizedIntentAndBalanceFirstFillValidityWitness, IntentAndBalanceFirstFillValidityStatement)
     {
+        let balance = create_matching_balance_for_intent(intent);
+        create_witness_statement_with_intent_and_balance(intent, balance)
+    }
+
+    /// Create a witness and statement with the given intent and balance
+    pub fn create_witness_statement_with_intent_and_balance(
+        intent: &Intent,
+        balance: DarkpoolStateBalance,
+    ) -> (SizedIntentAndBalanceFirstFillValidityWitness, IntentAndBalanceFirstFillValidityStatement)
+    {
         // Create the intent state wrapper
         let initial_intent = create_state_wrapper(intent.clone());
 
@@ -491,73 +496,37 @@ pub mod test_helpers {
         let private_intent_shares = initial_intent.private_shares();
         let intent_public_share = initial_intent.public_share();
         let new_amount_public_share = intent_public_share.amount_in;
-
-        // Build PreMatchIntentShare (without amount_in)
         let intent_pre_match_share = PreMatchIntentShare::from(intent_public_share.clone());
 
-        // Compute intent commitments
-        // The original intent commitment is the full commitment
-        let original_intent_commitment = initial_intent.compute_commitment();
-
-        // Clone the intent and compute recovery_id (this advances the recovery stream)
-        // The circuit does this to create a "new" intent state
+        // Compute intent commitments for the original and new intents
         let mut new_intent = initial_intent.clone();
+        let original_intent_commitment = initial_intent.compute_commitment();
         let intent_recovery_id = new_intent.compute_recovery_id();
-
-        // The intent private share commitment is the private commitment of the new
-        // intent (after recovery_id has been computed, which advances the
-        // recovery stream)
         let intent_private_share_commitment = new_intent.compute_private_commitment();
 
-        // Create a balance that matches the intent
-        // The balance must have the same owner and mint matching intent.in_token
-        let one_time_authority = random_address();
-        let balance_inner = Balance {
-            mint: intent.in_token,
-            owner: intent.owner,
-            relayer_fee_recipient: random_address(),
-            one_time_authority,
-            relayer_fee_balance: random_amount(),
-            protocol_fee_balance: random_amount(),
-            amount: random_amount(),
-        };
-
-        // Create the balance state wrapper
-        let mut balance = create_random_state_wrapper(balance_inner.clone());
-        // Advance the recovery stream once so we can compute the nullifier
-        // (the nullifier uses recovery_id at index - 1)
-        balance.compute_recovery_id();
-        let balance_commitment = balance.compute_commitment();
+        // Compute the state rotation information for the original balance
+        let one_time_authority = balance.inner.one_time_authority;
         let old_balance_nullifier = balance.compute_nullifier();
+        let balance_commitment = balance.compute_commitment();
         let (merkle_root, balance_opening) =
             create_merkle_opening::<MERKLE_HEIGHT>(balance_commitment);
 
         // Create a new balance with updated post-match shares
-        // The circuit re-encrypts the one-time authorizing address and post-match
-        // balance shares
         let new_one_time_address = random_address();
         let mut new_balance = balance.clone();
         new_balance.inner.one_time_authority = new_one_time_address;
         let new_one_time_share = new_balance.stream_cipher_encrypt(&new_one_time_address);
         new_balance.public_share.one_time_authority = new_one_time_share;
 
-        let post_match_balance = PostMatchBalance::from(balance_inner);
+        let post_match_balance = PostMatchBalance::from(balance.inner.clone());
         let post_match_balance_shares = new_balance.stream_cipher_encrypt(&post_match_balance);
 
         // Update the balance's public_share to include the re-encrypted post-match
-        // shares This matches what the circuit does in create_new_balance
-        new_balance.public_share.amount = post_match_balance_shares.amount;
-        new_balance.public_share.relayer_fee_balance =
-            post_match_balance_shares.relayer_fee_balance;
-        new_balance.public_share.protocol_fee_balance =
-            post_match_balance_shares.protocol_fee_balance;
-
-        // Compute recovery_id for the new balance
-        let balance_recovery_id = new_balance.compute_recovery_id();
+        // shares. This matches what the circuit does in create_new_balance
+        new_balance.update_from_post_match(&post_match_balance_shares);
 
         // Compute the partial commitment for the new balance
-        // BALANCE_PARTIAL_COMMITMENT_SIZE is the number of scalars in Balance minus
-        // PostMatchBalance
+        let balance_recovery_id = new_balance.compute_recovery_id();
         let balance_partial_commitment =
             new_balance.compute_partial_commitment(BALANCE_PARTIAL_COMMITMENT_SIZE);
 
@@ -595,12 +564,39 @@ pub mod test_helpers {
 
         (witness, statement)
     }
+
+    /// Create a balance that matches the given intent
+    ///
+    /// The balance will have the same owner and mint as the intent's in_token,
+    /// with random values for other fields.
+    pub fn create_matching_balance_for_intent(intent: &Intent) -> DarkpoolStateBalance {
+        let balance_inner = Balance {
+            mint: intent.in_token,
+            owner: intent.owner,
+            relayer_fee_recipient: random_address(),
+            one_time_authority: random_address(),
+            relayer_fee_balance: random_amount(),
+            protocol_fee_balance: random_amount(),
+            amount: random_amount(),
+        };
+        create_random_state_wrapper(balance_inner)
+    }
 }
 
 #[cfg(test)]
 mod test {
+    use crate::{
+        test_helpers::{random_address, random_intent, random_scalar},
+        zk_circuits::validity_proofs::intent_and_balance_first_fill::test_helpers::{
+            create_matching_balance_for_intent, create_witness_statement_with_intent,
+        },
+    };
+
     use super::*;
-    use circuit_types::traits::SingleProverCircuit;
+    use circuit_types::{
+        fixed_point::FixedPoint, max_amount, max_price, traits::SingleProverCircuit,
+    };
+    use rand::{Rng, thread_rng};
 
     /// A helper to print the number of constraints in the circuit
     ///
@@ -620,5 +616,154 @@ mod test {
     fn test_valid_intent_and_balance_first_fill_constraints() {
         let (witness, statement) = test_helpers::create_witness_statement();
         assert!(test_helpers::check_constraints(&witness, &statement));
+    }
+
+    // --- Invalid Intent Tests --- //
+
+    /// Test the case in which the intent's owner does not match the balance's
+    /// owner
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_intent__owner_mismatch() {
+        let mut intent = random_intent();
+        let balance = create_matching_balance_for_intent(&intent);
+        intent.owner = random_address();
+
+        let (witness, statement) =
+            test_helpers::create_witness_statement_with_intent_and_balance(&intent, balance);
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the balance holds a different mint than the
+    /// intent's in_token
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_intent__balance_mint_mismatch() {
+        let intent = random_intent();
+        let mut balance = create_matching_balance_for_intent(&intent);
+        balance.inner.mint = random_address();
+
+        let (witness, statement) = test_helpers::create_witness_statement_with_intent_and_balance(
+            &intent,
+            balance.clone(),
+        );
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the intent's amount_in is not of valid bitlength
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_intent__amount_in_not_valid_bitlength() {
+        let mut intent = random_intent();
+        intent.amount_in = max_amount() + 1;
+
+        let (witness, statement) = create_witness_statement_with_intent(&intent);
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the intent's minimum price is not of valid
+    /// bitlength
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_intent__min_price_not_valid_bitlength() {
+        let mut intent = random_intent();
+        intent.min_price = max_price() + FixedPoint::from_integer(1);
+
+        let (witness, statement) = create_witness_statement_with_intent(&intent);
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the new amount share in the witness doesn't match
+    /// that of the intent
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_intent__new_amount_share_mismatch() {
+        let (mut witness, statement) = test_helpers::create_witness_statement();
+
+        witness.new_amount_public_share = random_scalar();
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the intent's public shares are modified
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_intent__public_shares_modified() {
+        let mut rng = thread_rng();
+        let (witness, mut statement) = test_helpers::create_witness_statement();
+
+        let mut public_shares = statement.intent_public_share.to_scalars();
+        let idx = rng.gen_range(0..public_shares.len());
+        public_shares[idx] = random_scalar();
+        statement.intent_public_share =
+            PreMatchIntentShare::from_scalars(&mut public_shares.into_iter());
+
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the intent's private share commitment is modified
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_intent__private_share_commitment_modified() {
+        let (witness, mut statement) = test_helpers::create_witness_statement();
+
+        statement.intent_private_share_commitment = random_scalar();
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the intent's recovery ID is modified
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_intent__recovery_id_modified() {
+        let (witness, mut statement) = test_helpers::create_witness_statement();
+        statement.intent_recovery_id = random_scalar();
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the new intent's commitment is modified
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_intent__new_intent_commitment_modified() {
+        let (witness, mut statement) = test_helpers::create_witness_statement();
+        statement.intent_and_authorizing_address_commitment = random_scalar();
+
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    // --- Invalid Balance Tests --- //
+
+    /// Test the case in which the balance's one-time authorizing address does
+    /// not match the one leaked in the statement
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_balance__one_time_authorizing_address_mismatch() {
+        let (witness, mut statement) = test_helpers::create_witness_statement();
+        statement.one_time_authorizing_address = random_address();
+
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the new one-time authorizing address is modified
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_balance__new_one_time_authorizing_address_modified() {
+        let (mut witness, statement) = test_helpers::create_witness_statement();
+        witness.new_one_time_address = random_address();
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the post-match balance shares are modified
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_balance__post_match_balance_shares_modified() {
+        let mut rng = thread_rng();
+        let (mut witness, statement) = test_helpers::create_witness_statement();
+
+        let mut shares = witness.post_match_balance_shares.to_scalars();
+        let idx = rng.gen_range(0..shares.len());
+        shares[idx] = random_scalar();
+        witness.post_match_balance_shares =
+            PostMatchBalanceShare::from_scalars(&mut shares.into_iter());
+
+        assert!(!test_helpers::check_constraints(&witness, &statement));
     }
 }

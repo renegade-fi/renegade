@@ -2,6 +2,8 @@
 
 use circuit_types::{
     PlonkCircuit,
+    balance::{BalanceShareVar, BalanceVar, PostMatchBalanceShareVar, PostMatchBalanceVar},
+    intent::{IntentShareVar, PreMatchIntentShareVar},
     traits::{CircuitVarType, SecretShareVarType},
 };
 use mpc_relation::traits::Circuit;
@@ -52,6 +54,39 @@ impl ShareGadget {
             .collect::<Result<Vec<Variable>, CircuitError>>()?;
         let complementary_shares = S::from_vars(&mut complementary_shares_vars.into_iter(), cs);
         Ok(complementary_shares)
+    }
+
+    // --- Partial Shares --- //
+
+    /// Convert an `IntentShareVar` into a `PreMatchIntentShare`
+    pub fn build_pre_match_intent_share(intent_share: &IntentShareVar) -> PreMatchIntentShareVar {
+        PreMatchIntentShareVar {
+            in_token: intent_share.in_token,
+            out_token: intent_share.out_token,
+            owner: intent_share.owner,
+            min_price: intent_share.min_price.clone(),
+        }
+    }
+
+    /// Build a post-match balance share from a balance
+    pub fn build_post_match_balance_share(pre_match_balance: &BalanceVar) -> PostMatchBalanceVar {
+        PostMatchBalanceVar {
+            amount: pre_match_balance.amount,
+            relayer_fee_balance: pre_match_balance.relayer_fee_balance,
+            protocol_fee_balance: pre_match_balance.protocol_fee_balance,
+        }
+    }
+
+    /// Update a balance share with the given post-match balance
+    ///
+    /// Mutates the given balance share in place.
+    pub fn update_balance_share_post_match(
+        balance_share: &mut BalanceShareVar,
+        post_match_balance: &PostMatchBalanceShareVar,
+    ) {
+        balance_share.amount = post_match_balance.amount;
+        balance_share.relayer_fee_balance = post_match_balance.relayer_fee_balance;
+        balance_share.protocol_fee_balance = post_match_balance.protocol_fee_balance;
     }
 }
 
