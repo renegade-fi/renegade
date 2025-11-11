@@ -122,7 +122,7 @@ impl<const MERKLE_HEIGHT: usize> IntentAndBalanceFirstFillValidityCircuit<MERKLE
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
         let intent = &witness.intent;
-        let balance = &witness.balance.inner;
+        let balance = &witness.balance;
 
         // The intent and balance must have the same owner
         EqGadget::constrain_eq(&intent.owner, &balance.owner, cs)?;
@@ -205,7 +205,9 @@ impl<const MERKLE_HEIGHT: usize> IntentAndBalanceFirstFillValidityCircuit<MERKLE
         witness: &IntentAndBalanceFirstFillValidityWitnessVar<MERKLE_HEIGHT>,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
-        let balance = &witness.balance;
+        let balance = &witness.old_balance;
+        // Bind the denormalized balance to the one in the state element
+        EqGadget::constrain_eq(&witness.balance, &balance.inner, cs)?;
 
         // Leak the balance's one-time authorizing address
         EqGadget::constrain_eq(
@@ -218,7 +220,7 @@ impl<const MERKLE_HEIGHT: usize> IntentAndBalanceFirstFillValidityCircuit<MERKLE
         let old_balance_private_shares =
             ShareGadget::compute_complementary_shares(&balance.public_share, &balance.inner, cs)?;
         let (new_balance, new_balance_private_shares) =
-            Self::create_new_balance(&old_balance_private_shares, witness, cs)?;
+            Self::create_new_balance(&old_balance_private_shares, statement, witness, cs)?;
 
         // Verify the balance's rotation
         let mut args = StateElementRotationArgsWithPartialCommitment {
@@ -246,11 +248,12 @@ impl<const MERKLE_HEIGHT: usize> IntentAndBalanceFirstFillValidityCircuit<MERKLE
     /// Returns the new balance and the private shares of the new balance
     fn create_new_balance(
         old_balance_private_shares: &BalanceShareVar,
+        statement: &IntentAndBalanceFirstFillValidityStatementVar,
         witness: &IntentAndBalanceFirstFillValidityWitnessVar<MERKLE_HEIGHT>,
         cs: &mut PlonkCircuit,
     ) -> Result<(DarkpoolStateBalanceVar, BalanceShareVar), CircuitError> {
         // Update the balance
-        let mut new_balance = witness.balance.clone();
+        let mut new_balance = witness.old_balance.clone();
         let mut new_balance_private_shares = old_balance_private_shares.clone();
 
         // Re-encrypt the new one-time authorizing address
@@ -263,6 +266,11 @@ impl<const MERKLE_HEIGHT: usize> IntentAndBalanceFirstFillValidityCircuit<MERKLE
             )?;
         new_balance_private_shares.one_time_authority = new_one_time_private_share;
         new_balance.public_share.one_time_authority = new_one_time_public_share;
+        EqGadget::constrain_eq(
+            &new_one_time_public_share,
+            &statement.new_one_time_address_public_share,
+            cs,
+        )?;
 
         // Re-encrypt the post-match balance shares so that they may be updated in the
         // settlement circuit. Re-encryption here prevents the shares from being tracked
@@ -322,8 +330,12 @@ pub struct IntentAndBalanceFirstFillValidityWitness<const MERKLE_HEIGHT: usize> 
 
     // --- Balance --- //
     /// The balance which capitalizes the intent
+    pub old_balance: DarkpoolStateBalance,
+    /// The balance which capitalizes the intent, denormalized from the state
+    /// element balance here so that it may be proof-linked into the settlement
+    /// proof.
     #[link_groups = "intent_and_balance_public_settlement"]
-    pub balance: DarkpoolStateBalance,
+    pub balance: Balance,
     /// The updated public shares of the post-match balance
     #[link_groups = "intent_and_balance_public_settlement"]
     pub post_match_balance_shares: PostMatchBalanceShare,
@@ -376,6 +388,9 @@ pub struct IntentAndBalanceFirstFillValidityStatement {
     // --- Balance --- //
     /// The partial commitment to the new balance
     pub balance_partial_commitment: PartialCommitment,
+    /// The public share of the one-time authorizing address after it has been
+    /// re-encrypted
+    pub new_one_time_address_public_share: Scalar,
     /// The nullifier of the old balance
     pub old_balance_nullifier: Nullifier,
     /// The recovery identifier of the new balance
@@ -543,7 +558,8 @@ pub mod test_helpers {
             initial_intent_recovery_stream: initial_intent.recovery_stream,
             private_intent_shares,
             new_amount_public_share,
-            balance,
+            old_balance: balance.clone(),
+            balance: balance.inner,
             post_match_balance_shares,
             balance_opening,
             new_one_time_address,
@@ -556,6 +572,7 @@ pub mod test_helpers {
             intent_private_share_commitment,
             intent_recovery_id,
             balance_partial_commitment,
+            new_one_time_address_public_share: new_one_time_share,
             old_balance_nullifier,
             balance_recovery_id,
             one_time_authorizing_address: one_time_authority,

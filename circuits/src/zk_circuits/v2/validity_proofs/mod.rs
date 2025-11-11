@@ -15,6 +15,7 @@
 //! The state elements which witness these validity proofs are proof-linked into
 //! the match settlement proofs in `settlement/`
 
+pub mod intent_and_balance;
 pub mod intent_and_balance_first_fill;
 pub mod intent_only;
 pub mod intent_only_first_fill;
