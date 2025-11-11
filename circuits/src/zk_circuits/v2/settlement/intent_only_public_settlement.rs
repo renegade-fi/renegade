@@ -181,13 +181,12 @@ impl<const MERKLE_HEIGHT: usize> SingleProverCircuit
 
 #[cfg(any(test, feature = "test_helpers"))]
 pub mod test_helpers {
-    use circuit_types::{Amount, intent::Intent};
+    use circuit_types::intent::Intent;
     use constants::Scalar;
 
     use crate::{
         test_helpers::{
-            check_constraints_satisfied, compute_min_amount_out as shared_compute_min_amount_out,
-            create_settlement_obligation, random_intent, random_scalar,
+            check_constraints_satisfied, create_settlement_obligation, random_intent, random_scalar,
         },
         zk_circuits::v2::settlement::intent_only_public_settlement::{
             IntentOnlyPublicSettlementCircuit, IntentOnlyPublicSettlementStatement,
@@ -237,18 +236,12 @@ pub mod test_helpers {
 
         (witness, statement)
     }
-
-    /// Compute the minimum amount out for a given intent and amount in
-    pub fn compute_min_amount_out(intent: &Intent, amount_in: Amount) -> Amount {
-        shared_compute_min_amount_out(intent, amount_in)
-    }
 }
 
 #[cfg(test)]
 mod test {
-    use crate::{
-        test_helpers::{random_address, random_intent, random_scalar},
-        zk_circuits::settlement::intent_only_public_settlement::test_helpers::compute_min_amount_out,
+    use crate::test_helpers::{
+        compute_min_amount_out, random_address, random_intent, random_scalar,
     };
 
     use super::*;

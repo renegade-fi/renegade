@@ -89,12 +89,19 @@ pub fn random_withdrawal() -> Withdrawal {
 
 /// Create a random intent
 pub fn random_intent() -> Intent {
+    random_bounded_intent(max_amount())
+}
+
+/// Create a random bounded intent
+pub fn random_bounded_intent(max_amount_in: Amount) -> Intent {
+    let mut rng = thread_rng();
+    let amount_in = rng.gen_range(0..=max_amount_in);
     Intent {
         in_token: random_address(),
         out_token: random_address(),
         owner: random_address(),
         min_price: random_price(),
-        amount_in: random_amount(),
+        amount_in,
     }
 }
 
