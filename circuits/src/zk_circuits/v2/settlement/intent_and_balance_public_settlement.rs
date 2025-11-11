@@ -23,7 +23,7 @@ use serde::{Deserialize, Serialize};
 
 use super::INTENT_AND_BALANCE_PUBLIC_SETTLEMENT_LINK;
 use crate::{
-    SingleProverCircuit, print_wire,
+    SingleProverCircuit,
     zk_gadgets::{
         comparators::{EqGadget, GreaterThanEqGadget},
         fixed_point::FixedPointGadget,
@@ -240,7 +240,7 @@ impl<const MERKLE_HEIGHT: usize> SingleProverCircuit
 #[cfg(any(test, feature = "test_helpers"))]
 pub mod test_helpers {
     use circuit_types::{
-        balance::{Balance, PostMatchBalance, PostMatchBalanceShare},
+        balance::{Balance, PostMatchBalanceShare},
         intent::Intent,
         settlement_obligation::SettlementObligation,
     };
@@ -339,9 +339,9 @@ pub mod test_helpers {
         IntentAndBalancePublicSettlementStatement,
     ) {
         // Create the intent amount public shares
+        let amount_in = Scalar::from(settlement_obligation.amount_in);
         let pre_settlement_amount_public_share = random_scalar();
-        let new_amount_public_share =
-            pre_settlement_amount_public_share - Scalar::from(settlement_obligation.amount_in);
+        let new_amount_public_share = pre_settlement_amount_public_share - amount_in;
 
         // Create the balance post-match shares
         let pre_settlement_balance_shares = PostMatchBalanceShare {
@@ -351,7 +351,6 @@ pub mod test_helpers {
         };
 
         // Create the new balance shares after settlement
-        let amount_in = Scalar::from(settlement_obligation.amount_in);
         let new_balance_public_shares = PostMatchBalanceShare {
             amount: pre_settlement_balance_shares.amount - amount_in,
             relayer_fee_balance: pre_settlement_balance_shares.relayer_fee_balance,

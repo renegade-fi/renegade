@@ -179,6 +179,12 @@ path = "benches/v2/intent_and_balance.rs"
 harness = false
 required-features = ["test_helpers"]
 
+[[bench]]
+name = "intent_and_balance_public_settlement"
+path = "benches/v2/intent_and_balance_public_settlement.rs"
+harness = false
+required-features = ["test_helpers"]
+
 [dependencies]
 # === Cryptography + Arithmetic === #
 alloy-primitives = { workspace = true }
