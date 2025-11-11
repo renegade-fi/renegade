@@ -472,9 +472,12 @@ pub mod test_helpers {
 
 #[cfg(test)]
 mod test {
+    use crate::test_helpers::random_scalar;
+
     use super::*;
     use circuit_types::traits::SingleProverCircuit;
     use constants::MERKLE_HEIGHT;
+    use rand::{Rng, thread_rng};
 
     /// A helper to print the number of constraints in the circuit
     ///
@@ -496,4 +499,68 @@ mod test {
         let (witness, statement) = test_helpers::create_witness_statement::<MERKLE_HEIGHT>();
         assert!(test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
     }
+
+    // --- Invalid Intent Tests --- //
+
+    /// Test the case in which the denormalized intent does not match the one in
+    /// the state element
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_intent__denormalized_intent_mismatch() {
+        let mut rng = thread_rng();
+        let (mut witness, statement) = test_helpers::create_witness_statement::<MERKLE_HEIGHT>();
+
+        let mut intent_scalars = witness.intent.to_scalars();
+        let idx = rng.gen_range(0..intent_scalars.len());
+        intent_scalars[idx] = random_scalar();
+        witness.intent = Intent::from_scalars(&mut intent_scalars.into_iter());
+        assert!(!test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
+    }
+
+    /// Test the case in which the new amount public share does not match the
+    /// one in the witness
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_intent__new_amount_public_share_mismatch() {
+        let (mut witness, statement) = test_helpers::create_witness_statement::<MERKLE_HEIGHT>();
+        witness.new_amount_public_share = random_scalar();
+        assert!(!test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
+    }
+
+    // --- Invalid Balance Tests --- //
+
+    /// Test the case in which the denormalized balance does not match the one
+    /// in the state element
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_balance__denormalized_balance_mismatch() {
+        let mut rng = thread_rng();
+        let (mut witness, statement) = test_helpers::create_witness_statement::<MERKLE_HEIGHT>();
+
+        let mut balance_scalars = witness.balance.to_scalars();
+        let idx = rng.gen_range(0..balance_scalars.len());
+        balance_scalars[idx] = random_scalar();
+        witness.balance = Balance::from_scalars(&mut balance_scalars.into_iter());
+
+        assert!(!test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
+    }
+
+    /// Test the case in which the post-match balance shares in the witness
+    /// don't match those computed in the circuit
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_balance__post_match_balance_shares_mismatch() {
+        let mut rng = thread_rng();
+        let (mut witness, statement) = test_helpers::create_witness_statement::<MERKLE_HEIGHT>();
+
+        let mut post_match_balance_shares = witness.post_match_balance_shares.to_scalars();
+        let idx = rng.gen_range(0..post_match_balance_shares.len());
+        post_match_balance_shares[idx] = random_scalar();
+        witness.post_match_balance_shares =
+            PostMatchBalanceShare::from_scalars(&mut post_match_balance_shares.into_iter());
+
+        assert!(!test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
+    }
+
+    // State rotation test cases are covered in the test cases for the `StateElementRotationGadget` test suite
 }
