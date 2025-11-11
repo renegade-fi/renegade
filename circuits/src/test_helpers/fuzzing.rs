@@ -1,5 +1,7 @@
 //! Fuzzing helpers for generating random test data
 
+use std::cmp;
+
 use alloy_primitives::Address;
 use circuit_types::{
     AMOUNT_BITS, Amount,
@@ -7,6 +9,7 @@ use circuit_types::{
     elgamal::{DecryptionKey, EncryptionKey},
     fixed_point::FixedPoint,
     intent::Intent,
+    settlement_obligation::SettlementObligation,
     state_wrapper::StateWrapper,
     traits::{BaseType, CircuitBaseType, SecretShareBaseType},
     v2::deposit::Deposit,
@@ -15,6 +18,7 @@ use circuit_types::{
 use constants::Scalar;
 use itertools::Itertools;
 use rand::{Rng, distributions::uniform::SampleRange, thread_rng};
+use renegade_crypto::fields::scalar_to_u128;
 
 // -------------------
 // | Primitive Types |
@@ -106,6 +110,43 @@ pub fn random_elgamal_keypair() -> (EncryptionKey, DecryptionKey) {
     let dec_key = DecryptionKey::random(&mut rng);
     let enc_key = dec_key.public_key();
     (enc_key, dec_key)
+}
+
+/// Create a settlement obligation for an intent
+pub fn create_settlement_obligation(intent: &Intent) -> SettlementObligation {
+    // Use a "virtual" balance that fully capitalizes the intent
+    create_settlement_obligation_with_balance(intent, intent.amount_in)
+}
+
+/// Create a settlement obligation for an intent and balance amount
+pub fn create_settlement_obligation_with_balance(
+    intent: &Intent,
+    balance_amount: Amount,
+) -> SettlementObligation {
+    let mut rng = thread_rng();
+
+    // Clamp the obligation's `amount_in` to avoid price overflows
+    let mut max_amount_in = 2u128.pow((AMOUNT_BITS / 2) as u32);
+    let amount_bound = cmp::min(intent.amount_in, balance_amount);
+    max_amount_in = cmp::min(amount_bound, max_amount_in);
+
+    // Sample a random amount
+    let amount_in = rng.gen_range(0..=max_amount_in);
+    let min_amount_out = compute_min_amount_out(intent, amount_in);
+    let amount_out = rng.gen_range(min_amount_out..=max_amount());
+
+    SettlementObligation {
+        input_token: intent.in_token,
+        output_token: intent.out_token,
+        amount_in,
+        amount_out,
+    }
+}
+
+/// Compute the minimum amount out for a given intent and amount in
+pub fn compute_min_amount_out(intent: &Intent, amount_in: Amount) -> Amount {
+    let min_amount_out = intent.min_price * Scalar::from(amount_in);
+    scalar_to_u128(&min_amount_out.floor())
 }
 
 /// Create a state wrapper and initialize the share state

@@ -181,18 +181,14 @@ impl<const MERKLE_HEIGHT: usize> SingleProverCircuit
 
 #[cfg(any(test, feature = "test_helpers"))]
 pub mod test_helpers {
-    use std::cmp;
-
-    use circuit_types::{
-        AMOUNT_BITS, Amount, intent::Intent, max_amount,
-        settlement_obligation::SettlementObligation,
-    };
+    use circuit_types::{Amount, intent::Intent};
     use constants::Scalar;
-    use rand::{Rng, thread_rng};
-    use renegade_crypto::fields::scalar_to_u128;
 
     use crate::{
-        test_helpers::{check_constraints_satisfied, random_intent, random_scalar},
+        test_helpers::{
+            check_constraints_satisfied, compute_min_amount_out as shared_compute_min_amount_out,
+            create_settlement_obligation, random_intent, random_scalar,
+        },
         zk_circuits::v2::settlement::intent_only_public_settlement::{
             IntentOnlyPublicSettlementCircuit, IntentOnlyPublicSettlementStatement,
             IntentOnlyPublicSettlementWitness,
@@ -226,25 +222,11 @@ pub mod test_helpers {
         intent: &Intent,
     ) -> (IntentOnlyPublicSettlementWitness<MERKLE_HEIGHT>, IntentOnlyPublicSettlementStatement)
     {
-        let mut rng = thread_rng();
-
-        // Create a settlement obligation that satisfies the intent constraints
-        // Clamp the obligation's `amount_in` to avoid price overflows
-        let max_amount_in = 2u128.pow((AMOUNT_BITS / 2) as u32);
-        let max_amount_in = cmp::min(intent.amount_in, max_amount_in);
-        let amount_in = rng.gen_range(0..=max_amount_in);
-        let min_amount_out = compute_min_amount_out(intent, amount_in);
-        let amount_out = rng.gen_range(min_amount_out..=max_amount());
-
-        let settlement_obligation = SettlementObligation {
-            input_token: intent.in_token,
-            output_token: intent.out_token,
-            amount_in,
-            amount_out,
-        };
+        let settlement_obligation = create_settlement_obligation(intent);
 
         let pre_settlement_amount_public_share = random_scalar();
-        let new_amount_public_share = pre_settlement_amount_public_share - Scalar::from(amount_in);
+        let new_amount_public_share =
+            pre_settlement_amount_public_share - Scalar::from(settlement_obligation.amount_in);
 
         let witness = IntentOnlyPublicSettlementWitness {
             intent: intent.clone(),
@@ -258,8 +240,7 @@ pub mod test_helpers {
 
     /// Compute the minimum amount out for a given intent and amount in
     pub fn compute_min_amount_out(intent: &Intent, amount_in: Amount) -> Amount {
-        let min_amount_out = intent.min_price * Scalar::from(amount_in);
-        scalar_to_u128(&min_amount_out.floor())
+        shared_compute_min_amount_out(intent, amount_in)
     }
 }
 
