@@ -25,6 +25,7 @@ use super::INTENT_AND_BALANCE_PUBLIC_SETTLEMENT_LINK;
 use crate::{
     SingleProverCircuit,
     zk_gadgets::{
+        bitlength::AmountGadget,
         comparators::{EqGadget, GreaterThanEqGadget},
         fixed_point::FixedPointGadget,
     },
@@ -71,14 +72,24 @@ impl<const MERKLE_HEIGHT: usize> IntentAndBalancePublicSettlementCircuit<MERKLE_
             cs,
         )?;
 
-        // Balance update
-        // TODO: Add fees
-        let mut expected_shares = witness.pre_settlement_balance_shares.clone();
+        // Input balance update
+        let mut expected_shares = witness.pre_settlement_in_balance_shares.clone();
         expected_shares.amount = cs.sub(
-            witness.pre_settlement_balance_shares.amount,
+            witness.pre_settlement_in_balance_shares.amount,
             statement.settlement_obligation.amount_in,
         )?;
-        EqGadget::constrain_eq(&expected_shares, &statement.new_balance_public_shares, cs)
+        EqGadget::constrain_eq(&expected_shares, &statement.new_in_balance_public_shares, cs)?;
+
+        // Output balance update
+        // TODO: Add fees
+        let mut expected_shares = witness.pre_settlement_out_balance_shares.clone();
+        expected_shares.amount = cs.add(
+            witness.pre_settlement_out_balance_shares.amount,
+            statement.settlement_obligation.amount_out,
+        )?;
+        EqGadget::constrain_eq(&expected_shares, &statement.new_out_balance_public_shares, cs)?;
+
+        Ok(())
     }
 
     /// Verify that the intent's constraints are satisfied
@@ -129,16 +140,21 @@ impl<const MERKLE_HEIGHT: usize> IntentAndBalancePublicSettlementCircuit<MERKLE_
         witness: &IntentAndBalancePublicSettlementWitnessVar<MERKLE_HEIGHT>,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
-        let balance = &witness.balance;
+        let in_balance = &witness.in_balance;
+        let out_balance = &witness.out_balance;
         let obligation = &statement.settlement_obligation;
 
         // The balance must exceed the obligation's input amount
         GreaterThanEqGadget::constrain_greater_than_eq(
-            balance.amount,
+            in_balance.amount,
             obligation.amount_in,
             AMOUNT_BITS,
             cs,
-        )
+        )?;
+
+        // The receive side balance must not overflow
+        let new_bal_amount = cs.add(out_balance.amount, obligation.amount_out)?;
+        AmountGadget::constrain_valid_amount(new_bal_amount, cs)
     }
 }
 
@@ -167,13 +183,26 @@ pub struct IntentAndBalancePublicSettlementWitness<const MERKLE_HEIGHT: usize> {
     /// This value is proof-linked from the `INTENT AND BALANCE VALIDITY`
     /// circuit
     #[link_groups = "intent_and_balance_public_settlement"]
-    pub balance: Balance,
-    /// The updated public shares of the post-match balance
+    pub in_balance: Balance,
+    /// The balance public shares which are updated in the settlement circuit
     ///
     /// This value is proof-linked from the `INTENT AND BALANCE VALIDITY`
     /// circuit
     #[link_groups = "intent_and_balance_public_settlement"]
-    pub pre_settlement_balance_shares: PostMatchBalanceShare,
+    pub pre_settlement_in_balance_shares: PostMatchBalanceShare,
+    /// The balance which receives the output tokens of the obligation
+    ///
+    /// This value is proof-linked from the `INTENT AND BALANCE VALIDITY`
+    /// circuit
+    #[link_groups = "intent_and_balance_public_settlement"]
+    pub out_balance: Balance,
+    /// The balance public shares which are updated in the settlement circuit
+    /// for the output balance
+    ///
+    /// This value is proof-linked from the `INTENT AND BALANCE VALIDITY`
+    /// circuit
+    #[link_groups = "intent_and_balance_public_settlement"]
+    pub pre_settlement_out_balance_shares: PostMatchBalanceShare,
 }
 
 /// A `INTENT AND BALANCE PUBLIC SETTLEMENT` witness with default const generic
@@ -197,8 +226,12 @@ pub struct IntentAndBalancePublicSettlementStatement {
     pub settlement_obligation: SettlementObligation,
     /// The updated amount public share of the intent
     pub new_amount_public_share: Scalar,
-    /// The updated public shares of the post-match balance fields
-    pub new_balance_public_shares: PostMatchBalanceShare,
+    /// The updated public shares of the post-match balance fields for the input
+    /// balance
+    pub new_in_balance_public_shares: PostMatchBalanceShare,
+    /// The updated public shares of the post-match balance fields for the
+    /// output balance
+    pub new_out_balance_public_shares: PostMatchBalanceShare,
 }
 
 // ---------------------
@@ -242,9 +275,11 @@ pub mod test_helpers {
     use circuit_types::{
         balance::{Balance, PostMatchBalanceShare},
         intent::Intent,
+        max_amount,
         settlement_obligation::SettlementObligation,
     };
     use constants::Scalar;
+    use rand::{Rng, thread_rng};
 
     use crate::{
         test_helpers::{
@@ -340,36 +375,70 @@ pub mod test_helpers {
     ) {
         // Create the intent amount public shares
         let amount_in = Scalar::from(settlement_obligation.amount_in);
+        let amount_out = Scalar::from(settlement_obligation.amount_out);
+        let receive_balance = create_receive_balance(&settlement_obligation);
         let pre_settlement_amount_public_share = random_scalar();
         let new_amount_public_share = pre_settlement_amount_public_share - amount_in;
 
         // Create the balance post-match shares
-        let pre_settlement_balance_shares = PostMatchBalanceShare {
-            amount: random_scalar(),
-            relayer_fee_balance: random_scalar(),
-            protocol_fee_balance: random_scalar(),
-        };
+        let pre_settlement_in_balance_shares = random_post_match_balance_share();
+        let pre_settlement_out_balance_shares = random_post_match_balance_share();
 
         // Create the new balance shares after settlement
-        let new_balance_public_shares = PostMatchBalanceShare {
-            amount: pre_settlement_balance_shares.amount - amount_in,
-            relayer_fee_balance: pre_settlement_balance_shares.relayer_fee_balance,
-            protocol_fee_balance: pre_settlement_balance_shares.protocol_fee_balance,
+        let new_in_balance_public_shares = PostMatchBalanceShare {
+            amount: pre_settlement_in_balance_shares.amount - amount_in,
+            relayer_fee_balance: pre_settlement_in_balance_shares.relayer_fee_balance,
+            protocol_fee_balance: pre_settlement_in_balance_shares.protocol_fee_balance,
+        };
+
+        let new_out_balance_public_shares = PostMatchBalanceShare {
+            amount: pre_settlement_out_balance_shares.amount + amount_out,
+            relayer_fee_balance: pre_settlement_out_balance_shares.relayer_fee_balance,
+            protocol_fee_balance: pre_settlement_out_balance_shares.protocol_fee_balance,
         };
 
         let witness = IntentAndBalancePublicSettlementWitness {
             intent: intent.clone(),
             pre_settlement_amount_public_share,
-            balance: balance.clone(),
-            pre_settlement_balance_shares,
+            in_balance: balance.clone(),
+            pre_settlement_in_balance_shares,
+            out_balance: receive_balance,
+            pre_settlement_out_balance_shares,
         };
         let statement = IntentAndBalancePublicSettlementStatement {
             settlement_obligation,
             new_amount_public_share,
-            new_balance_public_shares,
+            new_in_balance_public_shares,
+            new_out_balance_public_shares,
         };
 
         (witness, statement)
+    }
+
+    /// Create a random post-match balance share
+    pub fn random_post_match_balance_share() -> PostMatchBalanceShare {
+        PostMatchBalanceShare {
+            amount: random_scalar(),
+            relayer_fee_balance: random_scalar(),
+            protocol_fee_balance: random_scalar(),
+        }
+    }
+
+    /// Create a receive balance for the given obligation
+    pub fn create_receive_balance(obligation: &SettlementObligation) -> Balance {
+        let mut rng = thread_rng();
+        let max_existing_balance = max_amount() - obligation.amount_out;
+        let amount = rng.gen_range(0..=max_existing_balance);
+
+        Balance {
+            mint: obligation.output_token,
+            owner: random_address(),
+            relayer_fee_recipient: random_address(),
+            one_time_authority: random_address(),
+            relayer_fee_balance: random_amount(),
+            protocol_fee_balance: random_amount(),
+            amount,
+        }
     }
 }
 
@@ -384,7 +453,7 @@ mod test {
     };
 
     use super::*;
-    use circuit_types::{Amount, traits::SingleProverCircuit};
+    use circuit_types::{Amount, max_amount, traits::SingleProverCircuit};
     use constants::MERKLE_HEIGHT;
     use rand::{Rng, thread_rng};
 
@@ -520,6 +589,19 @@ mod test {
         assert!(!test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
     }
 
+    /// Test the case in which the output balance overflows
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_obligation__output_balance_overflows() {
+        let (mut witness, statement) = test_helpers::create_witness_statement::<MERKLE_HEIGHT>();
+
+        let max_amount_out = max_amount() - statement.settlement_obligation.amount_out;
+        witness.out_balance.amount = max_amount_out + 1;
+
+        // Check that the constraints are not satisfied
+        assert!(!test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
+    }
+
     // --- Invalid State Updates --- //
 
     /// Test the case in which the intent's amount public share is modified
@@ -538,11 +620,27 @@ mod test {
         let mut rng = thread_rng();
         let (witness, mut statement) = test_helpers::create_witness_statement::<MERKLE_HEIGHT>();
 
-        let mut balance_scalars = statement.new_balance_public_shares.to_scalars();
+        let mut balance_scalars = statement.new_in_balance_public_shares.to_scalars();
         let idx = rng.gen_range(0..balance_scalars.len());
         balance_scalars[idx] = random_scalar();
-        statement.new_balance_public_shares =
+        statement.new_in_balance_public_shares =
             PostMatchBalanceShare::from_scalars(&mut balance_scalars.into_iter());
+
+        assert!(!test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
+    }
+
+    /// Test the case in which the output balance's public shares are modified
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_update__out_balance_public_shares_modified() {
+        let mut rng = thread_rng();
+        let (witness, mut statement) = test_helpers::create_witness_statement::<MERKLE_HEIGHT>();
+
+        let mut out_balance_scalars = statement.new_out_balance_public_shares.to_scalars();
+        let idx = rng.gen_range(0..out_balance_scalars.len());
+        out_balance_scalars[idx] = random_scalar();
+        statement.new_out_balance_public_shares =
+            PostMatchBalanceShare::from_scalars(&mut out_balance_scalars.into_iter());
 
         assert!(!test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
     }
