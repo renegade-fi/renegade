@@ -30,7 +30,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     SingleProverCircuit,
-    zk_circuits::settlement::INTENT_AND_BALANCE_PUBLIC_SETTLEMENT_LINK,
+    zk_circuits::settlement::{
+        INTENT_AND_BALANCE_PUBLIC_SETTLEMENT_LINK,
+        intent_and_balance_public_settlement::IntentAndBalancePublicSettlementCircuit,
+    },
     zk_gadgets::{
         comparators::EqGadget,
         shares::ShareGadget,
@@ -324,12 +327,11 @@ impl<const MERKLE_HEIGHT: usize> SingleProverCircuit
     ///   group is placed by the settlement circuit, so we inherit its layout
     ///   here.
     fn proof_linking_groups() -> Result<Vec<(String, Option<GroupLayout>)>, PlonkError> {
-        // TODO: Implement this correctly
-        let group_name = INTENT_AND_BALANCE_PUBLIC_SETTLEMENT_LINK.to_string();
+        let circuit_layout = IntentAndBalancePublicSettlementCircuit::get_circuit_layout()?;
+        let group_layout =
+            circuit_layout.get_group_layout(INTENT_AND_BALANCE_PUBLIC_SETTLEMENT_LINK);
 
-        // For now, we place the group ourselves (the settlement circuit will inherit
-        // it)
-        Ok(vec![(group_name, None)])
+        Ok(vec![(INTENT_AND_BALANCE_PUBLIC_SETTLEMENT_LINK.to_string(), Some(group_layout))])
     }
 
     fn apply_constraints(
