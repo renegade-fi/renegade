@@ -121,14 +121,14 @@ pub struct IntentOnlyFirstFillValidityWitness {
     /// For this reason, we do not need to verify the intent's encryption here.
     /// This is bundled into the commitment which the owner signs. Thereby the
     /// encryption is authorized by the user.
-    #[link_groups = "intent_only_public_settlement"]
+    #[link_groups = "intent_only_settlement"]
     pub intent: Intent,
     /// The public share of the intent's `amount_in` field
     ///
     /// Places here in the witness to enable proof linking between this
     /// circuit's witness and the `INTENT ONLY PUBLIC SETTLEMENT` circuit's
     /// witness.
-    #[link_groups = "intent_only_public_settlement"]
+    #[link_groups = "intent_only_settlement"]
     pub new_amount_public_share: Scalar,
     /// The initial intent share CSPRNG
     pub initial_intent_share_stream: PoseidonCSPRNG,

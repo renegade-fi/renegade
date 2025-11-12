@@ -153,14 +153,14 @@ pub struct IntentOnlyValidityWitness<const MERKLE_HEIGHT: usize> {
     /// This value is denormalized from the `old_intent` to enable proof linking
     /// between this circuit's witness and the `INTENT ONLY PUBLIC
     /// SETTLEMENT` circuit's witness.
-    #[link_groups = "intent_only_public_settlement"]
+    #[link_groups = "intent_only_settlement"]
     pub intent: Intent,
     /// The new public share of the `amount_in` field after the value has been
     /// re-encrypted. This value appears only in the witness and is proof-linked
     /// into the settlement proof. Doing so prevents the verifier from learning
     /// the pre- and post- public share or the `amount_in` field which would
     /// leak the match size.
-    #[link_groups = "intent_only_public_settlement"]
+    #[link_groups = "intent_only_settlement"]
     pub new_amount_public_share: Scalar,
 }
 
