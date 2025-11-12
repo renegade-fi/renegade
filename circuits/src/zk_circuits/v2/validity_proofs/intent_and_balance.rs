@@ -243,14 +243,14 @@ pub struct IntentAndBalanceValidityWitness<const MERKLE_HEIGHT: usize> {
     /// This value is denormalized from the `old_intent` to enable proof linking
     /// between this circuit's witness and the `INTENT AND BALANCE PUBLIC
     /// SETTLEMENT` circuit's witness.
-    #[link_groups = "intent_and_balance_public_settlement"]
+    #[link_groups = "intent_and_balance_settlement"]
     pub intent: Intent,
     /// The new public share of the `amount_in` field after the value has been
     /// re-encrypted. This value appears only in the witness and is proof-linked
     /// into the settlement proof. Doing so prevents the verifier from learning
     /// the pre- and post- public share or the `amount_in` field which would
     /// leak the match size.
-    #[link_groups = "intent_and_balance_public_settlement"]
+    #[link_groups = "intent_and_balance_settlement"]
     pub new_amount_public_share: Scalar,
 
     // --- Balance --- //
@@ -259,10 +259,10 @@ pub struct IntentAndBalanceValidityWitness<const MERKLE_HEIGHT: usize> {
     /// The Merkle opening proving the old balance exists in the tree
     pub old_balance_opening: MerkleOpening<MERKLE_HEIGHT>,
     /// The balance which capitalizes the intent
-    #[link_groups = "intent_and_balance_public_settlement"]
+    #[link_groups = "intent_and_balance_settlement"]
     pub balance: Balance,
     /// The updated public shares of the post-match balance
-    #[link_groups = "intent_and_balance_public_settlement"]
+    #[link_groups = "intent_and_balance_settlement"]
     pub post_match_balance_shares: PostMatchBalanceShare,
 }
 
@@ -562,5 +562,6 @@ mod test {
         assert!(!test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
     }
 
-    // State rotation test cases are covered in the test cases for the `StateElementRotationGadget` test suite
+    // State rotation test cases are covered in the test cases for the
+    // `StateElementRotationGadget` test suite
 }

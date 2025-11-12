@@ -12,9 +12,12 @@ pub mod intent_and_balance_public_settlement;
 pub mod intent_only_public_settlement;
 
 /// The group name for the INTENT ONLY (FIRST FILL) VALIDITY <-> INTENT ONLY
-/// PUBLIC SETTLEMENT link
-pub const INTENT_ONLY_PUBLIC_SETTLEMENT_LINK: &str = "intent_only_public_settlement";
+/// SETTLEMENT link
+pub const INTENT_ONLY_PUBLIC_SETTLEMENT_LINK: &str = "intent_only_settlement";
 
 /// The group name for the INTENT AND BALANCE (FIRST FILL) VALIDITY <-> INTENT
-/// AND BALANCE PUBLIC SETTLEMENT link
-pub const INTENT_AND_BALANCE_PUBLIC_SETTLEMENT_LINK: &str = "intent_and_balance_public_settlement";
+/// AND BALANCE SETTLEMENT link
+pub const INTENT_AND_BALANCE_PUBLIC_SETTLEMENT_LINK: &str = "intent_and_balance_settlement";
+
+/// The group name for the OUTPUT BALANCE SETTLEMENT link
+pub const OUTPUT_BALANCE_SETTLEMENT_LINK: &str = "output_balance_settlement";

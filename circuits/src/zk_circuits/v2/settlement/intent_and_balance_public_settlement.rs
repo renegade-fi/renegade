@@ -24,6 +24,7 @@ use serde::{Deserialize, Serialize};
 use super::INTENT_AND_BALANCE_PUBLIC_SETTLEMENT_LINK;
 use crate::{
     SingleProverCircuit,
+    zk_circuits::settlement::OUTPUT_BALANCE_SETTLEMENT_LINK,
     zk_gadgets::{
         bitlength::AmountGadget,
         comparators::{EqGadget, GreaterThanEqGadget},
@@ -36,18 +37,12 @@ use crate::{
 // ----------------------
 
 /// The `INTENT AND BALANCE PUBLIC SETTLEMENT` circuit
-pub struct IntentAndBalancePublicSettlementCircuit<const MERKLE_HEIGHT: usize>;
-
-/// The `INTENT AND BALANCE PUBLIC SETTLEMENT` circuit with default const
-/// generic sizing parameters
-pub type SizedIntentAndBalancePublicSettlementCircuit =
-    IntentAndBalancePublicSettlementCircuit<MERKLE_HEIGHT>;
-
-impl<const MERKLE_HEIGHT: usize> IntentAndBalancePublicSettlementCircuit<MERKLE_HEIGHT> {
+pub struct IntentAndBalancePublicSettlementCircuit;
+impl IntentAndBalancePublicSettlementCircuit {
     /// Apply the circuit constraints to a given constraint system
     pub fn circuit(
         statement: &IntentAndBalancePublicSettlementStatementVar,
-        witness: &mut IntentAndBalancePublicSettlementWitnessVar<MERKLE_HEIGHT>,
+        witness: &mut IntentAndBalancePublicSettlementWitnessVar,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
         // 1. Verify the constraints imposed by both the intent and the balance
@@ -95,7 +90,7 @@ impl<const MERKLE_HEIGHT: usize> IntentAndBalancePublicSettlementCircuit<MERKLE_
     /// Verify that the intent's constraints are satisfied
     pub fn verify_intent_constraints(
         statement: &IntentAndBalancePublicSettlementStatementVar,
-        witness: &IntentAndBalancePublicSettlementWitnessVar<MERKLE_HEIGHT>,
+        witness: &IntentAndBalancePublicSettlementWitnessVar,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
         let intent = &witness.intent;
@@ -137,7 +132,7 @@ impl<const MERKLE_HEIGHT: usize> IntentAndBalancePublicSettlementCircuit<MERKLE_
     /// obligation.
     pub fn verify_balance_constraints(
         statement: &IntentAndBalancePublicSettlementStatementVar,
-        witness: &IntentAndBalancePublicSettlementWitnessVar<MERKLE_HEIGHT>,
+        witness: &IntentAndBalancePublicSettlementWitnessVar,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
         let in_balance = &witness.in_balance;
@@ -165,50 +160,45 @@ impl<const MERKLE_HEIGHT: usize> IntentAndBalancePublicSettlementCircuit<MERKLE_
 /// The witness type for `INTENT AND BALANCE PUBLIC SETTLEMENT`
 #[circuit_type(serde, singleprover_circuit)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct IntentAndBalancePublicSettlementWitness<const MERKLE_HEIGHT: usize> {
+pub struct IntentAndBalancePublicSettlementWitness {
     /// The intent which this circuit is settling a match for
     ///
     /// This value is proof-linked from the `INTENT AND BALANCE VALIDITY`
     /// circuit
-    #[link_groups = "intent_and_balance_public_settlement"]
+    #[link_groups = "intent_and_balance_settlement"]
     pub intent: Intent,
     /// The pre-update public share of the intent's amount
     ///
     /// This should match the `new_amount_public_share` from the intent validity
     /// proof that authorized this settlement
-    #[link_groups = "intent_and_balance_public_settlement"]
+    #[link_groups = "intent_and_balance_settlement"]
     pub pre_settlement_amount_public_share: Scalar,
     /// The balance which capitalizes the intent
     ///
     /// This value is proof-linked from the `INTENT AND BALANCE VALIDITY`
     /// circuit
-    #[link_groups = "intent_and_balance_public_settlement"]
+    #[link_groups = "intent_and_balance_settlement"]
     pub in_balance: Balance,
     /// The balance public shares which are updated in the settlement circuit
     ///
     /// This value is proof-linked from the `INTENT AND BALANCE VALIDITY`
     /// circuit
-    #[link_groups = "intent_and_balance_public_settlement"]
+    #[link_groups = "intent_and_balance_settlement"]
     pub pre_settlement_in_balance_shares: PostMatchBalanceShare,
     /// The balance which receives the output tokens of the obligation
     ///
     /// This value is proof-linked from the `INTENT AND BALANCE VALIDITY`
     /// circuit
-    #[link_groups = "intent_and_balance_public_settlement"]
+    #[link_groups = "output_balance_settlement"]
     pub out_balance: Balance,
     /// The balance public shares which are updated in the settlement circuit
     /// for the output balance
     ///
     /// This value is proof-linked from the `INTENT AND BALANCE VALIDITY`
     /// circuit
-    #[link_groups = "intent_and_balance_public_settlement"]
+    #[link_groups = "output_balance_settlement"]
     pub pre_settlement_out_balance_shares: PostMatchBalanceShare,
 }
-
-/// A `INTENT AND BALANCE PUBLIC SETTLEMENT` witness with default const generic
-/// sizing parameters
-pub type SizedIntentAndBalancePublicSettlementWitness =
-    IntentAndBalancePublicSettlementWitness<MERKLE_HEIGHT>;
 
 // -----------------------------
 // | Statement Type Definition |
@@ -238,27 +228,31 @@ pub struct IntentAndBalancePublicSettlementStatement {
 // | Prove Verify Flow |
 // ---------------------
 
-impl<const MERKLE_HEIGHT: usize> SingleProverCircuit
-    for IntentAndBalancePublicSettlementCircuit<MERKLE_HEIGHT>
-{
-    type Witness = IntentAndBalancePublicSettlementWitness<MERKLE_HEIGHT>;
+impl SingleProverCircuit for IntentAndBalancePublicSettlementCircuit {
+    type Witness = IntentAndBalancePublicSettlementWitness;
     type Statement = IntentAndBalancePublicSettlementStatement;
 
     fn name() -> String {
         format!("Intent And Balance Public Settlement ({MERKLE_HEIGHT})")
     }
 
-    /// INTENT AND BALANCE PUBLIC SETTLEMENT has one proof linking group:
-    /// - intent_and_balance_public_settlement: The linking group between INTENT
-    ///   AND BALANCE VALIDITY and INTENT AND BALANCE PUBLIC SETTLEMENT. This
-    ///   group is placed by this circuit.
+    /// INTENT AND BALANCE PUBLIC SETTLEMENT has two proof linking groups:
+    /// - intent_and_balance_settlement: The linking group between INTENT AND
+    ///   BALANCE VALIDITY and INTENT AND BALANCE PUBLIC SETTLEMENT. This group
+    ///   is placed by this circuit.
+    /// - out_balance_settlement: The linking group between INTENT AND BALANCE
+    ///   PUBLIC SETTLEMENT and the output balance. This group is placed by this
+    ///   circuit.
     fn proof_linking_groups() -> Result<Vec<(String, Option<GroupLayout>)>, PlonkError> {
-        // Place the linking group (the intent validity circuit will inherit it)
-        Ok(vec![(INTENT_AND_BALANCE_PUBLIC_SETTLEMENT_LINK.to_string(), None)])
+        // Place the linking groups (the validity circuits will inherit them)
+        Ok(vec![
+            (INTENT_AND_BALANCE_PUBLIC_SETTLEMENT_LINK.to_string(), None),
+            (OUTPUT_BALANCE_SETTLEMENT_LINK.to_string(), None),
+        ])
     }
 
     fn apply_constraints(
-        mut witness_var: IntentAndBalancePublicSettlementWitnessVar<MERKLE_HEIGHT>,
+        mut witness_var: IntentAndBalancePublicSettlementWitnessVar,
         statement_var: IntentAndBalancePublicSettlementStatementVar,
         cs: &mut PlonkCircuit,
     ) -> Result<(), PlonkError> {
@@ -299,12 +293,12 @@ pub mod test_helpers {
     /// Check that the constraints are satisfied on the given witness and
     /// statement
     pub fn check_constraints<const MERKLE_HEIGHT: usize>(
-        witness: &IntentAndBalancePublicSettlementWitness<MERKLE_HEIGHT>,
+        witness: &IntentAndBalancePublicSettlementWitness,
         statement: &IntentAndBalancePublicSettlementStatement,
     ) -> bool {
-        crate::test_helpers::check_constraints_satisfied::<
-            IntentAndBalancePublicSettlementCircuit<MERKLE_HEIGHT>,
-        >(witness, statement)
+        crate::test_helpers::check_constraints_satisfied::<IntentAndBalancePublicSettlementCircuit>(
+            witness, statement,
+        )
     }
 
     /// Create a balance that matches the given intent
@@ -324,10 +318,8 @@ pub mod test_helpers {
     }
 
     /// Construct a witness and statement with valid data
-    pub fn create_witness_statement<const MERKLE_HEIGHT: usize>() -> (
-        IntentAndBalancePublicSettlementWitness<MERKLE_HEIGHT>,
-        IntentAndBalancePublicSettlementStatement,
-    ) {
+    pub fn create_witness_statement<const MERKLE_HEIGHT: usize>()
+    -> (IntentAndBalancePublicSettlementWitness, IntentAndBalancePublicSettlementStatement) {
         let intent = random_intent();
         create_witness_statement_with_intent::<MERKLE_HEIGHT>(&intent)
     }
@@ -335,10 +327,7 @@ pub mod test_helpers {
     /// Create a witness and statement with the given intent
     pub fn create_witness_statement_with_intent<const MERKLE_HEIGHT: usize>(
         intent: &Intent,
-    ) -> (
-        IntentAndBalancePublicSettlementWitness<MERKLE_HEIGHT>,
-        IntentAndBalancePublicSettlementStatement,
-    ) {
+    ) -> (IntentAndBalancePublicSettlementWitness, IntentAndBalancePublicSettlementStatement) {
         let balance = create_matching_balance_for_intent(intent);
         create_witness_statement_with_intent_and_balance::<MERKLE_HEIGHT>(intent, &balance)
     }
@@ -347,10 +336,7 @@ pub mod test_helpers {
     pub fn create_witness_statement_with_intent_and_balance<const MERKLE_HEIGHT: usize>(
         intent: &Intent,
         balance: &Balance,
-    ) -> (
-        IntentAndBalancePublicSettlementWitness<MERKLE_HEIGHT>,
-        IntentAndBalancePublicSettlementStatement,
-    ) {
+    ) -> (IntentAndBalancePublicSettlementWitness, IntentAndBalancePublicSettlementStatement) {
         let settlement_obligation =
             create_settlement_obligation_with_balance(intent, balance.amount);
 
@@ -369,10 +355,7 @@ pub mod test_helpers {
         intent: &Intent,
         balance: &Balance,
         settlement_obligation: SettlementObligation,
-    ) -> (
-        IntentAndBalancePublicSettlementWitness<MERKLE_HEIGHT>,
-        IntentAndBalancePublicSettlementStatement,
-    ) {
+    ) -> (IntentAndBalancePublicSettlementWitness, IntentAndBalancePublicSettlementStatement) {
         // Create the intent amount public shares
         let amount_in = Scalar::from(settlement_obligation.amount_in);
         let amount_out = Scalar::from(settlement_obligation.amount_out);
@@ -467,8 +450,7 @@ mod test {
     /// Useful when benchmarking the circuit
     #[test]
     fn test_n_constraints() {
-        let layout =
-            IntentAndBalancePublicSettlementCircuit::<MERKLE_HEIGHT>::get_circuit_layout().unwrap();
+        let layout = IntentAndBalancePublicSettlementCircuit::get_circuit_layout().unwrap();
 
         let n_gates = layout.n_gates;
         let circuit_size = layout.circuit_size();

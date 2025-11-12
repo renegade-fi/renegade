@@ -111,13 +111,13 @@ impl<const MERKLE_HEIGHT: usize> IntentOnlyPublicSettlementCircuit<MERKLE_HEIGHT
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct IntentOnlyPublicSettlementWitness<const MERKLE_HEIGHT: usize> {
     /// The intent which this circuit is settling a match for
-    #[link_groups = "intent_only_public_settlement"]
+    #[link_groups = "intent_only_settlement"]
     pub intent: Intent,
     /// The pre-update public share of the intent's amount
     ///
     /// This should match the `new_amount_public_share` from the intent validity
     /// proof that authorized this settlement
-    #[link_groups = "intent_only_public_settlement"]
+    #[link_groups = "intent_only_settlement"]
     pub pre_settlement_amount_public_share: Scalar,
 }
 
