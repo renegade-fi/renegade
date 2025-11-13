@@ -69,11 +69,22 @@ impl ShareGadget {
     }
 
     /// Build a post-match balance share from a balance
-    pub fn build_post_match_balance_share(pre_match_balance: &BalanceVar) -> PostMatchBalanceVar {
+    pub fn build_post_match_balance(pre_match_balance: &BalanceVar) -> PostMatchBalanceVar {
         PostMatchBalanceVar {
             amount: pre_match_balance.amount,
             relayer_fee_balance: pre_match_balance.relayer_fee_balance,
             protocol_fee_balance: pre_match_balance.protocol_fee_balance,
+        }
+    }
+
+    /// Build a post-match balance share from a balance share
+    pub fn build_post_match_balance_share(
+        balance_share: &BalanceShareVar,
+    ) -> PostMatchBalanceShareVar {
+        PostMatchBalanceShareVar {
+            amount: balance_share.amount,
+            relayer_fee_balance: balance_share.relayer_fee_balance,
+            protocol_fee_balance: balance_share.protocol_fee_balance,
         }
     }
 

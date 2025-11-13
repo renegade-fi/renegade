@@ -5,6 +5,7 @@ use std::cmp;
 use alloy_primitives::Address;
 use circuit_types::{
     AMOUNT_BITS, Amount,
+    balance::Balance,
     csprng::PoseidonCSPRNG,
     elgamal::{DecryptionKey, EncryptionKey},
     fixed_point::FixedPoint,
@@ -102,6 +103,32 @@ pub fn random_bounded_intent(max_amount_in: Amount) -> Intent {
         owner: random_address(),
         min_price: random_price(),
         amount_in,
+    }
+}
+
+/// Create a random balance
+pub fn random_balance() -> Balance {
+    Balance {
+        mint: random_address(),
+        owner: random_address(),
+        relayer_fee_recipient: random_address(),
+        one_time_authority: random_address(),
+        relayer_fee_balance: random_amount(),
+        protocol_fee_balance: random_amount(),
+        amount: random_amount(),
+    }
+}
+
+/// Create a random zero'd balance
+pub fn random_zeroed_balance() -> Balance {
+    Balance {
+        mint: random_address(),
+        owner: random_address(),
+        relayer_fee_recipient: random_address(),
+        one_time_authority: random_address(),
+        relayer_fee_balance: 0,
+        protocol_fee_balance: 0,
+        amount: 0,
     }
 }
 

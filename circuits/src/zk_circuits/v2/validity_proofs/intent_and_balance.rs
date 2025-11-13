@@ -204,7 +204,7 @@ impl<const MERKLE_HEIGHT: usize> IntentAndBalanceValidityCircuit<MERKLE_HEIGHT> 
         let mut new_balance_private_shares = private_shares.clone();
 
         // Re-encrypt the `amount` field
-        let post_match_balance = ShareGadget::build_post_match_balance_share(&new_balance.inner);
+        let post_match_balance = ShareGadget::build_post_match_balance(&new_balance.inner);
         let (new_private_share, new_public_share) =
             StreamCipherGadget::encrypt::<PostMatchBalanceShareVar>(
                 &post_match_balance,
