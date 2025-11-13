@@ -8,26 +8,26 @@
 #![feature(future_join)]
 
 // Top-level modules
-pub mod elgamal;
 #[cfg(feature = "proof-system-types")]
 pub mod errors;
-pub mod fixed_point;
 #[cfg(feature = "proof-system-types")]
 pub mod macro_tests;
-pub mod merkle;
-#[cfg(feature = "proof-system-types")]
-pub mod srs;
 #[cfg(feature = "proof-system-types")]
 pub mod traits;
 
-pub mod v2;
-pub use v2::*;
+// Re-export darkpool state types at the top level
+pub mod darkpool_state_types;
+pub use darkpool_state_types::*;
+
+// Re-export primitives at the top level
+pub mod primitives;
+pub use primitives::*;
 
 use ark_ff::BigInt;
 use bigdecimal::Num;
 use constants::{ADDRESS_BYTE_LENGTH, Scalar, ScalarField};
-use fixed_point::{DEFAULT_FP_PRECISION, FixedPoint};
 use num_bigint::BigUint;
+use primitives::fixed_point::{DEFAULT_FP_PRECISION, FixedPoint};
 use renegade_crypto::fields::{biguint_to_scalar, scalar_to_biguint};
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error as SerdeErr};
 

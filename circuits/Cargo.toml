@@ -15,185 +15,103 @@ path = "integration/main.rs"
 harness = false
 required-features = ["test_helpers"]
 
-[[bench]]
-name = "valid_wallet_create"
-path = "benches/v1/valid_wallet_create.rs"
-harness = false
-required-features = ["test_helpers"]
-
 #####################
-### V1 Benchmarks ###
-#####################
-
-[[bench]]
-name = "valid_wallet_update"
-path = "benches/v1/valid_wallet_update.rs"
-harness = false
-required-features = ["test_helpers"]
-
-[[bench]]
-name = "valid_reblind"
-path = "benches/v1/valid_reblind.rs"
-harness = false
-required-features = ["test_helpers"]
-
-[[bench]]
-name = "valid_commitments"
-path = "benches/v1/valid_commitments.rs"
-harness = false
-required-features = ["test_helpers"]
-
-[[bench]]
-name = "match"
-path = "benches/v1/match.rs"
-harness = false
-required-features = ["test_helpers"]
-
-[[bench]]
-name = "full_match"
-path = "benches/v1/full_match.rs"
-harness = false
-required-features = ["test_helpers"]
-
-[[bench]]
-name = "internal_match_settlement"
-path = "benches/v1/internal_match_settlement.rs"
-harness = false
-required-features = ["test_helpers"]
-
-[[bench]]
-name = "valid_match_settle_with_commitments"
-path = "benches/v1/valid_match_settle_with_commitments.rs"
-harness = false
-required-features = ["test_helpers"]
-
-[[bench]]
-name = "valid_match_settle_atomic"
-path = "benches/v1/valid_match_settle_atomic.rs"
-harness = false
-required-features = ["test_helpers"]
-
-[[bench]]
-name = "valid_match_settle_atomic_with_commitments"
-path = "benches/v1/valid_match_settle_atomic_with_commitments.rs"
-harness = false
-required-features = ["test_helpers"]
-
-[[bench]]
-name = "valid_malleable_match_settle_atomic"
-path = "benches/v1/valid_malleable_match_settle_atomic.rs"
-harness = false
-required-features = ["test_helpers"]
-
-[[bench]]
-name = "valid_relayer_fee_settlement"
-path = "benches/v1/valid_relayer_fee_settlement.rs"
-harness = false
-required-features = ["test_helpers"]
-
-[[bench]]
-name = "valid_offline_fee_settlement"
-path = "benches/v1/valid_offline_fee_settlement.rs"
-harness = false
-required-features = ["test_helpers"]
-
-[[bench]]
-name = "valid_fee_redemption"
-path = "benches/v1/valid_fee_redemption.rs"
-harness = false
-required-features = ["test_helpers"]
-
-#####################
-### V2 Benchmarks ###
+### Benchmarks ###
 #####################
 
 [[bench]]
 name = "valid_deposit"
-path = "benches/v2/valid_deposit.rs"
+path = "benches/valid_deposit.rs"
 harness = false
 required-features = ["test_helpers"]
 
 [[bench]]
 name = "valid_balance_create"
-path = "benches/v2/valid_balance_create.rs"
+path = "benches/valid_balance_create.rs"
 harness = false
 required-features = ["test_helpers"]
 
 [[bench]]
 name = "valid_withdrawal"
-path = "benches/v2/valid_withdrawal.rs"
+path = "benches/valid_withdrawal.rs"
 harness = false
 required-features = ["test_helpers"]
 
 [[bench]]
 name = "valid_private_protocol_fee_payment"
-path = "benches/v2/valid_private_protocol_fee_payment.rs"
+path = "benches/valid_private_protocol_fee_payment.rs"
 harness = false
 required-features = ["test_helpers"]
 
 [[bench]]
 name = "valid_private_relayer_fee_payment"
-path = "benches/v2/valid_private_relayer_fee_payment.rs"
+path = "benches/valid_private_relayer_fee_payment.rs"
 harness = false
 required-features = ["test_helpers"]
 
 [[bench]]
 name = "valid_public_protocol_fee_payment"
-path = "benches/v2/valid_public_protocol_fee_payment.rs"
+path = "benches/valid_public_protocol_fee_payment.rs"
 harness = false
 required-features = ["test_helpers"]
 
 [[bench]]
 name = "valid_public_relayer_fee_payment"
-path = "benches/v2/valid_public_relayer_fee_payment.rs"
+path = "benches/valid_public_relayer_fee_payment.rs"
 harness = false
 required-features = ["test_helpers"]
 
 [[bench]]
 name = "valid_note_redemption"
-path = "benches/v2/valid_note_redemption.rs"
+path = "benches/valid_note_redemption.rs"
 harness = false
 required-features = ["test_helpers"]
 
 [[bench]]
 name = "intent_only_first_fill"
-path = "benches/v2/intent_only_first_fill.rs"
+path = "benches/intent_only_first_fill.rs"
 harness = false
 required-features = ["test_helpers"]
 
 [[bench]]
 name = "intent_only"
-path = "benches/v2/intent_only.rs"
+path = "benches/intent_only.rs"
 harness = false
 required-features = ["test_helpers"]
 
 [[bench]]
 name = "intent_only_public_settlement"
-path = "benches/v2/intent_only_public_settlement.rs"
+path = "benches/intent_only_public_settlement.rs"
 harness = false
 required-features = ["test_helpers"]
 
 [[bench]]
 name = "intent_and_balance"
-path = "benches/v2/intent_and_balance.rs"
+path = "benches/intent_and_balance.rs"
+harness = false
+required-features = ["test_helpers"]
+
+[[bench]]
+name = "intent_and_balance_first_fill"
+path = "benches/intent_and_balance_first_fill.rs"
 harness = false
 required-features = ["test_helpers"]
 
 [[bench]]
 name = "intent_and_balance_public_settlement"
-path = "benches/v2/intent_and_balance_public_settlement.rs"
+path = "benches/intent_and_balance_public_settlement.rs"
 harness = false
 required-features = ["test_helpers"]
 
 [[bench]]
 name = "output_balance"
-path = "benches/v2/output_balance.rs"
+path = "benches/output_balance.rs"
 harness = false
 required-features = ["test_helpers"]
 
 [[bench]]
 name = "new_output_balance"
-path = "benches/v2/new_output_balance.rs"
+path = "benches/new_output_balance.rs"
 harness = false
 required-features = ["test_helpers"]
 
