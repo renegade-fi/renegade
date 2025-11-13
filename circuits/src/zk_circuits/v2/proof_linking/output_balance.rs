@@ -97,6 +97,7 @@ mod test {
     use super::*;
     use crate::{
         singleprover_prove_with_hint,
+        test_helpers::{create_settlement_obligation_with_balance, random_intent},
         zk_circuits::{
             settlement::intent_and_balance_public_settlement::{
                 IntentAndBalancePublicSettlementStatement, IntentAndBalancePublicSettlementWitness,
@@ -105,9 +106,16 @@ mod test {
                     create_witness_statement_with_intent_balance_and_obligation as create_settlement_witness_statement,
                 },
             },
-            validity_proofs::output_balance::{
-                OutputBalanceValidityStatement, OutputBalanceValidityWitness,
-                test_helpers::create_witness_statement as create_validity_witness_statement,
+            validity_proofs::{
+                new_output_balance::{
+                    NewOutputBalanceValidityCircuit, NewOutputBalanceValidityStatement,
+                    NewOutputBalanceValidityWitness,
+                    test_helpers::create_witness_statement as create_new_output_balance_witness_statement,
+                },
+                output_balance::{
+                    OutputBalanceValidityStatement, OutputBalanceValidityWitness,
+                    test_helpers::create_witness_statement as create_validity_witness_statement,
+                },
             },
         },
     };
@@ -202,6 +210,81 @@ mod test {
         (validity_witness, validity_statement, settlement_witness, settlement_statement)
     }
 
+    /// Prove NEW OUTPUT BALANCE VALIDITY and INTENT AND BALANCE PUBLIC
+    /// SETTLEMENT, then link the proofs and verify the link
+    fn test_new_output_balance_validity_settlement_link(
+        validity_witness: NewOutputBalanceValidityWitness,
+        validity_statement: NewOutputBalanceValidityStatement,
+        settlement_witness: IntentAndBalancePublicSettlementWitness,
+        settlement_statement: IntentAndBalancePublicSettlementStatement,
+    ) -> Result<(), ProverError> {
+        // Create a proof of NEW OUTPUT BALANCE VALIDITY and one of INTENT AND BALANCE
+        // PUBLIC SETTLEMENT
+        let (validity_proof, validity_hint) = singleprover_prove_with_hint::<
+            NewOutputBalanceValidityCircuit,
+        >(validity_witness, validity_statement)?;
+        let (settlement_proof, settlement_hint) = singleprover_prove_with_hint::<
+            IntentAndBalancePublicSettlementCircuit,
+        >(
+            settlement_witness, settlement_statement
+        )?;
+
+        // Link the proofs and verify the link using the existing sized methods
+        let link_proof = link_sized_output_balance_settlement(&validity_hint, &settlement_hint)?;
+        validate_sized_output_balance_settlement_link(
+            &link_proof,
+            &validity_proof,
+            &settlement_proof,
+        )
+    }
+
+    /// Build a new output balance validity and settlement witness and statement
+    /// with valid data
+    ///
+    /// This involves modifying the witness and statements for each circuit to
+    /// align with one another so that they may be linked
+    fn build_new_output_balance_validity_settlement_data() -> (
+        NewOutputBalanceValidityWitness,
+        NewOutputBalanceValidityStatement,
+        IntentAndBalancePublicSettlementWitness,
+        IntentAndBalancePublicSettlementStatement,
+    ) {
+        // Create the validity witness and statement
+        let (validity_witness, validity_statement) = create_new_output_balance_witness_statement();
+
+        // Create an intent and input balance for the settlement
+        let output_balance = validity_witness.balance.clone();
+        let mut intent = random_intent();
+        intent.out_token = output_balance.mint;
+        let input_balance = create_matching_balance_for_intent(&intent);
+        let settlement_obligation =
+            create_settlement_obligation_with_balance(&intent, input_balance.amount);
+
+        // Create the settlement witness and statement
+        let (mut settlement_witness, mut settlement_statement) =
+            create_settlement_witness_statement::<TEST_MERKLE_HEIGHT>(
+                &intent,
+                &input_balance,
+                settlement_obligation,
+            );
+
+        // Align the settlement witness with the validity witness
+        settlement_witness.out_balance = validity_witness.balance.clone();
+        settlement_witness.pre_settlement_out_balance_shares =
+            validity_witness.post_match_balance_shares.clone();
+
+        // Update the statement to reflect the settlement
+        let amt_out = Scalar::from(settlement_statement.settlement_obligation.amount_out);
+        let original_shares = settlement_witness.pre_settlement_out_balance_shares.clone();
+        settlement_statement.new_out_balance_public_shares = PostMatchBalanceShare {
+            amount: original_shares.amount + amt_out,
+            relayer_fee_balance: original_shares.relayer_fee_balance,
+            protocol_fee_balance: original_shares.protocol_fee_balance,
+        };
+
+        (validity_witness, validity_statement, settlement_witness, settlement_statement)
+    }
+
     // --------------
     // | Test Cases |
     // --------------
@@ -215,6 +298,23 @@ mod test {
             build_output_balance_validity_settlement_data();
 
         test_output_balance_validity_settlement_link(
+            validity_witness,
+            validity_statement,
+            settlement_witness,
+            settlement_statement,
+        )
+        .unwrap();
+    }
+
+    /// Tests a valid link between a proof of NEW OUTPUT BALANCE VALIDITY and a
+    /// proof of INTENT AND BALANCE PUBLIC SETTLEMENT
+    #[cfg_attr(feature = "ci", ignore)]
+    #[test]
+    fn test_new_output_balance_valid_link() {
+        let (validity_witness, validity_statement, settlement_witness, settlement_statement) =
+            build_new_output_balance_validity_settlement_data();
+
+        test_new_output_balance_validity_settlement_link(
             validity_witness,
             validity_statement,
             settlement_witness,

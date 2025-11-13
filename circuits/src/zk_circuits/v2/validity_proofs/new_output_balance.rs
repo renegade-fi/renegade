@@ -15,7 +15,12 @@ use circuit_types::{
 };
 use constants::{Scalar, ScalarField};
 use mpc_plonk::errors::PlonkError;
-use mpc_relation::{Variable, errors::CircuitError, proof_linking::GroupLayout, traits::Circuit};
+use mpc_relation::{
+    Variable,
+    errors::CircuitError,
+    proof_linking::{GroupLayout, LinkableCircuit},
+    traits::Circuit,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -146,10 +151,12 @@ impl NewOutputBalanceValidityCircuit {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NewOutputBalanceValidityWitness {
     /// The balance
+    #[link_groups = "output_balance_settlement"]
     pub balance: Balance,
     /// The balance public shares which are updated in the settlement circuit
     ///
     /// These values are proof-linked into the settlement circuit
+    #[link_groups = "output_balance_settlement"]
     pub post_match_balance_shares: PostMatchBalanceShare,
     /// The initial share stream of the balance
     pub initial_share_stream: PoseidonCSPRNG,
