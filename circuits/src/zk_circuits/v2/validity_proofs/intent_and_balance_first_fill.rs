@@ -33,7 +33,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     SingleProverCircuit,
-    zk_circuits::settlement::INTENT_AND_BALANCE_PUBLIC_SETTLEMENT_LINK,
+    zk_circuits::settlement::{
+        INTENT_AND_BALANCE_PUBLIC_SETTLEMENT_LINK,
+        intent_and_balance_public_settlement::IntentAndBalancePublicSettlementCircuit,
+    },
     zk_gadgets::{
         bitlength::{AmountGadget, PriceGadget},
         comparators::EqGadget,
@@ -422,12 +425,11 @@ impl<const MERKLE_HEIGHT: usize> SingleProverCircuit
     ///   SETTLEMENT. This group is placed by the settlement circuit, so we
     ///   inherit its layout here.
     fn proof_linking_groups() -> Result<Vec<(String, Option<GroupLayout>)>, PlonkError> {
-        // TODO: Implement this correctly
-        let group_name = INTENT_AND_BALANCE_PUBLIC_SETTLEMENT_LINK.to_string();
+        let circuit_layout = IntentAndBalancePublicSettlementCircuit::get_circuit_layout()?;
+        let group_layout =
+            circuit_layout.get_group_layout(INTENT_AND_BALANCE_PUBLIC_SETTLEMENT_LINK);
 
-        // For now, we place the group ourselves (the settlement circuit will inherit
-        // it)
-        Ok(vec![(group_name, None)])
+        Ok(vec![(INTENT_AND_BALANCE_PUBLIC_SETTLEMENT_LINK.to_string(), Some(group_layout))])
     }
 
     fn apply_constraints(
@@ -459,12 +461,12 @@ pub mod test_helpers {
         zk_circuits::{
             v2::validity_proofs::intent_and_balance_first_fill::IntentAndBalanceFirstFillValidityStatement,
             validity_proofs::intent_and_balance_first_fill::{
-                BALANCE_PARTIAL_COMMITMENT_SIZE, SizedIntentAndBalanceFirstFillValidityCircuit,
+                BALANCE_PARTIAL_COMMITMENT_SIZE, IntentAndBalanceFirstFillValidityWitness,
+                SizedIntentAndBalanceFirstFillValidityCircuit,
                 SizedIntentAndBalanceFirstFillValidityWitness,
             },
         },
     };
-    use constants::MERKLE_HEIGHT;
 
     // -----------
     // | Helpers |
@@ -482,28 +484,33 @@ pub mod test_helpers {
     }
 
     /// Construct a witness and statement with valid data
-    pub fn create_witness_statement()
-    -> (SizedIntentAndBalanceFirstFillValidityWitness, IntentAndBalanceFirstFillValidityStatement)
-    {
+    pub fn create_witness_statement<const MERKLE_HEIGHT: usize>() -> (
+        IntentAndBalanceFirstFillValidityWitness<MERKLE_HEIGHT>,
+        IntentAndBalanceFirstFillValidityStatement,
+    ) {
         let intent = random_intent();
         create_witness_statement_with_intent(&intent)
     }
 
     /// Create a witness and statement with the given intent
-    pub fn create_witness_statement_with_intent(
+    pub fn create_witness_statement_with_intent<const MERKLE_HEIGHT: usize>(
         intent: &Intent,
-    ) -> (SizedIntentAndBalanceFirstFillValidityWitness, IntentAndBalanceFirstFillValidityStatement)
-    {
+    ) -> (
+        IntentAndBalanceFirstFillValidityWitness<MERKLE_HEIGHT>,
+        IntentAndBalanceFirstFillValidityStatement,
+    ) {
         let balance = create_matching_balance_for_intent(intent);
         create_witness_statement_with_intent_and_balance(intent, balance)
     }
 
     /// Create a witness and statement with the given intent and balance
-    pub fn create_witness_statement_with_intent_and_balance(
+    pub fn create_witness_statement_with_intent_and_balance<const MERKLE_HEIGHT: usize>(
         intent: &Intent,
         balance: DarkpoolStateBalance,
-    ) -> (SizedIntentAndBalanceFirstFillValidityWitness, IntentAndBalanceFirstFillValidityStatement)
-    {
+    ) -> (
+        IntentAndBalanceFirstFillValidityWitness<MERKLE_HEIGHT>,
+        IntentAndBalanceFirstFillValidityStatement,
+    ) {
         // Create the intent state wrapper
         let initial_intent = create_state_wrapper(intent.clone());
 
@@ -552,7 +559,7 @@ pub mod test_helpers {
         ]);
 
         // Build the witness
-        let witness = SizedIntentAndBalanceFirstFillValidityWitness {
+        let witness = IntentAndBalanceFirstFillValidityWitness {
             intent: initial_intent.inner,
             initial_intent_share_stream: initial_intent.share_stream,
             initial_intent_recovery_stream: initial_intent.recovery_stream,
