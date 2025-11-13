@@ -154,6 +154,16 @@ impl From<Balance> for PostMatchBalance {
     }
 }
 
+impl From<BalanceShare> for PostMatchBalanceShare {
+    fn from(balance_share: BalanceShare) -> Self {
+        Self {
+            amount: balance_share.amount,
+            relayer_fee_balance: balance_share.relayer_fee_balance,
+            protocol_fee_balance: balance_share.protocol_fee_balance,
+        }
+    }
+}
+
 impl From<(PreMatchBalance, PostMatchBalance)> for Balance {
     fn from((pre_match_balance, post_match_balance): (PreMatchBalance, PostMatchBalance)) -> Self {
         Self {

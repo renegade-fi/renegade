@@ -107,7 +107,7 @@ impl<const MERKLE_HEIGHT: usize> OutputBalanceValidityCircuit<MERKLE_HEIGHT> {
         let mut new_balance_private_shares = private_shares.clone();
 
         // Re-encrypt the amount and fees fields as they'll change during the match
-        let post_match_balance = ShareGadget::build_post_match_balance_share(&new_balance.inner);
+        let post_match_balance = ShareGadget::build_post_match_balance(&new_balance.inner);
         let (new_private_share, new_public_share) =
             StreamCipherGadget::encrypt(&post_match_balance, &mut new_balance.share_stream, cs)?;
         ShareGadget::update_balance_share_post_match(

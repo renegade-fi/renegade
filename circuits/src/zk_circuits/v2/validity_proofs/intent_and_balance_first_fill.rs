@@ -278,7 +278,7 @@ impl<const MERKLE_HEIGHT: usize> IntentAndBalanceFirstFillValidityCircuit<MERKLE
         // Re-encrypt the post-match balance shares so that they may be updated in the
         // settlement circuit. Re-encryption here prevents the shares from being tracked
         // across transactions.
-        let post_match_shares = ShareGadget::build_post_match_balance_share(&new_balance.inner);
+        let post_match_shares = ShareGadget::build_post_match_balance(&new_balance.inner);
         let (new_private_share, new_public_share) =
             StreamCipherGadget::encrypt::<PostMatchBalanceShareVar>(
                 &post_match_shares,
