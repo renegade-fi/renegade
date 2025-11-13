@@ -1,4 +1,5 @@
-//! Helpers for linking proofs between circuits
+//! Helpers for linking proofs between intent only validity and settlement
+//! circuits
 
 use circuit_types::{
     PlonkLinkProof, PlonkProof, ProofLinkingHint, errors::ProverError, traits::SingleProverCircuit,
