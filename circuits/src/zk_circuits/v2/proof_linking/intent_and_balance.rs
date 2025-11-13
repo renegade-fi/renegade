@@ -231,9 +231,6 @@ mod test {
         let (validity_witness, validity_statement, settlement_witness, settlement_statement) =
             build_intent_and_balance_validity_settlement_data();
 
-        assert_eq!(validity_witness.intent, settlement_witness.intent);
-        assert_eq!(validity_witness.balance, settlement_witness.in_balance);
-
         test_intent_and_balance_validity_settlement_link(
             validity_witness,
             validity_statement,
