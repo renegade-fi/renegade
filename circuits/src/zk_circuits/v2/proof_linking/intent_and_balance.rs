@@ -103,9 +103,16 @@ mod test {
                 IntentAndBalancePublicSettlementStatement, IntentAndBalancePublicSettlementWitness,
                 test_helpers::create_witness_statement_with_intent_balance_and_obligation as create_settlement_witness_statement,
             },
-            validity_proofs::intent_and_balance::{
-                IntentAndBalanceValidityStatement, IntentAndBalanceValidityWitness,
-                test_helpers::create_witness_statement_with_intent as create_validity_witness_statement,
+            validity_proofs::{
+                intent_and_balance::{
+                    IntentAndBalanceValidityStatement, IntentAndBalanceValidityWitness,
+                    test_helpers::create_witness_statement_with_intent as create_validity_witness_statement,
+                },
+                intent_and_balance_first_fill::{
+                    IntentAndBalanceFirstFillValidityStatement,
+                    IntentAndBalanceFirstFillValidityWitness,
+                    test_helpers::create_witness_statement as create_witness_statement_first_fill,
+                },
             },
         },
     };
@@ -117,6 +124,9 @@ mod test {
     const TEST_MERKLE_HEIGHT: usize = 3;
     /// Intent and balance validity with testing sizing
     type SizedIntentAndBalanceValidity = IntentAndBalanceValidityCircuit<TEST_MERKLE_HEIGHT>;
+    /// Intent and balance first fill validity with testing sizing
+    type SizedIntentAndBalanceFirstFillValidity =
+        crate::zk_circuits::v2::validity_proofs::intent_and_balance_first_fill::IntentAndBalanceFirstFillValidityCircuit<TEST_MERKLE_HEIGHT>;
 
     // -----------
     // | Helpers |
@@ -219,6 +229,86 @@ mod test {
         (validity_witness, validity_statement, settlement_witness, settlement_statement)
     }
 
+    /// Prove INTENT AND BALANCE FIRST FILL VALIDITY and INTENT AND BALANCE
+    /// PUBLIC SETTLEMENT, then link the proofs and verify the link
+    fn test_intent_and_balance_first_fill_validity_settlement_link(
+        validity_witness: IntentAndBalanceFirstFillValidityWitness<TEST_MERKLE_HEIGHT>,
+        validity_statement: IntentAndBalanceFirstFillValidityStatement,
+        settlement_witness: IntentAndBalancePublicSettlementWitness,
+        settlement_statement: IntentAndBalancePublicSettlementStatement,
+    ) -> Result<(), ProverError> {
+        // Create a proof of INTENT AND BALANCE FIRST FILL VALIDITY and one of INTENT
+        // AND BALANCE PUBLIC SETTLEMENT
+        let (validity_proof, validity_hint) = singleprover_prove_with_hint::<
+            SizedIntentAndBalanceFirstFillValidity,
+        >(validity_witness, validity_statement)?;
+        let (settlement_proof, settlement_hint) = singleprover_prove_with_hint::<
+            IntentAndBalancePublicSettlementCircuit,
+        >(
+            settlement_witness, settlement_statement
+        )?;
+
+        let link_proof = link_intent_and_balance_settlement::<TEST_MERKLE_HEIGHT>(
+            &validity_hint,
+            &settlement_hint,
+        )?;
+        validate_intent_and_balance_settlement_link::<TEST_MERKLE_HEIGHT>(
+            &link_proof,
+            &validity_proof,
+            &settlement_proof,
+        )
+    }
+
+    /// Build a first fill validity and settlement witness and statement with
+    /// valid data
+    ///
+    /// This involves modifying the witness and statements for each circuit to
+    /// align with one another so that they may be linked
+    fn build_intent_and_balance_first_fill_validity_settlement_data() -> (
+        IntentAndBalanceFirstFillValidityWitness<TEST_MERKLE_HEIGHT>,
+        IntentAndBalanceFirstFillValidityStatement,
+        IntentAndBalancePublicSettlementWitness,
+        IntentAndBalancePublicSettlementStatement,
+    ) {
+        let (validity_witness, validity_statement) = create_witness_statement_first_fill();
+
+        // Create a settlement obligation that matches the validity witness
+        let settlement_obligation = create_settlement_obligation_with_balance(
+            &validity_witness.intent,
+            validity_witness.balance.amount,
+        );
+
+        // Create the settlement witness and statement using the validity witness data
+        let (mut settlement_witness, mut settlement_statement) =
+            create_settlement_witness_statement::<TEST_MERKLE_HEIGHT>(
+                &validity_witness.intent,
+                &validity_witness.balance,
+                settlement_obligation,
+            );
+
+        // Align the settlement witness with the validity witness
+        settlement_witness.pre_settlement_amount_public_share =
+            validity_witness.new_amount_public_share;
+        settlement_witness.intent = validity_witness.intent.clone();
+        settlement_witness.in_balance = validity_witness.balance.clone();
+        settlement_witness.pre_settlement_in_balance_shares =
+            validity_witness.post_match_balance_shares.clone();
+
+        // Update the statement to reflect the settlement
+        let amt_in = Scalar::from(settlement_statement.settlement_obligation.amount_in);
+        settlement_statement.new_amount_public_share =
+            settlement_witness.pre_settlement_amount_public_share - amt_in;
+
+        let original_shares = settlement_witness.pre_settlement_in_balance_shares.clone();
+        settlement_statement.new_in_balance_public_shares = PostMatchBalanceShare {
+            amount: original_shares.amount - amt_in,
+            relayer_fee_balance: original_shares.relayer_fee_balance,
+            protocol_fee_balance: original_shares.protocol_fee_balance,
+        };
+
+        (validity_witness, validity_statement, settlement_witness, settlement_statement)
+    }
+
     // --------------
     // | Test Cases |
     // --------------
@@ -232,6 +322,23 @@ mod test {
             build_intent_and_balance_validity_settlement_data();
 
         test_intent_and_balance_validity_settlement_link(
+            validity_witness,
+            validity_statement,
+            settlement_witness,
+            settlement_statement,
+        )
+        .unwrap();
+    }
+
+    /// Tests a valid link between a proof of INTENT AND BALANCE FIRST FILL
+    /// VALIDITY and a proof of INTENT AND BALANCE PUBLIC SETTLEMENT
+    #[cfg_attr(feature = "ci", ignore)]
+    #[test]
+    fn test_intent_and_balance_first_fill_valid_link() {
+        let (validity_witness, validity_statement, settlement_witness, settlement_statement) =
+            build_intent_and_balance_first_fill_validity_settlement_data();
+
+        test_intent_and_balance_first_fill_validity_settlement_link(
             validity_witness,
             validity_statement,
             settlement_witness,
