@@ -588,6 +588,26 @@ mod test {
         assert!(!test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
     }
 
+    /// Test the case in which the output balance's owner does not match the
+    /// intent's owner
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_obligation__output_balance_owner_mismatch() {
+        let (mut witness, statement) = test_helpers::create_witness_statement::<MERKLE_HEIGHT>();
+        witness.out_balance.owner = random_address();
+        assert!(!test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
+    }
+
+    /// Test the case in which the output balance's mint does not match the
+    /// obligation's output token
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_obligation__output_balance_mint_mismatch() {
+        let (mut witness, statement) = test_helpers::create_witness_statement::<MERKLE_HEIGHT>();
+        witness.out_balance.mint = random_address();
+        assert!(!test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
+    }
+
     /// Test the case in which the output balance overflows
     #[test]
     #[allow(non_snake_case)]
