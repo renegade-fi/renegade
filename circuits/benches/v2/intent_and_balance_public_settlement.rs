@@ -5,7 +5,7 @@
 
 use circuit_types::PlonkCircuit;
 use circuit_types::traits::{CircuitBaseType, SingleProverCircuit};
-use circuits::zk_circuits::v2::settlement::intent_and_balance_public_settlement::SizedIntentAndBalancePublicSettlementCircuit;
+use circuits::zk_circuits::v2::settlement::intent_and_balance_public_settlement::IntentAndBalancePublicSettlementCircuit;
 use circuits::zk_circuits::v2::settlement::intent_and_balance_public_settlement::test_helpers::create_witness_statement;
 use circuits::{singleprover_prove, verify_singleprover_proof};
 use constants::MERKLE_HEIGHT;
@@ -21,7 +21,7 @@ pub fn bench_apply_constraints(c: &mut Criterion) {
     let mut cs = PlonkCircuit::new_turbo_plonk();
 
     // Create link groups before allocating variables
-    let layout = SizedIntentAndBalancePublicSettlementCircuit::get_circuit_layout().unwrap();
+    let layout = IntentAndBalancePublicSettlementCircuit::get_circuit_layout().unwrap();
     for (id, group_layout) in layout.group_layouts.into_iter() {
         cs.create_link_group(id, Some(group_layout));
     }
@@ -35,7 +35,7 @@ pub fn bench_apply_constraints(c: &mut Criterion) {
 
     group.bench_function(benchmark_id, |b| {
         b.iter(|| {
-            SizedIntentAndBalancePublicSettlementCircuit::apply_constraints(
+            IntentAndBalancePublicSettlementCircuit::apply_constraints(
                 witness_var.clone(),
                 statement_var.clone(),
                 &mut cs,
@@ -53,7 +53,7 @@ pub fn bench_prover(c: &mut Criterion) {
     let benchmark_id = BenchmarkId::new("prover", "");
     group.bench_function(benchmark_id, |b| {
         b.iter(|| {
-            singleprover_prove::<SizedIntentAndBalancePublicSettlementCircuit>(
+            singleprover_prove::<IntentAndBalancePublicSettlementCircuit>(
                 witness.clone(),
                 statement.clone(),
             )
@@ -66,18 +66,16 @@ pub fn bench_prover(c: &mut Criterion) {
 pub fn bench_verifier(c: &mut Criterion) {
     // First generate a proof that will be verified multiple times
     let (witness, statement) = create_witness_statement::<MERKLE_HEIGHT>();
-    let proof = singleprover_prove::<SizedIntentAndBalancePublicSettlementCircuit>(
-        witness,
-        statement.clone(),
-    )
-    .unwrap();
+    let proof =
+        singleprover_prove::<IntentAndBalancePublicSettlementCircuit>(witness, statement.clone())
+            .unwrap();
 
     // Run the benchmark
     let mut group = c.benchmark_group("intent_and_balance_public_settlement");
     let benchmark_id = BenchmarkId::new("verifier", "");
     group.bench_function(benchmark_id, |b| {
         b.iter(|| {
-            verify_singleprover_proof::<SizedIntentAndBalancePublicSettlementCircuit>(
+            verify_singleprover_proof::<IntentAndBalancePublicSettlementCircuit>(
                 statement.clone(),
                 &proof,
             )
