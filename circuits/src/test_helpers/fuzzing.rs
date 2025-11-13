@@ -7,13 +7,13 @@ use circuit_types::{
     AMOUNT_BITS, Amount,
     balance::Balance,
     csprng::PoseidonCSPRNG,
+    deposit::Deposit,
     elgamal::{DecryptionKey, EncryptionKey},
     fixed_point::FixedPoint,
     intent::Intent,
     settlement_obligation::SettlementObligation,
     state_wrapper::StateWrapper,
     traits::{BaseType, CircuitBaseType, SecretShareBaseType},
-    v2::deposit::Deposit,
     withdrawal::Withdrawal,
 };
 use constants::Scalar;
