@@ -47,7 +47,8 @@ impl IntentAndBalancePublicSettlementCircuit {
     ) -> Result<(), CircuitError> {
         // 1. Verify the constraints imposed by both the intent and the balance
         Self::verify_intent_constraints(statement, witness, cs)?;
-        Self::verify_balance_constraints(statement, witness, cs)?;
+        Self::verify_in_balance_constraints(statement, witness, cs)?;
+        Self::verify_out_balance_constraints(statement, witness, cs)?;
 
         // 2. Verify the update to the intent and balance shares
         // - The intent's amount public share should decrease by obligation input
@@ -130,13 +131,12 @@ impl IntentAndBalancePublicSettlementCircuit {
     /// obligation. The pre-settlement validity proofs will verify that the mint
     /// of the balance matches the mint of the intent, and thereby the
     /// obligation.
-    pub fn verify_balance_constraints(
+    pub fn verify_in_balance_constraints(
         statement: &IntentAndBalancePublicSettlementStatementVar,
         witness: &IntentAndBalancePublicSettlementWitnessVar,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
         let in_balance = &witness.in_balance;
-        let out_balance = &witness.out_balance;
         let obligation = &statement.settlement_obligation;
 
         // The balance must exceed the obligation's input amount
@@ -145,11 +145,28 @@ impl IntentAndBalancePublicSettlementCircuit {
             obligation.amount_in,
             AMOUNT_BITS,
             cs,
-        )?;
+        )
+    }
 
-        // The receive side balance must not overflow
+    /// Verify receive balance constraints
+    pub fn verify_out_balance_constraints(
+        statement: &IntentAndBalancePublicSettlementStatementVar,
+        witness: &IntentAndBalancePublicSettlementWitnessVar,
+        cs: &mut PlonkCircuit,
+    ) -> Result<(), CircuitError> {
+        let intent = &witness.intent;
+        let out_balance = &witness.out_balance;
+        let obligation = &statement.settlement_obligation;
+
+        // The output balance's mint must match the obligation's output token
+        EqGadget::constrain_eq(&out_balance.mint, &obligation.output_token, cs)?;
+
+        // The output amount must not overflow the receive balance
         let new_bal_amount = cs.add(out_balance.amount, obligation.amount_out)?;
-        AmountGadget::constrain_valid_amount(new_bal_amount, cs)
+        AmountGadget::constrain_valid_amount(new_bal_amount, cs)?;
+
+        // The output balance must be owned by the intent's owner
+        EqGadget::constrain_eq(&out_balance.owner, &intent.owner, cs)
     }
 }
 
