@@ -315,7 +315,7 @@ pub struct IntentAndBalanceFirstFillValidityWitness<const MERKLE_HEIGHT: usize> 
     ///
     /// The intent will be authorized by the balance's one-time authorizing key
     /// for the first fill.
-    #[link_groups = "intent_and_balance_settlement_party0"]
+    #[link_groups = "intent_and_balance_settlement_party0,intent_and_balance_settlement_party1"]
     pub intent: Intent,
     /// The initial intent share CSPRNG
     pub initial_intent_share_stream: PoseidonCSPRNG,
@@ -328,7 +328,7 @@ pub struct IntentAndBalanceFirstFillValidityWitness<const MERKLE_HEIGHT: usize> 
     /// We leak all other public shares in the statement of this circuit, but we
     /// only leak the new public share after it's been updated by the
     /// settlement circuit.
-    #[link_groups = "intent_and_balance_settlement_party0"]
+    #[link_groups = "intent_and_balance_settlement_party0,intent_and_balance_settlement_party1"]
     pub new_amount_public_share: Scalar,
 
     // --- Balance --- //
@@ -337,10 +337,10 @@ pub struct IntentAndBalanceFirstFillValidityWitness<const MERKLE_HEIGHT: usize> 
     /// The balance which capitalizes the intent, denormalized from the state
     /// element balance here so that it may be proof-linked into the settlement
     /// proof.
-    #[link_groups = "intent_and_balance_settlement_party0"]
+    #[link_groups = "intent_and_balance_settlement_party0,intent_and_balance_settlement_party1"]
     pub balance: Balance,
     /// The updated public shares of the post-match balance
-    #[link_groups = "intent_and_balance_settlement_party0"]
+    #[link_groups = "intent_and_balance_settlement_party0,intent_and_balance_settlement_party1"]
     pub post_match_balance_shares: PostMatchBalanceShare,
     /// The new one-time authorizing address after the previous value has been
     /// leaked

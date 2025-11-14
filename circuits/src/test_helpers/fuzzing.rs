@@ -93,6 +93,15 @@ pub fn random_intent() -> Intent {
     random_bounded_intent(max_amount())
 }
 
+/// Create a random intent at half the bitlength of the maximum amount
+///
+/// We do this so that a match on the intent does not overflow the bitlength of
+/// the receive balance amount
+pub fn random_small_intent() -> Intent {
+    let max_amount_in = 1u128.pow((AMOUNT_BITS / 2) as u32);
+    random_bounded_intent(max_amount_in)
+}
+
 /// Create a random bounded intent
 pub fn random_bounded_intent(max_amount_in: Amount) -> Intent {
     let mut rng = thread_rng();
@@ -106,8 +115,21 @@ pub fn random_bounded_intent(max_amount_in: Amount) -> Intent {
     }
 }
 
+/// Create a random balance with a small initial amount
+pub fn random_small_balance() -> Balance {
+    let max_amount = 1u128.pow((AMOUNT_BITS / 2) as u32);
+    random_bounded_balance(max_amount)
+}
+
 /// Create a random balance
 pub fn random_balance() -> Balance {
+    random_bounded_balance(max_amount())
+}
+
+/// Create a random balance with a bounded initial amount
+pub fn random_bounded_balance(max_amount: Amount) -> Balance {
+    let mut rng = thread_rng();
+    let amount = rng.gen_range(0..=max_amount);
     Balance {
         mint: random_address(),
         owner: random_address(),
@@ -115,7 +137,7 @@ pub fn random_balance() -> Balance {
         one_time_authority: random_address(),
         relayer_fee_balance: random_amount(),
         protocol_fee_balance: random_amount(),
-        amount: random_amount(),
+        amount,
     }
 }
 

@@ -28,7 +28,6 @@ use crate::{
     zk_circuits::settlement::{
         OUTPUT_BALANCE_SETTLEMENT_PARTY0_LINK, OUTPUT_BALANCE_SETTLEMENT_PARTY1_LINK,
         intent_and_balance_private_settlement::IntentAndBalancePrivateSettlementCircuit,
-        intent_and_balance_public_settlement::IntentAndBalancePublicSettlementCircuit,
     },
     zk_gadgets::{
         comparators::EqGadget,
