@@ -8,8 +8,10 @@
 //! The settlement circuits in this module represent different configurations of
 //! private vs public obligations and private vs public intents and balances.
 
+pub mod intent_and_balance_private_settlement;
 pub mod intent_and_balance_public_settlement;
 pub mod intent_only_public_settlement;
+pub mod settlement_lib;
 
 /// The group name for the INTENT ONLY (FIRST FILL) VALIDITY <-> INTENT ONLY
 /// SETTLEMENT link

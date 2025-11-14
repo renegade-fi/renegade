@@ -5,7 +5,7 @@
 
 use circuit_macros::circuit_type;
 use circuit_types::{
-    AMOUNT_BITS, PlonkCircuit,
+    PlonkCircuit,
     balance::{Balance, PostMatchBalanceShare},
     intent::Intent,
     settlement_obligation::SettlementObligation,
@@ -24,12 +24,7 @@ use serde::{Deserialize, Serialize};
 use super::INTENT_AND_BALANCE_PUBLIC_SETTLEMENT_LINK;
 use crate::{
     SingleProverCircuit,
-    zk_circuits::settlement::OUTPUT_BALANCE_SETTLEMENT_LINK,
-    zk_gadgets::{
-        bitlength::AmountGadget,
-        comparators::{EqGadget, GreaterThanEqGadget},
-        fixed_point::FixedPointGadget,
-    },
+    zk_circuits::settlement::{OUTPUT_BALANCE_SETTLEMENT_LINK, settlement_lib::SettlementGadget},
 };
 
 // ----------------------
@@ -46,127 +41,25 @@ impl IntentAndBalancePublicSettlementCircuit {
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
         // 1. Verify the constraints imposed by both the intent and the balance
-        Self::verify_intent_constraints(statement, witness, cs)?;
-        Self::verify_in_balance_constraints(statement, witness, cs)?;
-        Self::verify_out_balance_constraints(statement, witness, cs)?;
+        SettlementGadget::verify_intent_and_balance_obligation_constraints(
+            &witness.intent,
+            &witness.in_balance,
+            &witness.out_balance,
+            &statement.settlement_obligation,
+            cs,
+        )?;
 
         // 2. Verify the update to the intent and balance shares
-        // - The intent's amount public share should decrease by obligation input
-        // - The balance's amount should decrease by the obligation input
-        // - TODO: Fees
-        // We can rely on the additive homomorphic property of our stream cipher
-        // for each of these updates.
-
-        // Intent update
-        let expected_amount_public_share = cs.sub(
+        SettlementGadget::verify_state_updates(
             witness.pre_settlement_amount_public_share,
-            statement.settlement_obligation.amount_in,
-        )?;
-        EqGadget::constrain_eq(
-            &expected_amount_public_share,
-            &statement.new_amount_public_share,
-            cs,
-        )?;
-
-        // Input balance update
-        let mut expected_shares = witness.pre_settlement_in_balance_shares.clone();
-        expected_shares.amount = cs.sub(
-            witness.pre_settlement_in_balance_shares.amount,
-            statement.settlement_obligation.amount_in,
-        )?;
-        EqGadget::constrain_eq(&expected_shares, &statement.new_in_balance_public_shares, cs)?;
-
-        // Output balance update
-        // TODO: Add fees
-        let mut expected_shares = witness.pre_settlement_out_balance_shares.clone();
-        expected_shares.amount = cs.add(
-            witness.pre_settlement_out_balance_shares.amount,
-            statement.settlement_obligation.amount_out,
-        )?;
-        EqGadget::constrain_eq(&expected_shares, &statement.new_out_balance_public_shares, cs)?;
-
-        Ok(())
-    }
-
-    /// Verify that the intent's constraints are satisfied
-    pub fn verify_intent_constraints(
-        statement: &IntentAndBalancePublicSettlementStatementVar,
-        witness: &IntentAndBalancePublicSettlementWitnessVar,
-        cs: &mut PlonkCircuit,
-    ) -> Result<(), CircuitError> {
-        let intent = &witness.intent;
-        let obligation = &statement.settlement_obligation;
-
-        // The settlement obligation's token pair must match that of the intent
-        EqGadget::constrain_eq(&obligation.input_token, &intent.in_token, cs)?;
-        EqGadget::constrain_eq(&obligation.output_token, &intent.out_token, cs)?;
-
-        // The input amount of the obligation must not exceed the intent's amount
-        GreaterThanEqGadget::constrain_greater_than_eq(
-            intent.amount_in,
-            obligation.amount_in,
-            AMOUNT_BITS,
-            cs,
-        )?;
-
-        // The settlement obligation must exceed the intent's worst case price
-        // `intent.min_price` is in units of `out_token/in_token` so we need only clear
-        // the denominator
-        let min_output_fp =
-            FixedPointGadget::mul_integer(intent.min_price, obligation.amount_in, cs)?;
-        let min_output = FixedPointGadget::floor(min_output_fp, cs)?;
-        GreaterThanEqGadget::constrain_greater_than_eq(
-            obligation.amount_out,
-            min_output,
-            AMOUNT_BITS,
-            cs,
-        )?;
-
-        Ok(())
-    }
-
-    /// Verify that the balance's constraints are satisfied
-    ///
-    /// We only need to verify that the balance adequately capitalizes the
-    /// obligation. The pre-settlement validity proofs will verify that the mint
-    /// of the balance matches the mint of the intent, and thereby the
-    /// obligation.
-    pub fn verify_in_balance_constraints(
-        statement: &IntentAndBalancePublicSettlementStatementVar,
-        witness: &IntentAndBalancePublicSettlementWitnessVar,
-        cs: &mut PlonkCircuit,
-    ) -> Result<(), CircuitError> {
-        let in_balance = &witness.in_balance;
-        let obligation = &statement.settlement_obligation;
-
-        // The balance must exceed the obligation's input amount
-        GreaterThanEqGadget::constrain_greater_than_eq(
-            in_balance.amount,
-            obligation.amount_in,
-            AMOUNT_BITS,
+            statement.new_amount_public_share,
+            &witness.pre_settlement_in_balance_shares,
+            &statement.new_in_balance_public_shares,
+            &witness.pre_settlement_out_balance_shares,
+            &statement.new_out_balance_public_shares,
+            &statement.settlement_obligation,
             cs,
         )
-    }
-
-    /// Verify receive balance constraints
-    pub fn verify_out_balance_constraints(
-        statement: &IntentAndBalancePublicSettlementStatementVar,
-        witness: &IntentAndBalancePublicSettlementWitnessVar,
-        cs: &mut PlonkCircuit,
-    ) -> Result<(), CircuitError> {
-        let intent = &witness.intent;
-        let out_balance = &witness.out_balance;
-        let obligation = &statement.settlement_obligation;
-
-        // The output balance's mint must match the obligation's output token
-        EqGadget::constrain_eq(&out_balance.mint, &obligation.output_token, cs)?;
-
-        // The output amount must not overflow the receive balance
-        let new_bal_amount = cs.add(out_balance.amount, obligation.amount_out)?;
-        AmountGadget::constrain_valid_amount(new_bal_amount, cs)?;
-
-        // The output balance must be owned by the intent's owner
-        EqGadget::constrain_eq(&out_balance.owner, &intent.owner, cs)
     }
 }
 
@@ -283,6 +176,7 @@ impl SingleProverCircuit for IntentAndBalancePublicSettlementCircuit {
 
 #[cfg(any(test, feature = "test_helpers"))]
 pub mod test_helpers {
+    use alloy_primitives::Address;
     use circuit_types::{
         balance::{Balance, PostMatchBalanceShare},
         intent::Intent,
@@ -376,7 +270,7 @@ pub mod test_helpers {
         // Create the intent amount public shares
         let amount_in = Scalar::from(settlement_obligation.amount_in);
         let amount_out = Scalar::from(settlement_obligation.amount_out);
-        let receive_balance = create_receive_balance(&settlement_obligation);
+        let receive_balance = create_receive_balance(intent.owner, &settlement_obligation);
         let pre_settlement_amount_public_share = random_scalar();
         let new_amount_public_share = pre_settlement_amount_public_share - amount_in;
 
@@ -425,14 +319,14 @@ pub mod test_helpers {
     }
 
     /// Create a receive balance for the given obligation
-    pub fn create_receive_balance(obligation: &SettlementObligation) -> Balance {
+    pub fn create_receive_balance(owner: Address, obligation: &SettlementObligation) -> Balance {
         let mut rng = thread_rng();
         let max_existing_balance = max_amount() - obligation.amount_out;
         let amount = rng.gen_range(0..=max_existing_balance);
 
         Balance {
             mint: obligation.output_token,
-            owner: random_address(),
+            owner,
             relayer_fee_recipient: random_address(),
             one_time_authority: random_address(),
             relayer_fee_balance: random_amount(),
@@ -453,7 +347,7 @@ mod test {
     };
 
     use super::*;
-    use circuit_types::{Amount, max_amount, traits::SingleProverCircuit};
+    use circuit_types::{AMOUNT_BITS, Amount, max_amount, traits::SingleProverCircuit};
     use constants::MERKLE_HEIGHT;
     use rand::{Rng, thread_rng};
 
