@@ -221,7 +221,7 @@ pub mod test_helpers {
 
     use crate::test_helpers::{
         check_constraints_satisfied, create_merkle_opening, create_random_state_wrapper,
-        random_address, random_amount,
+        random_balance,
     };
 
     use super::*;
@@ -241,19 +241,17 @@ pub mod test_helpers {
         )
     }
 
-    /// Construct a witness and statement with valid data
+    /// Construct a witness and statement with valid data using a random balance
     pub fn create_witness_statement<const MERKLE_HEIGHT: usize>()
     -> (OutputBalanceValidityWitness<MERKLE_HEIGHT>, OutputBalanceValidityStatement) {
-        // Create a random balance
-        let balance_inner = Balance {
-            mint: random_address(),
-            owner: random_address(),
-            relayer_fee_recipient: random_address(),
-            one_time_authority: random_address(),
-            relayer_fee_balance: random_amount(),
-            protocol_fee_balance: random_amount(),
-            amount: random_amount(),
-        };
+        create_witness_statement_with_balance::<MERKLE_HEIGHT>(random_balance())
+    }
+
+    /// Construct a witness and statement with valid data using the provided
+    /// balance
+    pub fn create_witness_statement_with_balance<const MERKLE_HEIGHT: usize>(
+        balance_inner: Balance,
+    ) -> (OutputBalanceValidityWitness<MERKLE_HEIGHT>, OutputBalanceValidityStatement) {
         let old_balance = create_random_state_wrapper(balance_inner.clone());
 
         // Compute commitment, nullifier, and create Merkle opening for the balance

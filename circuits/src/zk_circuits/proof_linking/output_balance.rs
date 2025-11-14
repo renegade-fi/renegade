@@ -10,7 +10,7 @@ use mpc_relation::proof_linking::GroupLayout;
 
 use crate::zk_circuits::{
     settlement::{
-        OUTPUT_BALANCE_SETTLEMENT_PARTY0_LINK, OUTPUT_BALANCE_SETTLEMENT_PARTY1_LINK,
+        OUTPUT_BALANCE_SETTLEMENT_PARTY0_LINK,
         intent_and_balance_public_settlement::IntentAndBalancePublicSettlementCircuit,
     },
     validity_proofs::output_balance::OutputBalanceValidityCircuit,
@@ -97,7 +97,10 @@ mod test {
     use super::*;
     use crate::{
         singleprover_prove_with_hint,
-        test_helpers::{create_settlement_obligation_with_balance, random_intent},
+        test_helpers::{
+            create_settlement_obligation_with_balance, random_intent, random_small_balance,
+            random_small_intent,
+        },
         zk_circuits::{
             settlement::intent_and_balance_public_settlement::{
                 IntentAndBalancePublicSettlementStatement, IntentAndBalancePublicSettlementWitness,
@@ -114,7 +117,7 @@ mod test {
                 },
                 output_balance::{
                     OutputBalanceValidityStatement, OutputBalanceValidityWitness,
-                    test_helpers::create_witness_statement as create_validity_witness_statement,
+                    test_helpers::create_witness_statement_with_balance as create_validity_witness_statement,
                 },
             },
         },
@@ -171,15 +174,14 @@ mod test {
         IntentAndBalancePublicSettlementWitness,
         IntentAndBalancePublicSettlementStatement,
     ) {
-        use crate::test_helpers::{create_settlement_obligation_with_balance, random_intent};
-
         // Create the validity witness and statement
+        let balance = random_small_balance();
         let (validity_witness, validity_statement) =
-            create_validity_witness_statement::<TEST_MERKLE_HEIGHT>();
+            create_validity_witness_statement::<TEST_MERKLE_HEIGHT>(balance.clone());
 
         // Create an intent and input balance for the settlement
         let output_balance = validity_witness.balance.clone();
-        let mut intent = random_intent();
+        let mut intent = random_small_intent();
         intent.out_token = output_balance.mint;
         intent.owner = output_balance.owner;
         let input_balance = create_matching_balance_for_intent(&intent);

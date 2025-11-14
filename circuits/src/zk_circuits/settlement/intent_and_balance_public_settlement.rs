@@ -349,20 +349,15 @@ mod test {
     use crate::{
         test_helpers::{
             compute_min_amount_out, create_settlement_obligation_with_balance, random_address,
-            random_bounded_intent, random_scalar,
+            random_scalar, random_small_intent,
         },
         zk_circuits::settlement::intent_and_balance_public_settlement::test_helpers::create_matching_balance_for_intent,
     };
 
     use super::*;
-    use circuit_types::{AMOUNT_BITS, Amount, max_amount, traits::SingleProverCircuit};
+    use circuit_types::{max_amount, traits::SingleProverCircuit};
     use constants::MERKLE_HEIGHT;
     use rand::{Rng, thread_rng};
-
-    /// The maximum input amount for intents; this leaves room for the whole
-    /// intent to be executed at sampled prices; i.e. `amount_out` does not
-    /// violate `AMOUNT_BITS` bounds.
-    const MAX_AMOUNT_IN: Amount = 1u128 << (AMOUNT_BITS / 2);
 
     /// A helper to print the number of constraints in the circuit
     ///
@@ -387,7 +382,7 @@ mod test {
     /// Test the case in which the intent is fully matched
     #[test]
     fn test_valid_intent_and_balance_public_settlement_constraints_full_match() {
-        let intent = random_bounded_intent(MAX_AMOUNT_IN);
+        let intent = random_small_intent();
         let mut balance = create_matching_balance_for_intent(&intent);
         balance.amount = intent.amount_in;
         let mut obligation = create_settlement_obligation_with_balance(&intent, balance.amount);
@@ -403,7 +398,7 @@ mod test {
     /// Test the case in which the balance undercapitalizes the obligation
     #[test]
     fn test_valid_intent_and_balance_public_settlement_constraints_undercapitalized() {
-        let intent = random_bounded_intent(MAX_AMOUNT_IN);
+        let intent = random_small_intent();
         let mut balance = create_matching_balance_for_intent(&intent);
         balance.amount = intent.amount_in / 2;
         let obligation = create_settlement_obligation_with_balance(&intent, balance.amount);
@@ -438,7 +433,7 @@ mod test {
     #[test]
     #[allow(non_snake_case)]
     fn test_invalid_obligation__amount_in_exceeds_intent_size() {
-        let intent = random_bounded_intent(MAX_AMOUNT_IN);
+        let intent = random_small_intent();
         let mut balance = create_matching_balance_for_intent(&intent);
         balance.amount = intent.amount_in + 1; // Fully capitalize the intent   
         let mut obligation = create_settlement_obligation_with_balance(&intent, balance.amount);
@@ -458,7 +453,7 @@ mod test {
     #[test]
     #[allow(non_snake_case)]
     fn test_invalid_obligation__amount_out_violates_min_price() {
-        let intent = random_bounded_intent(MAX_AMOUNT_IN);
+        let intent = random_small_intent();
         let mut balance = create_matching_balance_for_intent(&intent);
         balance.amount = intent.amount_in;
         let mut obligation = create_settlement_obligation_with_balance(&intent, balance.amount);
@@ -476,7 +471,7 @@ mod test {
     #[test]
     #[allow(non_snake_case)]
     fn test_invalid_obligation__undercapitalized() {
-        let intent = random_bounded_intent(MAX_AMOUNT_IN);
+        let intent = random_small_intent();
         let mut balance = create_matching_balance_for_intent(&intent);
         balance.amount = intent.amount_in - 1;
         let mut obligation = create_settlement_obligation_with_balance(&intent, balance.amount);
