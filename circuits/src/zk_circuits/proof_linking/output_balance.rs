@@ -10,7 +10,7 @@ use mpc_relation::proof_linking::GroupLayout;
 
 use crate::zk_circuits::{
     settlement::{
-        OUTPUT_BALANCE_SETTLEMENT_LINK,
+        OUTPUT_BALANCE_SETTLEMENT_PARTY0_LINK, OUTPUT_BALANCE_SETTLEMENT_PARTY1_LINK,
         intent_and_balance_public_settlement::IntentAndBalancePublicSettlementCircuit,
     },
     validity_proofs::output_balance::OutputBalanceValidityCircuit,
@@ -89,7 +89,7 @@ pub fn validate_output_balance_settlement_link<const MERKLE_HEIGHT: usize>(
 pub fn get_group_layout<const MERKLE_HEIGHT: usize>() -> Result<GroupLayout, ProverError> {
     let circuit_layout = IntentAndBalancePublicSettlementCircuit::get_circuit_layout()
         .map_err(ProverError::Plonk)?;
-    Ok(circuit_layout.get_group_layout(OUTPUT_BALANCE_SETTLEMENT_LINK))
+    Ok(circuit_layout.get_group_layout(OUTPUT_BALANCE_SETTLEMENT_PARTY0_LINK))
 }
 
 #[cfg(test)]

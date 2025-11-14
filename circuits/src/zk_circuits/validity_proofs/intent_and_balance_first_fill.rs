@@ -34,8 +34,8 @@ use serde::{Deserialize, Serialize};
 use crate::{
     SingleProverCircuit,
     zk_circuits::settlement::{
-        INTENT_AND_BALANCE_PUBLIC_SETTLEMENT_LINK,
-        intent_and_balance_public_settlement::IntentAndBalancePublicSettlementCircuit,
+        INTENT_AND_BALANCE_SETTLEMENT_PARTY0_LINK, INTENT_AND_BALANCE_SETTLEMENT_PARTY1_LINK,
+        intent_and_balance_private_settlement::IntentAndBalancePrivateSettlementCircuit,
     },
     zk_gadgets::{
         bitlength::{AmountGadget, PriceGadget},
@@ -315,7 +315,7 @@ pub struct IntentAndBalanceFirstFillValidityWitness<const MERKLE_HEIGHT: usize> 
     ///
     /// The intent will be authorized by the balance's one-time authorizing key
     /// for the first fill.
-    #[link_groups = "intent_and_balance_settlement"]
+    #[link_groups = "intent_and_balance_settlement_party0"]
     pub intent: Intent,
     /// The initial intent share CSPRNG
     pub initial_intent_share_stream: PoseidonCSPRNG,
@@ -328,7 +328,7 @@ pub struct IntentAndBalanceFirstFillValidityWitness<const MERKLE_HEIGHT: usize> 
     /// We leak all other public shares in the statement of this circuit, but we
     /// only leak the new public share after it's been updated by the
     /// settlement circuit.
-    #[link_groups = "intent_and_balance_settlement"]
+    #[link_groups = "intent_and_balance_settlement_party0"]
     pub new_amount_public_share: Scalar,
 
     // --- Balance --- //
@@ -337,10 +337,10 @@ pub struct IntentAndBalanceFirstFillValidityWitness<const MERKLE_HEIGHT: usize> 
     /// The balance which capitalizes the intent, denormalized from the state
     /// element balance here so that it may be proof-linked into the settlement
     /// proof.
-    #[link_groups = "intent_and_balance_settlement"]
+    #[link_groups = "intent_and_balance_settlement_party0"]
     pub balance: Balance,
     /// The updated public shares of the post-match balance
-    #[link_groups = "intent_and_balance_settlement"]
+    #[link_groups = "intent_and_balance_settlement_party0"]
     pub post_match_balance_shares: PostMatchBalanceShare,
     /// The new one-time authorizing address after the previous value has been
     /// leaked
@@ -419,17 +419,27 @@ impl<const MERKLE_HEIGHT: usize> SingleProverCircuit
         "Intent And Balance First Fill Validity".to_string()
     }
 
-    /// INTENT AND BALANCE FIRST FILL VALIDITY has one proof linking group:
-    /// - intent_and_balance_public_settlement: The linking group between INTENT
-    ///   AND BALANCE FIRST FILL VALIDITY and INTENT AND BALANCE PUBLIC
-    ///   SETTLEMENT. This group is placed by the settlement circuit, so we
-    ///   inherit its layout here.
+    /// INTENT AND BALANCE FIRST FILL VALIDITY has two proof linking groups:
+    /// - intent_and_balance_settlement_party0: The linking group between INTENT
+    ///   AND BALANCE FIRST FILL VALIDITY and the first party's intent and
+    ///   balance
+    /// - intent_and_balance_settlement_party1: The linking group between INTENT
+    ///   AND BALANCE FIRST FILL VALIDITY and the second party's intent and
+    ///   balance
+    ///
+    /// This circuit inherits the group layouts from the private settlement
+    /// circuit.
     fn proof_linking_groups() -> Result<Vec<(String, Option<GroupLayout>)>, PlonkError> {
-        let circuit_layout = IntentAndBalancePublicSettlementCircuit::get_circuit_layout()?;
-        let group_layout =
-            circuit_layout.get_group_layout(INTENT_AND_BALANCE_PUBLIC_SETTLEMENT_LINK);
+        let circuit_layout = IntentAndBalancePrivateSettlementCircuit::get_circuit_layout()?;
+        let group_layout0 =
+            circuit_layout.get_group_layout(INTENT_AND_BALANCE_SETTLEMENT_PARTY0_LINK);
+        let group_layout1 =
+            circuit_layout.get_group_layout(INTENT_AND_BALANCE_SETTLEMENT_PARTY1_LINK);
 
-        Ok(vec![(INTENT_AND_BALANCE_PUBLIC_SETTLEMENT_LINK.to_string(), Some(group_layout))])
+        Ok(vec![
+            (INTENT_AND_BALANCE_SETTLEMENT_PARTY0_LINK.to_string(), Some(group_layout0)),
+            (INTENT_AND_BALANCE_SETTLEMENT_PARTY1_LINK.to_string(), Some(group_layout1)),
+        ])
     }
 
     fn apply_constraints(

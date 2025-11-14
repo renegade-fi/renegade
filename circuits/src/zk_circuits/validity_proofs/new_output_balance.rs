@@ -26,7 +26,8 @@ use serde::{Deserialize, Serialize};
 use crate::{
     SingleProverCircuit,
     zk_circuits::settlement::{
-        OUTPUT_BALANCE_SETTLEMENT_LINK,
+        OUTPUT_BALANCE_SETTLEMENT_PARTY0_LINK, OUTPUT_BALANCE_SETTLEMENT_PARTY1_LINK,
+        intent_and_balance_private_settlement::IntentAndBalancePrivateSettlementCircuit,
         intent_and_balance_public_settlement::IntentAndBalancePublicSettlementCircuit,
     },
     zk_gadgets::{
@@ -151,12 +152,12 @@ impl NewOutputBalanceValidityCircuit {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NewOutputBalanceValidityWitness {
     /// The balance
-    #[link_groups = "output_balance_settlement"]
+    #[link_groups = "output_balance_settlement_party0,output_balance_settlement_party1"]
     pub balance: Balance,
     /// The balance public shares which are updated in the settlement circuit
     ///
     /// These values are proof-linked into the settlement circuit
-    #[link_groups = "output_balance_settlement"]
+    #[link_groups = "output_balance_settlement_party0,output_balance_settlement_party1"]
     pub post_match_balance_shares: PostMatchBalanceShare,
     /// The initial share stream of the balance
     pub initial_share_stream: PoseidonCSPRNG,
@@ -198,10 +199,14 @@ impl SingleProverCircuit for NewOutputBalanceValidityCircuit {
     ///
     /// The layout for this group is inherited from the settlement circuit.
     fn proof_linking_groups() -> Result<Vec<(String, Option<GroupLayout>)>, PlonkError> {
-        let circuit_layout = IntentAndBalancePublicSettlementCircuit::get_circuit_layout()?;
-        let group_layout = circuit_layout.get_group_layout(OUTPUT_BALANCE_SETTLEMENT_LINK);
+        let circuit_layout = IntentAndBalancePrivateSettlementCircuit::get_circuit_layout()?;
+        let group_layout0 = circuit_layout.get_group_layout(OUTPUT_BALANCE_SETTLEMENT_PARTY0_LINK);
+        let group_layout1 = circuit_layout.get_group_layout(OUTPUT_BALANCE_SETTLEMENT_PARTY1_LINK);
 
-        Ok(vec![(OUTPUT_BALANCE_SETTLEMENT_LINK.to_string(), Some(group_layout))])
+        Ok(vec![
+            (OUTPUT_BALANCE_SETTLEMENT_PARTY0_LINK.to_string(), Some(group_layout0)),
+            (OUTPUT_BALANCE_SETTLEMENT_PARTY1_LINK.to_string(), Some(group_layout1)),
+        ])
     }
 
     fn apply_constraints(
