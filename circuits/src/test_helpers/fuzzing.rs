@@ -183,6 +183,12 @@ pub fn compute_min_amount_out(intent: &Intent, amount_in: Amount) -> Amount {
     scalar_to_u128(&min_amount_out.floor())
 }
 
+/// Compute the implied price for a given amount out and in
+pub fn compute_implied_price(amount_out: Amount, amount_in: Amount) -> FixedPoint {
+    let price = (amount_out as f64) / (amount_in as f64);
+    FixedPoint::from_f64_round_down(price)
+}
+
 /// Create a state wrapper and initialize the share state
 pub fn create_state_wrapper<V>(state: V) -> StateWrapper<V>
 where

@@ -181,6 +181,7 @@ mod test {
         let output_balance = validity_witness.balance.clone();
         let mut intent = random_intent();
         intent.out_token = output_balance.mint;
+        intent.owner = output_balance.owner;
         let input_balance = create_matching_balance_for_intent(&intent);
         let settlement_obligation =
             create_settlement_obligation_with_balance(&intent, input_balance.amount);
@@ -256,6 +257,7 @@ mod test {
         let output_balance = validity_witness.balance.clone();
         let mut intent = random_intent();
         intent.out_token = output_balance.mint;
+        intent.owner = output_balance.owner;
         let input_balance = create_matching_balance_for_intent(&intent);
         let settlement_obligation =
             create_settlement_obligation_with_balance(&intent, input_balance.amount);
