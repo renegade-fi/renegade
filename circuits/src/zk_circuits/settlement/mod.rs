@@ -13,13 +13,18 @@ pub mod intent_and_balance_public_settlement;
 pub mod intent_only_public_settlement;
 pub mod settlement_lib;
 
-/// The group name for the INTENT ONLY (FIRST FILL) VALIDITY <-> INTENT ONLY
+/// The group name for the INTENT ONLY VALIDITY <-> INTENT ONLY
 /// SETTLEMENT link
 pub const INTENT_ONLY_PUBLIC_SETTLEMENT_LINK: &str = "intent_only_settlement";
 
-/// The group name for the INTENT AND BALANCE (FIRST FILL) VALIDITY <-> INTENT
+/// The group name for the INTENT AND BALANCE VALIDITY <-> INTENT
 /// AND BALANCE SETTLEMENT link
-pub const INTENT_AND_BALANCE_PUBLIC_SETTLEMENT_LINK: &str = "intent_and_balance_settlement";
+pub const INTENT_AND_BALANCE_SETTLEMENT_PARTY0_LINK: &str = "intent_and_balance_settlement_party0";
+/// The group name for the INTENT AND BALANCE SETTLEMENT link for the
+/// second party
+pub const INTENT_AND_BALANCE_SETTLEMENT_PARTY1_LINK: &str = "intent_and_balance_settlement_party1";
 
 /// The group name for the OUTPUT BALANCE SETTLEMENT link
-pub const OUTPUT_BALANCE_SETTLEMENT_LINK: &str = "output_balance_settlement";
+pub const OUTPUT_BALANCE_SETTLEMENT_PARTY0_LINK: &str = "output_balance_settlement_party0";
+/// The group name for the OUTPUT BALANCE SETTLEMENT link for the second party
+pub const OUTPUT_BALANCE_SETTLEMENT_PARTY1_LINK: &str = "output_balance_settlement_party1";

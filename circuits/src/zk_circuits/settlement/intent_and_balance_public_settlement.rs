@@ -21,10 +21,13 @@ use mpc_relation::{
 };
 use serde::{Deserialize, Serialize};
 
-use super::INTENT_AND_BALANCE_PUBLIC_SETTLEMENT_LINK;
 use crate::{
     SingleProverCircuit,
-    zk_circuits::settlement::{OUTPUT_BALANCE_SETTLEMENT_LINK, settlement_lib::SettlementGadget},
+    zk_circuits::settlement::{
+        INTENT_AND_BALANCE_SETTLEMENT_PARTY0_LINK, OUTPUT_BALANCE_SETTLEMENT_PARTY0_LINK,
+        intent_and_balance_private_settlement::IntentAndBalancePrivateSettlementCircuit,
+        settlement_lib::SettlementGadget,
+    },
 };
 
 // ----------------------
@@ -75,38 +78,38 @@ pub struct IntentAndBalancePublicSettlementWitness {
     ///
     /// This value is proof-linked from the `INTENT AND BALANCE VALIDITY`
     /// circuit
-    #[link_groups = "intent_and_balance_settlement"]
+    #[link_groups = "intent_and_balance_settlement_party0"]
     pub intent: Intent,
     /// The pre-update public share of the intent's amount
     ///
     /// This should match the `new_amount_public_share` from the intent validity
     /// proof that authorized this settlement
-    #[link_groups = "intent_and_balance_settlement"]
+    #[link_groups = "intent_and_balance_settlement_party0"]
     pub pre_settlement_amount_public_share: Scalar,
     /// The balance which capitalizes the intent
     ///
     /// This value is proof-linked from the `INTENT AND BALANCE VALIDITY`
     /// circuit
-    #[link_groups = "intent_and_balance_settlement"]
+    #[link_groups = "intent_and_balance_settlement_party0"]
     pub in_balance: Balance,
     /// The balance public shares which are updated in the settlement circuit
     ///
     /// This value is proof-linked from the `INTENT AND BALANCE VALIDITY`
     /// circuit
-    #[link_groups = "intent_and_balance_settlement"]
+    #[link_groups = "intent_and_balance_settlement_party0"]
     pub pre_settlement_in_balance_shares: PostMatchBalanceShare,
     /// The balance which receives the output tokens of the obligation
     ///
     /// This value is proof-linked from the `INTENT AND BALANCE VALIDITY`
     /// circuit
-    #[link_groups = "output_balance_settlement"]
+    #[link_groups = "output_balance_settlement_party0"]
     pub out_balance: Balance,
     /// The balance public shares which are updated in the settlement circuit
     /// for the output balance
     ///
     /// This value is proof-linked from the `INTENT AND BALANCE VALIDITY`
     /// circuit
-    #[link_groups = "output_balance_settlement"]
+    #[link_groups = "output_balance_settlement_party0"]
     pub pre_settlement_out_balance_shares: PostMatchBalanceShare,
 }
 
@@ -153,11 +156,16 @@ impl SingleProverCircuit for IntentAndBalancePublicSettlementCircuit {
     /// - out_balance_settlement: The linking group between INTENT AND BALANCE
     ///   PUBLIC SETTLEMENT and the output balance. This group is placed by this
     ///   circuit.
+    ///
+    /// Because this settlement circuit only settles one user's intent and
+    /// balance, we use the party 0 link groups.
     fn proof_linking_groups() -> Result<Vec<(String, Option<GroupLayout>)>, PlonkError> {
-        // Place the linking groups (the validity circuits will inherit them)
+        let layout = IntentAndBalancePrivateSettlementCircuit::get_circuit_layout()?;
+        let intent_and_balance = layout.get_group_layout(INTENT_AND_BALANCE_SETTLEMENT_PARTY0_LINK);
+        let output_balance = layout.get_group_layout(OUTPUT_BALANCE_SETTLEMENT_PARTY0_LINK);
         Ok(vec![
-            (INTENT_AND_BALANCE_PUBLIC_SETTLEMENT_LINK.to_string(), None),
-            (OUTPUT_BALANCE_SETTLEMENT_LINK.to_string(), None),
+            (INTENT_AND_BALANCE_SETTLEMENT_PARTY0_LINK.to_string(), Some(intent_and_balance)),
+            (OUTPUT_BALANCE_SETTLEMENT_PARTY0_LINK.to_string(), Some(output_balance)),
         ])
     }
 

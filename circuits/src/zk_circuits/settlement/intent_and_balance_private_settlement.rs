@@ -13,12 +13,21 @@ use circuit_types::{
 };
 use constants::{MERKLE_HEIGHT, Scalar, ScalarField};
 use mpc_plonk::errors::PlonkError;
-use mpc_relation::{Variable, errors::CircuitError, proof_linking::GroupLayout, traits::Circuit};
+use mpc_relation::{
+    Variable,
+    errors::CircuitError,
+    proof_linking::{GroupLayout, LinkableCircuit},
+    traits::Circuit,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::{
     SingleProverCircuit,
-    zk_circuits::settlement::settlement_lib::SettlementGadget,
+    zk_circuits::settlement::{
+        INTENT_AND_BALANCE_SETTLEMENT_PARTY0_LINK, INTENT_AND_BALANCE_SETTLEMENT_PARTY1_LINK,
+        OUTPUT_BALANCE_SETTLEMENT_PARTY0_LINK, OUTPUT_BALANCE_SETTLEMENT_PARTY1_LINK,
+        settlement_lib::SettlementGadget,
+    },
     zk_gadgets::{bitlength::AmountGadget, comparators::EqGadget},
 };
 
@@ -121,32 +130,44 @@ pub struct IntentAndBalancePrivateSettlementWitness {
     // The first party's settlement obligation
     pub settlement_obligation0: SettlementObligation,
     /// The first party's intent
+    #[link_groups = "intent_and_balance_settlement_party0"]
     pub intent0: Intent,
     /// The pre-update public shares of the first party's intent amount
+    #[link_groups = "intent_and_balance_settlement_party0"]
     pub pre_settlement_amount_public_share0: Scalar,
     /// The first party's input balance
+    #[link_groups = "intent_and_balance_settlement_party0"]
     pub input_balance0: Balance,
     /// The pre-update public shares of the first party's input balance
+    #[link_groups = "intent_and_balance_settlement_party0"]
     pub pre_settlement_in_balance_shares0: PostMatchBalanceShare,
     /// The first party's output balance
+    #[link_groups = "output_balance_settlement_party0"]
     pub output_balance0: Balance,
     /// The pre-update public shares of the first party's output balance
+    #[link_groups = "output_balance_settlement_party0"]
     pub pre_settlement_out_balance_shares0: PostMatchBalanceShare,
 
     // --- Second Party --- //
     /// The second party's settlement obligation
     pub settlement_obligation1: SettlementObligation,
     /// The second party's intent
+    #[link_groups = "intent_and_balance_settlement_party1"]
     pub intent1: Intent,
     /// The pre-update public shares of the second party's intent amount
+    #[link_groups = "intent_and_balance_settlement_party1"]
     pub pre_settlement_amount_public_share1: Scalar,
     /// The second party's input balance
+    #[link_groups = "intent_and_balance_settlement_party1"]
     pub input_balance1: Balance,
     /// The pre-update public shares of the second party's input balance
+    #[link_groups = "intent_and_balance_settlement_party1"]
     pub pre_settlement_in_balance_shares1: PostMatchBalanceShare,
     /// The second party's output balance
+    #[link_groups = "output_balance_settlement_party1"]
     pub output_balance1: Balance,
     /// The pre-update public shares of the second party's output balance
+    #[link_groups = "output_balance_settlement_party1"]
     pub pre_settlement_out_balance_shares1: PostMatchBalanceShare,
 }
 
@@ -187,9 +208,27 @@ impl SingleProverCircuit for IntentAndBalancePrivateSettlementCircuit {
         format!("Intent And Balance Private Settlement ({MERKLE_HEIGHT})")
     }
 
+    /// This circuit has four linking groups:
+    /// - intent_and_balance_settlement_party0: The linking group between INTENT
+    ///   AND BALANCE PRIVATE SETTLEMENT and the first party's intent and
+    ///   balance
+    /// - intent_and_balance_settlement_party1: The linking group between INTENT
+    ///   AND BALANCE PRIVATE SETTLEMENT and the second party's intent and
+    ///   balance
+    /// - output_balance_settlement_party0: The linking group between INTENT AND
+    ///   BALANCE PRIVATE SETTLEMENT and the first party's output balance
+    /// - output_balance_settlement_party1: The linking group between INTENT AND
+    ///   BALANCE PRIVATE SETTLEMENT and the second party's output balance
+    ///
+    /// This circuit places all its proof-linking groups and all other circuits
+    /// inherit this layout.
     fn proof_linking_groups() -> Result<Vec<(String, Option<GroupLayout>)>, PlonkError> {
-        // TODO: Add proof linking groups
-        Ok(vec![])
+        Ok(vec![
+            (INTENT_AND_BALANCE_SETTLEMENT_PARTY0_LINK.to_string(), None),
+            (INTENT_AND_BALANCE_SETTLEMENT_PARTY1_LINK.to_string(), None),
+            (OUTPUT_BALANCE_SETTLEMENT_PARTY0_LINK.to_string(), None),
+            (OUTPUT_BALANCE_SETTLEMENT_PARTY1_LINK.to_string(), None),
+        ])
     }
 
     fn apply_constraints(

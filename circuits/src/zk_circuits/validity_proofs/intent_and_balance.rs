@@ -31,8 +31,8 @@ use serde::{Deserialize, Serialize};
 use crate::{
     SingleProverCircuit,
     zk_circuits::settlement::{
-        INTENT_AND_BALANCE_PUBLIC_SETTLEMENT_LINK,
-        intent_and_balance_public_settlement::IntentAndBalancePublicSettlementCircuit,
+        INTENT_AND_BALANCE_SETTLEMENT_PARTY0_LINK, INTENT_AND_BALANCE_SETTLEMENT_PARTY1_LINK,
+        intent_and_balance_private_settlement::IntentAndBalancePrivateSettlementCircuit,
     },
     zk_gadgets::{
         comparators::EqGadget,
@@ -246,14 +246,14 @@ pub struct IntentAndBalanceValidityWitness<const MERKLE_HEIGHT: usize> {
     /// This value is denormalized from the `old_intent` to enable proof linking
     /// between this circuit's witness and the `INTENT AND BALANCE PUBLIC
     /// SETTLEMENT` circuit's witness.
-    #[link_groups = "intent_and_balance_settlement"]
+    #[link_groups = "intent_and_balance_settlement_party0,intent_and_balance_settlement_party1"]
     pub intent: Intent,
     /// The new public share of the `amount_in` field after the value has been
     /// re-encrypted. This value appears only in the witness and is proof-linked
     /// into the settlement proof. Doing so prevents the verifier from learning
     /// the pre- and post- public share or the `amount_in` field which would
     /// leak the match size.
-    #[link_groups = "intent_and_balance_settlement"]
+    #[link_groups = "intent_and_balance_settlement_party0,intent_and_balance_settlement_party1"]
     pub new_amount_public_share: Scalar,
 
     // --- Balance --- //
@@ -262,10 +262,10 @@ pub struct IntentAndBalanceValidityWitness<const MERKLE_HEIGHT: usize> {
     /// The Merkle opening proving the old balance exists in the tree
     pub old_balance_opening: MerkleOpening<MERKLE_HEIGHT>,
     /// The balance which capitalizes the intent
-    #[link_groups = "intent_and_balance_settlement"]
+    #[link_groups = "intent_and_balance_settlement_party0,intent_and_balance_settlement_party1"]
     pub balance: Balance,
     /// The updated public shares of the post-match balance
-    #[link_groups = "intent_and_balance_settlement"]
+    #[link_groups = "intent_and_balance_settlement_party0,intent_and_balance_settlement_party1"]
     pub post_match_balance_shares: PostMatchBalanceShare,
 }
 
@@ -321,17 +321,22 @@ impl<const MERKLE_HEIGHT: usize> SingleProverCircuit
         format!("Intent And Balance Validity ({MERKLE_HEIGHT})")
     }
 
-    /// INTENT AND BALANCE VALIDITY has one proof linking group:
-    /// - intent_and_balance_public_settlement: The linking group between INTENT
-    ///   AND BALANCE VALIDITY and INTENT AND BALANCE PUBLIC SETTLEMENT. This
-    ///   group is placed by the settlement circuit, so we inherit its layout
-    ///   here.
+    /// INTENT AND BALANCE VALIDITY has two proof linking groups:
+    /// - intent_and_balance_settlement_party0: The linking group between INTENT
+    ///   AND BALANCE VALIDITY and the first party's intent and balance
+    /// - intent_and_balance_settlement_party1: The linking group between INTENT
+    ///   AND BALANCE VALIDITY and the second party's intent and balance
+    ///
+    /// This circuit inherits the group layouts from the private settlement
+    /// circuit.
     fn proof_linking_groups() -> Result<Vec<(String, Option<GroupLayout>)>, PlonkError> {
-        let circuit_layout = IntentAndBalancePublicSettlementCircuit::get_circuit_layout()?;
-        let group_layout =
-            circuit_layout.get_group_layout(INTENT_AND_BALANCE_PUBLIC_SETTLEMENT_LINK);
-
-        Ok(vec![(INTENT_AND_BALANCE_PUBLIC_SETTLEMENT_LINK.to_string(), Some(group_layout))])
+        let layout = IntentAndBalancePrivateSettlementCircuit::get_circuit_layout()?;
+        let group_layout0 = layout.get_group_layout(INTENT_AND_BALANCE_SETTLEMENT_PARTY0_LINK);
+        let group_layout1 = layout.get_group_layout(INTENT_AND_BALANCE_SETTLEMENT_PARTY1_LINK);
+        Ok(vec![
+            (INTENT_AND_BALANCE_SETTLEMENT_PARTY0_LINK.to_string(), Some(group_layout0)),
+            (INTENT_AND_BALANCE_SETTLEMENT_PARTY1_LINK.to_string(), Some(group_layout1)),
+        ])
     }
 
     fn apply_constraints(
