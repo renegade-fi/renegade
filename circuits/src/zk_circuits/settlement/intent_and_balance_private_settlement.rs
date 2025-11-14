@@ -207,20 +207,18 @@ impl SingleProverCircuit for IntentAndBalancePrivateSettlementCircuit {
 
 #[cfg(any(test, feature = "test_helpers"))]
 pub mod test_helpers {
+    use alloy_primitives::Address;
     use circuit_types::{
-        Amount,
         balance::{Balance, PostMatchBalanceShare},
         fixed_point::FixedPoint,
         intent::Intent,
         settlement_obligation::SettlementObligation,
     };
     use constants::Scalar;
+    use rand::{Rng, thread_rng};
 
     use crate::{
-        test_helpers::{
-            create_settlement_obligation_with_balance, random_address, random_amount,
-            random_intent, random_scalar,
-        },
+        test_helpers::{max_amount, random_address, random_amount, random_scalar},
         zk_circuits::settlement::intent_and_balance_private_settlement::{
             IntentAndBalancePrivateSettlementCircuit, IntentAndBalancePrivateSettlementStatement,
             IntentAndBalancePrivateSettlementWitness,
@@ -245,186 +243,65 @@ pub mod test_helpers {
     /// Construct a witness and statement with valid data
     pub fn create_witness_statement<const MERKLE_HEIGHT: usize>()
     -> (IntentAndBalancePrivateSettlementWitness, IntentAndBalancePrivateSettlementStatement) {
-        let intent = random_intent();
-        create_witness_statement_with_intent::<MERKLE_HEIGHT>(&intent)
-    }
+        // Create the intents, balances, and obligations
+        let (intent0, intent1, obligation0, obligation1) = create_compatible_intents();
+        let input_balance0 = create_send_balance(intent0.owner, &obligation0);
+        let input_balance1 = create_send_balance(intent1.owner, &obligation1);
+        let output_balance0 = create_receive_balance(intent0.owner, &obligation0);
+        let output_balance1 = create_receive_balance(intent1.owner, &obligation1);
 
-    /// Create a witness and statement with the given base intent for party 0
-    pub fn create_witness_statement_with_intent<const MERKLE_HEIGHT: usize>(
-        base_intent: &Intent,
-    ) -> (IntentAndBalancePrivateSettlementWitness, IntentAndBalancePrivateSettlementStatement)
-    {
-        // --- Party 0: intent and obligation --- //
-        let intent0 = base_intent.clone();
-
-        // Create a settlement obligation for party 0 that respects the intent's
-        // size and min price
-        let settlement_obligation0 =
-            create_settlement_obligation_with_balance(&intent0, intent0.amount_in);
-
-        // --- Party 1: intent and obligation --- //
-        //
-        // We construct a "reciprocal" intent and obligation for party 1 so that:
-        // - The token pair is reversed relative to party 0
-        // - The obligations are compatible as required by
-        //   `validate_obligation_compatibility`
-        //
-        // Specifically, we require:
-        //   obligation0.input_token == obligation1.output_token
-        //   obligation0.output_token == obligation1.input_token
-        //   obligation0.amount_in  == obligation1.amount_out
-        //   obligation0.amount_out == obligation1.amount_in
-        //
-        // We also choose party 1's intent so that:
-        //   obligation1.input_token == intent1.in_token
-        //   obligation1.output_token == intent1.out_token
-        //   obligation1.amount_in <= intent1.amount_in
-        //   obligation1.amount_out >= floor(intent1.min_price * obligation1.amount_in)
-        //
-        // The latter is trivial to satisfy by choosing `intent1.min_price = 0`.
-
-        let amount_in0: Amount = settlement_obligation0.amount_in;
-        let amount_out0: Amount = settlement_obligation0.amount_out;
-
-        let intent1 = Intent {
-            in_token: intent0.out_token,
-            out_token: intent0.in_token,
-            owner: random_address(),
-            min_price: FixedPoint::zero(),
-            amount_in: amount_out0,
-        };
-
-        let settlement_obligation1 = SettlementObligation {
-            input_token: intent1.in_token,
-            output_token: intent1.out_token,
-            amount_in: amount_out0,
-            amount_out: amount_in0,
-        };
-
-        // Convert amounts to scalars for computation of public shares
-        let amount_in0_scalar = Scalar::from(amount_in0);
-        let amount_out0_scalar = Scalar::from(amount_out0);
-        let amount_in1_scalar = Scalar::from(settlement_obligation1.amount_in);
-        let amount_out1_scalar = Scalar::from(settlement_obligation1.amount_out);
-
-        // Create pre-settlement shares for party 0
+        // Create the pre- and post-update shares
         let pre_settlement_amount_public_share0 = random_scalar();
-        let pre_settlement_in_balance_shares0 = PostMatchBalanceShare {
-            amount: random_scalar(),
-            relayer_fee_balance: random_scalar(),
-            protocol_fee_balance: random_scalar(),
-        };
-        let pre_settlement_out_balance_shares0 = PostMatchBalanceShare {
-            amount: random_scalar(),
-            relayer_fee_balance: random_scalar(),
-            protocol_fee_balance: random_scalar(),
-        };
-
-        // Create pre-settlement shares for party 1
         let pre_settlement_amount_public_share1 = random_scalar();
-        let pre_settlement_in_balance_shares1 = PostMatchBalanceShare {
-            amount: random_scalar(),
-            relayer_fee_balance: random_scalar(),
-            protocol_fee_balance: random_scalar(),
-        };
-        let pre_settlement_out_balance_shares1 = PostMatchBalanceShare {
-            amount: random_scalar(),
-            relayer_fee_balance: random_scalar(),
-            protocol_fee_balance: random_scalar(),
-        };
+        let pre_settlement_in_balance_shares0 = random_post_match_balance_share();
+        let pre_settlement_in_balance_shares1 = random_post_match_balance_share();
+        let pre_settlement_out_balance_shares0 = random_post_match_balance_share();
+        let pre_settlement_out_balance_shares1 = random_post_match_balance_share();
 
-        // Compute new shares for party 0
-        let new_amount_public_share0 = pre_settlement_amount_public_share0 - amount_in0_scalar;
+        let new_amount_public_share0 =
+            pre_settlement_amount_public_share0 - Scalar::from(obligation0.amount_in);
+        let new_amount_public_share1 =
+            pre_settlement_amount_public_share1 - Scalar::from(obligation1.amount_in);
         let new_in_balance_public_shares0 = PostMatchBalanceShare {
-            amount: pre_settlement_in_balance_shares0.amount - amount_in0_scalar,
+            amount: pre_settlement_in_balance_shares0.amount - Scalar::from(obligation0.amount_in),
             relayer_fee_balance: pre_settlement_in_balance_shares0.relayer_fee_balance,
             protocol_fee_balance: pre_settlement_in_balance_shares0.protocol_fee_balance,
         };
-        let new_out_balance_public_shares0 = PostMatchBalanceShare {
-            amount: pre_settlement_out_balance_shares0.amount + amount_out0_scalar,
-            relayer_fee_balance: pre_settlement_out_balance_shares0.relayer_fee_balance,
-            protocol_fee_balance: pre_settlement_out_balance_shares0.protocol_fee_balance,
-        };
-
-        // Compute new shares for party 1
-        let new_amount_public_share1 = pre_settlement_amount_public_share1 - amount_in1_scalar;
         let new_in_balance_public_shares1 = PostMatchBalanceShare {
-            amount: pre_settlement_in_balance_shares1.amount - amount_in1_scalar,
+            amount: pre_settlement_in_balance_shares1.amount - Scalar::from(obligation1.amount_in),
             relayer_fee_balance: pre_settlement_in_balance_shares1.relayer_fee_balance,
             protocol_fee_balance: pre_settlement_in_balance_shares1.protocol_fee_balance,
         };
+        let new_out_balance_public_shares0 = PostMatchBalanceShare {
+            amount: pre_settlement_out_balance_shares0.amount
+                + Scalar::from(obligation0.amount_out),
+            relayer_fee_balance: pre_settlement_out_balance_shares0.relayer_fee_balance,
+            protocol_fee_balance: pre_settlement_out_balance_shares0.protocol_fee_balance,
+        };
         let new_out_balance_public_shares1 = PostMatchBalanceShare {
-            amount: pre_settlement_out_balance_shares1.amount + amount_out1_scalar,
+            amount: pre_settlement_out_balance_shares1.amount
+                + Scalar::from(obligation1.amount_out),
             relayer_fee_balance: pre_settlement_out_balance_shares1.relayer_fee_balance,
             protocol_fee_balance: pre_settlement_out_balance_shares1.protocol_fee_balance,
         };
 
-        // --- Balances --- //
-        //
-        // Construct input/output balances for each party that satisfy the
-        // SettlementGadget constraints:
-        // - input_balance.amount >= obligation.amount_in
-        // - output_balance.mint == obligation.output_token
-        // - output_balance.owner == intent.owner
-        // - output_balance.amount + obligation.amount_out is a valid amount
-
-        let input_balance0 = Balance {
-            mint: intent0.in_token,
-            owner: intent0.owner,
-            relayer_fee_recipient: random_address(),
-            one_time_authority: random_address(),
-            relayer_fee_balance: random_amount(),
-            protocol_fee_balance: random_amount(),
-            amount: amount_in0,
-        };
-
-        let output_balance0 = Balance {
-            mint: settlement_obligation0.output_token,
-            owner: intent0.owner,
-            relayer_fee_recipient: random_address(),
-            one_time_authority: random_address(),
-            relayer_fee_balance: random_amount(),
-            protocol_fee_balance: random_amount(),
-            amount: 0,
-        };
-
-        let input_balance1 = Balance {
-            mint: intent1.in_token,
-            owner: intent1.owner,
-            relayer_fee_recipient: random_address(),
-            one_time_authority: random_address(),
-            relayer_fee_balance: random_amount(),
-            protocol_fee_balance: random_amount(),
-            amount: settlement_obligation1.amount_in,
-        };
-
-        let output_balance1 = Balance {
-            mint: settlement_obligation1.output_token,
-            owner: intent1.owner,
-            relayer_fee_recipient: random_address(),
-            one_time_authority: random_address(),
-            relayer_fee_balance: random_amount(),
-            protocol_fee_balance: random_amount(),
-            amount: 0,
-        };
-
+        // Create the witness and statement
         let witness = IntentAndBalancePrivateSettlementWitness {
-            settlement_obligation0,
-            intent0,
+            settlement_obligation0: obligation0,
+            intent0: intent0.clone(),
             pre_settlement_amount_public_share0,
-            input_balance0,
+            input_balance0: input_balance0.clone(),
             pre_settlement_in_balance_shares0,
-            output_balance0,
+            output_balance0: output_balance0.clone(),
             pre_settlement_out_balance_shares0,
-            settlement_obligation1,
-            intent1,
+            settlement_obligation1: obligation1,
+            intent1: intent1.clone(),
             pre_settlement_amount_public_share1,
-            input_balance1,
+            input_balance1: input_balance1.clone(),
             pre_settlement_in_balance_shares1,
-            output_balance1,
+            output_balance1: output_balance1.clone(),
             pre_settlement_out_balance_shares1,
         };
-
         let statement = IntentAndBalancePrivateSettlementStatement {
             new_amount_public_share0,
             new_in_balance_public_shares0,
@@ -436,13 +313,135 @@ pub mod test_helpers {
 
         (witness, statement)
     }
+
+    /// Create a pair of compatible intents, returns settlement obligations
+    /// which correspond to the intents
+    fn create_compatible_intents() -> (Intent, Intent, SettlementObligation, SettlementObligation) {
+        let mut rng = thread_rng();
+        let token0 = random_address();
+        let token1 = random_address();
+        let token0_amount = random_amount();
+        let token1_amount = random_amount();
+        let token0_traded = rng.gen_range(1..=token0_amount);
+        let token1_traded = rng.gen_range(1..=token1_amount);
+
+        // Compute the actual trade prices based on the traded amounts
+        let trade_price0 = (token1_traded as f64) / (token0_traded as f64);
+        let trade_price1 = (token0_traded as f64) / (token1_traded as f64);
+        let min_price0 = rng.gen_range(0.0..=trade_price0);
+        let min_price1 = rng.gen_range(0.0..=trade_price1);
+
+        let intent0 = Intent {
+            in_token: token0,
+            out_token: token1,
+            owner: random_address(),
+            min_price: FixedPoint::from_f64_round_down(min_price0),
+            amount_in: token0_amount,
+        };
+
+        let intent1 = Intent {
+            in_token: token1,
+            out_token: token0,
+            owner: random_address(),
+            min_price: FixedPoint::from_f64_round_down(min_price1),
+            amount_in: token1_amount,
+        };
+
+        let obligation0 = SettlementObligation {
+            input_token: token0,
+            output_token: token1,
+            amount_in: token0_traded,
+            amount_out: token1_traded,
+        };
+        let obligation1 = SettlementObligation {
+            input_token: token1,
+            output_token: token0,
+            amount_in: token1_traded,
+            amount_out: token0_traded,
+        };
+        (intent0, intent1, obligation0, obligation1)
+    }
+
+    /// Create a send balance for a given obligation
+    fn create_send_balance(owner: Address, obligation: &SettlementObligation) -> Balance {
+        let mut rng = thread_rng();
+        let amount = rng.gen_range(obligation.amount_in..=max_amount());
+        Balance {
+            mint: obligation.input_token,
+            owner,
+            relayer_fee_recipient: random_address(),
+            one_time_authority: random_address(),
+            relayer_fee_balance: random_amount(),
+            protocol_fee_balance: random_amount(),
+            amount,
+        }
+    }
+
+    /// Create a receive balance for a given obligation
+    fn create_receive_balance(owner: Address, obligation: &SettlementObligation) -> Balance {
+        let mut rng = thread_rng();
+        let max_existing_balance = max_amount() - obligation.amount_out;
+        let amount = rng.gen_range(0..=max_existing_balance);
+        Balance {
+            mint: obligation.output_token,
+            owner,
+            relayer_fee_recipient: random_address(),
+            one_time_authority: random_address(),
+            relayer_fee_balance: random_amount(),
+            protocol_fee_balance: random_amount(),
+            amount,
+        }
+    }
+
+    /// Create a random post-match balance share
+    pub fn random_post_match_balance_share() -> PostMatchBalanceShare {
+        PostMatchBalanceShare {
+            amount: random_scalar(),
+            relayer_fee_balance: random_scalar(),
+            protocol_fee_balance: random_scalar(),
+        }
+    }
 }
 
 #[cfg(test)]
+#[allow(unused_braces)]
 mod test {
+    use crate::test_helpers::{compute_implied_price, random_address, random_scalar};
+
     use super::*;
-    use circuit_types::traits::SingleProverCircuit;
+    use circuit_types::{max_amount, traits::SingleProverCircuit};
     use constants::MERKLE_HEIGHT;
+    use rand::{Rng, thread_rng};
+
+    macro_rules! rand_branch {
+        // Base case: 2 branches
+        ($branch1:tt, $branch2:tt) => {
+            if thread_rng().gen_bool(0.5) { $branch1 } else { $branch2 }
+        };
+        // Recursive case: N branches (N > 2)
+        // Randomly choose between first branch and the rest
+        ($first:tt, $($rest:tt),+ $(,)?) => {
+            {
+                let mut rng = thread_rng();
+                let n = 1 + count_branches!($($rest),+);
+                let choice = rng.gen_range(0..n);
+                if choice == 0 {
+                    $first
+                } else {
+                    rand_branch!($($rest),+)
+                }
+            }
+        };
+    }
+
+    // Helper macro to count branches
+    #[allow(unused_macros)]
+    macro_rules! count_branches {
+        ($first:tt) => { 1 };
+        ($first:tt, $($rest:tt),+ $(,)?) => {
+            1 + count_branches!($($rest),+)
+        };
+    }
 
     /// A helper to print the number of constraints in the circuit
     ///
@@ -462,5 +461,283 @@ mod test {
     fn test_valid_intent_and_balance_private_settlement_constraints() {
         let (witness, statement) = test_helpers::create_witness_statement::<MERKLE_HEIGHT>();
         assert!(test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
+    }
+
+    // --- Incompatible Obligations --- //
+
+    /// Test the case in which the obligation amounts are invalid
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_obligation__invalid_amount() {
+        let (mut witness, statement) = test_helpers::create_witness_statement::<MERKLE_HEIGHT>();
+
+        // Pick a random obligation amount to corrupt
+        let amount = rand_branch!(
+            { &mut witness.settlement_obligation0.amount_in },
+            { &mut witness.settlement_obligation0.amount_out },
+            { &mut witness.settlement_obligation1.amount_in },
+            { &mut witness.settlement_obligation1.amount_out }
+        );
+
+        *amount = max_amount() + 1;
+        assert!(!test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
+    }
+
+    /// Test the case in which an obligation input token is misconfigured
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_obligation__input_token_mismatch() {
+        let (mut witness, statement) = test_helpers::create_witness_statement::<MERKLE_HEIGHT>();
+
+        let bad_token = random_address();
+        rand_branch!(
+            {
+                witness.settlement_obligation0.input_token = bad_token;
+                witness.intent0.in_token = bad_token;
+            },
+            {
+                witness.settlement_obligation1.input_token = bad_token;
+                witness.intent1.in_token = bad_token;
+            }
+        );
+
+        assert!(!test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
+    }
+
+    /// Test the case in which an obligation output token is misconfigured
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_obligation__output_token_mismatch() {
+        let (mut witness, statement) = test_helpers::create_witness_statement::<MERKLE_HEIGHT>();
+
+        let bad_token = random_address();
+        rand_branch!(
+            {
+                witness.settlement_obligation0.output_token = bad_token;
+                witness.intent0.out_token = bad_token;
+                witness.output_balance0.mint = bad_token;
+            },
+            {
+                witness.settlement_obligation1.output_token = bad_token;
+                witness.intent1.out_token = bad_token;
+                witness.output_balance1.mint = bad_token;
+            }
+        );
+        assert!(!test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
+    }
+
+    /// Test the case in which the input and output amounts of the obligations
+    /// are not aligned
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_obligation__amounts_not_aligned() {
+        let (mut witness, mut statement) =
+            test_helpers::create_witness_statement::<MERKLE_HEIGHT>();
+
+        rand_branch!(
+            {
+                witness.settlement_obligation0.amount_in -= 1;
+                statement.new_amount_public_share0 -= Scalar::one();
+                statement.new_in_balance_public_shares0.amount -= Scalar::one();
+            },
+            {
+                witness.settlement_obligation1.amount_in -= 1;
+                statement.new_amount_public_share1 -= Scalar::one();
+                statement.new_in_balance_public_shares1.amount -= Scalar::one();
+            }
+        );
+        assert!(!test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
+    }
+
+    // --- Invalid Intent --- //
+
+    /// Test the case in which an intent is incompatible with an obligation
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_obligation__intent_incompatible() {
+        let (mut witness, statement) = test_helpers::create_witness_statement::<MERKLE_HEIGHT>();
+
+        let bad_token = random_address();
+        #[rustfmt::skip]
+        rand_branch!(
+            { witness.intent0.out_token = bad_token; },
+            { witness.intent0.in_token = bad_token; },
+            { witness.intent1.in_token = bad_token; },
+            { witness.intent1.out_token = bad_token; }
+        );
+        assert!(!test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
+    }
+
+    /// Test the case in which an intent's input amount is violated
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_intent__input_amount_violated() {
+        let (mut witness, statement) = test_helpers::create_witness_statement::<MERKLE_HEIGHT>();
+
+        #[rustfmt::skip]
+        rand_branch!(
+            { witness.intent0.amount_in = witness.settlement_obligation0.amount_in - 1; },
+            { witness.intent1.amount_in = witness.settlement_obligation1.amount_in - 1; }
+        );
+        assert!(!test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
+    }
+
+    /// Test the case in which the intent's min price is violated
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_intent__min_price_violated() {
+        let (mut witness, statement) = test_helpers::create_witness_statement::<MERKLE_HEIGHT>();
+
+        // Increase the min price by a factor of 2 so that the obligation violates it
+        let two_scalar = Scalar::from(2u8);
+        rand_branch!(
+            {
+                let obligation = &witness.settlement_obligation0;
+                let trade_price =
+                    compute_implied_price(obligation.amount_out, obligation.amount_in);
+                witness.intent0.min_price = trade_price * two_scalar;
+            },
+            {
+                let obligation = &witness.settlement_obligation1;
+                let trade_price =
+                    compute_implied_price(obligation.amount_out, obligation.amount_in);
+                witness.intent1.min_price = trade_price * two_scalar;
+            }
+        );
+        assert!(!test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
+    }
+
+    // --- Invalid Input Balance --- //
+
+    /// Test the case in which the input balance does not capitalize the
+    /// obligation
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_input_balance__undercapitalized() {
+        let (mut witness, statement) = test_helpers::create_witness_statement::<MERKLE_HEIGHT>();
+
+        #[rustfmt::skip]
+        rand_branch!(
+            { witness.input_balance0.amount = witness.settlement_obligation0.amount_in - 1; },
+            { witness.input_balance1.amount = witness.settlement_obligation1.amount_in - 1; }
+        );
+        assert!(!test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
+    }
+
+    // --- Invalid Output Balance --- //
+
+    /// Test the case in which the output balance does not capitalize the
+    /// obligation
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_output_balance__wrong_mint() {
+        let (mut witness, statement) = test_helpers::create_witness_statement::<MERKLE_HEIGHT>();
+
+        let bad_mint = random_address();
+        #[rustfmt::skip]
+        rand_branch!(
+            { witness.output_balance0.mint = bad_mint; },
+            { witness.output_balance1.mint = bad_mint; }
+        );
+        assert!(!test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
+    }
+
+    /// Test the case in which the balance owner is not the same as the intent's
+    /// owner
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_output_balance__owner_mismatch() {
+        let (mut witness, statement) = test_helpers::create_witness_statement::<MERKLE_HEIGHT>();
+
+        let bad_owner = random_address();
+        #[rustfmt::skip]
+        rand_branch!(
+            { witness.output_balance0.owner = bad_owner; },
+            { witness.output_balance1.owner = bad_owner; }
+        );
+        assert!(!test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
+    }
+
+    /// Test the case in which the output balance overflows
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_output_balance__overflow() {
+        let (mut witness, statement) = test_helpers::create_witness_statement::<MERKLE_HEIGHT>();
+
+        let bal_amt = max_amount() - 1;
+        #[rustfmt::skip]
+        rand_branch!(
+            { witness.output_balance0.amount = bal_amt; },
+            { witness.output_balance1.amount = bal_amt; }
+        );
+        assert!(!test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
+    }
+
+    // --- Invalid State Updates --- //
+
+    /// Test the case in which the intent's amount public share is modified
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_update__intent_amount_public_share_modified() {
+        let (witness, mut statement) = test_helpers::create_witness_statement::<MERKLE_HEIGHT>();
+
+        #[rustfmt::skip]
+        rand_branch!(
+            { statement.new_amount_public_share0 = random_scalar(); },
+            { statement.new_amount_public_share1 = random_scalar(); }
+        );
+        assert!(!test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
+    }
+
+    /// Test the case in which the input balance's public shares are modified
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_update__input_balance_public_shares_modified() {
+        let mut rng = thread_rng();
+        let (witness, mut statement) = test_helpers::create_witness_statement::<MERKLE_HEIGHT>();
+
+        rand_branch!(
+            {
+                let mut shares = statement.new_in_balance_public_shares0.to_scalars();
+                let idx = rng.gen_range(0..shares.len());
+                shares[idx] = random_scalar();
+                statement.new_in_balance_public_shares0 =
+                    PostMatchBalanceShare::from_scalars(&mut shares.into_iter());
+            },
+            {
+                let mut shares = statement.new_in_balance_public_shares1.to_scalars();
+                let idx = rng.gen_range(0..shares.len());
+                shares[idx] = random_scalar();
+                statement.new_in_balance_public_shares1 =
+                    PostMatchBalanceShare::from_scalars(&mut shares.into_iter());
+            }
+        );
+        assert!(!test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
+    }
+
+    /// Test the case in which the output balance's public shares are modified
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_update__output_balance_public_shares_modified() {
+        let mut rng = thread_rng();
+        let (witness, mut statement) = test_helpers::create_witness_statement::<MERKLE_HEIGHT>();
+
+        rand_branch!(
+            {
+                let mut shares = statement.new_out_balance_public_shares0.to_scalars();
+                let idx = rng.gen_range(0..shares.len());
+                shares[idx] = random_scalar();
+                statement.new_out_balance_public_shares0 =
+                    PostMatchBalanceShare::from_scalars(&mut shares.into_iter());
+            },
+            {
+                let mut shares = statement.new_out_balance_public_shares1.to_scalars();
+                let idx = rng.gen_range(0..shares.len());
+                shares[idx] = random_scalar();
+                statement.new_out_balance_public_shares1 =
+                    PostMatchBalanceShare::from_scalars(&mut shares.into_iter());
+            }
+        );
+        assert!(!test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
     }
 }

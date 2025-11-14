@@ -101,12 +101,12 @@ impl SettlementGadget {
         // The output balance's mint must match the obligation's output token
         EqGadget::constrain_eq(&out_balance.mint, &obligation.output_token, cs)?;
 
+        // The output balance must be owned by the intent's owner
+        EqGadget::constrain_eq(&out_balance.owner, &intent.owner, cs)?;
+
         // The output amount must not overflow the receive balance
         let new_bal_amount = cs.add(out_balance.amount, obligation.amount_out)?;
-        AmountGadget::constrain_valid_amount(new_bal_amount, cs)?;
-
-        // The output balance must be owned by the intent's owner
-        EqGadget::constrain_eq(&out_balance.owner, &intent.owner, cs)
+        AmountGadget::constrain_valid_amount(new_bal_amount, cs)
     }
 
     // --- State Update Constraints --- //
