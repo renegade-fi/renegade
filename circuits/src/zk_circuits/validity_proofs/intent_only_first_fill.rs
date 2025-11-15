@@ -274,10 +274,12 @@ pub mod test_helpers {
 
 #[cfg(test)]
 mod test {
-    use crate::test_helpers::{max_amount, random_address, random_intent, random_scalar};
+    use crate::test_helpers::{random_address, random_intent, random_scalar};
 
     use super::*;
-    use circuit_types::{fixed_point::FixedPoint, max_price, traits::SingleProverCircuit};
+    use circuit_types::{
+        fixed_point::FixedPoint, max_amount, max_price, traits::SingleProverCircuit,
+    };
     use rand::{Rng, thread_rng};
 
     /// A helper to print the number of constraints in the circuit

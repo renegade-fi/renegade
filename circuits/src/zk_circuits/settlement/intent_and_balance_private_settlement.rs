@@ -7,6 +7,7 @@ use circuit_macros::circuit_type;
 use circuit_types::{
     PlonkCircuit,
     balance::{Balance, PostMatchBalanceShare},
+    fixed_point::FixedPoint,
     intent::Intent,
     settlement_obligation::SettlementObligation,
     traits::{BaseType, CircuitBaseType, CircuitVarType},
@@ -194,6 +195,16 @@ pub struct IntentAndBalancePrivateSettlementStatement {
     pub new_in_balance_public_shares1: PostMatchBalanceShare,
     /// The updated public shares of the second party's output balance
     pub new_out_balance_public_shares1: PostMatchBalanceShare,
+
+    // --- Fees --- //
+    /// The relayer fee applied to the first party's match
+    pub relayer_fee0: FixedPoint,
+    /// The relayer fee applied to the second party's match
+    pub relayer_fee1: FixedPoint,
+    /// The protocol fee applied to the match
+    ///
+    /// This is the same for both parties
+    pub protocol_fee: FixedPoint,
 }
 
 // ---------------------
@@ -251,13 +262,14 @@ pub mod test_helpers {
         balance::{Balance, PostMatchBalanceShare},
         fixed_point::FixedPoint,
         intent::Intent,
+        max_amount,
         settlement_obligation::SettlementObligation,
     };
     use constants::Scalar;
     use rand::{Rng, thread_rng};
 
     use crate::{
-        test_helpers::{max_amount, random_address, random_amount, random_scalar},
+        test_helpers::{random_address, random_amount, random_fee, random_scalar},
         zk_circuits::settlement::intent_and_balance_private_settlement::{
             IntentAndBalancePrivateSettlementCircuit, IntentAndBalancePrivateSettlementStatement,
             IntentAndBalancePrivateSettlementWitness,
@@ -348,6 +360,9 @@ pub mod test_helpers {
             new_amount_public_share1,
             new_in_balance_public_shares1,
             new_out_balance_public_shares1,
+            relayer_fee0: random_fee(),
+            relayer_fee1: random_fee(),
+            protocol_fee: random_fee(),
         };
 
         (witness, statement)
