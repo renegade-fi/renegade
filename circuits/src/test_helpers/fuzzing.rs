@@ -11,12 +11,13 @@ use circuit_types::{
     elgamal::{DecryptionKey, EncryptionKey},
     fixed_point::FixedPoint,
     intent::Intent,
+    max_amount,
     settlement_obligation::SettlementObligation,
     state_wrapper::StateWrapper,
     traits::{BaseType, CircuitBaseType, SecretShareBaseType},
     withdrawal::Withdrawal,
 };
-use constants::Scalar;
+use constants::{MAX_RELAYER_FEE_RATE, Scalar};
 use itertools::Itertools;
 use rand::{Rng, distributions::uniform::SampleRange, thread_rng};
 use renegade_crypto::fields::scalar_to_u128;
@@ -52,11 +53,6 @@ pub fn random_amount() -> Amount {
     amt / 10
 }
 
-/// Get the maximum amount allowed
-pub fn max_amount() -> Amount {
-    (1u128 << AMOUNT_BITS) - 1u128
-}
-
 /// Generate a random address
 pub fn random_address() -> Address {
     let mut rng = thread_rng();
@@ -72,6 +68,13 @@ pub fn random_price() -> FixedPoint {
     let price_f64 = thread_rng().gen_range(min_price..max_price);
 
     FixedPoint::from_f64_round_down(price_f64)
+}
+
+/// Generate a random fee
+pub fn random_fee() -> FixedPoint {
+    let mut rng = thread_rng();
+    let fee_f64 = rng.gen_range(0.0..=MAX_RELAYER_FEE_RATE);
+    FixedPoint::from_f64_round_down(fee_f64)
 }
 
 // ---------------

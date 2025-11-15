@@ -25,7 +25,7 @@ pub use primitives::*;
 
 use ark_ff::BigInt;
 use bigdecimal::Num;
-use constants::{ADDRESS_BYTE_LENGTH, Scalar, ScalarField};
+use constants::{ADDRESS_BYTE_LENGTH, MAX_RELAYER_FEE_RATE, Scalar, ScalarField};
 use num_bigint::BigUint;
 use primitives::fixed_point::{DEFAULT_FP_PRECISION, FixedPoint};
 use renegade_crypto::fields::{biguint_to_scalar, scalar_to_biguint};
@@ -147,6 +147,11 @@ pub fn max_price() -> FixedPoint {
 /// Get the maximum representable amount
 pub fn max_amount() -> Amount {
     (1u128 << AMOUNT_BITS) - 1
+}
+
+/// The maximum fee rate allowed by the protocol
+pub fn maximum_fee() -> FixedPoint {
+    FixedPoint::from_f64_round_down(MAX_RELAYER_FEE_RATE)
 }
 
 /// Verify that an amount is within the correct bitlength

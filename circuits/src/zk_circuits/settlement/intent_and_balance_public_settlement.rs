@@ -7,6 +7,7 @@ use circuit_macros::circuit_type;
 use circuit_types::{
     PlonkCircuit,
     balance::{Balance, PostMatchBalanceShare},
+    fixed_point::FixedPoint,
     intent::Intent,
     settlement_obligation::SettlementObligation,
     traits::{BaseType, CircuitBaseType, CircuitVarType},
@@ -135,6 +136,13 @@ pub struct IntentAndBalancePublicSettlementStatement {
     /// The updated public shares of the post-match balance fields for the
     /// output balance
     pub new_out_balance_public_shares: PostMatchBalanceShare,
+    /// The relayer fee which is charged for the settlement
+    ///
+    /// We place this field in the statement so that it is included in the
+    /// Fiat-Shamir transcript and therefore is not malleable transaction
+    /// calldata. This allows the relayer to set the fee and be sure it cannot
+    /// be modified by mempool observers.
+    pub relayer_fee: FixedPoint,
 }
 
 // ---------------------
@@ -196,7 +204,7 @@ pub mod test_helpers {
 
     use crate::{
         test_helpers::{
-            create_settlement_obligation_with_balance, random_address, random_amount,
+            create_settlement_obligation_with_balance, random_address, random_amount, random_fee,
             random_intent, random_scalar,
         },
         zk_circuits::settlement::intent_and_balance_public_settlement::{
@@ -312,6 +320,7 @@ pub mod test_helpers {
             new_amount_public_share,
             new_in_balance_public_shares,
             new_out_balance_public_shares,
+            relayer_fee: random_fee(),
         };
 
         (witness, statement)

@@ -8,6 +8,7 @@
 use circuit_macros::circuit_type;
 use circuit_types::{
     AMOUNT_BITS, PlonkCircuit,
+    fixed_point::FixedPoint,
     intent::Intent,
     settlement_obligation::SettlementObligation,
     traits::{BaseType, CircuitBaseType, CircuitVarType},
@@ -141,6 +142,13 @@ pub struct IntentOnlyPublicSettlementStatement {
     pub settlement_obligation: SettlementObligation,
     /// The updated amount public share of the intent
     pub new_amount_public_share: Scalar,
+    /// The relayer fee which is charged for the settlement
+    ///
+    /// We place this field in the statement so that it is included in the
+    /// Fiat-Shamir transcript and therefore is not malleable transaction
+    /// calldata. This allows the relayer to set the fee and be sure it cannot
+    /// be modified by mempool observers.
+    pub relayer_fee: FixedPoint,
 }
 
 // ---------------------
@@ -186,7 +194,8 @@ pub mod test_helpers {
 
     use crate::{
         test_helpers::{
-            check_constraints_satisfied, create_settlement_obligation, random_intent, random_scalar,
+            check_constraints_satisfied, create_settlement_obligation, random_fee, random_intent,
+            random_scalar,
         },
         zk_circuits::settlement::intent_only_public_settlement::{
             IntentOnlyPublicSettlementCircuit, IntentOnlyPublicSettlementStatement,
@@ -231,8 +240,11 @@ pub mod test_helpers {
             intent: intent.clone(),
             pre_settlement_amount_public_share,
         };
-        let statement =
-            IntentOnlyPublicSettlementStatement { settlement_obligation, new_amount_public_share };
+        let statement = IntentOnlyPublicSettlementStatement {
+            settlement_obligation,
+            new_amount_public_share,
+            relayer_fee: random_fee(),
+        };
 
         (witness, statement)
     }
