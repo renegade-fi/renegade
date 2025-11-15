@@ -104,7 +104,6 @@ mod test {
         },
     };
     use circuit_types::traits::SingleProverCircuit;
-    use constants::Scalar;
 
     /// The Merkle height used for testing
     const TEST_MERKLE_HEIGHT: usize = 3;
@@ -174,15 +173,8 @@ mod test {
             create_first_fill_witness_statement(&intent);
 
         // Create the settlement witness and statement with the same intent
-        let (mut settlement_witness, mut settlement_statement) =
+        let (settlement_witness, settlement_statement) =
             create_settlement_witness_statement::<TEST_MERKLE_HEIGHT>(&intent);
-
-        // Align the settlement witness with the first fill witness
-        settlement_witness.pre_settlement_amount_public_share =
-            first_fill_witness.new_amount_public_share;
-        let amt_int = Scalar::from(settlement_statement.settlement_obligation.amount_in);
-        settlement_statement.new_amount_public_share =
-            settlement_witness.pre_settlement_amount_public_share - amt_int;
 
         (first_fill_witness, first_fill_statement, settlement_witness, settlement_statement)
     }
@@ -211,15 +203,8 @@ mod test {
             create_validity_witness_statement::<TEST_MERKLE_HEIGHT>(intent.clone());
 
         // Create the settlement witness and statement with the same intent
-        let (mut settlement_witness, mut settlement_statement) =
+        let (settlement_witness, settlement_statement) =
             create_settlement_witness_statement::<TEST_MERKLE_HEIGHT>(&intent);
-
-        // Align the settlement witness with the validity witness
-        settlement_witness.pre_settlement_amount_public_share =
-            validity_witness.new_amount_public_share;
-        let amt_int = Scalar::from(settlement_statement.settlement_obligation.amount_in);
-        settlement_statement.new_amount_public_share =
-            settlement_witness.pre_settlement_amount_public_share - amt_int;
 
         (validity_witness, validity_statement, settlement_witness, settlement_statement)
     }
@@ -309,44 +294,6 @@ mod test {
         // Modify the intent in the settlement witness to break the link
         settlement_witness.intent.amount_in += 1;
 
-        test_intent_first_fill_settlement_link(
-            first_fill_witness,
-            first_fill_statement,
-            settlement_witness,
-            settlement_statement,
-        )
-        .unwrap();
-    }
-
-    /// Tests an invalid link between a proof of INTENT ONLY FIRST FILL VALIDITY
-    /// and a proof of INTENT ONLY PUBLIC SETTLEMENT wherein the amount public
-    /// share is modified between the two proofs
-    #[cfg_attr(feature = "ci", ignore)]
-    #[test]
-    #[should_panic(expected = "ProofLinkVerification")]
-    #[allow(non_snake_case)]
-    fn test_intent_first_fill_settlement_invalid_link__modified_amount_public_share() {
-        use constants::Scalar;
-        use rand::thread_rng;
-
-        let (
-            first_fill_witness,
-            first_fill_statement,
-            mut settlement_witness,
-            mut settlement_statement,
-        ) = build_intent_first_fill_settlement_data();
-
-        // Modify the amount public share in the settlement witness to break the link
-        // We also need to update the statement to keep the settlement circuit valid
-        let mut rng = thread_rng();
-        let modification = Scalar::random(&mut rng);
-        settlement_witness.pre_settlement_amount_public_share += modification;
-        // Update the statement to keep the settlement circuit constraints satisfied
-        settlement_statement.new_amount_public_share += modification;
-
-        // Now the settlement circuit is valid, but the link will fail because
-        // settlement_witness.pre_settlement_amount_public_share doesn't match
-        // first_fill_witness.new_amount_public_share
         test_intent_first_fill_settlement_link(
             first_fill_witness,
             first_fill_statement,

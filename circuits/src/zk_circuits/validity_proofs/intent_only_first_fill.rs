@@ -53,14 +53,6 @@ impl IntentOnlyFirstFillValidityCircuit {
         // 1. Validate the intent
         let mut intent = Self::build_and_validate_intent(witness, statement, cs)?;
 
-        // 2. Validate that the witness' public share of the amount matches the public
-        //    share computed for the intent
-        EqGadget::constrain_eq(
-            &witness.new_amount_public_share,
-            &intent.public_share.amount_in,
-            cs,
-        )?;
-
         // 2. Compute the recovery identifier for the new intent
         let recovery_id = RecoveryIdGadget::compute_recovery_id(&mut intent, cs)?;
         EqGadget::constrain_eq(&recovery_id, &statement.recovery_id, cs)?;
@@ -123,13 +115,6 @@ pub struct IntentOnlyFirstFillValidityWitness {
     /// encryption is authorized by the user.
     #[link_groups = "intent_only_settlement"]
     pub intent: Intent,
-    /// The public share of the intent's `amount_in` field
-    ///
-    /// Places here in the witness to enable proof linking between this
-    /// circuit's witness and the `INTENT ONLY PUBLIC SETTLEMENT` circuit's
-    /// witness.
-    #[link_groups = "intent_only_settlement"]
-    pub new_amount_public_share: Scalar,
     /// The initial intent share CSPRNG
     pub initial_intent_share_stream: PoseidonCSPRNG,
     /// The initial intent recovery stream
@@ -251,14 +236,12 @@ pub mod test_helpers {
         // Get shares from the initial (pre-mutation) state
         let private_shares = initial_intent.private_shares();
         let intent_public_share = initial_intent.public_share();
-        let new_amount_public_share = intent_public_share.amount_in;
 
         // Build the witness with the pre-mutation state
         let witness = IntentOnlyFirstFillValidityWitness {
             intent: initial_intent.inner,
             initial_intent_share_stream: initial_intent.share_stream,
             initial_intent_recovery_stream: initial_intent.recovery_stream,
-            new_amount_public_share,
             private_shares,
         };
         let statement = IntentOnlyFirstFillValidityStatement {
@@ -348,17 +331,6 @@ mod test {
         let random_index = rng.gen_range(0..public_share.len());
         public_share[random_index] = random_scalar();
         statement.intent_public_share = IntentShare::from_scalars(&mut public_share.into_iter());
-
-        assert!(!test_helpers::check_constraints(&witness, &statement));
-    }
-
-    /// Test the case in which the public share of the amount is not correctly
-    /// set in the witness
-    #[test]
-    #[allow(non_snake_case)]
-    fn test_invalid_intent__public_share_amount_not_correctly_set() {
-        let (mut witness, statement) = test_helpers::create_witness_statement();
-        witness.new_amount_public_share = random_scalar();
 
         assert!(!test_helpers::check_constraints(&witness, &statement));
     }

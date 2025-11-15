@@ -7,7 +7,7 @@
 
 use circuit_macros::circuit_type;
 use circuit_types::{
-    AMOUNT_BITS, PlonkCircuit,
+    PlonkCircuit,
     fixed_point::FixedPoint,
     intent::Intent,
     settlement_obligation::SettlementObligation,
@@ -24,13 +24,7 @@ use mpc_relation::{
 use serde::{Deserialize, Serialize};
 
 use super::INTENT_ONLY_PUBLIC_SETTLEMENT_LINK;
-use crate::{
-    SingleProverCircuit,
-    zk_gadgets::{
-        comparators::{EqGadget, GreaterThanEqGadget},
-        fixed_point::FixedPointGadget,
-    },
-};
+use crate::{SingleProverCircuit, zk_circuits::settlement::settlement_lib::SettlementGadget};
 
 // ----------------------
 // | Circuit Definition |
@@ -41,61 +35,23 @@ pub struct IntentOnlyPublicSettlementCircuit<const MERKLE_HEIGHT: usize>;
 
 impl<const MERKLE_HEIGHT: usize> IntentOnlyPublicSettlementCircuit<MERKLE_HEIGHT> {
     /// Apply the circuit constraints to a given constraint system
+    ///
+    /// Note that the intent's amount public share is updated by the contracts
+    /// using the homomorphic property of our stream cipher. So we need not
+    /// validate any state updates here.
+    ///
+    /// All that must be validated here is that the intent's constraints are
+    /// satisfied by the settlement obligation.
     pub fn circuit(
         statement: &IntentOnlyPublicSettlementStatementVar,
         witness: &mut IntentOnlyPublicSettlementWitnessVar<MERKLE_HEIGHT>,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
-        // 1. Verify that the constraints which the intent places on the settlement
-        //    obligation are satisfied
-        Self::verify_intent_constraints(statement, witness, cs)?;
-
-        // 2. Verify the update to the intent's amount public share
-        // The remaining amount in the intent should decrease by the amount paid in the
-        // obligation. We can rely on the additive homomorphic property of our stream
-        // cipher and simply subtract the executed amount from the pre-settlement public
-        // share.
-        let expected_public_share = cs.sub(
-            witness.pre_settlement_amount_public_share,
-            statement.settlement_obligation.amount_in,
-        )?;
-        EqGadget::constrain_eq(&expected_public_share, &statement.new_amount_public_share, cs)?;
-
-        Ok(())
-    }
-
-    /// Verify the constraints which the intent places on the settlement
-    /// obligation
-    fn verify_intent_constraints(
-        statement: &IntentOnlyPublicSettlementStatementVar,
-        witness: &IntentOnlyPublicSettlementWitnessVar<MERKLE_HEIGHT>,
-        cs: &mut PlonkCircuit,
-    ) -> Result<(), CircuitError> {
-        let intent = &witness.intent;
-        let obligation = &statement.settlement_obligation;
-
-        // The settlement obligation's token pair must match that of the intent
-        EqGadget::constrain_eq(&obligation.input_token, &intent.in_token, cs)?;
-        EqGadget::constrain_eq(&obligation.output_token, &intent.out_token, cs)?;
-
-        // The input amount of the obligation must not exceed the intent's amount
-        GreaterThanEqGadget::constrain_greater_than_eq(
-            intent.amount_in,
-            obligation.amount_in,
-            AMOUNT_BITS,
-            cs,
-        )?;
-
-        // The settlement obligation must exceed the intent's worst case price
-        // `intent.min_price` is in units of `out_token/in_token` so we need only clear
-        // the denominator
-        let min_output_fp =
-            FixedPointGadget::mul_integer(intent.min_price, obligation.amount_in, cs)?;
-        let min_output = FixedPointGadget::floor(min_output_fp, cs)?;
-        GreaterThanEqGadget::constrain_greater_than_eq(
-            obligation.amount_out,
-            min_output,
-            AMOUNT_BITS,
+        // Verify that the constraints which the intent places on the settlement
+        // obligation are satisfied
+        SettlementGadget::verify_intent_constraints(
+            &witness.intent,
+            &statement.settlement_obligation,
             cs,
         )?;
 
@@ -114,12 +70,6 @@ pub struct IntentOnlyPublicSettlementWitness<const MERKLE_HEIGHT: usize> {
     /// The intent which this circuit is settling a match for
     #[link_groups = "intent_only_settlement"]
     pub intent: Intent,
-    /// The pre-update public share of the intent's amount
-    ///
-    /// This should match the `new_amount_public_share` from the intent validity
-    /// proof that authorized this settlement
-    #[link_groups = "intent_only_settlement"]
-    pub pre_settlement_amount_public_share: Scalar,
 }
 
 /// A `INTENT ONLY PUBLIC SETTLEMENT` witness with default const generic sizing
@@ -140,8 +90,6 @@ pub struct IntentOnlyPublicSettlementStatement {
     /// which require only the obligation. For example, bitlengths on the
     /// obligation's in and out amounts
     pub settlement_obligation: SettlementObligation,
-    /// The updated amount public share of the intent
-    pub new_amount_public_share: Scalar,
     /// The relayer fee which is charged for the settlement
     ///
     /// We place this field in the statement so that it is included in the
@@ -190,12 +138,10 @@ impl<const MERKLE_HEIGHT: usize> SingleProverCircuit
 #[cfg(any(test, feature = "test_helpers"))]
 pub mod test_helpers {
     use circuit_types::intent::Intent;
-    use constants::Scalar;
 
     use crate::{
         test_helpers::{
             check_constraints_satisfied, create_settlement_obligation, random_fee, random_intent,
-            random_scalar,
         },
         zk_circuits::settlement::intent_only_public_settlement::{
             IntentOnlyPublicSettlementCircuit, IntentOnlyPublicSettlementStatement,
@@ -231,18 +177,9 @@ pub mod test_helpers {
     ) -> (IntentOnlyPublicSettlementWitness<MERKLE_HEIGHT>, IntentOnlyPublicSettlementStatement)
     {
         let settlement_obligation = create_settlement_obligation(intent);
-
-        let pre_settlement_amount_public_share = random_scalar();
-        let new_amount_public_share =
-            pre_settlement_amount_public_share - Scalar::from(settlement_obligation.amount_in);
-
-        let witness = IntentOnlyPublicSettlementWitness {
-            intent: intent.clone(),
-            pre_settlement_amount_public_share,
-        };
+        let witness = IntentOnlyPublicSettlementWitness { intent: intent.clone() };
         let statement = IntentOnlyPublicSettlementStatement {
             settlement_obligation,
-            new_amount_public_share,
             relayer_fee: random_fee(),
         };
 
@@ -252,12 +189,10 @@ pub mod test_helpers {
 
 #[cfg(test)]
 mod test {
-    use crate::test_helpers::{
-        compute_min_amount_out, random_address, random_intent, random_scalar,
-    };
+    use crate::test_helpers::{compute_min_amount_out, random_address, random_intent};
 
     use super::*;
-    use circuit_types::{max_amount, traits::SingleProverCircuit};
+    use circuit_types::{AMOUNT_BITS, max_amount, traits::SingleProverCircuit};
     use constants::MERKLE_HEIGHT;
     use rand::{Rng, thread_rng};
 
@@ -298,8 +233,6 @@ mod test {
         let min_out = compute_min_amount_out(&witness.intent, witness.intent.amount_in);
         let amt_out = rng.gen_range(min_out..=max_amount());
         statement.settlement_obligation.amount_out = amt_out;
-        statement.new_amount_public_share =
-            witness.pre_settlement_amount_public_share - Scalar::from(witness.intent.amount_in);
         assert!(test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
     }
 
@@ -316,15 +249,6 @@ mod test {
     }
 
     // --- Invalid Test Cases --- //
-
-    /// Test the case in which the `amount_in` public share is updated
-    /// incorrectly
-    #[test]
-    fn test_invalid_amount_in_public_share() {
-        let (witness, mut statement) = test_helpers::create_witness_statement::<MERKLE_HEIGHT>();
-        statement.new_amount_public_share = random_scalar();
-        assert!(!test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
-    }
 
     /// Test the case in which the pair in the obligation does not match the
     /// pair in the intent
@@ -361,8 +285,6 @@ mod test {
         // Update other fields to isolate the constraint
         let amount_out = compute_min_amount_out(&witness.intent, new_amount_in);
         statement.settlement_obligation.amount_out = amount_out;
-        statement.new_amount_public_share =
-            witness.pre_settlement_amount_public_share - Scalar::from(new_amount_in);
 
         // Check that the constraints are not satisfied
         assert!(!test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));

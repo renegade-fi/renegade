@@ -77,7 +77,7 @@ impl<const MERKLE_HEIGHT: usize> IntentOnlyValidityCircuit<MERKLE_HEIGHT> {
         EqGadget::constrain_eq(&new_intent.inner, &witness.intent, cs)?;
         EqGadget::constrain_eq(
             &new_intent.public_share.amount_in,
-            &witness.new_amount_public_share,
+            &statement.new_amount_public_share,
             cs,
         )?;
         EqGadget::constrain_eq(&new_intent.inner.owner, &statement.owner, cs)?;
@@ -155,13 +155,6 @@ pub struct IntentOnlyValidityWitness<const MERKLE_HEIGHT: usize> {
     /// SETTLEMENT` circuit's witness.
     #[link_groups = "intent_only_settlement"]
     pub intent: Intent,
-    /// The new public share of the `amount_in` field after the value has been
-    /// re-encrypted. This value appears only in the witness and is proof-linked
-    /// into the settlement proof. Doing so prevents the verifier from learning
-    /// the pre- and post- public share or the `amount_in` field which would
-    /// leak the match size.
-    #[link_groups = "intent_only_settlement"]
-    pub new_amount_public_share: Scalar,
 }
 
 /// A `INTENT ONLY VALIDITY` witness with default const generic sizing
@@ -186,6 +179,14 @@ pub struct IntentOnlyValidityStatement {
     pub merkle_root: MerkleRoot,
     /// The nullifier of the old intent
     pub old_intent_nullifier: Nullifier,
+    /// The new public share of the `amount_in` field after the value has been
+    /// re-encrypted.
+    ///
+    /// Unlike other validity proofs, the settlement circuit for the `INTENT
+    /// ONLY VALIDITY` circuit is always a public circuit. Therefore, we can
+    /// leak the public share immediately as it will be updated on-chain
+    /// anyways.
+    pub new_amount_public_share: Scalar,
     /// A partial commitment to the new intent
     ///
     /// We omit the public share of the `amount_in` field here as this will
@@ -299,16 +300,12 @@ pub mod test_helpers {
 
         // Build the witness and statement
         let owner = intent.owner;
-        let witness = IntentOnlyValidityWitness {
-            old_intent,
-            old_intent_opening,
-            intent,
-            new_amount_public_share,
-        };
+        let witness = IntentOnlyValidityWitness { old_intent, old_intent_opening, intent };
         let statement = IntentOnlyValidityStatement {
             owner,
             merkle_root,
             old_intent_nullifier,
+            new_amount_public_share,
             new_intent_partial_commitment,
             recovery_id,
         };
@@ -370,8 +367,8 @@ mod test {
     #[test]
     #[allow(non_snake_case)]
     fn test_invalid_intent__modified_amount_public_share() {
-        let (mut witness, statement) = test_helpers::create_witness_statement::<MERKLE_HEIGHT>();
-        witness.new_amount_public_share = random_scalar();
+        let (witness, mut statement) = test_helpers::create_witness_statement::<MERKLE_HEIGHT>();
+        statement.new_amount_public_share = random_scalar();
         assert!(!test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
     }
 
