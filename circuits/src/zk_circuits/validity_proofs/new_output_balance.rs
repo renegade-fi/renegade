@@ -247,6 +247,19 @@ pub mod test_helpers {
     -> (NewOutputBalanceValidityWitness, NewOutputBalanceValidityStatement) {
         // Create a random balance
         let balance_inner = random_zeroed_balance();
+        create_witness_statement_with_balance(balance_inner)
+    }
+
+    /// Construct a witness and statement with the given balance
+    ///
+    /// The balance must be zeroed (amount = 0, fees = 0) to satisfy the circuit
+    /// constraints
+    pub fn create_witness_statement_with_balance(
+        mut balance_inner: Balance,
+    ) -> (NewOutputBalanceValidityWitness, NewOutputBalanceValidityStatement) {
+        balance_inner.amount = 0;
+        balance_inner.relayer_fee_balance = 0;
+        balance_inner.protocol_fee_balance = 0;
         let mut balance = create_state_wrapper(balance_inner);
 
         // Compute the original balance commitment
