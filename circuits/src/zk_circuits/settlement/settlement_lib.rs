@@ -38,7 +38,7 @@ impl SettlementGadget {
     }
 
     /// Verify that the intent's constraints are satisfied
-    fn verify_intent_constraints(
+    pub fn verify_intent_constraints(
         intent: &IntentVar,
         obligation: &SettlementObligationVar,
         cs: &mut PlonkCircuit,

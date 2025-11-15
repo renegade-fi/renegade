@@ -29,6 +29,7 @@ use crate::{
         intent_and_balance_private_settlement::IntentAndBalancePrivateSettlementCircuit,
         settlement_lib::SettlementGadget,
     },
+    zk_gadgets::comparators::EqGadget,
 };
 
 // ----------------------
@@ -53,15 +54,21 @@ impl IntentAndBalancePublicSettlementCircuit {
             cs,
         )?;
 
-        // 2. Verify the update to the intent and balance shares
-        SettlementGadget::verify_state_updates(
-            witness.pre_settlement_amount_public_share,
-            statement.new_amount_public_share,
+        // 2. Verify that the leaked pre-update public shares match those proof-linked
+        //    into the witness
+        EqGadget::constrain_eq(
+            &witness.pre_settlement_amount_public_share,
+            &statement.amount_public_share,
+            cs,
+        )?;
+        EqGadget::constrain_eq(
             &witness.pre_settlement_in_balance_shares,
-            &statement.new_in_balance_public_shares,
+            &statement.in_balance_public_shares,
+            cs,
+        )?;
+        EqGadget::constrain_eq(
             &witness.pre_settlement_out_balance_shares,
-            &statement.new_out_balance_public_shares,
-            &statement.settlement_obligation,
+            &statement.out_balance_public_shares,
             cs,
         )
     }
@@ -128,14 +135,23 @@ pub struct IntentAndBalancePublicSettlementStatement {
     /// which require only the obligation. For example, bitlengths on the
     /// obligation's in and out amounts
     pub settlement_obligation: SettlementObligation,
-    /// The updated amount public share of the intent
-    pub new_amount_public_share: Scalar,
+    /// The leaked pre-update amount public share of the intent
+    ///
+    /// Because this circuit represents a public settlement, we leak the public
+    /// share and allow the contracts to update it on-chain.
+    pub amount_public_share: Scalar,
     /// The updated public shares of the post-match balance fields for the input
-    /// balance
-    pub new_in_balance_public_shares: PostMatchBalanceShare,
+    /// balance.
+    ///
+    /// This value is also leaked from the witness so that the contracts can
+    /// update it directly on-chain.
+    pub in_balance_public_shares: PostMatchBalanceShare,
     /// The updated public shares of the post-match balance fields for the
     /// output balance
-    pub new_out_balance_public_shares: PostMatchBalanceShare,
+    ///
+    /// This value is also leaked from the witness so that the contracts can
+    /// update it directly on-chain.
+    pub out_balance_public_shares: PostMatchBalanceShare,
     /// The relayer fee which is charged for the settlement
     ///
     /// We place this field in the statement so that it is included in the
@@ -199,7 +215,6 @@ pub mod test_helpers {
         max_amount,
         settlement_obligation::SettlementObligation,
     };
-    use constants::Scalar;
     use rand::{Rng, thread_rng};
 
     use crate::{
@@ -284,42 +299,26 @@ pub mod test_helpers {
         settlement_obligation: SettlementObligation,
     ) -> (IntentAndBalancePublicSettlementWitness, IntentAndBalancePublicSettlementStatement) {
         // Create the intent amount public shares
-        let amount_in = Scalar::from(settlement_obligation.amount_in);
-        let amount_out = Scalar::from(settlement_obligation.amount_out);
         let receive_balance = create_receive_balance(intent.owner, &settlement_obligation);
         let pre_settlement_amount_public_share = random_scalar();
-        let new_amount_public_share = pre_settlement_amount_public_share - amount_in;
 
         // Create the balance post-match shares
         let pre_settlement_in_balance_shares = random_post_match_balance_share();
         let pre_settlement_out_balance_shares = random_post_match_balance_share();
 
-        // Create the new balance shares after settlement
-        let new_in_balance_public_shares = PostMatchBalanceShare {
-            amount: pre_settlement_in_balance_shares.amount - amount_in,
-            relayer_fee_balance: pre_settlement_in_balance_shares.relayer_fee_balance,
-            protocol_fee_balance: pre_settlement_in_balance_shares.protocol_fee_balance,
-        };
-
-        let new_out_balance_public_shares = PostMatchBalanceShare {
-            amount: pre_settlement_out_balance_shares.amount + amount_out,
-            relayer_fee_balance: pre_settlement_out_balance_shares.relayer_fee_balance,
-            protocol_fee_balance: pre_settlement_out_balance_shares.protocol_fee_balance,
-        };
-
         let witness = IntentAndBalancePublicSettlementWitness {
             intent: intent.clone(),
             pre_settlement_amount_public_share,
             in_balance: balance.clone(),
-            pre_settlement_in_balance_shares,
+            pre_settlement_in_balance_shares: pre_settlement_in_balance_shares.clone(),
             out_balance: receive_balance,
-            pre_settlement_out_balance_shares,
+            pre_settlement_out_balance_shares: pre_settlement_out_balance_shares.clone(),
         };
         let statement = IntentAndBalancePublicSettlementStatement {
             settlement_obligation,
-            new_amount_public_share,
-            new_in_balance_public_shares,
-            new_out_balance_public_shares,
+            amount_public_share: pre_settlement_amount_public_share,
+            in_balance_public_shares: pre_settlement_in_balance_shares,
+            out_balance_public_shares: pre_settlement_out_balance_shares,
             relayer_fee: random_fee(),
         };
 
@@ -534,7 +533,7 @@ mod test {
     #[allow(non_snake_case)]
     fn test_invalid_update__intent_amount_public_share_modified() {
         let (witness, mut statement) = test_helpers::create_witness_statement::<MERKLE_HEIGHT>();
-        statement.new_amount_public_share = random_scalar();
+        statement.amount_public_share = random_scalar();
         assert!(!test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
     }
 
@@ -545,10 +544,10 @@ mod test {
         let mut rng = thread_rng();
         let (witness, mut statement) = test_helpers::create_witness_statement::<MERKLE_HEIGHT>();
 
-        let mut balance_scalars = statement.new_in_balance_public_shares.to_scalars();
+        let mut balance_scalars = statement.in_balance_public_shares.to_scalars();
         let idx = rng.gen_range(0..balance_scalars.len());
         balance_scalars[idx] = random_scalar();
-        statement.new_in_balance_public_shares =
+        statement.in_balance_public_shares =
             PostMatchBalanceShare::from_scalars(&mut balance_scalars.into_iter());
 
         assert!(!test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
@@ -561,10 +560,10 @@ mod test {
         let mut rng = thread_rng();
         let (witness, mut statement) = test_helpers::create_witness_statement::<MERKLE_HEIGHT>();
 
-        let mut out_balance_scalars = statement.new_out_balance_public_shares.to_scalars();
+        let mut out_balance_scalars = statement.out_balance_public_shares.to_scalars();
         let idx = rng.gen_range(0..out_balance_scalars.len());
         out_balance_scalars[idx] = random_scalar();
-        statement.new_out_balance_public_shares =
+        statement.out_balance_public_shares =
             PostMatchBalanceShare::from_scalars(&mut out_balance_scalars.into_iter());
 
         assert!(!test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));

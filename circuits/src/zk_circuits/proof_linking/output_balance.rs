@@ -181,7 +181,6 @@ mod test {
             },
         },
     };
-    use circuit_types::balance::PostMatchBalanceShare;
     use constants::Scalar;
     use rand::{seq::SliceRandom, thread_rng};
 
@@ -264,17 +263,9 @@ mod test {
 
         // Align the settlement witness with the validity witness
         settlement_witness.out_balance = validity_witness.balance.clone();
-        settlement_witness.pre_settlement_out_balance_shares =
-            validity_witness.post_match_balance_shares.clone();
-
-        // Update the statement to reflect the settlement
-        let amt_out = Scalar::from(settlement_statement.settlement_obligation.amount_out);
-        let original_shares = settlement_witness.pre_settlement_out_balance_shares.clone();
-        settlement_statement.new_out_balance_public_shares = PostMatchBalanceShare {
-            amount: original_shares.amount + amt_out,
-            relayer_fee_balance: original_shares.relayer_fee_balance,
-            protocol_fee_balance: original_shares.protocol_fee_balance,
-        };
+        let out_shares = validity_witness.post_match_balance_shares.clone();
+        settlement_witness.pre_settlement_out_balance_shares = out_shares.clone();
+        settlement_statement.out_balance_public_shares = out_shares;
 
         (validity_witness, validity_statement, settlement_witness, settlement_statement)
     }
@@ -348,17 +339,9 @@ mod test {
 
         // Align the settlement witness with the validity witness
         settlement_witness.out_balance = validity_witness.balance.clone();
-        settlement_witness.pre_settlement_out_balance_shares =
-            validity_witness.post_match_balance_shares.clone();
-
-        // Update the statement to reflect the settlement
-        let amt_out = Scalar::from(settlement_statement.settlement_obligation.amount_out);
-        let original_shares = settlement_witness.pre_settlement_out_balance_shares.clone();
-        settlement_statement.new_out_balance_public_shares = PostMatchBalanceShare {
-            amount: original_shares.amount + amt_out,
-            relayer_fee_balance: original_shares.relayer_fee_balance,
-            protocol_fee_balance: original_shares.protocol_fee_balance,
-        };
+        let out_shares = validity_witness.post_match_balance_shares.clone();
+        settlement_witness.pre_settlement_out_balance_shares = out_shares.clone();
+        settlement_statement.out_balance_public_shares = out_shares;
 
         (validity_witness, validity_statement, settlement_witness, settlement_statement)
     }
@@ -673,7 +656,7 @@ mod test {
         let modification = Scalar::random(&mut rng);
         settlement_witness.pre_settlement_out_balance_shares.amount += modification;
         // Update the statement to keep the settlement circuit constraints satisfied
-        settlement_statement.new_out_balance_public_shares.amount += modification;
+        settlement_statement.out_balance_public_shares.amount += modification;
 
         // Now the settlement circuit is valid, but the link will fail
         test_output_balance_validity_settlement_link(
