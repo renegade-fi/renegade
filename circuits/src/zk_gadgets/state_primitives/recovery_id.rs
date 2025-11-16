@@ -7,7 +7,7 @@ use circuit_types::{
 };
 use mpc_relation::{Variable, errors::CircuitError};
 
-use crate::zk_gadgets::csprng::CSPRNGGadget;
+use crate::zk_gadgets::state_primitives::csprng::CSPRNGGadget;
 
 /// A gadget for computing recovery identifiers of state elements
 pub struct RecoveryIdGadget;

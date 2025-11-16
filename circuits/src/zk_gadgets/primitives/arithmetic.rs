@@ -13,7 +13,7 @@ use renegade_crypto::fields::{biguint_to_scalar, scalar_to_biguint};
 use num_integer::Integer;
 
 use crate::SCALAR_BITS_MINUS_TWO;
-use crate::zk_gadgets::bits::BitRangeGadget;
+use crate::zk_gadgets::primitives::bits::BitRangeGadget;
 
 use super::comparators::LessThanGadget;
 

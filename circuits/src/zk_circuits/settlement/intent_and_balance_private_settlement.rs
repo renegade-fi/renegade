@@ -7,6 +7,7 @@ use circuit_macros::circuit_type;
 use circuit_types::{
     PlonkCircuit,
     balance::{Balance, PostMatchBalanceShare},
+    fee::FeeRatesVar,
     fixed_point::FixedPoint,
     intent::Intent,
     settlement_obligation::SettlementObligation,
@@ -29,7 +30,7 @@ use crate::{
         OUTPUT_BALANCE_SETTLEMENT_PARTY0_LINK, OUTPUT_BALANCE_SETTLEMENT_PARTY1_LINK,
         settlement_lib::SettlementGadget,
     },
-    zk_gadgets::{bitlength::AmountGadget, comparators::EqGadget},
+    zk_gadgets::{comparators::EqGadget, primitives::bitlength::AmountGadget},
 };
 
 // ----------------------
@@ -69,8 +70,18 @@ impl IntentAndBalancePrivateSettlementCircuit {
         )?;
 
         // 3. Verify the state updates for each party
+        let fee_rate0 = FeeRatesVar {
+            relayer_fee_rate: statement.relayer_fee0,
+            protocol_fee_rate: statement.protocol_fee,
+        };
+        let fee_rate1 = FeeRatesVar {
+            relayer_fee_rate: statement.relayer_fee1,
+            protocol_fee_rate: statement.protocol_fee,
+        };
+
         // Party 0
         SettlementGadget::verify_state_updates(
+            &fee_rate0,
             witness.pre_settlement_amount_public_share0,
             statement.new_amount_public_share0,
             &witness.pre_settlement_in_balance_shares0,
@@ -83,6 +94,7 @@ impl IntentAndBalancePrivateSettlementCircuit {
 
         // Party 1
         SettlementGadget::verify_state_updates(
+            &fee_rate1,
             witness.pre_settlement_amount_public_share1,
             statement.new_amount_public_share1,
             &witness.pre_settlement_in_balance_shares1,
@@ -260,6 +272,7 @@ pub mod test_helpers {
     use alloy_primitives::Address;
     use circuit_types::{
         balance::{Balance, PostMatchBalanceShare},
+        fee::FeeRates,
         fixed_point::FixedPoint,
         intent::Intent,
         max_amount,
@@ -300,6 +313,9 @@ pub mod test_helpers {
         let input_balance1 = create_send_balance(intent1.owner, &obligation1);
         let output_balance0 = create_receive_balance(intent0.owner, &obligation0);
         let output_balance1 = create_receive_balance(intent1.owner, &obligation1);
+        let relayer_fee0 = random_fee();
+        let relayer_fee1 = random_fee();
+        let protocol_fee = random_fee();
 
         // Create the pre- and post-update shares
         let pre_settlement_amount_public_share0 = random_scalar();
@@ -309,6 +325,7 @@ pub mod test_helpers {
         let pre_settlement_out_balance_shares0 = random_post_match_balance_share();
         let pre_settlement_out_balance_shares1 = random_post_match_balance_share();
 
+        // Update the public shares of the intents and input balances
         let new_amount_public_share0 =
             pre_settlement_amount_public_share0 - Scalar::from(obligation0.amount_in);
         let new_amount_public_share1 =
@@ -323,18 +340,24 @@ pub mod test_helpers {
             relayer_fee_balance: pre_settlement_in_balance_shares1.relayer_fee_balance,
             protocol_fee_balance: pre_settlement_in_balance_shares1.protocol_fee_balance,
         };
-        let new_out_balance_public_shares0 = PostMatchBalanceShare {
-            amount: pre_settlement_out_balance_shares0.amount
-                + Scalar::from(obligation0.amount_out),
-            relayer_fee_balance: pre_settlement_out_balance_shares0.relayer_fee_balance,
-            protocol_fee_balance: pre_settlement_out_balance_shares0.protocol_fee_balance,
-        };
-        let new_out_balance_public_shares1 = PostMatchBalanceShare {
-            amount: pre_settlement_out_balance_shares1.amount
-                + Scalar::from(obligation1.amount_out),
-            relayer_fee_balance: pre_settlement_out_balance_shares1.relayer_fee_balance,
-            protocol_fee_balance: pre_settlement_out_balance_shares1.protocol_fee_balance,
-        };
+
+        // Update the public shares of the output balances
+        let fee_rates0 = FeeRates::new(relayer_fee0, protocol_fee);
+        let fee_rates1 = FeeRates::new(relayer_fee1, protocol_fee);
+        let fee_take0 = fee_rates0.compute_fee_take(obligation0.amount_out);
+        let fee_take1 = fee_rates1.compute_fee_take(obligation1.amount_out);
+        let net_receive0 = obligation0.amount_out - fee_take0.total();
+        let net_receive1 = obligation1.amount_out - fee_take1.total();
+
+        let mut new_out_balance_public_shares0 = pre_settlement_out_balance_shares0.clone();
+        new_out_balance_public_shares0.amount += Scalar::from(net_receive0);
+        new_out_balance_public_shares0.relayer_fee_balance += Scalar::from(fee_take0.relayer_fee);
+        new_out_balance_public_shares0.protocol_fee_balance += Scalar::from(fee_take0.protocol_fee);
+
+        let mut new_out_balance_public_shares1 = pre_settlement_out_balance_shares1.clone();
+        new_out_balance_public_shares1.amount += Scalar::from(net_receive1);
+        new_out_balance_public_shares1.relayer_fee_balance += Scalar::from(fee_take1.relayer_fee);
+        new_out_balance_public_shares1.protocol_fee_balance += Scalar::from(fee_take1.protocol_fee);
 
         // Create the witness and statement
         let witness = IntentAndBalancePrivateSettlementWitness {
@@ -360,9 +383,9 @@ pub mod test_helpers {
             new_amount_public_share1,
             new_in_balance_public_shares1,
             new_out_balance_public_shares1,
-            relayer_fee0: random_fee(),
-            relayer_fee1: random_fee(),
-            protocol_fee: random_fee(),
+            relayer_fee0,
+            relayer_fee1,
+            protocol_fee,
         };
 
         (witness, statement)

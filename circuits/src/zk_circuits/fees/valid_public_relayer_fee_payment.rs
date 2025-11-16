@@ -17,9 +17,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::SingleProverCircuit;
 use crate::zk_gadgets::comparators::{EqGadget, EqZeroGadget};
-use crate::zk_gadgets::shares::ShareGadget;
-use crate::zk_gadgets::state_rotation::{StateElementRotationArgs, StateElementRotationGadget};
-use crate::zk_gadgets::stream_cipher::StreamCipherGadget;
+use crate::zk_gadgets::{
+    ShareGadget, StateElementRotationArgs, StateElementRotationGadget, StreamCipherGadget,
+};
 
 // ----------------------
 // | Circuit Definition |

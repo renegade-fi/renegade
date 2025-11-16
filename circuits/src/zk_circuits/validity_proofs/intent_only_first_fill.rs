@@ -29,9 +29,9 @@ use crate::{
         intent_only_public_settlement::IntentOnlyPublicSettlementCircuit,
     },
     zk_gadgets::{
-        bitlength::{AmountGadget, PriceGadget},
+        ShareGadget,
         comparators::EqGadget,
-        shares::ShareGadget,
+        primitives::bitlength::{AmountGadget, PriceGadget},
         state_primitives::{CommitmentGadget, RecoveryIdGadget},
     },
 };

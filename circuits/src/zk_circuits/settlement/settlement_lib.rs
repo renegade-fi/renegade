@@ -5,15 +5,17 @@
 use circuit_types::{
     AMOUNT_BITS, PlonkCircuit,
     balance::{BalanceVar, PostMatchBalanceShareVar},
+    fee::FeeRatesVar,
     intent::IntentVar,
     settlement_obligation::SettlementObligationVar,
 };
 use mpc_relation::{Variable, errors::CircuitError, traits::Circuit};
 
 use crate::zk_gadgets::{
-    bitlength::AmountGadget,
     comparators::{EqGadget, GreaterThanEqGadget},
+    fee::FeeGadget,
     fixed_point::FixedPointGadget,
+    primitives::bitlength::AmountGadget,
 };
 
 /// The settlement gadget encapsulates common functionality for settlement
@@ -118,13 +120,16 @@ impl SettlementGadget {
     /// - The intent's amount public share should decrease by obligation input
     /// - The input balance's amount should decrease by the obligation input
     /// - The output balance's amount should increase by the obligation output
+    /// - The output balance's relayer fee balance should increase by the
+    ///   relayer fee; computed from the fee rate
+    /// - The output balance's protocol fee balance should increase by the
+    ///   protocol fee; computed from the fee rate
     ///
     /// We can rely on the additive homomorphic property of our stream cipher
     /// for each of these updates.
-    ///
-    /// TODO: Add fees
     #[allow(clippy::too_many_arguments)]
     pub fn verify_state_updates(
+        fee_rates: &FeeRatesVar,
         intent_amount_public_share: Variable,
         new_amount_public_share: Variable,
         in_balance_public_shares: &PostMatchBalanceShareVar,
@@ -145,9 +150,40 @@ impl SettlementGadget {
         EqGadget::constrain_eq(&expected_shares, new_in_balance_public_shares, cs)?;
 
         // Output balance update
-        // TODO: Add fees
-        let mut expected_shares = out_balance_public_shares.clone();
-        expected_shares.amount = cs.add(out_balance_public_shares.amount, obligation.amount_out)?;
-        EqGadget::constrain_eq(&expected_shares, new_out_balance_public_shares, cs)
+        // Rather than compute the fee, it is more efficient to compute the implied fee
+        // from the output shares, this avoids using the floor gadget directly.
+        Self::verify_output_balance_share_updates(
+            fee_rates,
+            out_balance_public_shares,
+            new_out_balance_public_shares,
+            obligation,
+            cs,
+        )
+    }
+
+    /// Verify the output balance share updates
+    ///
+    /// This includes verifying the computation of the fees from their rates.
+    /// Each trader pays a fee on the receive side of the settlement.
+    fn verify_output_balance_share_updates(
+        fee_rates: &FeeRatesVar,
+        old_shares: &PostMatchBalanceShareVar,
+        new_shares: &PostMatchBalanceShareVar,
+        obligation: &SettlementObligationVar,
+        cs: &mut PlonkCircuit,
+    ) -> Result<(), CircuitError> {
+        // Compute the fee take from the rate
+        let fee_take = FeeGadget::compute_fee_take(obligation.amount_out, fee_rates, cs)?;
+        let total_fee = FeeGadget::total_fee(&fee_take, cs)?;
+        let net_receive = cs.sub(obligation.amount_out, total_fee)?;
+
+        // Apply the receive amount and fees to the shares
+        let mut expected_shares = old_shares.clone();
+        expected_shares.amount = cs.add(old_shares.amount, net_receive)?;
+        expected_shares.relayer_fee_balance =
+            cs.add(old_shares.relayer_fee_balance, fee_take.relayer_fee)?;
+        expected_shares.protocol_fee_balance =
+            cs.add(old_shares.protocol_fee_balance, fee_take.protocol_fee)?;
+        EqGadget::constrain_eq(&expected_shares, new_shares, cs)
     }
 }

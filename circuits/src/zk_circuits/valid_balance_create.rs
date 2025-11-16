@@ -20,10 +20,10 @@ use serde::{Deserialize, Serialize};
 use crate::{
     SingleProverCircuit,
     zk_gadgets::{
-        bitlength::AmountGadget,
+        StreamCipherGadget,
         comparators::EqGadget,
+        primitives::bitlength::AmountGadget,
         state_primitives::{CommitmentGadget, RecoveryIdGadget},
-        stream_cipher::StreamCipherGadget,
     },
 };
 

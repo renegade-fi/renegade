@@ -6,6 +6,7 @@
 
 pub mod balance;
 pub mod deposit;
+pub mod fee;
 pub mod intent;
 pub mod note;
 pub mod settlement_obligation;

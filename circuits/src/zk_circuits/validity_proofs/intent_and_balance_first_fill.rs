@@ -38,15 +38,12 @@ use crate::{
         intent_and_balance_private_settlement::IntentAndBalancePrivateSettlementCircuit,
     },
     zk_gadgets::{
-        bitlength::{AmountGadget, PriceGadget},
+        ShareGadget, StateElementRotationArgsWithPartialCommitment, StateElementRotationGadget,
+        StreamCipherGadget,
         comparators::EqGadget,
         poseidon::PoseidonHashGadget,
-        shares::ShareGadget,
+        primitives::bitlength::{AmountGadget, PriceGadget},
         state_primitives::{CommitmentGadget, RecoveryIdGadget},
-        state_rotation::{
-            StateElementRotationArgsWithPartialCommitment, StateElementRotationGadget,
-        },
-        stream_cipher::StreamCipherGadget,
     },
 };
 

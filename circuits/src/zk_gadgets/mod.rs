@@ -6,14 +6,11 @@
 //!
 //! Some low level gadgets are defined here to provide MPC efficiency
 
-pub mod arithmetic;
-pub mod bits;
-pub mod comparators;
-pub mod elgamal;
-pub mod fixed_point;
-pub mod merkle;
-pub mod poseidon;
-pub mod select;
+pub mod primitives;
+pub mod state_gadgets;
+pub mod state_primitives;
 
-mod v2;
-pub use v2::*;
+// Re-export for convenience
+pub use primitives::*;
+pub use state_gadgets::*;
+pub use state_primitives::*;
