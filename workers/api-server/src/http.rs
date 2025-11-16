@@ -30,6 +30,7 @@ use external_api::{
         external_match::{
             ASSEMBLE_EXTERNAL_MATCH_ROUTE, ASSEMBLE_MALLEABLE_EXTERNAL_MATCH_ROUTE,
             REQUEST_EXTERNAL_MATCH_ROUTE, REQUEST_EXTERNAL_QUOTE_ROUTE,
+            REQUEST_MALLEABLE_EXTERNAL_MATCH_ROUTE,
         },
         network::{GET_CLUSTER_INFO_ROUTE, GET_NETWORK_TOPOLOGY_ROUTE, GET_PEER_INFO_ROUTE},
         order_book::{
@@ -67,7 +68,10 @@ use tokio::net::{TcpListener, TcpStream};
 use util::get_current_time_millis;
 
 use crate::{
-    http::order_book::{GetDepthForAllPairsHandler, GetRelayerFeesHandler},
+    http::{
+        external_match::RequestMalleableExternalMatchHandler,
+        order_book::{GetDepthForAllPairsHandler, GetRelayerFeesHandler},
+    },
     router::QueryParams,
 };
 
@@ -332,11 +336,18 @@ impl HttpServer {
             AssembleMalleableExternalMatchHandler::new(processor.clone()),
         );
 
-        // The "/external-match/request" route
+        // The "/matching-engine/request-external-match" route
         router.add_admin_authenticated_route(
             &Method::POST,
             REQUEST_EXTERNAL_MATCH_ROUTE.to_string(),
-            RequestExternalMatchHandler::new(processor, state.clone()),
+            RequestExternalMatchHandler::new(processor.clone(), state.clone()),
+        );
+
+        // The "/matching-engine/request-malleable-external-match" route
+        router.add_admin_authenticated_route(
+            &Method::POST,
+            REQUEST_MALLEABLE_EXTERNAL_MATCH_ROUTE.to_string(),
+            RequestMalleableExternalMatchHandler::new(processor, state.clone()),
         );
 
         // --- Orderbook Routes --- //
