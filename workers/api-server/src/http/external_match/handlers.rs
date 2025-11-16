@@ -333,3 +333,60 @@ impl TypedHandler for RequestExternalMatchHandler {
         Ok(ExternalMatchResponse { match_bundle })
     }
 }
+
+/// The handler for the `POST /matching-engine/request-malleable-external-match`
+/// route
+pub struct RequestMalleableExternalMatchHandler {
+    /// The external match processor
+    processor: ExternalMatchProcessor,
+    /// A handle on the relayer state
+    state: State,
+}
+
+impl RequestMalleableExternalMatchHandler {
+    /// Create a new handler
+    pub fn new(processor: ExternalMatchProcessor, state: State) -> Self {
+        Self { processor, state }
+    }
+}
+
+#[async_trait]
+impl TypedHandler for RequestMalleableExternalMatchHandler {
+    type Request = ExternalMatchRequest;
+    type Response = MalleableExternalMatchResponse;
+
+    async fn handle_typed(
+        &self,
+        _headers: HeaderMap,
+        req: Self::Request,
+        _params: UrlParams,
+        _query_params: QueryParams,
+    ) -> Result<Self::Response, ApiServerError> {
+        // Check that atomic matches are enabled
+        let enabled = self.state.get_atomic_matches_enabled()?;
+        if !enabled {
+            return Err(bad_request(ERR_ATOMIC_MATCHES_DISABLED));
+        }
+
+        // Validate the relayer fee rate
+        validate_relayer_fee_rate(req.relayer_fee_rate)?;
+        let relayer_fee_rate = FixedPoint::from_f64_round_down(req.relayer_fee_rate);
+
+        // Validate the order then request a match bundle
+        let order = req.external_order;
+        order.validate().map_err(bad_request)?;
+
+        let receiver = parse_receiver_address(req.receiver_address)?;
+        let match_bundle = self
+            .processor
+            .request_malleable_match_bundle(
+                req.do_gas_estimation,
+                receiver,
+                relayer_fee_rate,
+                req.matching_pool,
+                order,
+            )
+            .await?;
+        Ok(MalleableExternalMatchResponse { match_bundle })
+    }
+}

@@ -266,6 +266,38 @@ impl ExternalMatchProcessor {
         }
     }
 
+    /// Request a malleable external match for a given order
+    pub(crate) async fn request_malleable_match_bundle(
+        &self,
+        gas_estimation: bool,
+        receiver: Option<Address>,
+        relayer_fee_rate: FixedPoint,
+        matching_pool: Option<MatchingPoolName>,
+        external_order: ExternalOrder,
+    ) -> Result<MalleableAtomicMatchApiBundle, ApiServerError> {
+        let opt = ExternalMatchingEngineOptions::new()
+            .with_bundle_duration(DIRECT_MATCH_BUNDLE_TIMEOUT)
+            .with_bounded_match(true)
+            .with_matching_pool(matching_pool)
+            .with_relayer_fee_rate(relayer_fee_rate);
+        let resp = self.request_handshake_manager(external_order.clone(), opt).await?;
+
+        match resp {
+            SystemBusMessage::NoAtomicMatchFound => Err(no_content(NO_ATOMIC_MATCH_FOUND)),
+            SystemBusMessage::MalleableAtomicMatchFound { match_bundle, validity_proofs } => {
+                self.build_malleable_api_bundle(
+                    gas_estimation,
+                    receiver,
+                    &external_order,
+                    match_bundle,
+                    validity_proofs,
+                )
+                .await
+            },
+            _ => Err(internal_error(ERR_FAILED_TO_PROCESS_EXTERNAL_MATCH)),
+        }
+    }
+
     /// Estimate the gas for a given external match transaction
     ///
     /// TODO: Properly implement gas estimation for external matches

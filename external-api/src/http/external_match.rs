@@ -63,6 +63,9 @@ pub const ASSEMBLE_MALLEABLE_EXTERNAL_MATCH_ROUTE: &str =
     "/v0/matching-engine/assemble-malleable-external-match";
 /// The route for requesting an atomic match
 pub const REQUEST_EXTERNAL_MATCH_ROUTE: &str = "/v0/matching-engine/request-external-match";
+/// The route for requesting a malleable external match
+pub const REQUEST_MALLEABLE_EXTERNAL_MATCH_ROUTE: &str =
+    "/v0/matching-engine/request-malleable-external-match";
 
 // -----------
 // | Helpers |
