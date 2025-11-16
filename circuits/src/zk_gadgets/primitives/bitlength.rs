@@ -1,12 +1,11 @@
 //! Gadgets for validating bit-lengths of state types
 
 use circuit_types::{
-    AMOUNT_BITS, FEE_BITS, Fabric, MpcPlonkCircuit, PRICE_BITS, PlonkCircuit,
-    fixed_point::FixedPointVar,
+    AMOUNT_BITS, Fabric, MpcPlonkCircuit, PRICE_BITS, PlonkCircuit, fixed_point::FixedPointVar,
 };
 use mpc_relation::{Variable, errors::CircuitError};
 
-use crate::zk_gadgets::bits::{BitRangeGadget, MultiproverBitRangeGadget};
+use crate::zk_gadgets::primitives::bits::{BitRangeGadget, MultiproverBitRangeGadget};
 
 /// Constrain a value to be a valid `Amount`, i.e. a non-negative `Scalar`
 /// representable in at most `AMOUNT_BITS` bits
@@ -31,20 +30,6 @@ impl MultiproverAmountGadget {
         cs: &mut MpcPlonkCircuit,
     ) -> Result<(), CircuitError> {
         MultiproverBitRangeGadget::constrain_bit_range(amount, AMOUNT_BITS, fabric, cs)
-    }
-}
-
-/// Constrain a fee to be in the range of valid take rates
-///
-/// This is [0, 2^FEE_BITS-1]
-pub struct FeeGadget;
-impl FeeGadget {
-    /// Constrain a value to be a valid fee
-    pub fn constrain_valid_fee(
-        fee: FixedPointVar,
-        cs: &mut PlonkCircuit,
-    ) -> Result<(), CircuitError> {
-        BitRangeGadget::constrain_bit_range(fee.repr, FEE_BITS, cs)
     }
 }
 

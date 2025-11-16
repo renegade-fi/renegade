@@ -181,6 +181,7 @@ mod test {
             },
         },
     };
+    use circuit_types::fee::FeeRates;
     use constants::Scalar;
     use rand::{seq::SliceRandom, thread_rng};
 
@@ -423,15 +424,32 @@ mod test {
         *pre_settlement_out_balance_shares = validity_witness.post_match_balance_shares.clone();
 
         // Update the settlement statement to reflect the settlement
-        let amt_out0 = Scalar::from(settlement_witness.settlement_obligation0.amount_out);
-        let amt_out1 = Scalar::from(settlement_witness.settlement_obligation1.amount_out);
+        let amt_out0 = settlement_witness.settlement_obligation0.amount_out;
+        let amt_out1 = settlement_witness.settlement_obligation1.amount_out;
 
         settlement_statement.new_out_balance_public_shares0 =
             settlement_witness.pre_settlement_out_balance_shares0.clone();
         settlement_statement.new_out_balance_public_shares1 =
             settlement_witness.pre_settlement_out_balance_shares1.clone();
-        settlement_statement.new_out_balance_public_shares0.amount += amt_out0;
-        settlement_statement.new_out_balance_public_shares1.amount += amt_out1;
+        let fee_rate0 =
+            FeeRates::new(settlement_statement.relayer_fee0, settlement_statement.protocol_fee);
+        let fee_rate1 =
+            FeeRates::new(settlement_statement.relayer_fee1, settlement_statement.protocol_fee);
+        let fee_take0 = fee_rate0.compute_fee_take(amt_out0);
+        let fee_take1 = fee_rate1.compute_fee_take(amt_out1);
+        let net_receive0 = amt_out0 - fee_take0.total();
+        let net_receive1 = amt_out1 - fee_take1.total();
+
+        settlement_statement.new_out_balance_public_shares0.amount += Scalar::from(net_receive0);
+        settlement_statement.new_out_balance_public_shares0.relayer_fee_balance +=
+            Scalar::from(fee_take0.relayer_fee);
+        settlement_statement.new_out_balance_public_shares0.protocol_fee_balance +=
+            Scalar::from(fee_take0.protocol_fee);
+        settlement_statement.new_out_balance_public_shares1.amount += Scalar::from(net_receive1);
+        settlement_statement.new_out_balance_public_shares1.relayer_fee_balance +=
+            Scalar::from(fee_take1.relayer_fee);
+        settlement_statement.new_out_balance_public_shares1.protocol_fee_balance +=
+            Scalar::from(fee_take1.protocol_fee);
 
         (validity_witness, validity_statement, settlement_witness, settlement_statement)
     }
@@ -518,15 +536,32 @@ mod test {
         *pre_settlement_out_balance_shares = validity_witness.post_match_balance_shares.clone();
 
         // Update the settlement statement to reflect the settlement
-        let amt_out0 = Scalar::from(settlement_witness.settlement_obligation0.amount_out);
-        let amt_out1 = Scalar::from(settlement_witness.settlement_obligation1.amount_out);
+        let amt_out0 = settlement_witness.settlement_obligation0.amount_out;
+        let amt_out1 = settlement_witness.settlement_obligation1.amount_out;
+        let fee_rate0 =
+            FeeRates::new(settlement_statement.relayer_fee0, settlement_statement.protocol_fee);
+        let fee_rate1 =
+            FeeRates::new(settlement_statement.relayer_fee1, settlement_statement.protocol_fee);
+        let fee_take0 = fee_rate0.compute_fee_take(amt_out0);
+        let fee_take1 = fee_rate1.compute_fee_take(amt_out1);
+        let net_receive0 = amt_out0 - fee_take0.total();
+        let net_receive1 = amt_out1 - fee_take1.total();
 
         settlement_statement.new_out_balance_public_shares0 =
             settlement_witness.pre_settlement_out_balance_shares0.clone();
         settlement_statement.new_out_balance_public_shares1 =
             settlement_witness.pre_settlement_out_balance_shares1.clone();
-        settlement_statement.new_out_balance_public_shares0.amount += amt_out0;
-        settlement_statement.new_out_balance_public_shares1.amount += amt_out1;
+
+        settlement_statement.new_out_balance_public_shares0.amount += Scalar::from(net_receive0);
+        settlement_statement.new_out_balance_public_shares0.relayer_fee_balance +=
+            Scalar::from(fee_take0.relayer_fee);
+        settlement_statement.new_out_balance_public_shares0.protocol_fee_balance +=
+            Scalar::from(fee_take0.protocol_fee);
+        settlement_statement.new_out_balance_public_shares1.amount += Scalar::from(net_receive1);
+        settlement_statement.new_out_balance_public_shares1.relayer_fee_balance +=
+            Scalar::from(fee_take1.relayer_fee);
+        settlement_statement.new_out_balance_public_shares1.protocol_fee_balance +=
+            Scalar::from(fee_take1.protocol_fee);
 
         (validity_witness, validity_statement, settlement_witness, settlement_statement)
     }

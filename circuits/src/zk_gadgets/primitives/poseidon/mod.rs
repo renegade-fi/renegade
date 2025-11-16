@@ -18,7 +18,7 @@ mod test {
     use rand::thread_rng;
     use renegade_crypto::hash::{Poseidon2Sponge, compute_poseidon_hash};
 
-    use crate::zk_gadgets::poseidon::PoseidonHashGadget;
+    use crate::zk_gadgets::primitives::poseidon::PoseidonHashGadget;
 
     /// Tests absorbing a series of elements into the hasher and comparing to
     /// the hasher in `renegade-crypto`

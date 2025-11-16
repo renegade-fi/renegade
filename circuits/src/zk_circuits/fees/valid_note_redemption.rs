@@ -21,8 +21,8 @@ use mpc_relation::{Variable, errors::CircuitError, traits::Circuit};
 use serde::{Deserialize, Serialize};
 
 use crate::SingleProverCircuit;
+use crate::zk_gadgets::NoteGadget;
 use crate::zk_gadgets::merkle::PoseidonMerkleHashGadget;
-use crate::zk_gadgets::note::NoteGadget;
 
 // ----------------------
 // | Circuit Definition |

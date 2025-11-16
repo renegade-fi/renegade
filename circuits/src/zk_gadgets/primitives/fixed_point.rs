@@ -4,12 +4,12 @@ use ark_ff::One;
 use circuit_types::{
     Fabric, MpcPlonkCircuit, PlonkCircuit,
     fixed_point::{DEFAULT_FP_PRECISION, FixedPointVar, TWO_TO_M_SCALAR},
+    traits::{CircuitBaseType, CircuitVarType},
 };
 use constants::ScalarField;
 use mpc_relation::{BoolVar, Variable, errors::CircuitError, traits::Circuit};
 
 use super::{
-    arithmetic::DivRemGadget,
     bits::{BitRangeGadget, MultiproverBitRangeGadget},
     comparators::{EqGadget, GreaterThanEqZeroGadget, MultiproverGreaterThanEqZeroGadget},
 };
@@ -123,12 +123,13 @@ impl FixedPointGadget {
     ///
     /// Returns the integer representation directly
     pub fn floor(val: FixedPointVar, cs: &mut PlonkCircuit) -> Result<Variable, CircuitError> {
-        // Floor div by the scaling factor
-        const NUM_BITS: usize = DEFAULT_FP_PRECISION + 1;
-        let divisor = cs.mul_constant(cs.one(), &*TWO_TO_M_SCALAR).unwrap();
-        let (div, _) = DivRemGadget::div_rem(val.repr, divisor, NUM_BITS, cs)?;
+        // Compute the floor outside of the circuit
+        let val_eval = val.eval(cs);
+        let floor_val = val_eval.floor();
+        let floor_val_var = floor_val.create_witness(cs);
 
-        Ok(div)
+        Self::constrain_equal_floor(val, floor_val_var, cs)?;
+        Ok(floor_val_var)
     }
 }
 
@@ -202,7 +203,7 @@ mod test {
     use rand::{Rng, thread_rng};
     use test_helpers::mpc_network::execute_mock_mpc;
 
-    use crate::zk_gadgets::fixed_point::MultiproverFixedPointGadget;
+    use crate::zk_gadgets::primitives::fixed_point::MultiproverFixedPointGadget;
     use crate::{test_helpers::random_amount, zk_gadgets::comparators::EqGadget};
 
     use super::FixedPointGadget;

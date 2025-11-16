@@ -38,15 +38,12 @@ use crate::{
         intent_and_balance_private_settlement::IntentAndBalancePrivateSettlementCircuit,
     },
     zk_gadgets::{
-        bitlength::{AmountGadget, PriceGadget},
+        ShareGadget, StateElementRotationArgsWithPartialCommitment, StateElementRotationGadget,
+        StreamCipherGadget,
         comparators::EqGadget,
         poseidon::PoseidonHashGadget,
-        shares::ShareGadget,
+        primitives::bitlength::{AmountGadget, PriceGadget},
         state_primitives::{CommitmentGadget, RecoveryIdGadget},
-        state_rotation::{
-            StateElementRotationArgsWithPartialCommitment, StateElementRotationGadget,
-        },
-        stream_cipher::StreamCipherGadget,
     },
 };
 
@@ -402,6 +399,7 @@ pub struct IntentAndBalanceFirstFillValidityStatement {
     ///
     /// This one-time signer allows the balance to authorize a single intent for
     /// the first fill. This address may be rotated after it is used to prevent
+    /// linking across transactions.
     pub one_time_authorizing_address: Address,
 }
 

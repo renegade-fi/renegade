@@ -9,7 +9,7 @@ use itertools::Itertools;
 use mpc_relation::traits::Circuit;
 use mpc_relation::{Variable, errors::CircuitError};
 
-use crate::zk_gadgets::csprng::CSPRNGGadget;
+use crate::zk_gadgets::state_primitives::csprng::CSPRNGGadget;
 
 /// A gadget for operating on stream ciphers
 pub struct StreamCipherGadget;
@@ -46,10 +46,10 @@ mod test {
     use mpc_relation::Variable;
     use mpc_relation::traits::Circuit;
 
+    use super::StreamCipherGadget;
     use crate::{
-        test_helpers::create_random_state_wrapper,
-        test_helpers::random_scalars_array,
-        zk_gadgets::{comparators::EqGadget, stream_cipher::StreamCipherGadget},
+        test_helpers::create_random_state_wrapper, test_helpers::random_scalars_array,
+        zk_gadgets::primitives::comparators::EqGadget,
     };
 
     /// Test that the encrypt gadget aligns with the native implementation

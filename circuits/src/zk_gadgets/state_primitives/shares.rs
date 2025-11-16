@@ -108,7 +108,9 @@ mod test {
     use itertools::Itertools;
     use rand::{distributions::uniform::SampleRange, thread_rng};
 
-    use crate::{test_helpers::random_scalars_array, zk_gadgets::comparators::EqGadget};
+    use crate::{
+        test_helpers::random_scalars_array, zk_gadgets::primitives::comparators::EqGadget,
+    };
 
     use super::*;
     use circuit_types::traits::CircuitBaseType;

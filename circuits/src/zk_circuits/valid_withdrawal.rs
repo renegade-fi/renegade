@@ -17,11 +17,11 @@ use mpc_relation::{Variable, errors::CircuitError, traits::Circuit};
 use serde::{Deserialize, Serialize};
 
 use crate::SingleProverCircuit;
-use crate::zk_gadgets::bitlength::AmountGadget;
 use crate::zk_gadgets::comparators::{EqGadget, EqZeroGadget, GreaterThanEqGadget};
-use crate::zk_gadgets::shares::ShareGadget;
-use crate::zk_gadgets::state_rotation::{StateElementRotationArgs, StateElementRotationGadget};
-use crate::zk_gadgets::stream_cipher::StreamCipherGadget;
+use crate::zk_gadgets::primitives::bitlength::AmountGadget;
+use crate::zk_gadgets::{
+    ShareGadget, StateElementRotationArgs, StateElementRotationGadget, StreamCipherGadget,
+};
 
 // ----------------------
 // | Circuit Definition |

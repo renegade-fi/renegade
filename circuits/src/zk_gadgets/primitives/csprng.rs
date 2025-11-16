@@ -4,7 +4,7 @@ use circuit_types::{PlonkCircuit, csprng::PoseidonCSPRNGVar};
 use mpc_relation::traits::Circuit;
 use mpc_relation::{Variable, errors::CircuitError};
 
-use crate::zk_gadgets::poseidon::PoseidonHashGadget;
+use crate::zk_gadgets::primitives::poseidon::PoseidonHashGadget;
 
 /// A gadget for operating on CSPRNGs
 pub struct CSPRNGGadget;
@@ -56,7 +56,7 @@ mod test {
     use mpc_relation::traits::Circuit;
     use rand::{Rng, thread_rng};
 
-    use crate::zk_gadgets::{comparators::EqGadget, csprng::CSPRNGGadget};
+    use crate::zk_gadgets::{primitives::comparators::EqGadget, primitives::csprng::CSPRNGGadget};
 
     /// Get a random CSPRNG state
     fn random_csprng() -> PoseidonCSPRNG {

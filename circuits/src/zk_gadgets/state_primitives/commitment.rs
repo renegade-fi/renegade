@@ -33,7 +33,7 @@ use circuit_types::{
 };
 use mpc_relation::{Variable, errors::CircuitError, traits::Circuit};
 
-use crate::zk_gadgets::poseidon::PoseidonHashGadget;
+use crate::zk_gadgets::primitives::poseidon::PoseidonHashGadget;
 
 /// Determine the length of the shared prefix of two state element shares
 ///

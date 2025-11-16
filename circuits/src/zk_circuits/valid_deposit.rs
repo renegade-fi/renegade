@@ -18,10 +18,8 @@ use serde::{Deserialize, Serialize};
 use crate::{
     SingleProverCircuit,
     zk_gadgets::{
-        bitlength::AmountGadget,
-        shares::ShareGadget,
-        state_rotation::{StateElementRotationArgs, StateElementRotationGadget},
-        stream_cipher::StreamCipherGadget,
+        ShareGadget, StateElementRotationArgs, StateElementRotationGadget, StreamCipherGadget,
+        primitives::bitlength::AmountGadget,
     },
 };
 

@@ -7,7 +7,8 @@ use circuit_types::{
 };
 use mpc_relation::{Variable, errors::CircuitError, traits::Circuit};
 
-use crate::zk_gadgets::{csprng::CSPRNGGadget, poseidon::PoseidonHashGadget};
+use crate::zk_gadgets::primitives::poseidon::PoseidonHashGadget;
+use crate::zk_gadgets::state_primitives::csprng::CSPRNGGadget;
 
 /// A gadget for computing nullifiers of state elements
 pub struct NullifierGadget;

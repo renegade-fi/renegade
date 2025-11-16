@@ -9,9 +9,9 @@ use circuit_types::{
 use mpc_relation::{Variable, errors::CircuitError, traits::Circuit};
 
 use crate::zk_gadgets::{
-    comparators::EqGadget,
-    merkle::PoseidonMerkleHashGadget,
-    v2::state_primitives::{CommitmentGadget, NullifierGadget, RecoveryIdGadget},
+    primitives::comparators::EqGadget,
+    primitives::merkle::PoseidonMerkleHashGadget,
+    state_primitives::{CommitmentGadget, NullifierGadget, RecoveryIdGadget},
 };
 
 /// The arguments to a state element rotation gadget
