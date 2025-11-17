@@ -20,6 +20,19 @@ pub enum Chain {
     Devnet,
 }
 
+impl Chain {
+    /// Get the chain ID
+    pub fn chain_id(&self) -> u64 {
+        match self {
+            Chain::ArbitrumSepolia => 421614,
+            Chain::ArbitrumOne => 42161,
+            Chain::BaseSepolia => 84532,
+            Chain::BaseMainnet => 8453,
+            Chain::Devnet => 31337,
+        }
+    }
+}
+
 impl Display for Chain {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
