@@ -30,7 +30,7 @@ use helpers::{
     parse_shares_from_process_match_settle, parse_shares_from_redeem_fee,
     parse_shares_from_settle_offline_fee, parse_shares_from_update_wallet,
 };
-use renegade_solidity_abi::IDarkpool::{
+use renegade_solidity_abi::v1::IDarkpool::{
     IDarkpoolInstance, MalleableMatchAtomicProofs, MatchAtomicLinkingProofs, MatchAtomicProofs,
     MatchLinkingProofs, MatchProofs, MerkleInsertion as AbiMerkleInsertion,
     MerkleOpeningNode as AbiMerkleOpeningNode, NullifierSpent as AbiNullifierSpent,

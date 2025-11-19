@@ -33,8 +33,8 @@ use common::types::proof_bundles::OrderValidityProofBundle;
 use common::types::transfer_auth::TransferAuth as CircuitTransferAuth;
 use constants::Scalar;
 
-use renegade_solidity_abi::BN254::G1Point;
-use renegade_solidity_abi::IDarkpool::*;
+use renegade_solidity_abi::v1::BN254::G1Point;
+use renegade_solidity_abi::v1::IDarkpool::*;
 
 use crate::conversion::address_to_biguint;
 use crate::conversion::biguint_to_address;
