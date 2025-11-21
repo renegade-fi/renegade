@@ -3,6 +3,7 @@
 //! This settlement is performed by a relayer cluster, and is used to settle an
 //! intent and balance pair
 
+use alloy_primitives::Address;
 use circuit_macros::circuit_type;
 use circuit_types::{
     PlonkCircuit,
@@ -69,6 +70,13 @@ impl IntentAndBalancePublicSettlementCircuit {
         EqGadget::constrain_eq(
             &witness.pre_settlement_out_balance_shares,
             &statement.out_balance_public_shares,
+            cs,
+        )?;
+
+        // 3. Verify the leak of the relayer fee recipient
+        EqGadget::constrain_eq(
+            &witness.out_balance.relayer_fee_recipient,
+            &statement.relayer_fee_recipient,
             cs,
         )
     }
@@ -159,6 +167,11 @@ pub struct IntentAndBalancePublicSettlementStatement {
     /// calldata. This allows the relayer to set the fee and be sure it cannot
     /// be modified by mempool observers.
     pub relayer_fee: FixedPoint,
+    /// The recipient of the relayer fee
+    ///
+    /// This must match the value on the output balance where the fee is
+    /// accrued.
+    pub relayer_fee_recipient: Address,
 }
 
 // ---------------------
@@ -306,6 +319,7 @@ pub mod test_helpers {
         let pre_settlement_in_balance_shares = random_post_match_balance_share();
         let pre_settlement_out_balance_shares = random_post_match_balance_share();
 
+        let relayer_fee_recipient = receive_balance.relayer_fee_recipient;
         let witness = IntentAndBalancePublicSettlementWitness {
             intent: intent.clone(),
             pre_settlement_amount_public_share,
@@ -320,6 +334,7 @@ pub mod test_helpers {
             in_balance_public_shares: pre_settlement_in_balance_shares,
             out_balance_public_shares: pre_settlement_out_balance_shares,
             relayer_fee: random_fee(),
+            relayer_fee_recipient,
         };
 
         (witness, statement)
