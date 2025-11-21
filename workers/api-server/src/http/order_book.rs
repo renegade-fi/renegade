@@ -1,5 +1,7 @@
 //! Groups routes and handlers for order book API operations
 
+use std::{collections::HashMap, sync::Arc};
+
 use async_trait::async_trait;
 use common::types::{
     price::TimestampedPrice,
@@ -10,7 +12,7 @@ use constants::DEFAULT_EXTERNAL_MATCH_RELAYER_FEE;
 use external_api::{
     EmptyRequestResponse,
     http::order_book::{
-        GetDepthByMintResponse, GetDepthForAllPairsResponse, GetExternalMatchFeeResponse,
+        FeeRates, GetDepthByMintResponse, GetDepthForAllPairsResponse, GetExternalMatchFeeResponse,
         GetNetworkOrderByIdResponse, GetNetworkOrdersResponse, GetRelayerFeesResponse,
         PriceAndDepth, TokenAndFee,
     },
@@ -24,7 +26,7 @@ use state::State;
 use util::on_chain::get_external_match_fee;
 
 use crate::{
-    error::{ApiServerError, not_found},
+    error::{ApiServerError, bad_request, not_found},
     param_parsing::{
         parse_mint_from_params, parse_order_id_from_params, parse_tickers_from_query_params,
     },
@@ -37,6 +39,8 @@ use crate::{
 
 /// Error displayed when an order cannot be found in the network order book
 const ERR_ORDER_NOT_FOUND: &str = "order not found in network order book";
+/// Error message displayed when a token is invalid for a request
+const ERR_INVALID_TOKEN: &str = "invalid token";
 
 // ----------------------
 // | Order Book Routers |
@@ -186,6 +190,11 @@ impl TypedHandler for GetExternalMatchFeesHandler {
 /// A helper struct encapsulating common logic between depth routes
 #[derive(Clone)]
 struct DepthCalculator {
+    /// The fee rates for each asset
+    ///
+    /// We precompute these rates and store them in memory to remove the state
+    /// from the critical path
+    fee_rates: Arc<HashMap<String, FeeRates>>,
     /// A handle to the relayer state
     state: State,
     /// The price streams from the price reporter
@@ -194,8 +203,20 @@ struct DepthCalculator {
 
 impl DepthCalculator {
     /// Constructor
-    pub fn new(state: State, price_streams: PriceStreamStates) -> Self {
-        Self { state, price_streams }
+    pub fn new(state: State, price_streams: PriceStreamStates) -> Result<Self, ApiServerError> {
+        // Pre-compute the fee rates for each asset
+        let mut fee_rates = HashMap::new();
+        for token in get_all_base_tokens() {
+            let ticker = token.get_ticker().unwrap();
+            let relayer_fee = state.get_relayer_fee(&ticker)?;
+            let protocol_fee = get_external_match_fee(&token.get_addr_biguint());
+
+            let rate = FeeRates::new(relayer_fee.to_f64(), protocol_fee.to_f64());
+            fee_rates.insert(token.get_addr(), rate);
+        }
+
+        let fee_rates = Arc::new(fee_rates);
+        Ok(Self { fee_rates, state, price_streams })
     }
 
     /// Get the price for a given token
@@ -225,6 +246,8 @@ impl DepthCalculator {
         let buy = DepthSide { total_quantity: buy_liquidity_base, total_quantity_usd: buy_usd };
         let sell = DepthSide { total_quantity: sell_liquidity, total_quantity_usd: sell_usd };
         let address = token.get_addr();
+        let fee_rates =
+            self.fee_rates.get(&address).cloned().ok_or_else(|| bad_request(ERR_INVALID_TOKEN))?;
 
         Ok(PriceAndDepth {
             address,
@@ -232,6 +255,7 @@ impl DepthCalculator {
             timestamp: ts_price.timestamp,
             buy,
             sell,
+            fee_rates,
         })
     }
 }
@@ -245,9 +269,9 @@ pub struct GetDepthByMintHandler {
 
 impl GetDepthByMintHandler {
     /// Constructor
-    pub fn new(state: State, price_streams: PriceStreamStates) -> Self {
-        let depth_calculator = DepthCalculator::new(state, price_streams);
-        Self { depth_calculator }
+    pub fn new(state: State, price_streams: PriceStreamStates) -> Result<Self, ApiServerError> {
+        let depth_calculator = DepthCalculator::new(state, price_streams)?;
+        Ok(Self { depth_calculator })
     }
 }
 
@@ -279,9 +303,9 @@ pub struct GetDepthForAllPairsHandler {
 
 impl GetDepthForAllPairsHandler {
     /// Constructor
-    pub fn new(state: State, price_streams: PriceStreamStates) -> Self {
-        let depth_calculator = DepthCalculator::new(state, price_streams);
-        Self { depth_calculator }
+    pub fn new(state: State, price_streams: PriceStreamStates) -> Result<Self, ApiServerError> {
+        let depth_calculator = DepthCalculator::new(state, price_streams)?;
+        Ok(Self { depth_calculator })
     }
 }
 

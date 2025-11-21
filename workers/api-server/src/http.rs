@@ -116,14 +116,15 @@ pub(super) struct HttpServer {
 
 impl HttpServer {
     /// Create a new http server
-    pub(super) fn new(config: ApiServerConfig, state: State) -> Self {
+    pub(super) fn new(config: ApiServerConfig, state: State) -> Result<Self, ApiServerError> {
         // Build the router, server, and register routes
-        let router = Self::build_router(&config, state);
-        Self { router: Arc::new(router), config }
+        let router = Self::build_router(&config, state)?;
+        let this = Self { router: Arc::new(router), config };
+        Ok(this)
     }
 
     /// Build a router and register routes on it
-    fn build_router(config: &ApiServerConfig, state: State) -> Router {
+    fn build_router(config: &ApiServerConfig, state: State) -> Result<Router, ApiServerError> {
         // Build the router and register its routes
         let mut router = Router::new(config.admin_api_key, state.clone());
         let wallet_rate_limiter = WalletTaskRateLimiter::new_hourly(config.wallet_task_rate_limit);
@@ -398,14 +399,14 @@ impl HttpServer {
         router.add_admin_authenticated_route(
             &Method::GET,
             GET_DEPTH_BY_MINT_ROUTE.to_string(),
-            GetDepthByMintHandler::new(state.clone(), config.price_streams.clone()),
+            GetDepthByMintHandler::new(state.clone(), config.price_streams.clone())?,
         );
 
         // The "/order_book/depth" route
         router.add_admin_authenticated_route(
             &Method::GET,
             GET_DEPTH_FOR_ALL_PAIRS_ROUTE.to_string(),
-            GetDepthForAllPairsHandler::new(state.clone(), config.price_streams.clone()),
+            GetDepthForAllPairsHandler::new(state.clone(), config.price_streams.clone())?,
         );
 
         // --- Network Routes --- //
@@ -520,7 +521,7 @@ impl HttpServer {
             AdminRefreshMatchFeesHandler::new(config.darkpool_client.clone()),
         );
 
-        router
+        Ok(router)
     }
 
     /// The execution loop for the http server, accepts incoming connections,
