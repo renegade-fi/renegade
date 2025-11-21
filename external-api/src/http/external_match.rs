@@ -37,6 +37,15 @@ use common::types::{
     wallet::Order,
 };
 
+// -----------------
+// | API Constants |
+// -----------------
+
+/// The maximum age of a quote before it is considered expired
+pub const MAX_QUOTE_AGE_MS: u64 = 10_000; // 10 seconds
+/// The duration for which a bundle is valid before it expires
+pub const BUNDLE_EXPIRATION_MS: u64 = 10_000; // 10 seconds
+
 // ------------------
 // | Error Messages |
 // ------------------
@@ -382,6 +391,8 @@ pub struct AtomicMatchApiBundle {
     pub send: ApiExternalAssetTransfer,
     /// The transaction which settles the match on-chain
     pub settlement_tx: TransactionRequest,
+    /// The deadline of the bundle, in milliseconds since the epoch
+    pub deadline: u64,
 }
 
 impl AtomicMatchApiBundle {
@@ -403,6 +414,9 @@ impl AtomicMatchApiBundle {
 
         // Update the format of the settlement transaction
         process_settlement_tx(&mut settlement_tx);
+
+        // Set the deadline
+        let deadline = get_current_time_millis() + BUNDLE_EXPIRATION_MS;
         Self {
             match_result: ApiExternalMatchResult::from(match_result),
             fees,
@@ -415,6 +429,7 @@ impl AtomicMatchApiBundle {
                 amount: sent_amount,
             },
             settlement_tx,
+            deadline,
         }
     }
 }
@@ -444,6 +459,8 @@ pub struct MalleableAtomicMatchApiBundle {
     pub min_send: ApiExternalAssetTransfer,
     /// The transaction which settles the match on-chain
     pub settlement_tx: TransactionRequest,
+    /// The deadline of the bundle, in milliseconds since the epoch
+    pub deadline: u64,
 }
 
 impl MalleableAtomicMatchApiBundle {
@@ -468,6 +485,9 @@ impl MalleableAtomicMatchApiBundle {
 
         // Update the format of the settlement transaction
         process_settlement_tx(&mut settlement_tx);
+
+        // Set the deadline
+        let deadline = get_current_time_millis() + BUNDLE_EXPIRATION_MS;
         Self {
             match_result: ApiBoundedMatchResult::from(match_result),
             fee_rates,
@@ -488,6 +508,7 @@ impl MalleableAtomicMatchApiBundle {
                 amount: min_send_amount,
             },
             settlement_tx,
+            deadline,
         }
     }
 }
@@ -615,6 +636,8 @@ pub struct ApiExternalQuote {
     pub price: ApiTimestampedPrice,
     /// The timestamp of the quote
     pub timestamp: u64,
+    /// The deadline of the quote, in milliseconds since the epoch
+    pub deadline: u64,
 }
 
 impl ApiExternalQuote {
@@ -630,6 +653,7 @@ impl ApiExternalQuote {
         let quote_amt_f64 = result.quote_amount as f64;
         let price = quote_amt_f64 / base_amt_f64;
         let timestamp = get_current_time_millis();
+        let deadline = timestamp + MAX_QUOTE_AGE_MS;
 
         Self {
             order,
@@ -645,6 +669,7 @@ impl ApiExternalQuote {
             },
             price: TimestampedPrice::new(price).into(),
             timestamp,
+            deadline,
         }
     }
 }
