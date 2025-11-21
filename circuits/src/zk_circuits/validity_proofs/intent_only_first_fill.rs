@@ -60,7 +60,7 @@ impl IntentOnlyFirstFillValidityCircuit {
         // 3. Compute the commitment to the private shares only
         let private_commitment =
             CommitmentGadget::compute_private_commitment(&witness.private_shares, &intent, cs)?;
-        EqGadget::constrain_eq(&private_commitment, &statement.intent_partial_commitment, cs)?;
+        EqGadget::constrain_eq(&private_commitment, &statement.intent_private_commitment, cs)?;
 
         Ok(())
     }
@@ -136,16 +136,11 @@ pub struct IntentOnlyFirstFillValidityStatement {
     /// We leak this value here to allow the contracts to verify that the intent
     /// is authorized by its owner on the first fill.
     pub owner: Address,
-    /// A partial commitment to the new intent
+    /// A commitment to the private shares of the intent
     ///
-    /// We omit the public share of the `amount_in` field here as this will
-    /// change during the first fill. Instead, we commit to _all_ private shares
-    /// and _all_ public shares other than the `amount_in` field.
-    ///
-    /// The match will update the public share of the `amount_in` field and the
-    /// contracts will resume the commitment to the intent. See the
-    /// `CommitmentGadget` for more details on resumable commitments.
-    pub intent_partial_commitment: Commitment,
+    /// The contracts will use the leaked public shares to compute the
+    /// commitment to the full intent.
+    pub intent_private_commitment: Commitment,
     /// The recovery identifier of the intent
     pub recovery_id: Scalar,
     /// The encrypted intent; i.e. the public shares of the intent without the
@@ -231,7 +226,7 @@ pub mod test_helpers {
         let initial_intent = create_state_wrapper(intent.clone());
         let mut intent_clone = initial_intent.clone();
         let recovery_id = intent_clone.compute_recovery_id();
-        let intent_partial_commitment = intent_clone.compute_private_commitment();
+        let intent_private_commitment = intent_clone.compute_private_commitment();
 
         // Get shares from the initial (pre-mutation) state
         let private_shares = initial_intent.private_shares();
@@ -246,7 +241,7 @@ pub mod test_helpers {
         };
         let statement = IntentOnlyFirstFillValidityStatement {
             owner: intent.owner,
-            intent_partial_commitment,
+            intent_private_commitment,
             recovery_id,
             intent_public_share,
         };
@@ -351,7 +346,7 @@ mod test {
     #[allow(non_snake_case)]
     fn test_invalid_commitment() {
         let (witness, mut statement) = test_helpers::create_witness_statement();
-        statement.intent_partial_commitment = random_scalar();
+        statement.intent_private_commitment = random_scalar();
         assert!(!test_helpers::check_constraints(&witness, &statement));
     }
 }

@@ -5,6 +5,7 @@
 //! match is settled. The settlement obligation (match result) is public,
 //! meaning the verifier can see the match details.
 
+use alloy_primitives::Address;
 use circuit_macros::circuit_type;
 use circuit_types::{
     PlonkCircuit,
@@ -97,6 +98,12 @@ pub struct IntentOnlyPublicSettlementStatement {
     /// calldata. This allows the relayer to set the fee and be sure it cannot
     /// be modified by mempool observers.
     pub relayer_fee: FixedPoint,
+    /// The recipient of the relayer fee
+    ///
+    /// Similar to above, we place this in the statement to make it
+    /// non-malleable; though it is otherwise unconstrained. This allows us to
+    /// be sure the prover alone set this value.
+    pub relayer_fee_recipient: Address,
 }
 
 // ---------------------
@@ -141,7 +148,8 @@ pub mod test_helpers {
 
     use crate::{
         test_helpers::{
-            check_constraints_satisfied, create_settlement_obligation, random_fee, random_intent,
+            check_constraints_satisfied, create_settlement_obligation, random_address, random_fee,
+            random_intent,
         },
         zk_circuits::settlement::intent_only_public_settlement::{
             IntentOnlyPublicSettlementCircuit, IntentOnlyPublicSettlementStatement,
@@ -181,6 +189,7 @@ pub mod test_helpers {
         let statement = IntentOnlyPublicSettlementStatement {
             settlement_obligation,
             relayer_fee: random_fee(),
+            relayer_fee_recipient: random_address(),
         };
 
         (witness, statement)
