@@ -23,7 +23,8 @@ use darkpool_client::DarkpoolClient;
 use external_api::{
     bus_message::SystemBusMessage,
     http::external_match::{
-        AtomicMatchApiBundle, ExternalOrder, MalleableAtomicMatchApiBundle, SignedExternalQuote,
+        AtomicMatchApiBundle, ExternalOrder, MAX_QUOTE_AGE_MS, MalleableAtomicMatchApiBundle,
+        SignedExternalQuote,
     },
 };
 use job_types::handshake_manager::{
@@ -50,8 +51,6 @@ use crate::{
 const DEFAULT_GAS_ESTIMATION: u64 = 4_000_000; // 4m
 /// The timeout waiting for an external match to be generated
 const EXTERNAL_MATCH_TIMEOUT: Duration = Duration::from_secs(30);
-/// The maximum age of a quote before it is considered expired
-const MAX_QUOTE_AGE: u64 = 10_000; // 10 seconds
 /// The validity duration for a match bundle in the assemble flow
 /// TODO(@joeykraut): Use a non-zero timeout
 const ASSEMBLE_BUNDLE_TIMEOUT: Duration = Duration::from_secs(0);
@@ -322,7 +321,7 @@ impl ExternalMatchProcessor {
         let current_time = get_current_time_millis();
         let quote = &signed_quote.quote;
         let quote_age = current_time.saturating_sub(quote.timestamp);
-        if quote_age > MAX_QUOTE_AGE {
+        if quote_age > MAX_QUOTE_AGE_MS {
             return Err(bad_request(ERR_QUOTE_EXPIRED));
         }
 
