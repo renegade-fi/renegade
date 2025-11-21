@@ -25,7 +25,7 @@ use renegade_crypto::fields::scalar_to_u128;
 use serde::{Deserialize, Serialize};
 use util::{
     get_current_time_millis,
-    hex::{biguint_from_hex_string, biguint_to_hex_addr},
+    hex::{biguint_from_hex_string, biguint_to_hex_addr, bytes_to_hex_string},
     on_chain::get_external_match_fee,
 };
 
@@ -392,6 +392,7 @@ pub struct AtomicMatchApiBundle {
     /// The transaction which settles the match on-chain
     pub settlement_tx: TransactionRequest,
     /// The deadline of the bundle, in milliseconds since the epoch
+    #[serde(default)]
     pub deadline: u64,
 }
 
@@ -460,6 +461,7 @@ pub struct MalleableAtomicMatchApiBundle {
     /// The transaction which settles the match on-chain
     pub settlement_tx: TransactionRequest,
     /// The deadline of the bundle, in milliseconds since the epoch
+    #[serde(default)]
     pub deadline: u64,
 }
 
@@ -595,9 +597,19 @@ pub struct SignedExternalQuote {
     pub quote: ApiExternalQuote,
     /// The signature
     pub signature: String,
+    /// The deadline of the quote, in milliseconds since the epoch
+    #[serde(default)]
+    pub deadline: u64,
 }
 
 impl SignedExternalQuote {
+    /// Create a new signed quote
+    pub fn new(quote: ApiExternalQuote, signature_bytes: &[u8]) -> Self {
+        let signature = bytes_to_hex_string(signature_bytes);
+        let deadline = quote.timestamp + MAX_QUOTE_AGE_MS;
+        Self { quote, signature, deadline }
+    }
+
     /// Get the match result from the quote
     pub fn match_result(&self) -> ApiExternalMatchResult {
         self.quote.match_result.clone()
@@ -636,8 +648,6 @@ pub struct ApiExternalQuote {
     pub price: ApiTimestampedPrice,
     /// The timestamp of the quote
     pub timestamp: u64,
-    /// The deadline of the quote, in milliseconds since the epoch
-    pub deadline: u64,
 }
 
 impl ApiExternalQuote {
@@ -653,7 +663,6 @@ impl ApiExternalQuote {
         let quote_amt_f64 = result.quote_amount as f64;
         let price = quote_amt_f64 / base_amt_f64;
         let timestamp = get_current_time_millis();
-        let deadline = timestamp + MAX_QUOTE_AGE_MS;
 
         Self {
             order,
@@ -669,7 +678,6 @@ impl ApiExternalQuote {
             },
             price: TimestampedPrice::new(price).into(),
             timestamp,
-            deadline,
         }
     }
 }

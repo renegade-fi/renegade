@@ -87,6 +87,22 @@ pub struct GetDepthForAllPairsResponse {
 // | API Types |
 // -------------
 
+/// The fee rates for a given pair
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct FeeRates {
+    /// The relayer fee rate
+    pub relayer_fee_rate: f64,
+    /// The protocol fee rate
+    pub protocol_fee_rate: f64,
+}
+
+impl FeeRates {
+    /// Constructor
+    pub fn new(relayer_fee_rate: f64, protocol_fee_rate: f64) -> Self {
+        Self { relayer_fee_rate, protocol_fee_rate }
+    }
+}
+
 /// A token and its fee
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TokenAndFee {
@@ -112,4 +128,6 @@ pub struct PriceAndDepth {
     pub buy: DepthSide,
     /// The liquidity depth for the sell side
     pub sell: DepthSide,
+    /// The fee rates for the pair
+    pub fee_rates: FeeRates,
 }

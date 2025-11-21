@@ -21,7 +21,7 @@ use external_api::http::external_match::{
 use hyper::HeaderMap;
 use renegade_crypto::fields::scalar_to_u128;
 use state::State;
-use util::{hex::bytes_to_hex_string, on_chain::get_external_match_fee};
+use util::on_chain::get_external_match_fee;
 
 use crate::{
     error::{ApiServerError, bad_request, internal_error},
@@ -93,9 +93,8 @@ impl RequestExternalQuoteHandler {
         let quote = ApiExternalQuote::new(order, match_res, fees);
         let quote_bytes = serde_json::to_vec(&quote).map_err(internal_error)?;
         let signature = self.admin_key.compute_mac(&quote_bytes);
-        let signature_hex = bytes_to_hex_string(&signature);
 
-        Ok(SignedExternalQuote { quote, signature: signature_hex })
+        Ok(SignedExternalQuote::new(quote, &signature))
     }
 
     /// Estimate the fee take for a given match
