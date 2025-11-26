@@ -8,5 +8,6 @@ pub mod proof_linking;
 pub mod settlement;
 pub mod valid_balance_create;
 pub mod valid_deposit;
+pub mod valid_order_cancellation;
 pub mod valid_withdrawal;
 pub mod validity_proofs;
