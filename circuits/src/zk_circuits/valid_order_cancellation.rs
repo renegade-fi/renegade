@@ -198,7 +198,9 @@ pub mod test_helpers {
 #[cfg(test)]
 mod test {
     use super::*;
-    use circuit_types::traits::SingleProverCircuit;
+    use crate::test_helpers::{random_address, random_scalar};
+    use circuit_types::{intent::IntentShare, traits::SingleProverCircuit};
+    use rand::{Rng, thread_rng};
 
     /// A helper to print the number of constraints in the circuit
     ///
@@ -218,5 +220,46 @@ mod test {
     fn test_valid_order_cancellation_constraints() {
         let (witness, statement) = test_helpers::create_dummy_witness_statement();
         assert!(test_helpers::check_constraints(&witness, &statement));
+    }
+
+    // --- Invalid Test Cases --- //
+
+    /// Test with an invalid Merkle root
+    #[test]
+    fn test_invalid_merkle_root() {
+        let (witness, mut statement) = test_helpers::create_dummy_witness_statement();
+        statement.merkle_root = random_scalar();
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test with an invalid nullifier
+    #[test]
+    fn test_invalid_nullifier() {
+        let (witness, mut statement) = test_helpers::create_dummy_witness_statement();
+        statement.old_intent_nullifier = random_scalar();
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test with an invalid owner in the statement
+    #[test]
+    fn test_invalid_owner() {
+        let (witness, mut statement) = test_helpers::create_dummy_witness_statement();
+        statement.owner = random_address();
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test with invalid public shares
+    #[test]
+    fn test_invalid_public_shares() {
+        let mut rng = thread_rng();
+        let (mut witness, statement) = test_helpers::create_dummy_witness_statement();
+
+        // Modify the public shares
+        let mut public_shares = witness.old_intent.public_share.to_scalars();
+        let random_index = rng.gen_range(0..public_shares.len());
+        public_shares[random_index] = random_scalar();
+        witness.old_intent.public_share = IntentShare::from_scalars(&mut public_shares.into_iter());
+
+        assert!(!test_helpers::check_constraints(&witness, &statement));
     }
 }
