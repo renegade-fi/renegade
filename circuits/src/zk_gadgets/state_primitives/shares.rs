@@ -2,7 +2,10 @@
 
 use circuit_types::{
     PlonkCircuit,
-    balance::{BalanceShareVar, BalanceVar, PostMatchBalanceShareVar, PostMatchBalanceVar},
+    balance::{
+        BalanceShareVar, BalanceVar, PostMatchBalanceShareVar, PostMatchBalanceVar,
+        PreMatchBalanceShareVar,
+    },
     intent::{IntentShareVar, PreMatchIntentShareVar},
     traits::{CircuitVarType, SecretShareVarType},
 };
@@ -65,6 +68,18 @@ impl ShareGadget {
             out_token: intent_share.out_token,
             owner: intent_share.owner,
             min_price: intent_share.min_price.clone(),
+        }
+    }
+
+    /// Build a pre-match balance share from a balance share
+    pub fn build_pre_match_balance_share(
+        balance_share: &BalanceShareVar,
+    ) -> PreMatchBalanceShareVar {
+        PreMatchBalanceShareVar {
+            mint: balance_share.mint,
+            owner: balance_share.owner,
+            relayer_fee_recipient: balance_share.relayer_fee_recipient,
+            one_time_authority: balance_share.one_time_authority,
         }
     }
 

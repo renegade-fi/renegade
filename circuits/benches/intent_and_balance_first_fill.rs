@@ -53,8 +53,7 @@ pub fn bench_prover(c: &mut Criterion) {
     group.bench_function(benchmark_id, |b| {
         b.iter(|| {
             singleprover_prove::<SizedIntentAndBalanceFirstFillValidityCircuit>(
-                witness.clone(),
-                statement.clone(),
+                &witness, &statement,
             )
             .unwrap();
         });
@@ -65,11 +64,9 @@ pub fn bench_prover(c: &mut Criterion) {
 pub fn bench_verifier(c: &mut Criterion) {
     // First generate a proof that will be verified multiple times
     let (witness, statement) = create_witness_statement();
-    let proof = singleprover_prove::<SizedIntentAndBalanceFirstFillValidityCircuit>(
-        witness,
-        statement.clone(),
-    )
-    .unwrap();
+    let proof =
+        singleprover_prove::<SizedIntentAndBalanceFirstFillValidityCircuit>(&witness, &statement)
+            .unwrap();
 
     // Run the benchmark
     let mut group = c.benchmark_group("intent_and_balance_first_fill_validity");
@@ -77,8 +74,7 @@ pub fn bench_verifier(c: &mut Criterion) {
     group.bench_function(benchmark_id, |b| {
         b.iter(|| {
             verify_singleprover_proof::<SizedIntentAndBalanceFirstFillValidityCircuit>(
-                statement.clone(),
-                &proof,
+                &statement, &proof,
             )
             .unwrap();
         });

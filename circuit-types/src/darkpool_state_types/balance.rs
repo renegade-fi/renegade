@@ -162,6 +162,17 @@ impl From<Balance> for PostMatchBalance {
     }
 }
 
+impl From<BalanceShare> for PreMatchBalanceShare {
+    fn from(balance_share: BalanceShare) -> Self {
+        Self {
+            mint: balance_share.mint,
+            owner: balance_share.owner,
+            relayer_fee_recipient: balance_share.relayer_fee_recipient,
+            one_time_authority: balance_share.one_time_authority,
+        }
+    }
+}
+
 impl From<BalanceShare> for PostMatchBalanceShare {
     fn from(balance_share: BalanceShare) -> Self {
         Self {

@@ -52,11 +52,7 @@ pub fn bench_prover(c: &mut Criterion) {
     let benchmark_id = BenchmarkId::new("prover", "");
     group.bench_function(benchmark_id, |b| {
         b.iter(|| {
-            singleprover_prove::<IntentOnlyFirstFillValidityCircuit>(
-                witness.clone(),
-                statement.clone(),
-            )
-            .unwrap();
+            singleprover_prove::<IntentOnlyFirstFillValidityCircuit>(&witness, &statement).unwrap();
         });
     });
 }
@@ -66,19 +62,15 @@ pub fn bench_verifier(c: &mut Criterion) {
     // First generate a proof that will be verified multiple times
     let (witness, statement) = create_witness_statement();
     let proof =
-        singleprover_prove::<IntentOnlyFirstFillValidityCircuit>(witness, statement.clone())
-            .unwrap();
+        singleprover_prove::<IntentOnlyFirstFillValidityCircuit>(&witness, &statement).unwrap();
 
     // Run the benchmark
     let mut group = c.benchmark_group("intent_only_first_fill_validity");
     let benchmark_id = BenchmarkId::new("verifier", "");
     group.bench_function(benchmark_id, |b| {
         b.iter(|| {
-            verify_singleprover_proof::<IntentOnlyFirstFillValidityCircuit>(
-                statement.clone(),
-                &proof,
-            )
-            .unwrap();
+            verify_singleprover_proof::<IntentOnlyFirstFillValidityCircuit>(&statement, &proof)
+                .unwrap();
         });
     });
 }
