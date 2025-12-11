@@ -916,8 +916,8 @@ pub trait SingleProverCircuit: Sized {
     ///
     /// Returns both the commitment to the inputs, as well as the proof itself
     fn prove(
-        witness: Self::Witness,
-        statement: Self::Statement,
+        witness: &Self::Witness,
+        statement: &Self::Statement,
     ) -> Result<Proof<SystemCurve>, ProverError> {
         let (proof, _hint) = Self::prove_with_link_hint(witness, statement)?;
         Ok(proof)
@@ -926,8 +926,8 @@ pub trait SingleProverCircuit: Sized {
     /// Generate a proof of the statement represented by the circuit and return
     /// a link hint with the proof
     fn prove_with_link_hint(
-        witness: Self::Witness,
-        statement: Self::Statement,
+        witness: &Self::Witness,
+        statement: &Self::Statement,
     ) -> Result<(PlonkProof, ProofLinkingHint), ProverError> {
         let mut circuit = PlonkCircuit::new_turbo_plonk();
 
@@ -956,7 +956,10 @@ pub trait SingleProverCircuit: Sized {
     /// Verify a proof of the statement represented by the circuit
     ///
     /// The verifier has access to the statement variables, but not the witness
-    fn verify(statement: Self::Statement, proof: &Proof<SystemCurve>) -> Result<(), VerifierError> {
+    fn verify(
+        statement: &Self::Statement,
+        proof: &Proof<SystemCurve>,
+    ) -> Result<(), VerifierError> {
         // Allocate the statement in the constraint system
         let statement_vals = statement.to_scalars().iter().map(Scalar::inner).collect_vec();
 
@@ -1102,7 +1105,7 @@ pub trait MultiProverCircuit {
         statement: <Self::Statement as MultiproverCircuitBaseType>::BaseType,
         proof: &Proof<SystemCurve>,
     ) -> Result<(), VerifierError> {
-        Self::BaseCircuit::verify(statement, proof)
+        Self::BaseCircuit::verify(&statement, proof)
     }
 }
 

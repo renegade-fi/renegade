@@ -110,23 +110,23 @@ pub fn scalar_2_to_m(m: u64) -> Scalar {
 
 /// Construct a proof of a given circuit
 pub fn singleprover_prove<C: SingleProverCircuit>(
-    witness: C::Witness,
-    statement: C::Statement,
+    witness: &C::Witness,
+    statement: &C::Statement,
 ) -> Result<PlonkProof, ProverError> {
     C::prove(witness, statement)
 }
 
 /// Construct a proof of a given circuit and return a link hint with it
 pub fn singleprover_prove_with_hint<C: SingleProverCircuit>(
-    witness: C::Witness,
-    statement: C::Statement,
+    witness: &C::Witness,
+    statement: &C::Statement,
 ) -> Result<(PlonkProof, ProofLinkingHint), ProverError> {
     C::prove_with_link_hint(witness, statement)
 }
 
 /// Verify a proof of a given circuit
 pub fn verify_singleprover_proof<C: SingleProverCircuit>(
-    statement: C::Statement,
+    statement: &C::Statement,
     proof: &PlonkProof,
 ) -> Result<(), VerifierError> {
     C::verify(statement, proof)
@@ -134,10 +134,10 @@ pub fn verify_singleprover_proof<C: SingleProverCircuit>(
 
 /// Generate a proof of a circuit and verify it
 pub fn singleprover_prove_and_verify<C: SingleProverCircuit>(
-    witness: C::Witness,
-    statement: C::Statement,
+    witness: &C::Witness,
+    statement: &C::Statement,
 ) -> Result<(), ProverError> {
-    let proof = C::prove(witness, statement.clone())?;
+    let proof = C::prove(witness, statement)?;
     C::verify(statement, &proof).map_err(ProverError::Verification)
 }
 

@@ -50,6 +50,9 @@ const PARTIAL_COMMITMENT_SIZE: usize = IntentShare::NUM_SCALARS - 1;
 // | Circuit Definition |
 // ----------------------
 
+/// The `INTENT ONLY VALIDITY` circuit with default const generic sizing
+/// parameters
+pub type SizedIntentOnlyValidityCircuit = IntentOnlyValidityCircuit<MERKLE_HEIGHT>;
 /// The `INTENT ONLY VALIDITY` circuit
 pub struct IntentOnlyValidityCircuit<const MERKLE_HEIGHT: usize>;
 
@@ -237,7 +240,7 @@ impl<const MERKLE_HEIGHT: usize> SingleProverCircuit for IntentOnlyValidityCircu
 
 #[cfg(any(test, feature = "test_helpers"))]
 pub mod test_helpers {
-    use circuit_types::intent::Intent;
+    use circuit_types::intent::{DarkpoolStateIntent, Intent};
 
     use crate::{
         test_helpers::{
@@ -278,7 +281,13 @@ pub mod test_helpers {
     ) -> (IntentOnlyValidityWitness<MERKLE_HEIGHT>, IntentOnlyValidityStatement) {
         // Create the old intent with initial stream states
         let old_intent = create_random_state_wrapper(intent.clone());
+        create_witness_statement_with_state_intent(old_intent)
+    }
 
+    /// Create a witness and statement with the given intent
+    pub fn create_witness_statement_with_state_intent<const MERKLE_HEIGHT: usize>(
+        old_intent: DarkpoolStateIntent,
+    ) -> (IntentOnlyValidityWitness<MERKLE_HEIGHT>, IntentOnlyValidityStatement) {
         // Compute commitment and nullifier for the old intent
         let old_intent_commitment = old_intent.compute_commitment();
         let old_intent_nullifier = old_intent.compute_nullifier();
@@ -299,7 +308,8 @@ pub mod test_helpers {
             new_intent.compute_partial_commitment(PARTIAL_COMMITMENT_SIZE);
 
         // Build the witness and statement
-        let owner = intent.owner;
+        let intent = old_intent.inner.clone();
+        let owner = old_intent.inner.owner;
         let witness = IntentOnlyValidityWitness { old_intent, old_intent_opening, intent };
         let statement = IntentOnlyValidityStatement {
             owner,

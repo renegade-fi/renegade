@@ -67,11 +67,7 @@ impl NewOutputBalanceValidityCircuit {
         // 3. Compute a commitment to the original balance
         let original_balance_commitment =
             CommitmentGadget::compute_commitment(&balance, &private_shares, cs)?;
-        EqGadget::constrain_eq(
-            &original_balance_commitment,
-            &statement.original_balance_commitment,
-            cs,
-        )?;
+        // TODO: Check signature here
 
         // 4. Compute the recovery identifier for the new balance
         let recovery_id = RecoveryIdGadget::compute_recovery_id(&mut balance, cs)?;
@@ -172,8 +168,6 @@ pub struct NewOutputBalanceValidityWitness {
 #[circuit_type(singleprover_circuit)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NewOutputBalanceValidityStatement {
-    /// A commitment to the original balance before update
-    pub original_balance_commitment: Commitment,
     /// A partial commitment to the new output balance
     pub new_balance_partial_commitment: PartialCommitment,
     /// The recovery identifier of the new output balance
@@ -262,9 +256,6 @@ pub mod test_helpers {
         balance_inner.protocol_fee_balance = 0;
         let mut balance = create_state_wrapper(balance_inner);
 
-        // Compute the original balance commitment
-        let original_balance_commitment = balance.compute_commitment();
-
         // Compute the recovery identifier (mutates recovery_stream)
         let recovery_id = balance.compute_recovery_id();
         let new_balance_partial_commitment =
@@ -284,11 +275,8 @@ pub mod test_helpers {
         };
 
         // Build the statement
-        let statement = NewOutputBalanceValidityStatement {
-            original_balance_commitment,
-            new_balance_partial_commitment,
-            recovery_id,
-        };
+        let statement =
+            NewOutputBalanceValidityStatement { new_balance_partial_commitment, recovery_id };
 
         (witness, statement)
     }

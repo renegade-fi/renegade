@@ -213,11 +213,11 @@ mod test {
         // PUBLIC SETTLEMENT
         let (validity_proof, validity_hint) = singleprover_prove_with_hint::<
             SizedIntentAndBalanceValidity,
-        >(validity_witness, validity_statement)?;
+        >(&validity_witness, &validity_statement)?;
         let (settlement_proof, settlement_hint) = singleprover_prove_with_hint::<
             IntentAndBalancePublicSettlementCircuit,
         >(
-            settlement_witness, settlement_statement
+            &settlement_witness, &settlement_statement
         )?;
 
         // Link the proofs and verify the link
@@ -295,11 +295,11 @@ mod test {
         // AND BALANCE PUBLIC SETTLEMENT
         let (validity_proof, validity_hint) = singleprover_prove_with_hint::<
             SizedIntentAndBalanceFirstFillValidity,
-        >(validity_witness, validity_statement)?;
+        >(&validity_witness, &validity_statement)?;
         let (settlement_proof, settlement_hint) = singleprover_prove_with_hint::<
             IntentAndBalancePublicSettlementCircuit,
         >(
-            settlement_witness, settlement_statement
+            &settlement_witness, &settlement_statement
         )?;
 
         let link_proof = link_intent_and_balance_settlement_with_party::<TEST_MERKLE_HEIGHT>(
@@ -373,13 +373,13 @@ mod test {
         // Create proofs of INTENT AND BALANCE VALIDITY for both parties
         let (validity_proof, validity_hint) = singleprover_prove_with_hint::<
             SizedIntentAndBalanceValidity,
-        >(validity_witness, validity_statement)?;
+        >(&validity_witness, &validity_statement)?;
 
         // Create a proof of INTENT AND BALANCE PRIVATE SETTLEMENT
         let (settlement_proof, settlement_hint) = singleprover_prove_with_hint::<
             IntentAndBalancePrivateSettlementCircuit,
         >(
-            settlement_witness, settlement_statement
+            &settlement_witness, &settlement_statement
         )?;
 
         // Link the proofs and verify the link
@@ -475,13 +475,13 @@ mod test {
         // Create a proof of INTENT AND BALANCE FIRST FILL VALIDITY
         let (validity_proof, validity_hint) = singleprover_prove_with_hint::<
             SizedIntentAndBalanceFirstFillValidity,
-        >(validity_witness, validity_statement)?;
+        >(&validity_witness, &validity_statement)?;
 
         // Create a proof of INTENT AND BALANCE PRIVATE SETTLEMENT
         let (settlement_proof, settlement_hint) = singleprover_prove_with_hint::<
             IntentAndBalancePrivateSettlementCircuit,
         >(
-            settlement_witness, settlement_statement
+            &settlement_witness, &settlement_statement
         )?;
 
         // Link the proofs and verify the link
