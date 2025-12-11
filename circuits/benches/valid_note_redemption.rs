@@ -44,8 +44,7 @@ pub fn bench_prover(c: &mut Criterion) {
     let benchmark_id = BenchmarkId::new("prover", format!("({MERKLE_HEIGHT})"));
     group.bench_function(benchmark_id, |b| {
         b.iter(|| {
-            singleprover_prove::<SizedValidNoteRedemption>(&witness, &statement)
-                .unwrap();
+            singleprover_prove::<SizedValidNoteRedemption>(&witness, &statement).unwrap();
         });
     });
 }
@@ -61,8 +60,7 @@ pub fn bench_verifier(c: &mut Criterion) {
     let benchmark_id = BenchmarkId::new("verifier", format!("({MERKLE_HEIGHT})"));
     group.bench_function(benchmark_id, |b| {
         b.iter(|| {
-            verify_singleprover_proof::<SizedValidNoteRedemption>(&statement, &proof)
-                .unwrap();
+            verify_singleprover_proof::<SizedValidNoteRedemption>(&statement, &proof).unwrap();
         });
     });
 }

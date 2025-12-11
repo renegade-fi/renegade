@@ -53,11 +53,8 @@ pub fn bench_prover(c: &mut Criterion) {
     let benchmark_id = BenchmarkId::new("prover", "");
     group.bench_function(benchmark_id, |b| {
         b.iter(|| {
-            singleprover_prove::<IntentAndBalancePublicSettlementCircuit>(
-                &witness,
-                &statement,
-            )
-            .unwrap();
+            singleprover_prove::<IntentAndBalancePublicSettlementCircuit>(&witness, &statement)
+                .unwrap();
         });
     });
 }
@@ -66,9 +63,8 @@ pub fn bench_prover(c: &mut Criterion) {
 pub fn bench_verifier(c: &mut Criterion) {
     // First generate a proof that will be verified multiple times
     let (witness, statement) = create_witness_statement::<MERKLE_HEIGHT>();
-    let proof =
-        singleprover_prove::<IntentAndBalancePublicSettlementCircuit>(&witness, &statement)
-            .unwrap();
+    let proof = singleprover_prove::<IntentAndBalancePublicSettlementCircuit>(&witness, &statement)
+        .unwrap();
 
     // Run the benchmark
     let mut group = c.benchmark_group("intent_and_balance_public_settlement");
@@ -76,8 +72,7 @@ pub fn bench_verifier(c: &mut Criterion) {
     group.bench_function(benchmark_id, |b| {
         b.iter(|| {
             verify_singleprover_proof::<IntentAndBalancePublicSettlementCircuit>(
-                &statement,
-                &proof,
+                &statement, &proof,
             )
             .unwrap();
         });
