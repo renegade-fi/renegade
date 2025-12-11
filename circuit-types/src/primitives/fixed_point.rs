@@ -4,7 +4,7 @@
 
 use std::{
     cmp::Ordering,
-    ops::{Add, Mul, Neg, Sub},
+    ops::{Add, Div, Mul, Neg, Sub},
 };
 
 use ark_ff::{BigInteger, Field, PrimeField};
@@ -323,6 +323,17 @@ impl Mul<Scalar> for FixedPoint {
     type Output = FixedPoint;
     fn mul(self, rhs: Scalar) -> Self::Output {
         Self { repr: self.repr * rhs }
+    }
+}
+
+impl<T: Into<Scalar>> Div<T> for FixedPoint {
+    type Output = FixedPoint;
+    fn div(self, rhs: T) -> Self::Output {
+        let rhs = scalar_to_biguint(&rhs.into());
+        let repr_biguint = scalar_to_biguint(&self.repr);
+        let new_repr = repr_biguint / rhs;
+
+        Self { repr: biguint_to_scalar(&new_repr) }
     }
 }
 

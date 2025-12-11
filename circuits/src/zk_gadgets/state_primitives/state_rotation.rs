@@ -9,8 +9,7 @@ use circuit_types::{
 use mpc_relation::{Variable, errors::CircuitError, traits::Circuit};
 
 use crate::zk_gadgets::{
-    primitives::comparators::EqGadget,
-    primitives::merkle::PoseidonMerkleHashGadget,
+    primitives::{comparators::EqGadget, merkle::PoseidonMerkleHashGadget},
     state_primitives::{CommitmentGadget, NullifierGadget, RecoveryIdGadget},
 };
 

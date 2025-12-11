@@ -31,6 +31,9 @@ use crate::{SingleProverCircuit, zk_circuits::settlement::settlement_lib::Settle
 // | Circuit Definition |
 // ----------------------
 
+/// The `INTENT ONLY PUBLIC SETTLEMENT` circuit with default const generic
+/// sizing parameters
+pub type SizedIntentOnlyPublicSettlementCircuit = IntentOnlyPublicSettlementCircuit<MERKLE_HEIGHT>;
 /// The `INTENT ONLY PUBLIC SETTLEMENT` circuit
 pub struct IntentOnlyPublicSettlementCircuit<const MERKLE_HEIGHT: usize>;
 
@@ -144,7 +147,7 @@ impl<const MERKLE_HEIGHT: usize> SingleProverCircuit
 
 #[cfg(any(test, feature = "test_helpers"))]
 pub mod test_helpers {
-    use circuit_types::intent::Intent;
+    use circuit_types::{intent::Intent, settlement_obligation::SettlementObligation};
 
     use crate::{
         test_helpers::{
@@ -185,9 +188,21 @@ pub mod test_helpers {
     ) -> (IntentOnlyPublicSettlementWitness<MERKLE_HEIGHT>, IntentOnlyPublicSettlementStatement)
     {
         let settlement_obligation = create_settlement_obligation(intent);
+        create_witness_statement_with_intent_and_obligation::<MERKLE_HEIGHT>(
+            intent,
+            &settlement_obligation,
+        )
+    }
+
+    /// Create a witness and statement with the given intent and obligation
+    pub fn create_witness_statement_with_intent_and_obligation<const MERKLE_HEIGHT: usize>(
+        intent: &Intent,
+        obligation: &SettlementObligation,
+    ) -> (IntentOnlyPublicSettlementWitness<MERKLE_HEIGHT>, IntentOnlyPublicSettlementStatement)
+    {
         let witness = IntentOnlyPublicSettlementWitness { intent: intent.clone() };
         let statement = IntentOnlyPublicSettlementStatement {
-            settlement_obligation,
+            settlement_obligation: obligation.clone(),
             relayer_fee: random_fee(),
             relayer_fee_recipient: random_address(),
         };

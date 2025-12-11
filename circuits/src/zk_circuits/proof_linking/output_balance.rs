@@ -208,11 +208,11 @@ mod test {
         // PUBLIC SETTLEMENT
         let (validity_proof, validity_hint) = singleprover_prove_with_hint::<
             SizedOutputBalanceValidity,
-        >(validity_witness, validity_statement)?;
+        >(&validity_witness, &validity_statement)?;
         let (settlement_proof, settlement_hint) = singleprover_prove_with_hint::<
             IntentAndBalancePublicSettlementCircuit,
         >(
-            settlement_witness, settlement_statement
+            &settlement_witness, &settlement_statement
         )?;
 
         // Link the proofs and verify the link
@@ -285,11 +285,11 @@ mod test {
         // PUBLIC SETTLEMENT
         let (validity_proof, validity_hint) = singleprover_prove_with_hint::<
             NewOutputBalanceValidityCircuit,
-        >(validity_witness, validity_statement)?;
+        >(&validity_witness, &validity_statement)?;
         let (settlement_proof, settlement_hint) = singleprover_prove_with_hint::<
             IntentAndBalancePublicSettlementCircuit,
         >(
-            settlement_witness, settlement_statement
+            &settlement_witness, &settlement_statement
         )?;
 
         // Link the proofs and verify the link using the existing sized methods
@@ -361,13 +361,13 @@ mod test {
         // Create a proof of OUTPUT BALANCE VALIDITY
         let (validity_proof, validity_hint) = singleprover_prove_with_hint::<
             SizedOutputBalanceValidity,
-        >(validity_witness, validity_statement)?;
+        >(&validity_witness, &validity_statement)?;
 
         // Create a proof of INTENT AND BALANCE PRIVATE SETTLEMENT
         let (settlement_proof, settlement_hint) = singleprover_prove_with_hint::<
             IntentAndBalancePrivateSettlementCircuit,
         >(
-            settlement_witness, settlement_statement
+            &settlement_witness, &settlement_statement
         )?;
 
         // Link the proofs and verify the link
@@ -468,13 +468,13 @@ mod test {
         // Create a proof of NEW OUTPUT BALANCE VALIDITY
         let (validity_proof, validity_hint) = singleprover_prove_with_hint::<
             NewOutputBalanceValidityCircuit,
-        >(validity_witness, validity_statement)?;
+        >(&validity_witness, &validity_statement)?;
 
         // Create a proof of INTENT AND BALANCE PRIVATE SETTLEMENT
         let (settlement_proof, settlement_hint) = singleprover_prove_with_hint::<
             IntentAndBalancePrivateSettlementCircuit,
         >(
-            settlement_witness, settlement_statement
+            &settlement_witness, &settlement_statement
         )?;
 
         // Link the proofs and verify the link

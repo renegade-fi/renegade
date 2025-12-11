@@ -7,7 +7,7 @@ use std::ops::Add;
 use alloy_primitives::Address;
 use serde::{Deserialize, Serialize};
 
-use crate::Amount;
+use crate::{Amount, fee::FeeTake, settlement_obligation::SettlementObligation};
 
 use super::state_wrapper::{StateWrapper, StateWrapperVar};
 
@@ -96,6 +96,15 @@ impl StateWrapper<Balance> {
     pub fn update_from_post_match(&mut self, post: &PostMatchBalanceShare) {
         self.public_share.update_from_post_match(post);
     }
+
+    /// Re-encrypt the post match balance shares and update the public share
+    pub fn reencrypt_post_match_share(&mut self) -> PostMatchBalanceShare {
+        let post_match_balance = PostMatchBalance::from(self.inner.clone());
+        let post_match_balance_shares = self.stream_cipher_encrypt(&post_match_balance);
+        self.update_from_post_match(&post_match_balance_shares);
+
+        post_match_balance_shares
+    }
 }
 
 /// A pre-match balance is a balance without the `amount` or fees fields
@@ -174,5 +183,37 @@ impl From<(PreMatchBalance, PostMatchBalance)> for Balance {
             protocol_fee_balance: post_match_balance.protocol_fee_balance,
             amount: post_match_balance.amount,
         }
+    }
+}
+
+impl StateWrapper<Balance> {
+    /// Apply a settlement obligation to the balance assuming this was an input
+    /// balance to a trade
+    pub fn apply_obligation_in_balance(&mut self, obligation: &SettlementObligation) {
+        self.inner.amount -= obligation.amount_in;
+        self.public_share.amount -= Scalar::from(obligation.amount_in);
+    }
+
+    /// Apply a settlement obligation to the balance assuming this was an output
+    /// balance in a trade
+    ///
+    /// This method does not apply the fees to the balance; use `add_fees` to do
+    /// so. Rather this method subtracts the total fee from the receive amount.
+    pub fn apply_obligation_out_balance(
+        &mut self,
+        obligation: &SettlementObligation,
+        fees: &FeeTake,
+    ) {
+        let receive_amt = obligation.amount_out - fees.total();
+        self.inner.amount += receive_amt;
+        self.public_share.amount += Scalar::from(receive_amt);
+    }
+
+    /// Apply fees to a balance
+    pub fn add_fees(&mut self, fees: &FeeTake) {
+        self.inner.relayer_fee_balance += fees.relayer_fee;
+        self.inner.protocol_fee_balance += fees.protocol_fee;
+        self.public_share.relayer_fee_balance += Scalar::from(fees.relayer_fee);
+        self.public_share.protocol_fee_balance += Scalar::from(fees.protocol_fee);
     }
 }

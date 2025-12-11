@@ -23,16 +23,16 @@ use crate::zk_circuits::{
 /// Link an intent only validity proof with a proof of INTENT ONLY
 /// PUBLIC SETTLEMENT using the system wide sizing constants
 pub fn link_sized_intent_only_settlement(
-    first_fill_link_hint: &ProofLinkingHint,
+    validity_link_hint: &ProofLinkingHint,
     settlement_link_hint: &ProofLinkingHint,
 ) -> Result<PlonkLinkProof, ProverError> {
-    link_intent_only_settlement::<MERKLE_HEIGHT>(first_fill_link_hint, settlement_link_hint)
+    link_intent_only_settlement::<MERKLE_HEIGHT>(validity_link_hint, settlement_link_hint)
 }
 
 /// Link an intent only validity proof with a proof of INTENT ONLY
 /// PUBLIC SETTLEMENT
 pub fn link_intent_only_settlement<const MERKLE_HEIGHT: usize>(
-    first_fill_link_hint: &ProofLinkingHint,
+    validity_link_hint: &ProofLinkingHint,
     settlement_link_hint: &ProofLinkingHint,
 ) -> Result<PlonkLinkProof, ProverError> {
     // Get the group layout for the first fill <-> settlement link group
@@ -40,7 +40,7 @@ pub fn link_intent_only_settlement<const MERKLE_HEIGHT: usize>(
     let pk = IntentOnlyValidityCircuit::<MERKLE_HEIGHT>::proving_key();
 
     PlonkKzgSnark::link_proofs::<SolidityTranscript>(
-        first_fill_link_hint,
+        validity_link_hint,
         settlement_link_hint,
         &layout,
         &pk.commit_key,
@@ -53,12 +53,12 @@ pub fn link_intent_only_settlement<const MERKLE_HEIGHT: usize>(
 /// constants
 pub fn validate_sized_intent_only_settlement_link(
     link_proof: &PlonkLinkProof,
-    first_fill_proof: &PlonkProof,
+    validity_proof: &PlonkProof,
     settlement_proof: &PlonkProof,
 ) -> Result<(), ProverError> {
     validate_intent_only_settlement_link::<MERKLE_HEIGHT>(
         link_proof,
-        first_fill_proof,
+        validity_proof,
         settlement_proof,
     )
 }
@@ -67,7 +67,7 @@ pub fn validate_sized_intent_only_settlement_link(
 /// proof of INTENT ONLY PUBLIC SETTLEMENT
 pub fn validate_intent_only_settlement_link<const MERKLE_HEIGHT: usize>(
     link_proof: &PlonkLinkProof,
-    first_fill_proof: &PlonkProof,
+    validity_proof: &PlonkProof,
     settlement_proof: &PlonkProof,
 ) -> Result<(), ProverError> {
     // Get the group layout for the first fill <-> settlement link group
@@ -75,7 +75,7 @@ pub fn validate_intent_only_settlement_link<const MERKLE_HEIGHT: usize>(
     let vk = IntentOnlyValidityCircuit::<MERKLE_HEIGHT>::verifying_key();
 
     PlonkKzgSnark::verify_link_proof::<SolidityTranscript>(
-        first_fill_proof,
+        validity_proof,
         settlement_proof,
         link_proof,
         &layout,
@@ -131,12 +131,12 @@ mod test {
         let (first_fill_proof, first_fill_hint) = singleprover_prove_with_hint::<
             SizedIntentOnlyFirstFillValidity,
         >(
-            first_fill_witness, first_fill_statement
+            &first_fill_witness, &first_fill_statement
         )?;
         let (settlement_proof, settlement_hint) = singleprover_prove_with_hint::<
             SizedIntentOnlyPublicSettlement,
         >(
-            settlement_witness, settlement_statement
+            &settlement_witness, &settlement_statement
         )?;
 
         // Link the proofs and verify the link
@@ -221,11 +221,11 @@ mod test {
         // SETTLEMENT
         let (validity_proof, validity_hint) = singleprover_prove_with_hint::<
             SizedIntentOnlyValidity,
-        >(validity_witness, validity_statement)?;
+        >(&validity_witness, &validity_statement)?;
         let (settlement_proof, settlement_hint) = singleprover_prove_with_hint::<
             SizedIntentOnlyPublicSettlement,
         >(
-            settlement_witness, settlement_statement
+            &settlement_witness, &settlement_statement
         )?;
 
         // Link the proofs and verify the link

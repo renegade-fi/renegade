@@ -7,7 +7,7 @@ use std::ops::Add;
 use alloy_primitives::Address;
 use serde::{Deserialize, Serialize};
 
-use crate::{Amount, fixed_point::FixedPoint};
+use crate::{Amount, fixed_point::FixedPoint, settlement_obligation::SettlementObligation};
 
 use super::state_wrapper::{StateWrapper, StateWrapperVar};
 
@@ -83,5 +83,23 @@ impl From<IntentShare> for PreMatchIntentShare {
             owner: intent_share.owner,
             min_price: intent_share.min_price,
         }
+    }
+}
+
+impl StateWrapper<Intent> {
+    /// Re-encrypt the amount in value and update the public share
+    pub fn reencrypt_amount_in(&mut self) -> Scalar {
+        let amount_in = self.inner.amount_in;
+        let new_amount_public_share = self.stream_cipher_encrypt(&amount_in);
+        self.public_share.amount_in = new_amount_public_share;
+        new_amount_public_share
+    }
+
+    /// Apply a settlement obligation to the intent
+    ///
+    /// This just subtracts the input amount from the intent
+    pub fn apply_settlement_obligation(&mut self, obligation: &SettlementObligation) {
+        self.inner.amount_in -= obligation.amount_in;
+        self.public_share.amount_in -= Scalar::from(obligation.amount_in);
     }
 }

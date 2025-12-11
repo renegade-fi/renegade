@@ -10,7 +10,7 @@ use circuit_macros::circuit_type;
 use circuit_types::{
     Nullifier, PlonkCircuit,
     balance::{
-        Balance, BalanceShareVar, DarkpoolStateBalance, DarkpoolStateBalanceVar, PostMatchBalance,
+        Balance, BalanceShareVar, DarkpoolStateBalance, DarkpoolStateBalanceVar,
         PostMatchBalanceShare, PostMatchBalanceShareVar,
     },
     intent::{DarkpoolStateIntent, DarkpoolStateIntentVar, Intent, IntentShare, IntentShareVar},
@@ -30,9 +30,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     SingleProverCircuit,
-    zk_circuits::settlement::{
-        INTENT_AND_BALANCE_SETTLEMENT_PARTY0_LINK, INTENT_AND_BALANCE_SETTLEMENT_PARTY1_LINK,
-        intent_and_balance_private_settlement::IntentAndBalancePrivateSettlementCircuit,
+    zk_circuits::{
+        settlement::{
+            INTENT_AND_BALANCE_SETTLEMENT_PARTY0_LINK, INTENT_AND_BALANCE_SETTLEMENT_PARTY1_LINK,
+            intent_and_balance_private_settlement::IntentAndBalancePrivateSettlementCircuit,
+        },
+        validity_proofs::intent_and_balance_first_fill::BALANCE_PARTIAL_COMMITMENT_SIZE,
     },
     zk_gadgets::{
         comparators::EqGadget,
@@ -48,11 +51,7 @@ use crate::{
 ///
 /// We omit the `amount_in` share (last share of the `Intent` type) as this will
 /// be updated in the match settlement.
-const INTENT_PARTIAL_COMMITMENT_SIZE: usize = IntentShare::NUM_SCALARS - 1;
-
-/// The size of the partial commitment to the balance
-pub const BALANCE_PARTIAL_COMMITMENT_SIZE: usize =
-    Balance::NUM_SCALARS - PostMatchBalance::NUM_SCALARS;
+pub const INTENT_PARTIAL_COMMITMENT_SIZE: usize = IntentShare::NUM_SCALARS - 1;
 
 // ----------------------
 // | Circuit Definition |
@@ -364,13 +363,14 @@ pub mod test_helpers {
             check_constraints_satisfied, create_merkle_opening, create_random_state_wrapper,
             random_intent,
         },
-        zk_circuits::{
-            validity_proofs::intent_and_balance::{
-                BALANCE_PARTIAL_COMMITMENT_SIZE, INTENT_PARTIAL_COMMITMENT_SIZE,
-                IntentAndBalanceValidityCircuit, IntentAndBalanceValidityStatement,
-                IntentAndBalanceValidityWitness,
+        zk_circuits::validity_proofs::{
+            intent_and_balance::{
+                INTENT_PARTIAL_COMMITMENT_SIZE, IntentAndBalanceValidityCircuit,
+                IntentAndBalanceValidityStatement, IntentAndBalanceValidityWitness,
             },
-            validity_proofs::intent_and_balance_first_fill::test_helpers::create_matching_balance_for_intent,
+            intent_and_balance_first_fill::{
+                BALANCE_PARTIAL_COMMITMENT_SIZE, test_helpers::create_matching_balance_for_intent,
+            },
         },
     };
 
