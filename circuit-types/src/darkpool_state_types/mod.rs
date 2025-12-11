@@ -5,6 +5,7 @@
 //! obligations.
 
 pub mod balance;
+pub mod bounded_match_result;
 pub mod deposit;
 pub mod fee;
 pub mod intent;

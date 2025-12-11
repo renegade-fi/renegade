@@ -6,6 +6,7 @@ use alloy_primitives::Address;
 use circuit_types::{
     AMOUNT_BITS, Amount,
     balance::Balance,
+    bounded_match_result::BoundedMatchResult,
     csprng::PoseidonCSPRNG,
     deposit::Deposit,
     elgamal::{DecryptionKey, EncryptionKey},
@@ -80,6 +81,12 @@ pub fn random_fee() -> FixedPoint {
     FixedPoint::from_f64_round_down(fee_f64)
 }
 
+/// Generate a random block deadline
+pub fn random_block_deadline() -> u64 {
+    let mut rng = thread_rng();
+    rng.gen_range(0..=u64::MAX)
+}
+
 // ---------------
 // | State Types |
 // ---------------
@@ -104,8 +111,7 @@ pub fn random_intent() -> Intent {
 /// We do this so that a match on the intent does not overflow the bitlength of
 /// the receive balance amount
 pub fn random_small_intent() -> Intent {
-    let max_amount_in = 1u128.pow((AMOUNT_BITS / 2) as u32);
-    random_bounded_intent(max_amount_in)
+    random_bounded_intent(BOUNDED_MAX_AMT)
 }
 
 /// Create a random bounded intent
@@ -123,8 +129,7 @@ pub fn random_bounded_intent(max_amount_in: Amount) -> Intent {
 
 /// Create a random balance with a small initial amount
 pub fn random_small_balance() -> Balance {
-    let max_amount = 1u128.pow((AMOUNT_BITS / 2) as u32);
-    random_bounded_balance(max_amount)
+    random_bounded_balance(BOUNDED_MAX_AMT)
 }
 
 /// Create a random balance
@@ -188,9 +193,8 @@ pub fn create_settlement_obligation_with_balance(
     let mut rng = thread_rng();
 
     // Clamp the obligation's `amount_in` to avoid price overflows
-    let mut max_amount_in = 2u128.pow((AMOUNT_BITS / 2) as u32);
     let amount_bound = cmp::min(intent.amount_in, balance_amount);
-    max_amount_in = cmp::min(amount_bound, max_amount_in);
+    let max_amount_in = cmp::min(amount_bound, BOUNDED_MAX_AMT);
 
     // Sample a random amount
     let amount_in = rng.gen_range(0..=max_amount_in);
@@ -202,6 +206,36 @@ pub fn create_settlement_obligation_with_balance(
         output_token: intent.out_token,
         amount_in,
         amount_out,
+    }
+}
+
+/// Create a bounded match result for an intent
+pub fn create_bounded_match_result(intent: &Intent) -> BoundedMatchResult {
+    create_bounded_match_result_with_balance(intent, intent.amount_in)
+}
+
+/// Create a bounded match result for an intent and balance amount
+pub fn create_bounded_match_result_with_balance(
+    intent: &Intent,
+    balance_amount: Amount,
+) -> BoundedMatchResult {
+    let mut rng = thread_rng();
+
+    // Clamp the obligation's `amount_in` to avoid price overflows
+    let amount_bound = cmp::min(intent.amount_in, balance_amount);
+    let mut max_amount_in = cmp::min(amount_bound, BOUNDED_MAX_AMT);
+
+    // Choose a random upper bound for the match result
+    max_amount_in = rng.gen_range(0..=max_amount_in);
+    let min_amount_in = rng.gen_range(0..=max_amount_in);
+
+    BoundedMatchResult {
+        internal_party_input_token: intent.in_token,
+        internal_party_output_token: intent.out_token,
+        min_internal_party_amount_in: min_amount_in,
+        max_internal_party_amount_in: max_amount_in,
+        price: intent.min_price,
+        block_deadline: random_block_deadline(),
     }
 }
 
