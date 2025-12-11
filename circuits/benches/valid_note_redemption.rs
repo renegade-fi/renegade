@@ -44,7 +44,7 @@ pub fn bench_prover(c: &mut Criterion) {
     let benchmark_id = BenchmarkId::new("prover", format!("({MERKLE_HEIGHT})"));
     group.bench_function(benchmark_id, |b| {
         b.iter(|| {
-            singleprover_prove::<SizedValidNoteRedemption>(witness.clone(), statement.clone())
+            singleprover_prove::<SizedValidNoteRedemption>(&witness, &statement)
                 .unwrap();
         });
     });
@@ -54,14 +54,14 @@ pub fn bench_prover(c: &mut Criterion) {
 pub fn bench_verifier(c: &mut Criterion) {
     // First generate a proof that will be verified multiple times
     let (witness, statement) = create_dummy_witness_statement();
-    let proof = singleprover_prove::<SizedValidNoteRedemption>(witness, statement.clone()).unwrap();
+    let proof = singleprover_prove::<SizedValidNoteRedemption>(&witness, &statement).unwrap();
 
     // Run the benchmark
     let mut group = c.benchmark_group("valid_note_redemption");
     let benchmark_id = BenchmarkId::new("verifier", format!("({MERKLE_HEIGHT})"));
     group.bench_function(benchmark_id, |b| {
         b.iter(|| {
-            verify_singleprover_proof::<SizedValidNoteRedemption>(statement.clone(), &proof)
+            verify_singleprover_proof::<SizedValidNoteRedemption>(&statement, &proof)
                 .unwrap();
         });
     });

@@ -46,8 +46,8 @@ pub fn bench_prover(c: &mut Criterion) {
     group.bench_function(benchmark_id, |b| {
         b.iter(|| {
             singleprover_prove::<SizedValidPublicRelayerFeePayment>(
-                witness.clone(),
-                statement.clone(),
+                &witness,
+                &statement,
             )
             .unwrap();
         });
@@ -58,7 +58,7 @@ pub fn bench_prover(c: &mut Criterion) {
 pub fn bench_verifier(c: &mut Criterion) {
     // First generate a proof that will be verified multiple times
     let (witness, statement) = create_dummy_witness_statement();
-    let proof = singleprover_prove::<SizedValidPublicRelayerFeePayment>(witness, statement.clone())
+    let proof = singleprover_prove::<SizedValidPublicRelayerFeePayment>(&witness, &statement)
         .unwrap();
 
     // Run the benchmark
@@ -67,7 +67,7 @@ pub fn bench_verifier(c: &mut Criterion) {
     group.bench_function(benchmark_id, |b| {
         b.iter(|| {
             verify_singleprover_proof::<SizedValidPublicRelayerFeePayment>(
-                statement.clone(),
+                &statement,
                 &proof,
             )
             .unwrap();

@@ -53,8 +53,8 @@ pub fn bench_prover(c: &mut Criterion) {
     group.bench_function(benchmark_id, |b| {
         b.iter(|| {
             singleprover_prove::<IntentOnlyFirstFillValidityCircuit>(
-                witness.clone(),
-                statement.clone(),
+                &witness,
+                &statement,
             )
             .unwrap();
         });
@@ -66,7 +66,7 @@ pub fn bench_verifier(c: &mut Criterion) {
     // First generate a proof that will be verified multiple times
     let (witness, statement) = create_witness_statement();
     let proof =
-        singleprover_prove::<IntentOnlyFirstFillValidityCircuit>(witness, statement.clone())
+        singleprover_prove::<IntentOnlyFirstFillValidityCircuit>(&witness, &statement)
             .unwrap();
 
     // Run the benchmark
@@ -75,7 +75,7 @@ pub fn bench_verifier(c: &mut Criterion) {
     group.bench_function(benchmark_id, |b| {
         b.iter(|| {
             verify_singleprover_proof::<IntentOnlyFirstFillValidityCircuit>(
-                statement.clone(),
+                &statement,
                 &proof,
             )
             .unwrap();

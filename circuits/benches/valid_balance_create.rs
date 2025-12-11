@@ -43,7 +43,7 @@ pub fn bench_prover(c: &mut Criterion) {
     let benchmark_id = BenchmarkId::new("prover", "");
     group.bench_function(benchmark_id, |b| {
         b.iter(|| {
-            singleprover_prove::<ValidBalanceCreate>(witness.clone(), statement.clone()).unwrap();
+            singleprover_prove::<ValidBalanceCreate>(&witness, &statement).unwrap();
         });
     });
 }
@@ -52,14 +52,14 @@ pub fn bench_prover(c: &mut Criterion) {
 pub fn bench_verifier(c: &mut Criterion) {
     // First generate a proof that will be verified multiple times
     let (witness, statement) = create_witness_statement();
-    let proof = singleprover_prove::<ValidBalanceCreate>(witness, statement.clone()).unwrap();
+    let proof = singleprover_prove::<ValidBalanceCreate>(&witness, &statement).unwrap();
 
     // Run the benchmark
     let mut group = c.benchmark_group("valid_balance_create");
     let benchmark_id = BenchmarkId::new("verifier", "");
     group.bench_function(benchmark_id, |b| {
         b.iter(|| {
-            verify_singleprover_proof::<ValidBalanceCreate>(statement.clone(), &proof).unwrap();
+            verify_singleprover_proof::<ValidBalanceCreate>(&statement, &proof).unwrap();
         });
     });
 }

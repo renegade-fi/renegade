@@ -5,9 +5,10 @@
 
 use circuit_macros::circuit_type;
 use circuit_types::{
-    Commitment, PlonkCircuit,
+    PlonkCircuit,
     balance::{
         Balance, BalanceShareVar, BalanceVar, DarkpoolStateBalanceVar, PostMatchBalanceShare,
+        PreMatchBalanceShare,
     },
     csprng::PoseidonCSPRNG,
     state_wrapper::PartialCommitment,
@@ -62,7 +63,7 @@ impl NewOutputBalanceValidityCircuit {
         Self::validate_new_balance(&witness.balance, cs)?;
 
         // 2. Build the state wrapper for the balance
-        let (mut balance, private_shares) = Self::build_balance_state(witness, cs)?;
+        let (mut balance, private_shares) = Self::build_balance_state(witness, statement, cs)?;
 
         // 3. Compute a commitment to the original balance
         let original_balance_commitment =
@@ -96,6 +97,7 @@ impl NewOutputBalanceValidityCircuit {
     /// Returns the state element and the private shares
     fn build_balance_state(
         witness: &mut NewOutputBalanceValidityWitnessVar,
+        statement: &NewOutputBalanceValidityStatementVar,
         cs: &mut PlonkCircuit,
     ) -> Result<(DarkpoolStateBalanceVar, BalanceShareVar), CircuitError> {
         let balance = &witness.balance;
@@ -105,6 +107,10 @@ impl NewOutputBalanceValidityCircuit {
         // Sample public and private shares for the balance
         let (private_shares, public_share) =
             StreamCipherGadget::encrypt(balance, share_stream, cs)?;
+
+        // Build the pre-match balance shares and check that they match the statement
+        let pre_match_balance_shares = ShareGadget::build_pre_match_balance_share(&public_share);
+        EqGadget::constrain_eq(&pre_match_balance_shares, &statement.pre_match_balance_shares, cs)?;
 
         // Build the post-match balance shares
         let post_match_balance_shares = ShareGadget::build_post_match_balance_share(&public_share);
@@ -168,6 +174,8 @@ pub struct NewOutputBalanceValidityWitness {
 #[circuit_type(singleprover_circuit)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NewOutputBalanceValidityStatement {
+    /// The pre-match balance shares for the new balance
+    pub pre_match_balance_shares: PreMatchBalanceShare,
     /// A partial commitment to the new output balance
     pub new_balance_partial_commitment: PartialCommitment,
     /// The recovery identifier of the new output balance
@@ -266,7 +274,8 @@ pub mod test_helpers {
         let mut initial_recovery_stream = balance.recovery_stream;
         initial_share_stream.index = 0;
         initial_recovery_stream.index = 0;
-        let post_match_balance_shares = PostMatchBalanceShare::from(balance.public_share);
+        let post_match_balance_shares = PostMatchBalanceShare::from(balance.public_share.clone());
+        let pre_match_balance_shares = PreMatchBalanceShare::from(balance.public_share);
         let witness = NewOutputBalanceValidityWitness {
             balance: balance.inner,
             initial_share_stream,
@@ -275,8 +284,11 @@ pub mod test_helpers {
         };
 
         // Build the statement
-        let statement =
-            NewOutputBalanceValidityStatement { new_balance_partial_commitment, recovery_id };
+        let statement = NewOutputBalanceValidityStatement {
+            pre_match_balance_shares,
+            new_balance_partial_commitment,
+            recovery_id,
+        };
 
         (witness, statement)
     }
@@ -284,8 +296,11 @@ pub mod test_helpers {
 
 #[cfg(test)]
 mod test {
+    use crate::test_helpers::random_scalar;
+
     use super::*;
     use circuit_types::traits::SingleProverCircuit;
+    use rand::{Rng, thread_rng};
 
     /// A helper to print the number of constraints in the circuit
     ///
@@ -305,5 +320,21 @@ mod test {
     fn test_valid_new_output_balance_constraints() {
         let (witness, statement) = test_helpers::create_witness_statement();
         assert!(test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the pre-match balance shares are modified
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_witness__pre_match_balance_shares_modified() {
+        let mut rng = thread_rng();
+        let (witness, mut statement) = test_helpers::create_witness_statement();
+
+        let mut shares = statement.pre_match_balance_shares.to_scalars();
+        let idx = rng.gen_range(0..shares.len());
+        shares[idx] = random_scalar();
+        statement.pre_match_balance_shares =
+            PreMatchBalanceShare::from_scalars(&mut shares.into_iter());
+
+        assert!(!test_helpers::check_constraints(&witness, &statement));
     }
 }
