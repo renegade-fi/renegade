@@ -218,7 +218,7 @@ impl<const MERKLE_HEIGHT: usize> SingleProverCircuit for IntentOnlyValidityCircu
     ///   VALIDITY and INTENT ONLY PUBLIC SETTLEMENT. This group is placed by
     ///   the settlement circuit, so we inherit its layout here.
     fn proof_linking_groups() -> Result<Vec<(String, Option<GroupLayout>)>, PlonkError> {
-        let layout = IntentOnlyPublicSettlementCircuit::<MERKLE_HEIGHT>::get_circuit_layout()?;
+        let layout = IntentOnlyPublicSettlementCircuit::get_circuit_layout()?;
         let settlement_group = layout.get_group_layout(INTENT_ONLY_PUBLIC_SETTLEMENT_LINK);
         let group_name = INTENT_ONLY_PUBLIC_SETTLEMENT_LINK.to_string();
 

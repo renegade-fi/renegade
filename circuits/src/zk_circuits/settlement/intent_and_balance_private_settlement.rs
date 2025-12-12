@@ -13,7 +13,7 @@ use circuit_types::{
     settlement_obligation::SettlementObligation,
     traits::{BaseType, CircuitBaseType, CircuitVarType},
 };
-use constants::{MERKLE_HEIGHT, Scalar, ScalarField};
+use constants::{Scalar, ScalarField};
 use mpc_plonk::errors::PlonkError;
 use mpc_relation::{
     Variable,
@@ -39,7 +39,6 @@ use crate::{
 
 /// The `INTENT AND BALANCE PRIVATE SETTLEMENT` circuit
 pub struct IntentAndBalancePrivateSettlementCircuit;
-
 impl IntentAndBalancePrivateSettlementCircuit {
     /// Apply the circuit constraints to a given constraint system
     pub fn circuit(
@@ -228,7 +227,7 @@ impl SingleProverCircuit for IntentAndBalancePrivateSettlementCircuit {
     type Statement = IntentAndBalancePrivateSettlementStatement;
 
     fn name() -> String {
-        format!("Intent And Balance Private Settlement ({MERKLE_HEIGHT})")
+        "Intent And Balance Private Settlement".to_string()
     }
 
     /// This circuit has four linking groups:
@@ -295,7 +294,7 @@ pub mod test_helpers {
 
     /// Check that the constraints are satisfied on the given witness and
     /// statement
-    pub fn check_constraints<const MERKLE_HEIGHT: usize>(
+    pub fn check_constraints(
         witness: &IntentAndBalancePrivateSettlementWitness,
         statement: &IntentAndBalancePrivateSettlementStatement,
     ) -> bool {
@@ -305,7 +304,7 @@ pub mod test_helpers {
     }
 
     /// Construct a witness and statement with valid data
-    pub fn create_witness_statement<const MERKLE_HEIGHT: usize>()
+    pub fn create_witness_statement()
     -> (IntentAndBalancePrivateSettlementWitness, IntentAndBalancePrivateSettlementStatement) {
         // Create the intents, balances, and obligations
         let (intent0, intent1, obligation0, obligation1) = create_compatible_intents();
@@ -487,7 +486,6 @@ mod test {
 
     use super::*;
     use circuit_types::{max_amount, traits::SingleProverCircuit};
-    use constants::MERKLE_HEIGHT;
     use rand::{Rng, thread_rng};
 
     macro_rules! rand_branch {
@@ -536,8 +534,8 @@ mod test {
     /// Test that constraints are satisfied on a valid witness and statement
     #[test]
     fn test_valid_intent_and_balance_private_settlement_constraints() {
-        let (witness, statement) = test_helpers::create_witness_statement::<MERKLE_HEIGHT>();
-        assert!(test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
+        let (witness, statement) = test_helpers::create_witness_statement();
+        assert!(test_helpers::check_constraints(&witness, &statement));
     }
 
     // --- Incompatible Obligations --- //
@@ -546,7 +544,7 @@ mod test {
     #[test]
     #[allow(non_snake_case)]
     fn test_invalid_obligation__invalid_amount() {
-        let (mut witness, statement) = test_helpers::create_witness_statement::<MERKLE_HEIGHT>();
+        let (mut witness, statement) = test_helpers::create_witness_statement();
 
         // Pick a random obligation amount to corrupt
         let amount = rand_branch!(
@@ -557,14 +555,14 @@ mod test {
         );
 
         *amount = max_amount() + 1;
-        assert!(!test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
+        assert!(!test_helpers::check_constraints(&witness, &statement));
     }
 
     /// Test the case in which an obligation input token is misconfigured
     #[test]
     #[allow(non_snake_case)]
     fn test_invalid_obligation__input_token_mismatch() {
-        let (mut witness, statement) = test_helpers::create_witness_statement::<MERKLE_HEIGHT>();
+        let (mut witness, statement) = test_helpers::create_witness_statement();
 
         let bad_token = random_address();
         rand_branch!(
@@ -578,14 +576,14 @@ mod test {
             }
         );
 
-        assert!(!test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
+        assert!(!test_helpers::check_constraints(&witness, &statement));
     }
 
     /// Test the case in which an obligation output token is misconfigured
     #[test]
     #[allow(non_snake_case)]
     fn test_invalid_obligation__output_token_mismatch() {
-        let (mut witness, statement) = test_helpers::create_witness_statement::<MERKLE_HEIGHT>();
+        let (mut witness, statement) = test_helpers::create_witness_statement();
 
         let bad_token = random_address();
         rand_branch!(
@@ -600,7 +598,7 @@ mod test {
                 witness.output_balance1.mint = bad_token;
             }
         );
-        assert!(!test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
+        assert!(!test_helpers::check_constraints(&witness, &statement));
     }
 
     /// Test the case in which the input and output amounts of the obligations
@@ -608,8 +606,7 @@ mod test {
     #[test]
     #[allow(non_snake_case)]
     fn test_invalid_obligation__amounts_not_aligned() {
-        let (mut witness, mut statement) =
-            test_helpers::create_witness_statement::<MERKLE_HEIGHT>();
+        let (mut witness, mut statement) = test_helpers::create_witness_statement();
 
         rand_branch!(
             {
@@ -623,7 +620,7 @@ mod test {
                 statement.new_in_balance_public_shares1.amount -= Scalar::one();
             }
         );
-        assert!(!test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
+        assert!(!test_helpers::check_constraints(&witness, &statement));
     }
 
     // --- Invalid Intent --- //
@@ -632,7 +629,7 @@ mod test {
     #[test]
     #[allow(non_snake_case)]
     fn test_invalid_obligation__intent_incompatible() {
-        let (mut witness, statement) = test_helpers::create_witness_statement::<MERKLE_HEIGHT>();
+        let (mut witness, statement) = test_helpers::create_witness_statement();
 
         let bad_token = random_address();
         #[rustfmt::skip]
@@ -642,28 +639,28 @@ mod test {
             { witness.intent1.in_token = bad_token; },
             { witness.intent1.out_token = bad_token; }
         );
-        assert!(!test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
+        assert!(!test_helpers::check_constraints(&witness, &statement));
     }
 
     /// Test the case in which an intent's input amount is violated
     #[test]
     #[allow(non_snake_case)]
     fn test_invalid_intent__input_amount_violated() {
-        let (mut witness, statement) = test_helpers::create_witness_statement::<MERKLE_HEIGHT>();
+        let (mut witness, statement) = test_helpers::create_witness_statement();
 
         #[rustfmt::skip]
         rand_branch!(
             { witness.intent0.amount_in = witness.settlement_obligation0.amount_in - 1; },
             { witness.intent1.amount_in = witness.settlement_obligation1.amount_in - 1; }
         );
-        assert!(!test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
+        assert!(!test_helpers::check_constraints(&witness, &statement));
     }
 
     /// Test the case in which the intent's min price is violated
     #[test]
     #[allow(non_snake_case)]
     fn test_invalid_intent__min_price_violated() {
-        let (mut witness, statement) = test_helpers::create_witness_statement::<MERKLE_HEIGHT>();
+        let (mut witness, statement) = test_helpers::create_witness_statement();
 
         // Increase the min price by a factor of 2 so that the obligation violates it
         let two_scalar = Scalar::from(2u8);
@@ -681,7 +678,7 @@ mod test {
                 witness.intent1.min_price = trade_price * two_scalar;
             }
         );
-        assert!(!test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
+        assert!(!test_helpers::check_constraints(&witness, &statement));
     }
 
     // --- Invalid Input Balance --- //
@@ -691,14 +688,14 @@ mod test {
     #[test]
     #[allow(non_snake_case)]
     fn test_invalid_input_balance__undercapitalized() {
-        let (mut witness, statement) = test_helpers::create_witness_statement::<MERKLE_HEIGHT>();
+        let (mut witness, statement) = test_helpers::create_witness_statement();
 
         #[rustfmt::skip]
         rand_branch!(
             { witness.input_balance0.amount = witness.settlement_obligation0.amount_in - 1; },
             { witness.input_balance1.amount = witness.settlement_obligation1.amount_in - 1; }
         );
-        assert!(!test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
+        assert!(!test_helpers::check_constraints(&witness, &statement));
     }
 
     // --- Invalid Output Balance --- //
@@ -708,7 +705,7 @@ mod test {
     #[test]
     #[allow(non_snake_case)]
     fn test_invalid_output_balance__wrong_mint() {
-        let (mut witness, statement) = test_helpers::create_witness_statement::<MERKLE_HEIGHT>();
+        let (mut witness, statement) = test_helpers::create_witness_statement();
 
         let bad_mint = random_address();
         #[rustfmt::skip]
@@ -716,7 +713,7 @@ mod test {
             { witness.output_balance0.mint = bad_mint; },
             { witness.output_balance1.mint = bad_mint; }
         );
-        assert!(!test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
+        assert!(!test_helpers::check_constraints(&witness, &statement));
     }
 
     /// Test the case in which the balance owner is not the same as the intent's
@@ -724,7 +721,7 @@ mod test {
     #[test]
     #[allow(non_snake_case)]
     fn test_invalid_output_balance__owner_mismatch() {
-        let (mut witness, statement) = test_helpers::create_witness_statement::<MERKLE_HEIGHT>();
+        let (mut witness, statement) = test_helpers::create_witness_statement();
 
         let bad_owner = random_address();
         #[rustfmt::skip]
@@ -732,14 +729,14 @@ mod test {
             { witness.output_balance0.owner = bad_owner; },
             { witness.output_balance1.owner = bad_owner; }
         );
-        assert!(!test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
+        assert!(!test_helpers::check_constraints(&witness, &statement));
     }
 
     /// Test the case in which the output balance overflows
     #[test]
     #[allow(non_snake_case)]
     fn test_invalid_output_balance__overflow() {
-        let (mut witness, statement) = test_helpers::create_witness_statement::<MERKLE_HEIGHT>();
+        let (mut witness, statement) = test_helpers::create_witness_statement();
 
         let bal_amt = max_amount() - 1;
         #[rustfmt::skip]
@@ -747,7 +744,7 @@ mod test {
             { witness.output_balance0.amount = bal_amt; },
             { witness.output_balance1.amount = bal_amt; }
         );
-        assert!(!test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
+        assert!(!test_helpers::check_constraints(&witness, &statement));
     }
 
     // --- Invalid State Updates --- //
@@ -756,14 +753,14 @@ mod test {
     #[test]
     #[allow(non_snake_case)]
     fn test_invalid_update__intent_amount_public_share_modified() {
-        let (witness, mut statement) = test_helpers::create_witness_statement::<MERKLE_HEIGHT>();
+        let (witness, mut statement) = test_helpers::create_witness_statement();
 
         #[rustfmt::skip]
         rand_branch!(
             { statement.new_amount_public_share0 = random_scalar(); },
             { statement.new_amount_public_share1 = random_scalar(); }
         );
-        assert!(!test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
+        assert!(!test_helpers::check_constraints(&witness, &statement));
     }
 
     /// Test the case in which the input balance's public shares are modified
@@ -771,7 +768,7 @@ mod test {
     #[allow(non_snake_case)]
     fn test_invalid_update__input_balance_public_shares_modified() {
         let mut rng = thread_rng();
-        let (witness, mut statement) = test_helpers::create_witness_statement::<MERKLE_HEIGHT>();
+        let (witness, mut statement) = test_helpers::create_witness_statement();
 
         rand_branch!(
             {
@@ -789,7 +786,7 @@ mod test {
                     PostMatchBalanceShare::from_scalars(&mut shares.into_iter());
             }
         );
-        assert!(!test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
+        assert!(!test_helpers::check_constraints(&witness, &statement));
     }
 
     /// Test the case in which the output balance's public shares are modified
@@ -797,7 +794,7 @@ mod test {
     #[allow(non_snake_case)]
     fn test_invalid_update__output_balance_public_shares_modified() {
         let mut rng = thread_rng();
-        let (witness, mut statement) = test_helpers::create_witness_statement::<MERKLE_HEIGHT>();
+        let (witness, mut statement) = test_helpers::create_witness_statement();
 
         rand_branch!(
             {
@@ -815,6 +812,6 @@ mod test {
                     PostMatchBalanceShare::from_scalars(&mut shares.into_iter());
             }
         );
-        assert!(!test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
+        assert!(!test_helpers::check_constraints(&witness, &statement));
     }
 }

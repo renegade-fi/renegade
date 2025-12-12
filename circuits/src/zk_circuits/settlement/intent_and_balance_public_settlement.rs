@@ -13,7 +13,7 @@ use circuit_types::{
     settlement_obligation::SettlementObligation,
     traits::{BaseType, CircuitBaseType, CircuitVarType},
 };
-use constants::{MERKLE_HEIGHT, Scalar, ScalarField};
+use constants::{Scalar, ScalarField};
 use mpc_plonk::errors::PlonkError;
 use mpc_relation::{
     Variable,
@@ -183,7 +183,7 @@ impl SingleProverCircuit for IntentAndBalancePublicSettlementCircuit {
     type Statement = IntentAndBalancePublicSettlementStatement;
 
     fn name() -> String {
-        format!("Intent And Balance Public Settlement ({MERKLE_HEIGHT})")
+        "Intent And Balance Public Settlement".to_string()
     }
 
     /// INTENT AND BALANCE PUBLIC SETTLEMENT has two proof linking groups:

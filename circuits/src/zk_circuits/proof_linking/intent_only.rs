@@ -36,7 +36,7 @@ pub fn link_intent_only_settlement<const MERKLE_HEIGHT: usize>(
     settlement_link_hint: &ProofLinkingHint,
 ) -> Result<PlonkLinkProof, ProverError> {
     // Get the group layout for the first fill <-> settlement link group
-    let layout = get_intent_public_settlement_group_layout::<MERKLE_HEIGHT>()?;
+    let layout = get_intent_public_settlement_group_layout()?;
     let pk = IntentOnlyValidityCircuit::<MERKLE_HEIGHT>::proving_key();
 
     PlonkKzgSnark::link_proofs::<SolidityTranscript>(
@@ -71,7 +71,7 @@ pub fn validate_intent_only_settlement_link<const MERKLE_HEIGHT: usize>(
     settlement_proof: &PlonkProof,
 ) -> Result<(), ProverError> {
     // Get the group layout for the first fill <-> settlement link group
-    let layout = get_intent_public_settlement_group_layout::<MERKLE_HEIGHT>()?;
+    let layout = get_intent_public_settlement_group_layout()?;
     let vk = IntentOnlyValidityCircuit::<MERKLE_HEIGHT>::verifying_key();
 
     PlonkKzgSnark::verify_link_proof::<SolidityTranscript>(
@@ -86,10 +86,9 @@ pub fn validate_intent_only_settlement_link<const MERKLE_HEIGHT: usize>(
 
 /// Get the group layout for the intent only validity <-> public settlement link
 /// group
-pub fn get_intent_public_settlement_group_layout<const MERKLE_HEIGHT: usize>()
--> Result<GroupLayout, ProverError> {
-    let circuit_layout = IntentOnlyPublicSettlementCircuit::<MERKLE_HEIGHT>::get_circuit_layout()
-        .map_err(ProverError::Plonk)?;
+pub fn get_intent_public_settlement_group_layout() -> Result<GroupLayout, ProverError> {
+    let circuit_layout =
+        IntentOnlyPublicSettlementCircuit::get_circuit_layout().map_err(ProverError::Plonk)?;
     Ok(circuit_layout.get_group_layout(INTENT_ONLY_PUBLIC_SETTLEMENT_LINK))
 }
 
@@ -111,8 +110,6 @@ mod test {
     type SizedIntentOnlyFirstFillValidity = IntentOnlyFirstFillValidityCircuit;
     /// Intent only validity with testing sizing
     type SizedIntentOnlyValidity = IntentOnlyValidityCircuit<TEST_MERKLE_HEIGHT>;
-    /// Intent only public settlement with testing sizing
-    type SizedIntentOnlyPublicSettlement = IntentOnlyPublicSettlementCircuit<TEST_MERKLE_HEIGHT>;
 
     // -----------
     // | Helpers |
@@ -123,8 +120,8 @@ mod test {
     fn test_intent_first_fill_settlement_link(
         first_fill_witness: <SizedIntentOnlyFirstFillValidity as SingleProverCircuit>::Witness,
         first_fill_statement: <SizedIntentOnlyFirstFillValidity as SingleProverCircuit>::Statement,
-        settlement_witness: <SizedIntentOnlyPublicSettlement as SingleProverCircuit>::Witness,
-        settlement_statement: <SizedIntentOnlyPublicSettlement as SingleProverCircuit>::Statement,
+        settlement_witness: <IntentOnlyPublicSettlementCircuit as SingleProverCircuit>::Witness,
+        settlement_statement: <IntentOnlyPublicSettlementCircuit as SingleProverCircuit>::Statement,
     ) -> Result<(), ProverError> {
         // Create a proof of INTENT ONLY FIRST FILL VALIDITY and one of INTENT ONLY
         // PUBLIC SETTLEMENT
@@ -134,7 +131,7 @@ mod test {
             &first_fill_witness, &first_fill_statement
         )?;
         let (settlement_proof, settlement_hint) = singleprover_prove_with_hint::<
-            SizedIntentOnlyPublicSettlement,
+            IntentOnlyPublicSettlementCircuit,
         >(
             &settlement_witness, &settlement_statement
         )?;
@@ -156,8 +153,8 @@ mod test {
     fn build_intent_first_fill_settlement_data() -> (
         <SizedIntentOnlyFirstFillValidity as SingleProverCircuit>::Witness,
         <SizedIntentOnlyFirstFillValidity as SingleProverCircuit>::Statement,
-        <SizedIntentOnlyPublicSettlement as SingleProverCircuit>::Witness,
-        <SizedIntentOnlyPublicSettlement as SingleProverCircuit>::Statement,
+        <IntentOnlyPublicSettlementCircuit as SingleProverCircuit>::Witness,
+        <IntentOnlyPublicSettlementCircuit as SingleProverCircuit>::Statement,
     ) {
         use crate::test_helpers::random_intent;
         use crate::zk_circuits::{
@@ -174,7 +171,7 @@ mod test {
 
         // Create the settlement witness and statement with the same intent
         let (settlement_witness, settlement_statement) =
-            create_settlement_witness_statement::<TEST_MERKLE_HEIGHT>(&intent);
+            create_settlement_witness_statement(&intent);
 
         (first_fill_witness, first_fill_statement, settlement_witness, settlement_statement)
     }
@@ -186,8 +183,8 @@ mod test {
     fn build_intent_validity_settlement_data() -> (
         <SizedIntentOnlyValidity as SingleProverCircuit>::Witness,
         <SizedIntentOnlyValidity as SingleProverCircuit>::Statement,
-        <SizedIntentOnlyPublicSettlement as SingleProverCircuit>::Witness,
-        <SizedIntentOnlyPublicSettlement as SingleProverCircuit>::Statement,
+        <IntentOnlyPublicSettlementCircuit as SingleProverCircuit>::Witness,
+        <IntentOnlyPublicSettlementCircuit as SingleProverCircuit>::Statement,
     ) {
         use crate::test_helpers::random_intent;
         use crate::zk_circuits::{
@@ -204,7 +201,7 @@ mod test {
 
         // Create the settlement witness and statement with the same intent
         let (settlement_witness, settlement_statement) =
-            create_settlement_witness_statement::<TEST_MERKLE_HEIGHT>(&intent);
+            create_settlement_witness_statement(&intent);
 
         (validity_witness, validity_statement, settlement_witness, settlement_statement)
     }
@@ -214,8 +211,8 @@ mod test {
     fn test_intent_validity_settlement_link(
         validity_witness: <SizedIntentOnlyValidity as SingleProverCircuit>::Witness,
         validity_statement: <SizedIntentOnlyValidity as SingleProverCircuit>::Statement,
-        settlement_witness: <SizedIntentOnlyPublicSettlement as SingleProverCircuit>::Witness,
-        settlement_statement: <SizedIntentOnlyPublicSettlement as SingleProverCircuit>::Statement,
+        settlement_witness: <IntentOnlyPublicSettlementCircuit as SingleProverCircuit>::Witness,
+        settlement_statement: <IntentOnlyPublicSettlementCircuit as SingleProverCircuit>::Statement,
     ) -> Result<(), ProverError> {
         // Create a proof of INTENT ONLY VALIDITY and one of INTENT ONLY PUBLIC
         // SETTLEMENT
@@ -223,7 +220,7 @@ mod test {
             SizedIntentOnlyValidity,
         >(&validity_witness, &validity_statement)?;
         let (settlement_proof, settlement_hint) = singleprover_prove_with_hint::<
-            SizedIntentOnlyPublicSettlement,
+            IntentOnlyPublicSettlementCircuit,
         >(
             &settlement_witness, &settlement_statement
         )?;

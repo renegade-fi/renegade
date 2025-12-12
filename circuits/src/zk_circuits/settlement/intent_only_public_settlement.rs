@@ -14,7 +14,7 @@ use circuit_types::{
     settlement_obligation::SettlementObligation,
     traits::{BaseType, CircuitBaseType, CircuitVarType},
 };
-use constants::{MERKLE_HEIGHT, Scalar, ScalarField};
+use constants::{Scalar, ScalarField};
 use mpc_plonk::errors::PlonkError;
 use mpc_relation::{
     Variable,
@@ -31,13 +31,10 @@ use crate::{SingleProverCircuit, zk_circuits::settlement::settlement_lib::Settle
 // | Circuit Definition |
 // ----------------------
 
-/// The `INTENT ONLY PUBLIC SETTLEMENT` circuit with default const generic
-/// sizing parameters
-pub type SizedIntentOnlyPublicSettlementCircuit = IntentOnlyPublicSettlementCircuit<MERKLE_HEIGHT>;
 /// The `INTENT ONLY PUBLIC SETTLEMENT` circuit
-pub struct IntentOnlyPublicSettlementCircuit<const MERKLE_HEIGHT: usize>;
+pub struct IntentOnlyPublicSettlementCircuit;
 
-impl<const MERKLE_HEIGHT: usize> IntentOnlyPublicSettlementCircuit<MERKLE_HEIGHT> {
+impl IntentOnlyPublicSettlementCircuit {
     /// Apply the circuit constraints to a given constraint system
     ///
     /// Note that the intent's amount public share is updated by the contracts
@@ -48,7 +45,7 @@ impl<const MERKLE_HEIGHT: usize> IntentOnlyPublicSettlementCircuit<MERKLE_HEIGHT
     /// satisfied by the settlement obligation.
     pub fn circuit(
         statement: &IntentOnlyPublicSettlementStatementVar,
-        witness: &mut IntentOnlyPublicSettlementWitnessVar<MERKLE_HEIGHT>,
+        witness: &mut IntentOnlyPublicSettlementWitnessVar,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
         // Verify that the constraints which the intent places on the settlement
@@ -70,15 +67,11 @@ impl<const MERKLE_HEIGHT: usize> IntentOnlyPublicSettlementCircuit<MERKLE_HEIGHT
 /// The witness type for `INTENT ONLY PUBLIC SETTLEMENT`
 #[circuit_type(serde, singleprover_circuit)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct IntentOnlyPublicSettlementWitness<const MERKLE_HEIGHT: usize> {
+pub struct IntentOnlyPublicSettlementWitness {
     /// The intent which this circuit is settling a match for
     #[link_groups = "intent_only_settlement"]
     pub intent: Intent,
 }
-
-/// A `INTENT ONLY PUBLIC SETTLEMENT` witness with default const generic sizing
-/// parameters
-pub type SizedIntentOnlyPublicSettlementWitness = IntentOnlyPublicSettlementWitness<MERKLE_HEIGHT>;
 
 // -----------------------------
 // | Statement Type Definition |
@@ -113,14 +106,12 @@ pub struct IntentOnlyPublicSettlementStatement {
 // | Prove Verify Flow |
 // ---------------------
 
-impl<const MERKLE_HEIGHT: usize> SingleProverCircuit
-    for IntentOnlyPublicSettlementCircuit<MERKLE_HEIGHT>
-{
-    type Witness = IntentOnlyPublicSettlementWitness<MERKLE_HEIGHT>;
+impl SingleProverCircuit for IntentOnlyPublicSettlementCircuit {
+    type Witness = IntentOnlyPublicSettlementWitness;
     type Statement = IntentOnlyPublicSettlementStatement;
 
     fn name() -> String {
-        format!("Intent Only Public Settlement ({MERKLE_HEIGHT})")
+        "Intent Only Public Settlement".to_string()
     }
 
     /// INTENT ONLY PUBLIC SETTLEMENT has one proof linking group:
@@ -133,7 +124,7 @@ impl<const MERKLE_HEIGHT: usize> SingleProverCircuit
     }
 
     fn apply_constraints(
-        mut witness_var: IntentOnlyPublicSettlementWitnessVar<MERKLE_HEIGHT>,
+        mut witness_var: IntentOnlyPublicSettlementWitnessVar,
         statement_var: IntentOnlyPublicSettlementStatementVar,
         cs: &mut PlonkCircuit,
     ) -> Result<(), PlonkError> {
@@ -166,40 +157,33 @@ pub mod test_helpers {
 
     /// Check that the constraints are satisfied on the given witness and
     /// statement
-    pub fn check_constraints<const MERKLE_HEIGHT: usize>(
-        witness: &IntentOnlyPublicSettlementWitness<MERKLE_HEIGHT>,
+    pub fn check_constraints(
+        witness: &IntentOnlyPublicSettlementWitness,
         statement: &IntentOnlyPublicSettlementStatement,
     ) -> bool {
-        check_constraints_satisfied::<IntentOnlyPublicSettlementCircuit<MERKLE_HEIGHT>>(
-            witness, statement,
-        )
+        check_constraints_satisfied::<IntentOnlyPublicSettlementCircuit>(witness, statement)
     }
 
     /// Construct a witness and statement with valid data
-    pub fn create_witness_statement<const MERKLE_HEIGHT: usize>()
-    -> (IntentOnlyPublicSettlementWitness<MERKLE_HEIGHT>, IntentOnlyPublicSettlementStatement) {
+    pub fn create_witness_statement()
+    -> (IntentOnlyPublicSettlementWitness, IntentOnlyPublicSettlementStatement) {
         let intent = random_intent();
-        create_witness_statement_with_intent::<MERKLE_HEIGHT>(&intent)
+        create_witness_statement_with_intent(&intent)
     }
 
     /// Create a witness and statement with the given intent
-    pub fn create_witness_statement_with_intent<const MERKLE_HEIGHT: usize>(
+    pub fn create_witness_statement_with_intent(
         intent: &Intent,
-    ) -> (IntentOnlyPublicSettlementWitness<MERKLE_HEIGHT>, IntentOnlyPublicSettlementStatement)
-    {
+    ) -> (IntentOnlyPublicSettlementWitness, IntentOnlyPublicSettlementStatement) {
         let settlement_obligation = create_settlement_obligation(intent);
-        create_witness_statement_with_intent_and_obligation::<MERKLE_HEIGHT>(
-            intent,
-            &settlement_obligation,
-        )
+        create_witness_statement_with_intent_and_obligation(intent, &settlement_obligation)
     }
 
     /// Create a witness and statement with the given intent and obligation
-    pub fn create_witness_statement_with_intent_and_obligation<const MERKLE_HEIGHT: usize>(
+    pub fn create_witness_statement_with_intent_and_obligation(
         intent: &Intent,
         obligation: &SettlementObligation,
-    ) -> (IntentOnlyPublicSettlementWitness<MERKLE_HEIGHT>, IntentOnlyPublicSettlementStatement)
-    {
+    ) -> (IntentOnlyPublicSettlementWitness, IntentOnlyPublicSettlementStatement) {
         let witness = IntentOnlyPublicSettlementWitness { intent: intent.clone() };
         let statement = IntentOnlyPublicSettlementStatement {
             settlement_obligation: obligation.clone(),
@@ -217,7 +201,6 @@ mod test {
 
     use super::*;
     use circuit_types::{AMOUNT_BITS, max_amount, traits::SingleProverCircuit};
-    use constants::MERKLE_HEIGHT;
     use rand::{Rng, thread_rng};
 
     /// A helper to print the number of constraints in the circuit
@@ -225,8 +208,7 @@ mod test {
     /// Useful when benchmarking the circuit
     #[test]
     fn test_n_constraints() {
-        let layout =
-            IntentOnlyPublicSettlementCircuit::<MERKLE_HEIGHT>::get_circuit_layout().unwrap();
+        let layout = IntentOnlyPublicSettlementCircuit::get_circuit_layout().unwrap();
 
         let n_gates = layout.n_gates;
         let circuit_size = layout.circuit_size();
@@ -237,8 +219,8 @@ mod test {
     /// Test that constraints are satisfied on a valid witness and statement
     #[test]
     fn test_valid_intent_only_public_settlement_constraints() {
-        let (witness, statement) = test_helpers::create_witness_statement::<MERKLE_HEIGHT>();
-        assert!(test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
+        let (witness, statement) = test_helpers::create_witness_statement();
+        assert!(test_helpers::check_constraints(&witness, &statement));
     }
 
     /// Test the case in which the entire intent is settled
@@ -249,27 +231,26 @@ mod test {
         let mut intent = random_intent();
         let max_amount_in = 1u128 << (AMOUNT_BITS / 2);
         intent.amount_in = rng.gen_range(0..max_amount_in);
-        let (witness, mut statement) =
-            test_helpers::create_witness_statement_with_intent::<MERKLE_HEIGHT>(&intent);
+        let (witness, mut statement) = test_helpers::create_witness_statement_with_intent(&intent);
 
         // Modify the obligation to settle the max amount
         statement.settlement_obligation.amount_in = witness.intent.amount_in;
         let min_out = compute_min_amount_out(&witness.intent, witness.intent.amount_in);
         let amt_out = rng.gen_range(min_out..=max_amount());
         statement.settlement_obligation.amount_out = amt_out;
-        assert!(test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
+        assert!(test_helpers::check_constraints(&witness, &statement));
     }
 
     /// Test the case in which the obligation settles exactly the minimum output
     /// amount
     #[test]
     fn test_exact_min_amount_out() {
-        let (witness, mut statement) = test_helpers::create_witness_statement::<MERKLE_HEIGHT>();
+        let (witness, mut statement) = test_helpers::create_witness_statement();
 
         let amount_in = statement.settlement_obligation.amount_in;
         let min_out = compute_min_amount_out(&witness.intent, amount_in);
         statement.settlement_obligation.amount_out = min_out;
-        assert!(test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
+        assert!(test_helpers::check_constraints(&witness, &statement));
     }
 
     // --- Invalid Test Cases --- //
@@ -279,14 +260,14 @@ mod test {
     #[test]
     fn test_invalid_pair_in_obligation() {
         let mut rng = thread_rng();
-        let (witness, mut statement) = test_helpers::create_witness_statement::<MERKLE_HEIGHT>();
+        let (witness, mut statement) = test_helpers::create_witness_statement();
 
         if rng.gen_bool(0.5) {
             statement.settlement_obligation.input_token = random_address();
         } else {
             statement.settlement_obligation.output_token = random_address();
         }
-        assert!(!test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
+        assert!(!test_helpers::check_constraints(&witness, &statement));
     }
 
     /// Test the case in which the obligation attempts to settle more than the
@@ -299,8 +280,7 @@ mod test {
         let max_amount_in = 1u128 << (AMOUNT_BITS / 2);
         intent.amount_in = rng.gen_range(0..max_amount_in);
 
-        let (witness, mut statement) =
-            test_helpers::create_witness_statement_with_intent::<MERKLE_HEIGHT>(&intent);
+        let (witness, mut statement) = test_helpers::create_witness_statement_with_intent(&intent);
 
         // Modify the amount in
         let new_amount_in = witness.intent.amount_in + 1;
@@ -311,17 +291,17 @@ mod test {
         statement.settlement_obligation.amount_out = amount_out;
 
         // Check that the constraints are not satisfied
-        assert!(!test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
+        assert!(!test_helpers::check_constraints(&witness, &statement));
     }
 
     /// Test the case in which the obligation violates the intent's min price
     #[test]
     fn test_invalid_amount_out_violates_min_price() {
-        let (witness, mut statement) = test_helpers::create_witness_statement::<MERKLE_HEIGHT>();
+        let (witness, mut statement) = test_helpers::create_witness_statement();
 
         let min_amount_out = compute_min_amount_out(&witness.intent, witness.intent.amount_in);
         let amount_out = min_amount_out - 1;
         statement.settlement_obligation.amount_out = amount_out;
-        assert!(!test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
+        assert!(!test_helpers::check_constraints(&witness, &statement));
     }
 }

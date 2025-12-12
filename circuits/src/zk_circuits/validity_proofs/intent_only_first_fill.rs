@@ -12,7 +12,7 @@ use circuit_types::{
     intent::{DarkpoolStateIntentVar, Intent, IntentShare},
     traits::{BaseType, CircuitBaseType, CircuitVarType},
 };
-use constants::{MERKLE_HEIGHT, Scalar, ScalarField};
+use constants::{Scalar, ScalarField};
 use mpc_plonk::errors::PlonkError;
 use mpc_relation::{
     Variable,
@@ -42,7 +42,6 @@ use crate::{
 
 /// The `INTENT ONLY FIRST FILL VALIDITY` circuit
 pub struct IntentOnlyFirstFillValidityCircuit;
-
 impl IntentOnlyFirstFillValidityCircuit {
     /// Apply the circuit constraints to a given constraint system
     pub fn circuit(
@@ -166,7 +165,7 @@ impl SingleProverCircuit for IntentOnlyFirstFillValidityCircuit {
     ///   FIRST FILL VALIDITY and INTENT ONLY PUBLIC SETTLEMENT. This group is
     ///   placed by the settlement circuit, so we inherit its layout here.
     fn proof_linking_groups() -> Result<Vec<(String, Option<GroupLayout>)>, PlonkError> {
-        let layout = IntentOnlyPublicSettlementCircuit::<MERKLE_HEIGHT>::get_circuit_layout()?;
+        let layout = IntentOnlyPublicSettlementCircuit::get_circuit_layout()?;
         let settlement_group = layout.get_group_layout(INTENT_ONLY_PUBLIC_SETTLEMENT_LINK);
         let group_name = INTENT_ONLY_PUBLIC_SETTLEMENT_LINK.to_string();
 

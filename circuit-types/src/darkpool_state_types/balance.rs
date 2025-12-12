@@ -210,7 +210,7 @@ impl StateWrapper<Balance> {
     ///
     /// This method does not apply the fees to the balance; use `add_fees` to do
     /// so. Rather this method subtracts the total fee from the receive amount.
-    pub fn apply_obligation_out_balance(
+    pub fn apply_obligation_out_balance_no_fees(
         &mut self,
         obligation: &SettlementObligation,
         fees: &FeeTake,
@@ -218,6 +218,18 @@ impl StateWrapper<Balance> {
         let receive_amt = obligation.amount_out - fees.total();
         self.inner.amount += receive_amt;
         self.public_share.amount += Scalar::from(receive_amt);
+    }
+
+    /// Apply a settlement obligation to the balance assuming this was an output
+    ///
+    /// This method applies the fees to the balance.
+    pub fn apply_obligation_out_balance(
+        &mut self,
+        obligation: &SettlementObligation,
+        fees: &FeeTake,
+    ) {
+        self.apply_obligation_out_balance_no_fees(obligation, fees);
+        self.add_fees(fees);
     }
 
     /// Apply fees to a balance

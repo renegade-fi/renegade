@@ -55,7 +55,7 @@ pub fn link_output_balance_settlement_with_party<const MERKLE_HEIGHT: usize>(
     settlement_link_hint: &ProofLinkingHint,
 ) -> Result<PlonkLinkProof, ProverError> {
     // Get the group layout for the validity <-> settlement link group
-    let layout = get_group_layout::<MERKLE_HEIGHT>(party_id)?;
+    let layout = get_group_layout(party_id)?;
     let pk = OutputBalanceValidityCircuit::<MERKLE_HEIGHT>::proving_key();
 
     PlonkKzgSnark::link_proofs::<SolidityTranscript>(
@@ -109,7 +109,7 @@ pub fn validate_output_balance_settlement_link_with_party<const MERKLE_HEIGHT: u
     settlement_proof: &PlonkProof,
 ) -> Result<(), ProverError> {
     // Get the group layout for the validity <-> settlement link group
-    let layout = get_group_layout::<MERKLE_HEIGHT>(party_id)?;
+    let layout = get_group_layout(party_id)?;
     let vk = OutputBalanceValidityCircuit::<MERKLE_HEIGHT>::verifying_key();
 
     PlonkKzgSnark::verify_link_proof::<SolidityTranscript>(
@@ -124,9 +124,7 @@ pub fn validate_output_balance_settlement_link_with_party<const MERKLE_HEIGHT: u
 
 /// Get the group layout for the output balance validity <-> settlement
 /// link group
-pub fn get_group_layout<const MERKLE_HEIGHT: usize>(
-    party_id: u8,
-) -> Result<GroupLayout, ProverError> {
+pub fn get_group_layout(party_id: u8) -> Result<GroupLayout, ProverError> {
     let layout_name = match party_id {
         0 => OUTPUT_BALANCE_SETTLEMENT_PARTY0_LINK,
         1 => OUTPUT_BALANCE_SETTLEMENT_PARTY1_LINK,
@@ -399,7 +397,7 @@ mod test {
     ) {
         // Create the private settlement witness and statement with compatible intents
         let (mut settlement_witness, mut settlement_statement) =
-            create_private_settlement_witness_statement::<TEST_MERKLE_HEIGHT>();
+            create_private_settlement_witness_statement();
 
         // Get mutable references to the relevant fields based on the party ID
         let (output_balance, pre_settlement_out_balance_shares) = if party_id == 0 {
@@ -506,7 +504,7 @@ mod test {
     ) {
         // Create the private settlement witness and statement with compatible intents
         let (mut settlement_witness, mut settlement_statement) =
-            create_private_settlement_witness_statement::<TEST_MERKLE_HEIGHT>();
+            create_private_settlement_witness_statement();
 
         // Get mutable references to the relevant fields based on the party ID
         let (output_balance, pre_settlement_out_balance_shares) = if party_id == 0 {

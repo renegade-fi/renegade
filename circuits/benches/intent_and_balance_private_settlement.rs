@@ -8,14 +8,13 @@ use circuit_types::traits::{CircuitBaseType, SingleProverCircuit};
 use circuits::zk_circuits::settlement::intent_and_balance_private_settlement::IntentAndBalancePrivateSettlementCircuit;
 use circuits::zk_circuits::settlement::intent_and_balance_private_settlement::test_helpers::create_witness_statement;
 use circuits::{singleprover_prove, verify_singleprover_proof};
-use constants::MERKLE_HEIGHT;
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use mpc_relation::proof_linking::LinkableCircuit;
 
 /// Benchmark applying constraints to a circuit
 pub fn bench_apply_constraints(c: &mut Criterion) {
     // Build a witness and statement
-    let (witness, statement) = create_witness_statement::<MERKLE_HEIGHT>();
+    let (witness, statement) = create_witness_statement();
 
     // Allocate in the constraint system
     let mut cs = PlonkCircuit::new_turbo_plonk();
@@ -49,7 +48,7 @@ pub fn bench_apply_constraints(c: &mut Criterion) {
 /// Benchmark proving a circuit
 pub fn bench_prover(c: &mut Criterion) {
     // Build a witness and statement
-    let (witness, statement) = create_witness_statement::<MERKLE_HEIGHT>();
+    let (witness, statement) = create_witness_statement();
     let mut group = c.benchmark_group("intent_and_balance_private_settlement");
     let benchmark_id = BenchmarkId::new("prover", "");
     group.bench_function(benchmark_id, |b| {
@@ -63,7 +62,7 @@ pub fn bench_prover(c: &mut Criterion) {
 /// Benchmark verifying a circuit
 pub fn bench_verifier(c: &mut Criterion) {
     // First generate a proof that will be verified multiple times
-    let (witness, statement) = create_witness_statement::<MERKLE_HEIGHT>();
+    let (witness, statement) = create_witness_statement();
     let proof =
         singleprover_prove::<IntentAndBalancePrivateSettlementCircuit>(&witness, &statement)
             .unwrap();
