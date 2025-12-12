@@ -3,8 +3,9 @@
 //! This module contains helpers for settlement circuits.
 
 use circuit_types::{
-    AMOUNT_BITS, PlonkCircuit,
+    AMOUNT_BITS, PRICE_BITS, PlonkCircuit,
     balance::{BalanceVar, PostMatchBalanceShareVar},
+    bounded_match_result::BoundedMatchResultVar,
     fee::FeeRatesVar,
     intent::IntentVar,
     settlement_obligation::SettlementObligationVar,
@@ -67,6 +68,47 @@ impl SettlementGadget {
             obligation.amount_out,
             min_output,
             AMOUNT_BITS,
+            cs,
+        )?;
+
+        Ok(())
+    }
+
+    /// Verify that the intent's constraints are satisfied by a bounded match
+    /// result
+    pub fn verify_intent_bounded_match_result_constraints(
+        intent: &IntentVar,
+        bounded_match_result: &BoundedMatchResultVar,
+        cs: &mut PlonkCircuit,
+    ) -> Result<(), CircuitError> {
+        // The bounded match result's input token must match the intent's input token
+        EqGadget::constrain_eq(
+            &bounded_match_result.internal_party_input_token,
+            &intent.in_token,
+            cs,
+        )?;
+        EqGadget::constrain_eq(
+            &bounded_match_result.internal_party_output_token,
+            &intent.out_token,
+            cs,
+        )?;
+
+        // The upper bound of the bounded match result must not exceed the intent's
+        // amount. The contract validates that min <= max <= amount_in, so we only
+        // need to check the upper bound here.
+        GreaterThanEqGadget::constrain_greater_than_eq(
+            intent.amount_in,
+            bounded_match_result.max_internal_party_amount_in,
+            AMOUNT_BITS,
+            cs,
+        )?;
+
+        // The bounded match result must exceed the intent's worst case price
+        // `bounded_match_result.price` has the same units as `intent.min_price`
+        GreaterThanEqGadget::constrain_greater_than_eq(
+            bounded_match_result.price.repr,
+            intent.min_price.repr,
+            PRICE_BITS,
             cs,
         )?;
 

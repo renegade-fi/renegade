@@ -28,3 +28,9 @@ pub const INTENT_AND_BALANCE_SETTLEMENT_PARTY1_LINK: &str = "intent_and_balance_
 pub const OUTPUT_BALANCE_SETTLEMENT_PARTY0_LINK: &str = "output_balance_settlement_party0";
 /// The group name for the OUTPUT BALANCE SETTLEMENT link for the second party
 pub const OUTPUT_BALANCE_SETTLEMENT_PARTY1_LINK: &str = "output_balance_settlement_party1";
+
+// ----------------------
+// | Bounded Settlement |
+// ----------------------
+
+pub mod intent_only_bounded_settlement;
