@@ -5,8 +5,9 @@
 use alloy_primitives::Address;
 use circuit_macros::circuit_type;
 use circuit_types::balance::{BalanceShareVar, DarkpoolStateBalance, DarkpoolStateBalanceVar};
+use circuit_types::elgamal::ElGamalCiphertext;
 use circuit_types::merkle::{MerkleOpening, MerkleRoot};
-use circuit_types::note::NoteVar;
+use circuit_types::note::{NOTE_CIPHERTEXT_SIZE, NoteVar};
 use circuit_types::traits::{BaseType, CircuitBaseType, CircuitVarType};
 use circuit_types::{Commitment, Nullifier, PlonkCircuit};
 use constants::{MERKLE_HEIGHT, Scalar, ScalarField};
@@ -143,7 +144,7 @@ pub struct ValidPrivateRelayerFeePaymentWitness<const MERKLE_HEIGHT: usize> {
     pub old_balance: DarkpoolStateBalance,
     /// The opening of the old balance to the Merkle root
     pub old_balance_opening: MerkleOpening<MERKLE_HEIGHT>,
-    /// The blinder samples for the note
+    /// The blinder sampled for the note
     pub blinder: Scalar,
 }
 
@@ -170,6 +171,8 @@ pub struct ValidPrivateRelayerFeePaymentStatement {
     /// The new recovery identifier of the balance
     pub recovery_id: Scalar,
     /// The new encrypted relayer fee balance (public share) of the balance
+    ///
+    /// Leaked here to enable recovery logic to compute the new balance state
     pub new_relayer_fee_balance_share: Scalar,
 
     // --- Note Elements --- //
@@ -182,6 +185,17 @@ pub struct ValidPrivateRelayerFeePaymentStatement {
     pub relayer_fee_receiver: Address,
     /// The commitment to the note
     pub note_commitment: Commitment,
+    /// The note ciphertext
+    ///
+    /// The note ciphertext is added here to enable recovery logic though it is
+    /// not verified in circuit.
+    ///
+    /// Rather, it is assumed that the party submitting the transaction (the
+    /// prover) has validated the ciphertext (possibly by construction). We
+    /// then add the ciphertext to the statement to include it in the Plonk
+    /// transcript, which prevents the value from being modified in
+    /// the mempool.
+    pub note_ciphertext: ElGamalCiphertext<NOTE_CIPHERTEXT_SIZE>,
 }
 
 // ---------------------
@@ -224,7 +238,7 @@ pub mod test_helpers {
     use crate::{
         test_helpers::{
             check_constraints_satisfied, create_merkle_opening, create_random_state_wrapper,
-            random_address, random_amount,
+            random_address, random_amount, random_elgamal_encryption_key,
         },
         zk_circuits::fees::valid_private_relayer_fee_payment::{
             SizedValidPrivateRelayerFeePayment, SizedValidPrivateRelayerFeePaymentWitness,
@@ -292,6 +306,8 @@ pub mod test_helpers {
             blinder: note.blinder,
         };
 
+        let key = random_elgamal_encryption_key();
+        let (note_ciphertext, _randomness) = note.encrypt(&key);
         let statement = ValidPrivateRelayerFeePaymentStatement {
             merkle_root,
             old_balance_nullifier,
@@ -300,6 +316,7 @@ pub mod test_helpers {
             new_relayer_fee_balance_share: new_balance.public_share.relayer_fee_balance,
             relayer_fee_receiver: relayer_fee_recipient,
             note_commitment,
+            note_ciphertext,
         };
 
         (witness, statement)

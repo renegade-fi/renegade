@@ -163,6 +163,8 @@ pub struct ValidPublicRelayerFeePaymentStatement {
     /// The new recovery identifier of the balance
     pub recovery_id: Scalar,
     /// The new encrypted relayer fee balance (public share) of the balance
+    ///
+    /// Leaked here to enable recovery logic to compute the new balance state
     pub new_relayer_fee_balance_share: Scalar,
 
     // --- Note Elements --- //
