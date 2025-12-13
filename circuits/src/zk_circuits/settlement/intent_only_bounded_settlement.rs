@@ -16,7 +16,7 @@ use circuit_types::{
 };
 use constants::{Scalar, ScalarField};
 use mpc_plonk::errors::PlonkError;
-use mpc_relation::{Variable, errors::CircuitError, traits::Circuit};
+use mpc_relation::{Variable, errors::CircuitError, proof_linking::GroupLayout, traits::Circuit};
 use serde::{Deserialize, Serialize};
 
 use crate::{SingleProverCircuit, zk_circuits::settlement::settlement_lib::SettlementGadget};
@@ -78,6 +78,12 @@ pub struct IntentOnlyBoundedSettlementWitness {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct IntentOnlyBoundedSettlementStatement {
     /// The bounded match result which this circuit is settling a match for
+    ///
+    /// Note that the contract is responsible for validating the constraints
+    /// which require only the bounded match result, including:
+    /// - Bit lengths on price, min_internal_party_amount_in, and
+    ///   max_internal_party_amount_in
+    /// - min_internal_party_amount_in <= max_internal_party_amount_in
     pub bounded_match_result: BoundedMatchResult,
     /// The relayer fee which is charged to the internal party for the
     /// settlement
@@ -108,6 +114,11 @@ impl SingleProverCircuit for IntentOnlyBoundedSettlementCircuit {
 
     fn name() -> String {
         "Intent Only Bounded Settlement".to_string()
+    }
+
+    fn proof_linking_groups() -> Result<Vec<(String, Option<GroupLayout>)>, PlonkError> {
+        // TODO: Implement
+        Ok(vec![])
     }
 
     fn apply_constraints(

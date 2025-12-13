@@ -5,7 +5,7 @@ use std::cmp;
 use alloy_primitives::Address;
 use circuit_types::{
     AMOUNT_BITS, Amount,
-    balance::Balance,
+    balance::{Balance, PostMatchBalanceShare},
     bounded_match_result::BoundedMatchResult,
     csprng::PoseidonCSPRNG,
     deposit::Deposit,
@@ -127,6 +127,22 @@ pub fn random_bounded_intent(max_amount_in: Amount) -> Intent {
     }
 }
 
+/// Create a balance that matches the given intent
+///
+/// The balance will have the same owner and mint as the intent's in_token,
+/// with random values for other fields.
+pub fn create_matching_balance_for_intent(intent: &Intent) -> Balance {
+    Balance {
+        mint: intent.in_token,
+        owner: intent.owner,
+        relayer_fee_recipient: random_address(),
+        one_time_authority: random_address(),
+        relayer_fee_balance: random_amount(),
+        protocol_fee_balance: random_amount(),
+        amount: random_amount(),
+    }
+}
+
 /// Create a random balance with a small initial amount
 pub fn random_small_balance() -> Balance {
     random_bounded_balance(BOUNDED_MAX_AMT)
@@ -162,6 +178,15 @@ pub fn random_zeroed_balance() -> Balance {
         relayer_fee_balance: 0,
         protocol_fee_balance: 0,
         amount: 0,
+    }
+}
+
+/// Create a random post-match balance share
+pub fn random_post_match_balance_share() -> PostMatchBalanceShare {
+    PostMatchBalanceShare {
+        amount: random_scalar(),
+        relayer_fee_balance: random_scalar(),
+        protocol_fee_balance: random_scalar(),
     }
 }
 

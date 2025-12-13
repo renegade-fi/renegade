@@ -40,6 +40,30 @@ impl SettlementGadget {
         Self::verify_out_balance_constraints(intent, out_balance, obligation, cs)
     }
 
+    /// Verify the intent and balance constraints for a bounded match result
+    pub fn verify_intent_and_balance_bounded_match_result_constraints(
+        intent: &IntentVar,
+        in_balance: &BalanceVar,
+        out_balance: &BalanceVar,
+        bounded_match_result: &BoundedMatchResultVar,
+        cs: &mut PlonkCircuit,
+    ) -> Result<(), CircuitError> {
+        // Verify the cross constraints which the intent and balances place on the
+        // bounded match result
+        Self::verify_intent_bounded_match_result_constraints(intent, bounded_match_result, cs)?;
+        Self::verify_in_balance_bounded_match_result_constraints(
+            in_balance,
+            bounded_match_result,
+            cs,
+        )?;
+        Self::verify_out_balance_bounded_match_result_constraints(
+            out_balance,
+            intent,
+            bounded_match_result,
+            cs,
+        )
+    }
+
     /// Verify that the intent's constraints are satisfied
     pub fn verify_intent_constraints(
         intent: &IntentVar,
@@ -135,6 +159,32 @@ impl SettlementGadget {
         )
     }
 
+    /// Verify that the balance's constraints are satisfied by the upper bound
+    /// of the bounded match result
+    ///
+    /// The contract validates that:
+    /// - min_internal_party_amount_in <= max_internal_party_amount_in
+    /// - max_internal_party_amount_in <= intent.amount_in
+    ///
+    /// Therefore, we only need to check that the balance can capitalize the
+    /// upper bound here.
+    ///
+    /// Note: The balance.mint == intent.in_token constraint is enforced by
+    /// the INTENT AND BALANCE VALIDITY proof via proof-linking.
+    pub fn verify_in_balance_bounded_match_result_constraints(
+        in_balance: &BalanceVar,
+        bounded_match_result: &BoundedMatchResultVar,
+        cs: &mut PlonkCircuit,
+    ) -> Result<(), CircuitError> {
+        // The balance must exceed the bounded match result's maximum input amount
+        GreaterThanEqGadget::constrain_greater_than_eq(
+            in_balance.amount,
+            bounded_match_result.max_internal_party_amount_in,
+            AMOUNT_BITS,
+            cs,
+        )
+    }
+
     /// Verify receive balance constraints
     fn verify_out_balance_constraints(
         intent: &IntentVar,
@@ -153,6 +203,38 @@ impl SettlementGadget {
         AmountGadget::constrain_valid_amount(new_bal_amount, cs)
     }
 
+    /// Verify receive balance constraints
+    ///
+    /// The contract validates that min <= max <= amount_in, so we only need to
+    /// check the upper bound here.
+    pub fn verify_out_balance_bounded_match_result_constraints(
+        out_balance: &BalanceVar,
+        intent: &IntentVar,
+        bounded_match_result: &BoundedMatchResultVar,
+        cs: &mut PlonkCircuit,
+    ) -> Result<(), CircuitError> {
+        // The output balance's mint must match the bounded match result's output token
+        EqGadget::constrain_eq(
+            &out_balance.mint,
+            &bounded_match_result.internal_party_output_token,
+            cs,
+        )?;
+
+        // The output balance must be owned by the intent's owner
+        EqGadget::constrain_eq(&out_balance.owner, &intent.owner, cs)?;
+
+        // The output amount must not overflow the receive balance
+        // We use the price and upper bound of the bounded match result to compute
+        // the maximum output amount.
+        let max_output_fp = FixedPointGadget::mul_integer(
+            bounded_match_result.price,
+            bounded_match_result.max_internal_party_amount_in,
+            cs,
+        )?;
+        let max_output = FixedPointGadget::floor(max_output_fp, cs)?;
+        let max_bal_amount = cs.add(out_balance.amount, max_output)?;
+        AmountGadget::constrain_valid_amount(max_bal_amount, cs)
+    }
     // --- State Update Constraints --- //
 
     /// Verify the update to the public shares of the state elements after
