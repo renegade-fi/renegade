@@ -116,6 +116,12 @@ harness = false
 required-features = ["test_helpers"]
 
 [[bench]]
+name = "intent_and_balance_bounded_settlement"
+path = "benches/intent_and_balance_bounded_settlement.rs"
+harness = false
+required-features = ["test_helpers"]
+
+[[bench]]
 name = "output_balance"
 path = "benches/output_balance.rs"
 harness = false
