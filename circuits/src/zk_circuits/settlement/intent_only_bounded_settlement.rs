@@ -19,7 +19,9 @@ use mpc_plonk::errors::PlonkError;
 use mpc_relation::{Variable, errors::CircuitError, proof_linking::GroupLayout, traits::Circuit};
 use serde::{Deserialize, Serialize};
 
-use crate::{SingleProverCircuit, zk_circuits::settlement::settlement_lib::SettlementGadget};
+use crate::{
+    SingleProverCircuit, zk_circuits::settlement::settlement_lib::BoundedSettlementGadget,
+};
 
 // ----------------------
 // | Circuit Definition |
@@ -47,7 +49,7 @@ impl IntentOnlyBoundedSettlementCircuit {
     ) -> Result<(), CircuitError> {
         // Verify that the constraints which the intent places on the bounded
         // match result are satisfied
-        SettlementGadget::verify_intent_bounded_match_result_constraints(
+        BoundedSettlementGadget::verify_intent_constraints(
             &witness.intent,
             &statement.bounded_match_result,
             cs,

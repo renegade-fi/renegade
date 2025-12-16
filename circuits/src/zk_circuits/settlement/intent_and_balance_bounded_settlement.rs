@@ -5,7 +5,7 @@
 //! are satisfied by the bounded match result.
 
 use crate::{
-    SingleProverCircuit, zk_circuits::settlement::settlement_lib::SettlementGadget,
+    SingleProverCircuit, zk_circuits::settlement::settlement_lib::BoundedSettlementGadget,
     zk_gadgets::comparators::EqGadget,
 };
 use alloy_primitives::Address;
@@ -37,7 +37,7 @@ impl IntentAndBalanceBoundedSettlementCircuit {
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
         // 1. Verify the constraints imposed by both the intent and the balance
-        SettlementGadget::verify_intent_and_balance_bounded_match_result_constraints(
+        BoundedSettlementGadget::verify_intent_and_balance_bounded_match_result_constraints(
             &witness.intent,
             &witness.in_balance,
             &witness.out_balance,
