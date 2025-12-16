@@ -281,7 +281,7 @@ pub mod test_helpers {
         intent: Intent,
     ) -> (IntentOnlyValidityWitness<MERKLE_HEIGHT>, IntentOnlyValidityStatement) {
         // Create the old intent with initial stream states
-        let old_intent = create_random_state_wrapper(intent.clone());
+        let old_intent = create_random_state_wrapper(intent);
         create_witness_statement_with_state_intent(old_intent)
     }
 

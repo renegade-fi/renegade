@@ -196,7 +196,7 @@ pub mod test_helpers {
     use crate::{
         test_helpers::{
             check_constraints_satisfied, create_random_state_wrapper, random_address,
-            random_deposit,
+            random_deposit, random_schnorr_public_key,
         },
         zk_circuits::valid_balance_create::{
             ValidBalanceCreate, ValidBalanceCreateStatement, ValidBalanceCreateWitness,
@@ -232,7 +232,7 @@ pub mod test_helpers {
             mint: deposit.token,
             owner: deposit.from,
             relayer_fee_recipient: random_address(),
-            one_time_authority: random_address(),
+            authority: random_schnorr_public_key(),
             relayer_fee_balance: 0,
             protocol_fee_balance: 0,
             amount: deposit.amount,
@@ -279,7 +279,9 @@ pub mod test_helpers {
 
 #[cfg(test)]
 mod test {
-    use crate::test_helpers::{random_address, random_amount, random_deposit, random_scalar};
+    use crate::test_helpers::{
+        random_address, random_amount, random_deposit, random_scalar, random_schnorr_public_key,
+    };
 
     use super::*;
     use circuit_types::{balance::Balance, traits::SingleProverCircuit};
@@ -334,7 +336,7 @@ mod test {
             mint: deposit.token,
             owner: deposit.from,
             relayer_fee_recipient: random_address(),
-            one_time_authority: random_address(),
+            authority: random_schnorr_public_key(),
             relayer_fee_balance: 0,
             protocol_fee_balance: 0,
             amount: deposit.amount,

@@ -400,7 +400,7 @@ pub mod test_helpers {
     pub fn create_witness_statement_with_intent<const MERKLE_HEIGHT: usize>(
         intent: Intent,
     ) -> (IntentAndBalanceValidityWitness<MERKLE_HEIGHT>, IntentAndBalanceValidityStatement) {
-        let balance = create_matching_balance_for_intent(&intent);
+        let (balance, _key) = create_matching_balance_for_intent(&intent);
         create_witness_statement_with_intent_and_balance::<MERKLE_HEIGHT>(intent, &balance)
     }
 

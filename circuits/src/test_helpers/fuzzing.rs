@@ -3,22 +3,25 @@
 use std::cmp;
 
 use alloy_primitives::Address;
+use ark_ec::Group;
+use ark_ff::UniformRand;
 use circuit_types::{
     AMOUNT_BITS, Amount,
     balance::{Balance, PostMatchBalanceShare},
     bounded_match_result::BoundedMatchResult,
     csprng::PoseidonCSPRNG,
     deposit::Deposit,
-    elgamal::{DecryptionKey, EncryptionKey},
+    elgamal::{BabyJubJubPoint, DecryptionKey, EncryptionKey},
     fixed_point::FixedPoint,
     intent::Intent,
     max_amount,
+    schnorr::{SchnorrPrivateKey, SchnorrPublicKey},
     settlement_obligation::SettlementObligation,
     state_wrapper::StateWrapper,
     traits::{BaseType, CircuitBaseType, SecretShareBaseType},
     withdrawal::Withdrawal,
 };
-use constants::{MAX_RELAYER_FEE_RATE, Scalar};
+use constants::{EmbeddedCurveGroup, EmbeddedScalarField, MAX_RELAYER_FEE_RATE, Scalar};
 use itertools::Itertools;
 use rand::{Rng, distributions::uniform::SampleRange, thread_rng};
 use renegade_crypto::fields::scalar_to_u128;
@@ -136,7 +139,7 @@ pub fn create_matching_balance_for_intent(intent: &Intent) -> Balance {
         mint: intent.in_token,
         owner: intent.owner,
         relayer_fee_recipient: random_address(),
-        one_time_authority: random_address(),
+        authority: random_schnorr_public_key(),
         relayer_fee_balance: random_amount(),
         protocol_fee_balance: random_amount(),
         amount: random_amount(),
@@ -161,7 +164,7 @@ pub fn random_bounded_balance(max_amount: Amount) -> Balance {
         mint: random_address(),
         owner: random_address(),
         relayer_fee_recipient: random_address(),
-        one_time_authority: random_address(),
+        authority: random_schnorr_public_key(),
         relayer_fee_balance: random_amount(),
         protocol_fee_balance: random_amount(),
         amount,
@@ -174,7 +177,7 @@ pub fn random_zeroed_balance() -> Balance {
         mint: random_address(),
         owner: random_address(),
         relayer_fee_recipient: random_address(),
-        one_time_authority: random_address(),
+        authority: random_schnorr_public_key(),
         relayer_fee_balance: 0,
         protocol_fee_balance: 0,
         amount: 0,
@@ -202,6 +205,21 @@ pub fn random_elgamal_keypair() -> (EncryptionKey, DecryptionKey) {
     let dec_key = DecryptionKey::random(&mut rng);
     let enc_key = dec_key.public_key();
     (enc_key, dec_key)
+}
+
+/// Create a random Schnorr keypair
+///
+/// TODO: Add type aliases
+pub fn random_schnorr_keypair() -> (SchnorrPrivateKey, SchnorrPublicKey) {
+    let private_key = SchnorrPrivateKey::random();
+    let public_key = private_key.public_key();
+    (private_key, public_key)
+}
+
+/// Create a random Schnorr public key
+pub fn random_schnorr_public_key() -> SchnorrPublicKey {
+    let (_, public_key) = random_schnorr_keypair();
+    public_key
 }
 
 /// Create a settlement obligation for an intent

@@ -218,7 +218,7 @@ pub mod test_helpers {
     use crate::{
         test_helpers::{
             check_constraints_satisfied, create_merkle_opening, create_random_state_wrapper,
-            random_address, random_amount, random_withdrawal,
+            random_address, random_amount, random_schnorr_public_key, random_withdrawal,
         },
         zk_circuits::valid_withdrawal::{SizedValidWithdrawal, SizedValidWithdrawalWitness},
     };
@@ -258,7 +258,7 @@ pub mod test_helpers {
             mint: withdrawal.token,
             owner: withdrawal.to,
             relayer_fee_recipient: random_address(),
-            one_time_authority: random_address(),
+            authority: random_schnorr_public_key(),
             relayer_fee_balance: 0,
             protocol_fee_balance: 0,
             amount: withdrawal.amount + random_amount(), // Ensure balance >= withdrawal
@@ -309,9 +309,9 @@ pub mod test_helpers {
 
 #[cfg(test)]
 mod test {
-    use crate::{
-        test_helpers::create_random_state_wrapper,
-        test_helpers::{random_address, random_amount, random_scalar, random_withdrawal},
+    use crate::test_helpers::{
+        create_random_state_wrapper, random_address, random_amount, random_scalar,
+        random_schnorr_public_key, random_withdrawal,
     };
 
     use super::*;
@@ -350,7 +350,7 @@ mod test {
             mint: withdrawal.token,
             owner: withdrawal.to,
             relayer_fee_recipient: random_address(),
-            one_time_authority: random_address(),
+            authority: random_schnorr_public_key(),
             relayer_fee_balance: 0,
             protocol_fee_balance: 0,
             amount: withdrawal.amount,
@@ -439,7 +439,7 @@ mod test {
             mint: withdrawal.token,
             owner: withdrawal.to,
             relayer_fee_recipient: random_address(),
-            one_time_authority: random_address(),
+            authority: random_schnorr_public_key(),
             relayer_fee_balance: 0,
             protocol_fee_balance: 0,
             amount: withdrawal.amount,

@@ -283,7 +283,7 @@ pub mod test_helpers {
     use crate::{
         test_helpers::{
             random_address, random_amount, random_fee, random_post_match_balance_share,
-            random_scalar,
+            random_scalar, random_schnorr_public_key,
         },
         zk_circuits::settlement::intent_and_balance_private_settlement::{
             IntentAndBalancePrivateSettlementCircuit, IntentAndBalancePrivateSettlementStatement,
@@ -449,7 +449,7 @@ pub mod test_helpers {
             mint: obligation.input_token,
             owner,
             relayer_fee_recipient: random_address(),
-            one_time_authority: random_address(),
+            authority: random_schnorr_public_key(),
             relayer_fee_balance: random_amount(),
             protocol_fee_balance: random_amount(),
             amount,
@@ -465,7 +465,7 @@ pub mod test_helpers {
             mint: obligation.output_token,
             owner,
             relayer_fee_recipient: random_address(),
-            one_time_authority: random_address(),
+            authority: random_schnorr_public_key(),
             relayer_fee_balance: random_amount(),
             protocol_fee_balance: random_amount(),
             amount,

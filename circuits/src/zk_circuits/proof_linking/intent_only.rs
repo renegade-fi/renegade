@@ -126,23 +126,23 @@ mod test {
 
     /// Prove INTENT ONLY FIRST FILL VALIDITY and INTENT ONLY PUBLIC SETTLEMENT,
     /// then link the proofs and verify the link
-    fn test_intent_first_fill_exact_settlement_link(
-        first_fill_witness: <SizedIntentOnlyFirstFillValidity as SingleProverCircuit>::Witness,
-        first_fill_statement: <SizedIntentOnlyFirstFillValidity as SingleProverCircuit>::Statement,
-        settlement_witness: <IntentOnlyPublicSettlementCircuit as SingleProverCircuit>::Witness,
-        settlement_statement: <IntentOnlyPublicSettlementCircuit as SingleProverCircuit>::Statement,
+    fn test_intent_first_fill_settlement_link(
+        first_fill_witness: &<SizedIntentOnlyFirstFillValidity as SingleProverCircuit>::Witness,
+        first_fill_statement: &<SizedIntentOnlyFirstFillValidity as SingleProverCircuit>::Statement,
+        settlement_witness: &<IntentOnlyPublicSettlementCircuit as SingleProverCircuit>::Witness,
+        settlement_statement: &<IntentOnlyPublicSettlementCircuit as SingleProverCircuit>::Statement,
     ) -> Result<(), ProverError> {
         // Create a proof of INTENT ONLY FIRST FILL VALIDITY and one of INTENT ONLY
         // PUBLIC SETTLEMENT
         let (first_fill_proof, first_fill_hint) = singleprover_prove_with_hint::<
             SizedIntentOnlyFirstFillValidity,
         >(
-            &first_fill_witness, &first_fill_statement
+            first_fill_witness, first_fill_statement
         )?;
         let (settlement_proof, settlement_hint) = singleprover_prove_with_hint::<
             IntentOnlyPublicSettlementCircuit,
         >(
-            &settlement_witness, &settlement_statement
+            settlement_witness, settlement_statement
         )?;
 
         // Link the proofs and verify the link
@@ -217,21 +217,21 @@ mod test {
 
     /// Prove INTENT ONLY VALIDITY and INTENT ONLY PUBLIC SETTLEMENT, then link
     /// the proofs and verify the link
-    fn test_intent_validity_exact_settlement_link(
-        validity_witness: <SizedIntentOnlyValidity as SingleProverCircuit>::Witness,
-        validity_statement: <SizedIntentOnlyValidity as SingleProverCircuit>::Statement,
-        settlement_witness: <IntentOnlyPublicSettlementCircuit as SingleProverCircuit>::Witness,
-        settlement_statement: <IntentOnlyPublicSettlementCircuit as SingleProverCircuit>::Statement,
+    fn test_intent_validity_settlement_link(
+        validity_witness: &<SizedIntentOnlyValidity as SingleProverCircuit>::Witness,
+        validity_statement: &<SizedIntentOnlyValidity as SingleProverCircuit>::Statement,
+        settlement_witness: &<IntentOnlyPublicSettlementCircuit as SingleProverCircuit>::Witness,
+        settlement_statement: &<IntentOnlyPublicSettlementCircuit as SingleProverCircuit>::Statement,
     ) -> Result<(), ProverError> {
         // Create a proof of INTENT ONLY VALIDITY and one of INTENT ONLY PUBLIC
         // SETTLEMENT
         let (validity_proof, validity_hint) = singleprover_prove_with_hint::<
             SizedIntentOnlyValidity,
-        >(&validity_witness, &validity_statement)?;
+        >(validity_witness, validity_statement)?;
         let (settlement_proof, settlement_hint) = singleprover_prove_with_hint::<
             IntentOnlyPublicSettlementCircuit,
         >(
-            &settlement_witness, &settlement_statement
+            settlement_witness, settlement_statement
         )?;
 
         // Link the proofs and verify the link

@@ -231,7 +231,7 @@ pub mod test_helpers {
         test_helpers::{
             create_matching_balance_for_intent, create_settlement_obligation_with_balance,
             random_address, random_amount, random_fee, random_intent,
-            random_post_match_balance_share, random_scalar,
+            random_post_match_balance_share, random_scalar, random_schnorr_public_key,
         },
         zk_circuits::settlement::intent_and_balance_public_settlement::{
             IntentAndBalancePublicSettlementCircuit, IntentAndBalancePublicSettlementStatement,
@@ -332,7 +332,7 @@ pub mod test_helpers {
             mint: obligation.output_token,
             owner,
             relayer_fee_recipient: random_address(),
-            one_time_authority: random_address(),
+            authority: random_schnorr_public_key(),
             relayer_fee_balance: random_amount(),
             protocol_fee_balance: random_amount(),
             amount,

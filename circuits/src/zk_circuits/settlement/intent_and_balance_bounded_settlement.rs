@@ -338,7 +338,7 @@ pub mod test_helpers {
             mint: bounded_match_result.internal_party_output_token,
             owner,
             relayer_fee_recipient: random_address(),
-            one_time_authority: random_address(),
+            authority: random_schnorr_public_key(),
             relayer_fee_balance: random_amount(),
             protocol_fee_balance: random_amount(),
             amount,

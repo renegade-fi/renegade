@@ -194,20 +194,20 @@ mod test {
     /// Prove OUTPUT BALANCE VALIDITY and INTENT AND BALANCE PUBLIC
     /// SETTLEMENT, then link the proofs and verify the link
     fn test_output_balance_validity_settlement_link(
-        validity_witness: OutputBalanceValidityWitness<TEST_MERKLE_HEIGHT>,
-        validity_statement: OutputBalanceValidityStatement,
-        settlement_witness: IntentAndBalancePublicSettlementWitness,
-        settlement_statement: IntentAndBalancePublicSettlementStatement,
+        validity_witness: &OutputBalanceValidityWitness<TEST_MERKLE_HEIGHT>,
+        validity_statement: &OutputBalanceValidityStatement,
+        settlement_witness: &IntentAndBalancePublicSettlementWitness,
+        settlement_statement: &IntentAndBalancePublicSettlementStatement,
     ) -> Result<(), ProverError> {
         // Create a proof of OUTPUT BALANCE VALIDITY and one of INTENT AND BALANCE
         // PUBLIC SETTLEMENT
         let (validity_proof, validity_hint) = singleprover_prove_with_hint::<
             SizedOutputBalanceValidity,
-        >(&validity_witness, &validity_statement)?;
+        >(validity_witness, validity_statement)?;
         let (settlement_proof, settlement_hint) = singleprover_prove_with_hint::<
             IntentAndBalancePublicSettlementCircuit,
         >(
-            &settlement_witness, &settlement_statement
+            settlement_witness, settlement_statement
         )?;
 
         // Link the proofs and verify the link
@@ -271,20 +271,20 @@ mod test {
     /// Prove NEW OUTPUT BALANCE VALIDITY and INTENT AND BALANCE PUBLIC
     /// SETTLEMENT, then link the proofs and verify the link
     fn test_new_output_balance_validity_settlement_link(
-        validity_witness: NewOutputBalanceValidityWitness,
-        validity_statement: NewOutputBalanceValidityStatement,
-        settlement_witness: IntentAndBalancePublicSettlementWitness,
-        settlement_statement: IntentAndBalancePublicSettlementStatement,
+        validity_witness: &NewOutputBalanceValidityWitness,
+        validity_statement: &NewOutputBalanceValidityStatement,
+        settlement_witness: &IntentAndBalancePublicSettlementWitness,
+        settlement_statement: &IntentAndBalancePublicSettlementStatement,
     ) -> Result<(), ProverError> {
         // Create a proof of NEW OUTPUT BALANCE VALIDITY and one of INTENT AND BALANCE
         // PUBLIC SETTLEMENT
         let (validity_proof, validity_hint) = singleprover_prove_with_hint::<
             NewOutputBalanceValidityCircuit,
-        >(&validity_witness, &validity_statement)?;
+        >(validity_witness, validity_statement)?;
         let (settlement_proof, settlement_hint) = singleprover_prove_with_hint::<
             IntentAndBalancePublicSettlementCircuit,
         >(
-            &settlement_witness, &settlement_statement
+            settlement_witness, settlement_statement
         )?;
 
         // Link the proofs and verify the link using the existing sized methods
@@ -348,21 +348,21 @@ mod test {
     /// SETTLEMENT, then link the proofs and verify the link
     fn test_output_balance_private_settlement_link(
         party_id: u8,
-        validity_witness: OutputBalanceValidityWitness<TEST_MERKLE_HEIGHT>,
-        validity_statement: OutputBalanceValidityStatement,
-        settlement_witness: IntentAndBalancePrivateSettlementWitness,
-        settlement_statement: IntentAndBalancePrivateSettlementStatement,
+        validity_witness: &OutputBalanceValidityWitness<TEST_MERKLE_HEIGHT>,
+        validity_statement: &OutputBalanceValidityStatement,
+        settlement_witness: &IntentAndBalancePrivateSettlementWitness,
+        settlement_statement: &IntentAndBalancePrivateSettlementStatement,
     ) -> Result<(), ProverError> {
         // Create a proof of OUTPUT BALANCE VALIDITY
         let (validity_proof, validity_hint) = singleprover_prove_with_hint::<
             SizedOutputBalanceValidity,
-        >(&validity_witness, &validity_statement)?;
+        >(validity_witness, validity_statement)?;
 
         // Create a proof of INTENT AND BALANCE PRIVATE SETTLEMENT
         let (settlement_proof, settlement_hint) = singleprover_prove_with_hint::<
             IntentAndBalancePrivateSettlementCircuit,
         >(
-            &settlement_witness, &settlement_statement
+            settlement_witness, settlement_statement
         )?;
 
         // Link the proofs and verify the link
@@ -455,21 +455,21 @@ mod test {
     /// SETTLEMENT, then link the proofs and verify the link
     fn test_new_output_balance_private_settlement_link(
         party_id: u8,
-        validity_witness: NewOutputBalanceValidityWitness,
-        validity_statement: NewOutputBalanceValidityStatement,
-        settlement_witness: IntentAndBalancePrivateSettlementWitness,
-        settlement_statement: IntentAndBalancePrivateSettlementStatement,
+        validity_witness: &NewOutputBalanceValidityWitness,
+        validity_statement: &NewOutputBalanceValidityStatement,
+        settlement_witness: &IntentAndBalancePrivateSettlementWitness,
+        settlement_statement: &IntentAndBalancePrivateSettlementStatement,
     ) -> Result<(), ProverError> {
         // Create a proof of NEW OUTPUT BALANCE VALIDITY
         let (validity_proof, validity_hint) = singleprover_prove_with_hint::<
             NewOutputBalanceValidityCircuit,
-        >(&validity_witness, &validity_statement)?;
+        >(validity_witness, validity_statement)?;
 
         // Create a proof of INTENT AND BALANCE PRIVATE SETTLEMENT
         let (settlement_proof, settlement_hint) = singleprover_prove_with_hint::<
             IntentAndBalancePrivateSettlementCircuit,
         >(
-            &settlement_witness, &settlement_statement
+            settlement_witness, settlement_statement
         )?;
 
         // Link the proofs and verify the link
@@ -576,10 +576,10 @@ mod test {
             build_output_balance_validity_settlement_data();
 
         test_output_balance_validity_settlement_link(
-            validity_witness,
-            validity_statement,
-            settlement_witness,
-            settlement_statement,
+            &validity_witness,
+            &validity_statement,
+            &settlement_witness,
+            &settlement_statement,
         )
         .unwrap();
     }
@@ -593,10 +593,10 @@ mod test {
             build_new_output_balance_validity_settlement_data();
 
         test_new_output_balance_validity_settlement_link(
-            validity_witness,
-            validity_statement,
-            settlement_witness,
-            settlement_statement,
+            &validity_witness,
+            &validity_statement,
+            &settlement_witness,
+            &settlement_statement,
         )
         .unwrap();
     }
@@ -613,10 +613,10 @@ mod test {
 
         test_output_balance_private_settlement_link(
             party_id,
-            validity_witness,
-            validity_statement,
-            settlement_witness,
-            settlement_statement,
+            &validity_witness,
+            &validity_statement,
+            &settlement_witness,
+            &settlement_statement,
         )
         .unwrap()
     }
@@ -633,10 +633,10 @@ mod test {
 
         test_new_output_balance_private_settlement_link(
             party_id,
-            validity_witness,
-            validity_statement,
-            settlement_witness,
-            settlement_statement,
+            &validity_witness,
+            &validity_statement,
+            &settlement_witness,
+            &settlement_statement,
         )
         .unwrap()
     }
@@ -657,10 +657,10 @@ mod test {
         // Modify the balance in the settlement witness to break the link
         settlement_witness.out_balance.amount += 1;
         test_output_balance_validity_settlement_link(
-            validity_witness,
-            validity_statement,
-            settlement_witness,
-            settlement_statement,
+            &validity_witness,
+            &validity_statement,
+            &settlement_witness,
+            &settlement_statement,
         )
         .unwrap();
     }
@@ -690,10 +690,10 @@ mod test {
 
         // Now the settlement circuit is valid, but the link will fail
         test_output_balance_validity_settlement_link(
-            validity_witness,
-            validity_statement,
-            settlement_witness,
-            settlement_statement,
+            &validity_witness,
+            &validity_statement,
+            &settlement_witness,
+            &settlement_statement,
         )
         .unwrap();
     }

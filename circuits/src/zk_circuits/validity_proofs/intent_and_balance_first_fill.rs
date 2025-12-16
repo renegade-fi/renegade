@@ -7,7 +7,6 @@
 //! on the intent's commitment and the new one-time authorizing key by the
 //! leaked key.
 
-use alloy_primitives::Address;
 use circuit_macros::circuit_type;
 use circuit_types::{
     Commitment, Nullifier, PlonkCircuit,
@@ -18,6 +17,7 @@ use circuit_types::{
     csprng::PoseidonCSPRNG,
     intent::{DarkpoolStateIntentVar, Intent, IntentShare, PreMatchIntentShare},
     merkle::{MerkleOpening, MerkleRoot},
+    schnorr::SchnorrSignature,
     state_wrapper::PartialCommitment,
     traits::{BaseType, CircuitBaseType, CircuitVarType},
 };
@@ -41,8 +41,8 @@ use crate::{
         ShareGadget, StateElementRotationArgsWithPartialCommitment, StateElementRotationGadget,
         StreamCipherGadget,
         comparators::EqGadget,
-        poseidon::PoseidonHashGadget,
         primitives::bitlength::{AmountGadget, PriceGadget},
+        schnorr::SchnorrGadget,
         state_primitives::{CommitmentGadget, RecoveryIdGadget},
     },
 };
@@ -74,13 +74,12 @@ impl<const MERKLE_HEIGHT: usize> IntentAndBalanceFirstFillValidityCircuit<MERKLE
         Self::validate_balance(statement, witness, cs)?;
         let original_intent_commitment = Self::build_and_validate_intent(statement, witness, cs)?;
 
-        // Validate hte commitment to the intent and the one-time authorizing address
-        let mut hasher = PoseidonHashGadget::new(cs.zero());
-        let expected_commitment =
-            hasher.hash(&[original_intent_commitment, witness.new_one_time_address], cs)?;
-        EqGadget::constrain_eq(
-            &expected_commitment,
-            &statement.intent_and_authorizing_address_commitment,
+        // Check the signature over the intent's commitment by the balance's authority
+        // key
+        SchnorrGadget::verify_signature(
+            &witness.intent_authorization_signature,
+            &original_intent_commitment,
+            &witness.balance.authority,
             cs,
         )?;
 
@@ -209,18 +208,11 @@ impl<const MERKLE_HEIGHT: usize> IntentAndBalanceFirstFillValidityCircuit<MERKLE
         // Bind the denormalized balance to the one in the state element
         EqGadget::constrain_eq(&witness.balance, &balance.inner, cs)?;
 
-        // Leak the balance's one-time authorizing address
-        EqGadget::constrain_eq(
-            &balance.inner.one_time_authority,
-            &statement.one_time_authorizing_address,
-            cs,
-        )?;
-
         // Create the new balance
         let old_balance_private_shares =
             ShareGadget::compute_complementary_shares(&balance.public_share, &balance.inner, cs)?;
         let (new_balance, new_balance_private_shares) =
-            Self::create_new_balance(&old_balance_private_shares, statement, witness, cs)?;
+            Self::create_new_balance(&old_balance_private_shares, witness, cs)?;
 
         // Verify the balance's rotation
         let mut args = StateElementRotationArgsWithPartialCommitment {
@@ -248,29 +240,12 @@ impl<const MERKLE_HEIGHT: usize> IntentAndBalanceFirstFillValidityCircuit<MERKLE
     /// Returns the new balance and the private shares of the new balance
     fn create_new_balance(
         old_balance_private_shares: &BalanceShareVar,
-        statement: &IntentAndBalanceFirstFillValidityStatementVar,
         witness: &IntentAndBalanceFirstFillValidityWitnessVar<MERKLE_HEIGHT>,
         cs: &mut PlonkCircuit,
     ) -> Result<(DarkpoolStateBalanceVar, BalanceShareVar), CircuitError> {
         // Update the balance
         let mut new_balance = witness.old_balance.clone();
         let mut new_balance_private_shares = old_balance_private_shares.clone();
-
-        // Re-encrypt the new one-time authorizing address
-        new_balance.inner.one_time_authority = witness.new_one_time_address;
-        let (new_one_time_private_share, new_one_time_public_share) =
-            StreamCipherGadget::encrypt::<Variable>(
-                &witness.new_one_time_address,
-                &mut new_balance.share_stream,
-                cs,
-            )?;
-        new_balance_private_shares.one_time_authority = new_one_time_private_share;
-        new_balance.public_share.one_time_authority = new_one_time_public_share;
-        EqGadget::constrain_eq(
-            &new_one_time_public_share,
-            &statement.new_one_time_address_public_share,
-            cs,
-        )?;
 
         // Re-encrypt the post-match balance shares so that they may be updated in the
         // settlement circuit. Re-encryption here prevents the shares from being tracked
@@ -327,6 +302,13 @@ pub struct IntentAndBalanceFirstFillValidityWitness<const MERKLE_HEIGHT: usize> 
     /// settlement circuit.
     #[link_groups = "intent_and_balance_settlement_party0,intent_and_balance_settlement_party1"]
     pub new_amount_public_share: Scalar,
+    /// A signature over the intent's commitment by the balance's authority key
+    ///
+    /// We use this signature to "bootstrap" authorization of the intent from
+    /// the balance; which is implicitly authorized by its presence in the
+    /// Merkle tree. In effect, we create a chain of authorization from the
+    /// owner's EOA through the balance to the intent.
+    pub intent_authorization_signature: SchnorrSignature,
 
     // --- Balance --- //
     /// The balance which capitalizes the intent
@@ -339,9 +321,6 @@ pub struct IntentAndBalanceFirstFillValidityWitness<const MERKLE_HEIGHT: usize> 
     /// The updated public shares of the post-match balance
     #[link_groups = "intent_and_balance_settlement_party0,intent_and_balance_settlement_party1"]
     pub post_match_balance_shares: PostMatchBalanceShare,
-    /// The new one-time authorizing address after the previous value has been
-    /// leaked
-    pub new_one_time_address: Address,
     /// The opening of the balance
     pub balance_opening: MerkleOpening<MERKLE_HEIGHT>,
 }
@@ -361,14 +340,6 @@ pub type SizedIntentAndBalanceFirstFillValidityWitness =
 pub struct IntentAndBalanceFirstFillValidityStatement {
     /// The Merkle root to which the balance opens
     pub merkle_root: MerkleRoot,
-    /// A commitment to the new one-time address and the original intent's
-    /// commitment
-    ///
-    /// A signature over this commitment by the previous one-time authorizing
-    /// address is checked in-contract. This authorizes both the creation of the
-    /// new intent by the owner and the rotation of the one-time authorizing
-    /// address.
-    pub intent_and_authorizing_address_commitment: Commitment,
 
     // --- Intent --- //
     /// The public shares of the intent minus the `amount_in` field
@@ -388,19 +359,10 @@ pub struct IntentAndBalanceFirstFillValidityStatement {
     // --- Balance --- //
     /// The partial commitment to the new balance
     pub balance_partial_commitment: PartialCommitment,
-    /// The public share of the one-time authorizing address after it has been
-    /// re-encrypted
-    pub new_one_time_address_public_share: Scalar,
     /// The nullifier of the old balance
     pub old_balance_nullifier: Nullifier,
     /// The recovery identifier of the new balance
     pub balance_recovery_id: Scalar,
-    /// The owner-delegated authorizing signer of the balance
-    ///
-    /// This one-time signer allows the balance to authorize a single intent for
-    /// the first fill. This address may be rotated after it is used to prevent
-    /// linking across transactions.
-    pub one_time_authorizing_address: Address,
 }
 
 // ---------------------
@@ -458,21 +420,20 @@ pub mod test_helpers {
     use circuit_types::{
         balance::{Balance, DarkpoolStateBalance, PostMatchBalance},
         intent::{Intent, PreMatchIntentShare},
+        schnorr::SchnorrPrivateKey,
     };
-    use renegade_crypto::{fields::address_to_scalar, hash::compute_poseidon_hash};
 
     use crate::{
         test_helpers::{
             check_constraints_satisfied, create_merkle_opening, create_random_state_wrapper,
             create_state_wrapper, random_address, random_amount, random_intent,
+            random_schnorr_keypair,
         },
-        zk_circuits::{
-            validity_proofs::intent_and_balance_first_fill::IntentAndBalanceFirstFillValidityStatement,
-            validity_proofs::intent_and_balance_first_fill::{
-                BALANCE_PARTIAL_COMMITMENT_SIZE, IntentAndBalanceFirstFillValidityWitness,
-                SizedIntentAndBalanceFirstFillValidityCircuit,
-                SizedIntentAndBalanceFirstFillValidityWitness,
-            },
+        zk_circuits::validity_proofs::intent_and_balance_first_fill::{
+            BALANCE_PARTIAL_COMMITMENT_SIZE, IntentAndBalanceFirstFillValidityStatement,
+            IntentAndBalanceFirstFillValidityWitness,
+            SizedIntentAndBalanceFirstFillValidityCircuit,
+            SizedIntentAndBalanceFirstFillValidityWitness,
         },
     };
 
@@ -507,14 +468,15 @@ pub mod test_helpers {
         IntentAndBalanceFirstFillValidityWitness<MERKLE_HEIGHT>,
         IntentAndBalanceFirstFillValidityStatement,
     ) {
-        let balance = create_matching_balance_for_intent(intent);
-        create_witness_statement_with_intent_and_balance(intent, balance)
+        let (balance, balance_authority_key) = create_matching_balance_for_intent(intent);
+        create_witness_statement_with_intent_and_balance(intent, balance, balance_authority_key)
     }
 
     /// Create a witness and statement with the given intent and balance
     pub fn create_witness_statement_with_intent_and_balance<const MERKLE_HEIGHT: usize>(
         intent: &Intent,
         balance: DarkpoolStateBalance,
+        balance_authority_key: SchnorrPrivateKey,
     ) -> (
         IntentAndBalanceFirstFillValidityWitness<MERKLE_HEIGHT>,
         IntentAndBalanceFirstFillValidityStatement,
@@ -530,24 +492,22 @@ pub mod test_helpers {
 
         // Compute intent commitments for the original and new intents
         let mut new_intent = initial_intent.clone();
-        let original_intent_commitment = initial_intent.compute_commitment();
         let intent_recovery_id = new_intent.compute_recovery_id();
         let intent_private_share_commitment = new_intent.compute_private_commitment();
 
+        // Sign the commitment to the intent
+        let intent_comm = initial_intent.compute_commitment();
+        let intent_authorization_signature = balance_authority_key.sign(&intent_comm).unwrap();
+
         // Compute the state rotation information for the original balance
-        let one_time_authority = balance.inner.one_time_authority;
+        // let one_time_authority = balance.inner.one_time_authority;
         let old_balance_nullifier = balance.compute_nullifier();
         let balance_commitment = balance.compute_commitment();
         let (merkle_root, balance_opening) =
             create_merkle_opening::<MERKLE_HEIGHT>(balance_commitment);
 
         // Create a new balance with updated post-match shares
-        let new_one_time_address = random_address();
         let mut new_balance = balance.clone();
-        new_balance.inner.one_time_authority = new_one_time_address;
-        let new_one_time_share = new_balance.stream_cipher_encrypt(&new_one_time_address);
-        new_balance.public_share.one_time_authority = new_one_time_share;
-
         let post_match_balance = PostMatchBalance::from(balance.inner.clone());
         let post_match_balance_shares = new_balance.stream_cipher_encrypt(&post_match_balance);
 
@@ -560,12 +520,6 @@ pub mod test_helpers {
         let balance_partial_commitment =
             new_balance.compute_partial_commitment(BALANCE_PARTIAL_COMMITMENT_SIZE);
 
-        // Commit to the new intent and one-time authorizing address
-        let intent_and_authorizing_address_commitment = compute_poseidon_hash(&[
-            original_intent_commitment,
-            address_to_scalar(&new_one_time_address),
-        ]);
-
         // Build the witness
         let witness = IntentAndBalanceFirstFillValidityWitness {
             intent: initial_intent.inner,
@@ -573,11 +527,11 @@ pub mod test_helpers {
             initial_intent_recovery_stream: initial_intent.recovery_stream,
             private_intent_shares,
             new_amount_public_share,
+            intent_authorization_signature,
             old_balance: balance.clone(),
             balance: balance.inner,
             post_match_balance_shares,
             balance_opening,
-            new_one_time_address,
         };
 
         // Build the statement
@@ -587,11 +541,8 @@ pub mod test_helpers {
             intent_private_share_commitment,
             intent_recovery_id,
             balance_partial_commitment,
-            new_one_time_address_public_share: new_one_time_share,
             old_balance_nullifier,
             balance_recovery_id,
-            one_time_authorizing_address: one_time_authority,
-            intent_and_authorizing_address_commitment,
         };
 
         (witness, statement)
@@ -601,17 +552,22 @@ pub mod test_helpers {
     ///
     /// The balance will have the same owner and mint as the intent's in_token,
     /// with random values for other fields.
-    pub fn create_matching_balance_for_intent(intent: &Intent) -> DarkpoolStateBalance {
+    pub fn create_matching_balance_for_intent(
+        intent: &Intent,
+    ) -> (DarkpoolStateBalance, SchnorrPrivateKey) {
+        let (secret_key, authority) = random_schnorr_keypair();
         let balance_inner = Balance {
             mint: intent.in_token,
             owner: intent.owner,
             relayer_fee_recipient: random_address(),
-            one_time_authority: random_address(),
+            authority,
             relayer_fee_balance: random_amount(),
             protocol_fee_balance: random_amount(),
             amount: random_amount(),
         };
-        create_random_state_wrapper(balance_inner)
+        let bal = create_random_state_wrapper(balance_inner);
+
+        (bal, secret_key)
     }
 }
 
@@ -658,11 +614,11 @@ mod test {
     #[allow(non_snake_case)]
     fn test_invalid_intent__owner_mismatch() {
         let mut intent = random_intent();
-        let balance = create_matching_balance_for_intent(&intent);
+        let (balance, key) = create_matching_balance_for_intent(&intent);
         intent.owner = random_address();
 
         let (witness, statement) =
-            test_helpers::create_witness_statement_with_intent_and_balance(&intent, balance);
+            test_helpers::create_witness_statement_with_intent_and_balance(&intent, balance, key);
         assert!(!test_helpers::check_constraints(&witness, &statement));
     }
 
@@ -672,12 +628,13 @@ mod test {
     #[allow(non_snake_case)]
     fn test_invalid_intent__balance_mint_mismatch() {
         let intent = random_intent();
-        let mut balance = create_matching_balance_for_intent(&intent);
+        let (mut balance, key) = create_matching_balance_for_intent(&intent);
         balance.inner.mint = random_address();
 
         let (witness, statement) = test_helpers::create_witness_statement_with_intent_and_balance(
             &intent,
             balance.clone(),
+            key,
         );
         assert!(!test_helpers::check_constraints(&witness, &statement));
     }
@@ -751,37 +708,7 @@ mod test {
         assert!(!test_helpers::check_constraints(&witness, &statement));
     }
 
-    /// Test the case in which the new intent's commitment is modified
-    #[test]
-    #[allow(non_snake_case)]
-    fn test_invalid_intent__new_intent_commitment_modified() {
-        let (witness, mut statement) = test_helpers::create_witness_statement();
-        statement.intent_and_authorizing_address_commitment = random_scalar();
-
-        assert!(!test_helpers::check_constraints(&witness, &statement));
-    }
-
     // --- Invalid Balance Tests --- //
-
-    /// Test the case in which the balance's one-time authorizing address does
-    /// not match the one leaked in the statement
-    #[test]
-    #[allow(non_snake_case)]
-    fn test_invalid_balance__one_time_authorizing_address_mismatch() {
-        let (witness, mut statement) = test_helpers::create_witness_statement();
-        statement.one_time_authorizing_address = random_address();
-
-        assert!(!test_helpers::check_constraints(&witness, &statement));
-    }
-
-    /// Test the case in which the new one-time authorizing address is modified
-    #[test]
-    #[allow(non_snake_case)]
-    fn test_invalid_balance__new_one_time_authorizing_address_modified() {
-        let (mut witness, statement) = test_helpers::create_witness_statement();
-        witness.new_one_time_address = random_address();
-        assert!(!test_helpers::check_constraints(&witness, &statement));
-    }
 
     /// Test the case in which the post-match balance shares are modified
     #[test]
