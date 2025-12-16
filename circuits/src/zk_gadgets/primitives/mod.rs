@@ -11,4 +11,5 @@ pub mod elgamal;
 pub mod fixed_point;
 pub mod merkle;
 pub mod poseidon;
+pub mod schnorr;
 pub mod select;
