@@ -200,9 +200,9 @@ pub mod test_helpers {
 
     use crate::{
         test_helpers::{
-            create_bounded_match_result_with_balance, create_matching_balance_for_intent,
-            random_address, random_amount, random_fee, random_intent,
-            random_post_match_balance_share, random_scalar,
+            compute_max_amount_out, create_bounded_match_result_with_balance,
+            create_matching_balance_for_intent, random_address, random_amount, random_fee,
+            random_intent, random_post_match_balance_share, random_scalar,
         },
         zk_circuits::settlement::intent_and_balance_bounded_settlement::{
             IntentAndBalanceBoundedSettlementCircuit, IntentAndBalanceBoundedSettlementStatement,
@@ -293,12 +293,15 @@ pub mod test_helpers {
         (witness, statement)
     }
 
+    /// Create a receive balance for the given bounded match result
     pub fn create_receive_balance(
         owner: Address,
         bounded_match_result: &BoundedMatchResult,
     ) -> Balance {
         let mut rng = thread_rng();
-        let max_existing_balance = max_amount() - bounded_match_result.max_internal_party_amount_in;
+        // Compute the maximum output amount based on price and max input amount
+        let max_output = compute_max_amount_out(bounded_match_result);
+        let max_existing_balance = max_amount() - max_output;
         let amount = rng.gen_range(0..=max_existing_balance);
 
         Balance {
@@ -316,7 +319,16 @@ pub mod test_helpers {
 #[cfg(test)]
 mod test {
     use super::*;
-    use circuit_types::traits::SingleProverCircuit;
+    use crate::{
+        test_helpers::{
+            BOUNDED_MAX_AMT, compute_max_amount_out, create_bounded_match_result_with_balance,
+            create_matching_balance_for_intent, random_address, random_intent, random_scalar,
+            random_small_intent,
+        },
+        zk_circuits::settlement::intent_and_balance_bounded_settlement::test_helpers,
+    };
+    use circuit_types::{balance::PostMatchBalanceShare, max_amount, traits::SingleProverCircuit};
+    use rand::{Rng, thread_rng};
 
     /// A helper to print the number of constraints in the circuit
     ///
@@ -336,5 +348,261 @@ mod test {
     fn test_valid_intent_and_balance_bounded_settlement_constraints() {
         let (witness, statement) = test_helpers::create_witness_statement();
         assert!(test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the max bound would settle the entire intent
+    #[test]
+    fn test_max_bound_full_fill() {
+        let intent = random_small_intent();
+        let mut balance = create_matching_balance_for_intent(&intent);
+        balance.amount = intent.amount_in;
+        let mut bounded_match_result =
+            create_bounded_match_result_with_balance(&intent, balance.amount);
+        // Explicitly set max bound to intent amount to test full fill
+        bounded_match_result.max_internal_party_amount_in = intent.amount_in;
+
+        let (witness, statement) =
+            test_helpers::create_witness_statement_with_intent_balance_and_bounded_match_result(
+                &intent,
+                &balance,
+                bounded_match_result,
+            );
+        assert!(test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the balance undercapitalizes the bounded match
+    /// result
+    #[test]
+    fn test_valid_intent_and_balance_bounded_settlement_constraints_undercapitalized() {
+        let intent = random_small_intent();
+        let mut balance = create_matching_balance_for_intent(&intent);
+        balance.amount = intent.amount_in / 2;
+        let bounded_match_result =
+            create_bounded_match_result_with_balance(&intent, balance.amount);
+
+        let (witness, statement) =
+            test_helpers::create_witness_statement_with_intent_balance_and_bounded_match_result(
+                &intent,
+                &balance,
+                bounded_match_result,
+            );
+        assert!(test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the bounds are the same, enforcing settlement of
+    /// a single trade size
+    #[test]
+    fn test_min_equals_max_bound_trade() {
+        let mut rng = thread_rng();
+        let mut intent = random_intent();
+        intent.amount_in = rng.gen_range(1..=BOUNDED_MAX_AMT);
+        let (witness, mut statement) = test_helpers::create_witness_statement_with_intent(&intent);
+
+        // Modify the bounds of the match result to enforce a single trade size
+        statement.bounded_match_result.max_internal_party_amount_in = witness.intent.amount_in;
+        statement.bounded_match_result.min_internal_party_amount_in = witness.intent.amount_in;
+        assert!(test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the bounded match result's price is at the min
+    /// price of the intent
+    #[test]
+    fn test_price_at_min_price_boundary() {
+        let intent = random_intent();
+        let (witness, mut statement) = test_helpers::create_witness_statement_with_intent(&intent);
+
+        // Modify the price of the match result to be at the min price of the intent
+        statement.bounded_match_result.price = witness.intent.min_price;
+        assert!(test_helpers::check_constraints(&witness, &statement));
+    }
+
+    // --- Invalid Test Cases --- //
+
+    /// Test the case in which the bounded match result's input token does not
+    /// match the intent's input token
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_match_result__input_token_mismatch() {
+        let (witness, mut statement) = test_helpers::create_witness_statement();
+
+        statement.bounded_match_result.internal_party_input_token = random_address();
+
+        // Check that the constraints are not satisfied
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the bounded match result's output token does not
+    /// match the intent's output token
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_match_result__output_token_mismatch() {
+        let (witness, mut statement) = test_helpers::create_witness_statement();
+
+        statement.bounded_match_result.internal_party_output_token = random_address();
+
+        // Check that the constraints are not satisfied
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the bounded match result's max bound is greater
+    /// than the intent's amount
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_match_result__max_bound_exceeds_intent_size() {
+        let intent = random_small_intent();
+        let mut balance = create_matching_balance_for_intent(&intent);
+        balance.amount = intent.amount_in + 1; // Fully capitalize the intent
+        let mut bounded_match_result =
+            create_bounded_match_result_with_balance(&intent, balance.amount);
+        bounded_match_result.max_internal_party_amount_in = balance.amount + 1;
+
+        // Check that the constraints are not satisfied
+        let (witness, statement) =
+            test_helpers::create_witness_statement_with_intent_balance_and_bounded_match_result(
+                &intent,
+                &balance,
+                bounded_match_result,
+            );
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the bounded match result's price is less than the
+    /// intent's min price
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_match_result__price_less_than_min_price() {
+        let intent = random_small_intent();
+        let mut balance = create_matching_balance_for_intent(&intent);
+        balance.amount = intent.amount_in;
+        let mut bounded_match_result =
+            create_bounded_match_result_with_balance(&intent, balance.amount);
+        bounded_match_result.price = intent.min_price - FixedPoint::from_integer(1);
+
+        // Check that the constraints are not satisfied
+        let (witness, statement) =
+            test_helpers::create_witness_statement_with_intent_balance_and_bounded_match_result(
+                &intent,
+                &balance,
+                bounded_match_result,
+            );
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the input balance does not capitalize the
+    /// bounded match result
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_input_balance__undercapitalized() {
+        let intent = random_small_intent();
+        let mut balance = create_matching_balance_for_intent(&intent);
+        balance.amount = intent.amount_in - 1;
+        let mut bounded_match_result =
+            create_bounded_match_result_with_balance(&intent, balance.amount);
+        bounded_match_result.max_internal_party_amount_in = intent.amount_in;
+
+        // Check that the constraints are not satisfied
+        let (witness, statement) =
+            test_helpers::create_witness_statement_with_intent_balance_and_bounded_match_result(
+                &intent,
+                &balance,
+                bounded_match_result,
+            );
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the output balance mint does not match the
+    /// bounded match result's output token
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_output_balance__mint_mismatch() {
+        let (mut witness, statement) = test_helpers::create_witness_statement();
+        witness.out_balance.mint = random_address();
+
+        // Check that the constraints are not satisfied
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the output balance owner does not match the
+    /// intent's owner
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_output_balance__owner_mismatch() {
+        let (mut witness, statement) = test_helpers::create_witness_statement();
+        witness.out_balance.owner = random_address();
+
+        // Check that the constraints are not satisfied
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the output balance overflows
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_output_balance__overflow() {
+        let (mut witness, statement) = test_helpers::create_witness_statement();
+
+        let max_output = compute_max_amount_out(&statement.bounded_match_result);
+        let max_amount_out = max_amount() - max_output;
+        witness.out_balance.amount = max_amount_out + 1;
+
+        // Check that the constraints are not satisfied
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    // --- Invalid State Updates --- //
+
+    /// Test the case in which the intent's amount public share is modified
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_update__intent_amount_public_share_modified() {
+        let (witness, mut statement) = test_helpers::create_witness_statement();
+        statement.amount_public_share = random_scalar();
+
+        // Check that the constraints are not satisfied
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the input balance's public shares are modified
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_update__in_balance_public_shares_modified() {
+        let mut rng = thread_rng();
+        let (witness, mut statement) = test_helpers::create_witness_statement();
+
+        let mut balance_scalars = statement.in_balance_public_shares.to_scalars();
+        let idx = rng.gen_range(0..balance_scalars.len());
+        balance_scalars[idx] = random_scalar();
+        statement.in_balance_public_shares =
+            PostMatchBalanceShare::from_scalars(&mut balance_scalars.into_iter());
+
+        // Check that the constraints are not satisfied
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the output balance's public shares are modified
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_update__out_balance_public_shares_modified() {
+        let mut rng = thread_rng();
+        let (witness, mut statement) = test_helpers::create_witness_statement();
+
+        let mut out_balance_scalars = statement.out_balance_public_shares.to_scalars();
+        let idx = rng.gen_range(0..out_balance_scalars.len());
+        out_balance_scalars[idx] = random_scalar();
+        statement.out_balance_public_shares =
+            PostMatchBalanceShare::from_scalars(&mut out_balance_scalars.into_iter());
+
+        // Check that the constraints are not satisfied
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the relayer fee recipient does not match
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_update__relayer_fee_recipient_mismatch() {
+        let (witness, mut statement) = test_helpers::create_witness_statement();
+        statement.relayer_fee_recipient = random_address();
+
+        // Check that the constraints are not satisfied
+        assert!(!test_helpers::check_constraints(&witness, &statement));
     }
 }

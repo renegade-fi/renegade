@@ -270,6 +270,15 @@ pub fn compute_min_amount_out(intent: &Intent, amount_in: Amount) -> Amount {
     scalar_to_u128(&min_amount_out.floor())
 }
 
+/// Compute the maximum amount out for a given bounded match result
+///
+/// This computes the maximum output amount based on the price and maximum
+/// input amount: `floor(price * max_internal_party_amount_in)`
+pub fn compute_max_amount_out(bounded_match_result: &BoundedMatchResult) -> Amount {
+    let max_amount_out = bounded_match_result.price * Scalar::from(bounded_match_result.max_internal_party_amount_in);
+    scalar_to_u128(&max_amount_out.floor())
+}
+
 /// Compute the implied price for a given amount out and in
 pub fn compute_implied_price(amount_out: Amount, amount_in: Amount) -> FixedPoint {
     let price = (amount_out as f64) / (amount_in as f64);

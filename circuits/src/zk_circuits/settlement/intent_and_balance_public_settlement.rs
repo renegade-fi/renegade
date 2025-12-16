@@ -470,6 +470,7 @@ mod test {
         balance.amount = intent.amount_in - 1;
         let mut obligation = create_settlement_obligation_with_balance(&intent, balance.amount);
         obligation.amount_in = intent.amount_in;
+        obligation.amount_out = compute_min_amount_out(&intent, obligation.amount_in);
 
         // Check that the constraints are not satisfied
         let (witness, statement) =
