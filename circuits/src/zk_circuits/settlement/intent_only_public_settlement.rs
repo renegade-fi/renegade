@@ -197,10 +197,12 @@ pub mod test_helpers {
 
 #[cfg(test)]
 mod test {
-    use crate::test_helpers::{compute_min_amount_out, random_address, random_intent};
+    use crate::test_helpers::{
+        BOUNDED_MAX_AMT, compute_min_amount_out, random_address, random_intent,
+    };
 
     use super::*;
-    use circuit_types::{AMOUNT_BITS, max_amount, traits::SingleProverCircuit};
+    use circuit_types::{max_amount, traits::SingleProverCircuit};
     use rand::{Rng, thread_rng};
 
     /// A helper to print the number of constraints in the circuit
@@ -229,8 +231,7 @@ mod test {
         // Sample an intent and leave room to actually settle the max amount
         let mut rng = thread_rng();
         let mut intent = random_intent();
-        let max_amount_in = 1u128 << (AMOUNT_BITS / 2);
-        intent.amount_in = rng.gen_range(0..max_amount_in);
+        intent.amount_in = rng.gen_range(0..=BOUNDED_MAX_AMT);
         let (witness, mut statement) = test_helpers::create_witness_statement_with_intent(&intent);
 
         // Modify the obligation to settle the max amount
@@ -277,8 +278,7 @@ mod test {
         // Leave room to exceed the max amount
         let mut rng = thread_rng();
         let mut intent = random_intent();
-        let max_amount_in = 1u128 << (AMOUNT_BITS / 2);
-        intent.amount_in = rng.gen_range(0..max_amount_in);
+        intent.amount_in = rng.gen_range(0..=BOUNDED_MAX_AMT);
 
         let (witness, mut statement) = test_helpers::create_witness_statement_with_intent(&intent);
 
