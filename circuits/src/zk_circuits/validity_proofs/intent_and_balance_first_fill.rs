@@ -74,8 +74,8 @@ impl<const MERKLE_HEIGHT: usize> IntentAndBalanceFirstFillValidityCircuit<MERKLE
         Self::validate_balance(statement, witness, cs)?;
         let original_intent_commitment = Self::build_and_validate_intent(statement, witness, cs)?;
 
-        // Check the signature over the intent's commitment by the balance's authority
-        // key
+        // Check the signature over the intent's commitment by the balance's key
+        // This "bootstraps" the intent authorization from the balance
         SchnorrGadget::verify_signature(
             &witness.intent_authorization_signature,
             &original_intent_commitment,
@@ -500,7 +500,6 @@ pub mod test_helpers {
         let intent_authorization_signature = balance_authority_key.sign(&intent_comm).unwrap();
 
         // Compute the state rotation information for the original balance
-        // let one_time_authority = balance.inner.one_time_authority;
         let old_balance_nullifier = balance.compute_nullifier();
         let balance_commitment = balance.compute_commitment();
         let (merkle_root, balance_opening) =
@@ -581,9 +580,12 @@ mod test {
     };
 
     use super::*;
+    use ark_ff::UniformRand;
     use circuit_types::{
-        fixed_point::FixedPoint, max_amount, max_price, traits::SingleProverCircuit,
+        fixed_point::FixedPoint, max_amount, max_price, schnorr::SchnorrPrivateKey,
+        traits::SingleProverCircuit,
     };
+    use constants::EmbeddedScalarField;
     use rand::{Rng, thread_rng};
 
     /// A helper to print the number of constraints in the circuit
@@ -709,6 +711,33 @@ mod test {
     }
 
     // --- Invalid Balance Tests --- //
+
+    /// Test the case in which the intent signature is incorrect
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_signature__wrong_key() {
+        let intent = random_intent();
+        let (balance, _) = create_matching_balance_for_intent(&intent);
+
+        // Modify the key which we sign with
+        let incorrect_key = SchnorrPrivateKey::random();
+        let (witness, statement) = test_helpers::create_witness_statement_with_intent_and_balance(
+            &intent,
+            balance,
+            incorrect_key,
+        );
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the signature is modified
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_signature__modified() {
+        let mut rng = thread_rng();
+        let (mut witness, statement) = test_helpers::create_witness_statement();
+        witness.intent_authorization_signature.s = EmbeddedScalarField::rand(&mut rng);
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
 
     /// Test the case in which the post-match balance shares are modified
     #[test]

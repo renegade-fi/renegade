@@ -233,6 +233,7 @@ pub mod test_helpers {
             compute_max_amount_out, create_bounded_match_result_with_balance,
             create_matching_balance_for_intent, random_address, random_amount, random_fee,
             random_intent, random_post_match_balance_share, random_scalar,
+            random_schnorr_public_key,
         },
         zk_circuits::settlement::intent_and_balance_bounded_settlement::{
             IntentAndBalanceBoundedSettlementCircuit, IntentAndBalanceBoundedSettlementStatement,

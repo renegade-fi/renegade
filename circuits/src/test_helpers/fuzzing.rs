@@ -3,15 +3,13 @@
 use std::cmp;
 
 use alloy_primitives::Address;
-use ark_ec::Group;
-use ark_ff::UniformRand;
 use circuit_types::{
     AMOUNT_BITS, Amount,
     balance::{Balance, PostMatchBalanceShare},
     bounded_match_result::BoundedMatchResult,
     csprng::PoseidonCSPRNG,
     deposit::Deposit,
-    elgamal::{BabyJubJubPoint, DecryptionKey, EncryptionKey},
+    elgamal::{DecryptionKey, EncryptionKey},
     fixed_point::FixedPoint,
     intent::Intent,
     max_amount,
@@ -21,7 +19,7 @@ use circuit_types::{
     traits::{BaseType, CircuitBaseType, SecretShareBaseType},
     withdrawal::Withdrawal,
 };
-use constants::{EmbeddedCurveGroup, EmbeddedScalarField, MAX_RELAYER_FEE_RATE, Scalar};
+use constants::{MAX_RELAYER_FEE_RATE, Scalar};
 use itertools::Itertools;
 use rand::{Rng, distributions::uniform::SampleRange, thread_rng};
 use renegade_crypto::fields::scalar_to_u128;
@@ -208,8 +206,6 @@ pub fn random_elgamal_keypair() -> (EncryptionKey, DecryptionKey) {
 }
 
 /// Create a random Schnorr keypair
-///
-/// TODO: Add type aliases
 pub fn random_schnorr_keypair() -> (SchnorrPrivateKey, SchnorrPublicKey) {
     let private_key = SchnorrPrivateKey::random();
     let public_key = private_key.public_key();
