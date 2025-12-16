@@ -223,17 +223,15 @@ impl SingleProverCircuit for IntentAndBalancePublicSettlementCircuit {
 pub mod test_helpers {
     use alloy_primitives::Address;
     use circuit_types::{
-        balance::{Balance, PostMatchBalanceShare},
-        intent::Intent,
-        max_amount,
-        settlement_obligation::SettlementObligation,
+        balance::Balance, intent::Intent, max_amount, settlement_obligation::SettlementObligation,
     };
     use rand::{Rng, thread_rng};
 
     use crate::{
         test_helpers::{
-            create_settlement_obligation_with_balance, random_address, random_amount, random_fee,
-            random_intent, random_scalar,
+            create_matching_balance_for_intent, create_settlement_obligation_with_balance,
+            random_address, random_amount, random_fee, random_intent,
+            random_post_match_balance_share, random_scalar,
         },
         zk_circuits::settlement::intent_and_balance_public_settlement::{
             IntentAndBalancePublicSettlementCircuit, IntentAndBalancePublicSettlementStatement,
@@ -254,22 +252,6 @@ pub mod test_helpers {
         crate::test_helpers::check_constraints_satisfied::<IntentAndBalancePublicSettlementCircuit>(
             witness, statement,
         )
-    }
-
-    /// Create a balance that matches the given intent
-    ///
-    /// The balance will have the same owner and mint as the intent's in_token,
-    /// with random values for other fields.
-    pub fn create_matching_balance_for_intent(intent: &Intent) -> Balance {
-        Balance {
-            mint: intent.in_token,
-            owner: intent.owner,
-            relayer_fee_recipient: random_address(),
-            one_time_authority: random_address(),
-            relayer_fee_balance: random_amount(),
-            protocol_fee_balance: random_amount(),
-            amount: random_amount(),
-        }
     }
 
     /// Construct a witness and statement with valid data
@@ -340,15 +322,6 @@ pub mod test_helpers {
         (witness, statement)
     }
 
-    /// Create a random post-match balance share
-    pub fn random_post_match_balance_share() -> PostMatchBalanceShare {
-        PostMatchBalanceShare {
-            amount: random_scalar(),
-            relayer_fee_balance: random_scalar(),
-            protocol_fee_balance: random_scalar(),
-        }
-    }
-
     /// Create a receive balance for the given obligation
     pub fn create_receive_balance(owner: Address, obligation: &SettlementObligation) -> Balance {
         let mut rng = thread_rng();
@@ -369,12 +342,10 @@ pub mod test_helpers {
 
 #[cfg(test)]
 mod test {
-    use crate::{
-        test_helpers::{
-            compute_min_amount_out, create_settlement_obligation_with_balance, random_address,
-            random_scalar, random_small_intent,
-        },
-        zk_circuits::settlement::intent_and_balance_public_settlement::test_helpers::create_matching_balance_for_intent,
+    use crate::test_helpers::{
+        compute_min_amount_out, create_matching_balance_for_intent,
+        create_settlement_obligation_with_balance, random_address, random_scalar,
+        random_small_intent,
     };
 
     use super::*;

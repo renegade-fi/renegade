@@ -281,7 +281,10 @@ pub mod test_helpers {
     use rand::{Rng, thread_rng};
 
     use crate::{
-        test_helpers::{random_address, random_amount, random_fee, random_scalar},
+        test_helpers::{
+            random_address, random_amount, random_fee, random_post_match_balance_share,
+            random_scalar,
+        },
         zk_circuits::settlement::intent_and_balance_private_settlement::{
             IntentAndBalancePrivateSettlementCircuit, IntentAndBalancePrivateSettlementStatement,
             IntentAndBalancePrivateSettlementWitness,
@@ -466,15 +469,6 @@ pub mod test_helpers {
             relayer_fee_balance: random_amount(),
             protocol_fee_balance: random_amount(),
             amount,
-        }
-    }
-
-    /// Create a random post-match balance share
-    pub fn random_post_match_balance_share() -> PostMatchBalanceShare {
-        PostMatchBalanceShare {
-            amount: random_scalar(),
-            relayer_fee_balance: random_scalar(),
-            protocol_fee_balance: random_scalar(),
         }
     }
 }

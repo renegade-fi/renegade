@@ -33,4 +33,5 @@ pub const OUTPUT_BALANCE_SETTLEMENT_PARTY1_LINK: &str = "output_balance_settleme
 // | Bounded Settlement |
 // ----------------------
 
+pub mod intent_and_balance_bounded_settlement;
 pub mod intent_only_bounded_settlement;

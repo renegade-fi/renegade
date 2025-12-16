@@ -142,8 +142,8 @@ mod test {
     use crate::{
         singleprover_prove_with_hint,
         test_helpers::{
-            create_settlement_obligation_with_balance, random_intent, random_small_balance,
-            random_small_intent, random_zeroed_balance,
+            create_matching_balance_for_intent, create_settlement_obligation_with_balance,
+            random_intent, random_small_balance, random_small_intent, random_zeroed_balance,
         },
         zk_circuits::{
             settlement::{
@@ -157,10 +157,7 @@ mod test {
                     IntentAndBalancePublicSettlementCircuit,
                     IntentAndBalancePublicSettlementStatement,
                     IntentAndBalancePublicSettlementWitness,
-                    test_helpers::{
-                        create_matching_balance_for_intent,
-                        create_witness_statement_with_intent_balance_and_obligation as create_settlement_witness_statement,
-                    },
+                    test_helpers::create_witness_statement_with_intent_balance_and_obligation as create_settlement_witness_statement,
                 },
             },
             validity_proofs::{
