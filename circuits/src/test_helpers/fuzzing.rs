@@ -275,7 +275,8 @@ pub fn compute_min_amount_out(intent: &Intent, amount_in: Amount) -> Amount {
 /// This computes the maximum output amount based on the price and maximum
 /// input amount: `floor(price * max_internal_party_amount_in)`
 pub fn compute_max_amount_out(bounded_match_result: &BoundedMatchResult) -> Amount {
-    let max_amount_out = bounded_match_result.price * Scalar::from(bounded_match_result.max_internal_party_amount_in);
+    let max_amount_out = bounded_match_result.price
+        * Scalar::from(bounded_match_result.max_internal_party_amount_in);
     scalar_to_u128(&max_amount_out.floor())
 }
 

@@ -370,10 +370,10 @@ mod test {
         assert!(test_helpers::check_constraints(&witness, &statement));
     }
 
-    /// Test the case in which the balance undercapitalizes the bounded match
-    /// result
+    /// Test the case in which the balance partially capitalizes the bounded
+    /// match result
     #[test]
-    fn test_valid_intent_and_balance_bounded_settlement_constraints_undercapitalized() {
+    fn test_valid_intent_and_balance_bounded_settlement_constraints_partially_capitalized() {
         let intent = random_small_intent();
         let mut balance = create_matching_balance_for_intent(&intent);
         balance.amount = intent.amount_in / 2;
@@ -454,7 +454,7 @@ mod test {
         balance.amount = intent.amount_in + 1; // Fully capitalize the intent
         let mut bounded_match_result =
             create_bounded_match_result_with_balance(&intent, balance.amount);
-        bounded_match_result.max_internal_party_amount_in = balance.amount + 1;
+        bounded_match_result.max_internal_party_amount_in = intent.amount_in + 1;
 
         // Check that the constraints are not satisfied
         let (witness, statement) =
