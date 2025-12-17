@@ -11,7 +11,7 @@
 
 use circuit_macros::circuit_type;
 use circuit_types::{
-    PlonkCircuit,
+    Nullifier, PlonkCircuit,
     balance::{
         Balance, BalanceShareVar, DarkpoolStateBalance, DarkpoolStateBalanceVar,
         PostMatchBalanceShare, PreMatchBalanceShare,
@@ -42,7 +42,7 @@ use crate::{
         comparators::EqGadget,
         schnorr::SchnorrGadget,
         shares::ShareGadget,
-        state_primitives::{CommitmentGadget, RecoveryIdGadget},
+        state_primitives::{CommitmentGadget, NullifierGadget, RecoveryIdGadget},
     },
 };
 
@@ -50,7 +50,7 @@ use crate::{
 /// updated balance
 ///
 /// This is the set of shares that will not change after the match.
-const NEW_BALANCE_PARTIAL_COMMITMENT_SIZE: usize =
+pub const NEW_BALANCE_PARTIAL_COMMITMENT_SIZE: usize =
     Balance::NUM_SCALARS - PostMatchBalanceShare::NUM_SCALARS;
 
 // ----------------------
@@ -104,7 +104,7 @@ impl<const MERKLE_HEIGHT: usize> NewOutputBalanceValidityCircuit<MERKLE_HEIGHT> 
         )?;
 
         // 5. Authorize the new balance by verifying the existing balance's Merkle
-        //    inclusion and checking the signature
+        //    inclusion, nullifier, and checking the signature
         Self::authorize_new_balance(new_balance_commitment, witness, statement, cs)
     }
 
@@ -138,7 +138,7 @@ impl<const MERKLE_HEIGHT: usize> NewOutputBalanceValidityCircuit<MERKLE_HEIGHT> 
         witness: &NewOutputBalanceValidityWitnessVar<MERKLE_HEIGHT>,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
-        // Check that the denormalize balance field matches the state element
+        // Check that the denormalized balance field matches the state element
         // We denormalize for proof linking, but prove authorization over the state
         // element
         let balance = &witness.balance;
@@ -155,18 +155,19 @@ impl<const MERKLE_HEIGHT: usize> NewOutputBalanceValidityCircuit<MERKLE_HEIGHT> 
     }
 
     /// Authorize the new balance by verifying the existing balance's Merkle
-    /// inclusion and checking the signature
+    /// inclusion, nullifier, and checking the signature
     fn authorize_new_balance(
         new_balance_commitment: Variable,
         witness: &NewOutputBalanceValidityWitnessVar<MERKLE_HEIGHT>,
         statement: &NewOutputBalanceValidityStatementVar,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
-        // First verify the Merkle opening for the existing balance
-        Self::verify_existing_balance_merkle_opening(
+        // Verify the existing balance (Merkle opening and nullifier)
+        Self::verify_existing_balance(
             &witness.existing_balance,
             &witness.existing_balance_opening,
             statement.existing_balance_merkle_root,
+            statement.existing_balance_nullifier,
             cs,
         )?;
 
@@ -192,11 +193,12 @@ impl<const MERKLE_HEIGHT: usize> NewOutputBalanceValidityCircuit<MERKLE_HEIGHT> 
         )
     }
 
-    /// Verify the Merkle opening for the existing balance
-    fn verify_existing_balance_merkle_opening(
+    /// Verify the existing balance by checking its Merkle opening and nullifier
+    fn verify_existing_balance(
         existing_balance: &DarkpoolStateBalanceVar,
         opening: &MerkleOpeningVar<MERKLE_HEIGHT>,
         root: Variable,
+        nullifier: Variable,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
         // Build a commitment to the existing balance
@@ -217,7 +219,13 @@ impl<const MERKLE_HEIGHT: usize> NewOutputBalanceValidityCircuit<MERKLE_HEIGHT> 
             opening,
             root,
             cs,
-        )
+        )?;
+
+        // Compute and verify the nullifier
+        let computed_nullifier = NullifierGadget::compute_nullifier(existing_balance, cs)?;
+        EqGadget::constrain_eq(&computed_nullifier, &nullifier, cs)?;
+
+        Ok(())
     }
 }
 
@@ -271,6 +279,11 @@ pub struct NewOutputBalanceValidityStatement {
     ///
     /// This balance bootstraps the new balance's authorization
     pub existing_balance_merkle_root: MerkleRoot,
+    /// The nullifier of the existing balance
+    ///
+    /// This nullifier will be leaked and checked on-chain to ensure it hasn't
+    /// been spent. This prevents bootstrapping off of outdated balances.
+    pub existing_balance_nullifier: Nullifier,
     /// The pre-match balance shares for the new balance
     pub pre_match_balance_shares: PreMatchBalanceShare,
     /// A partial commitment to the new output balance
@@ -385,6 +398,7 @@ pub mod test_helpers {
         let existing_balance = create_random_state_wrapper(existing_balance_inner);
 
         let existing_balance_commitment = existing_balance.compute_commitment();
+        let existing_balance_nullifier = existing_balance.compute_nullifier();
         let (merkle_root, existing_balance_opening) =
             create_merkle_opening::<MERKLE_HEIGHT>(existing_balance_commitment);
 
@@ -402,18 +416,20 @@ pub mod test_helpers {
         let new_balance_partial_commitment =
             balance.compute_partial_commitment(NEW_BALANCE_PARTIAL_COMMITMENT_SIZE);
 
-        let witness = NewOutputBalanceValidityWitness {
-            new_balance,
-            balance: balance.inner,
-            post_match_balance_shares,
-            existing_balance,
-            existing_balance_opening,
-            new_balance_authorization_signature,
-        };
+        let witness: NewOutputBalanceValidityWitness<MERKLE_HEIGHT> =
+            NewOutputBalanceValidityWitness {
+                new_balance,
+                balance: balance.inner,
+                post_match_balance_shares,
+                existing_balance,
+                existing_balance_opening,
+                new_balance_authorization_signature,
+            };
 
         // Build the statement
         let statement = NewOutputBalanceValidityStatement {
             existing_balance_merkle_root: merkle_root,
+            existing_balance_nullifier,
             pre_match_balance_shares,
             new_balance_partial_commitment,
             recovery_id,

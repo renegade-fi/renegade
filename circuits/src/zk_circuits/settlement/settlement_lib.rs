@@ -262,7 +262,7 @@ impl BoundedSettlementGadget {
     ///
     /// Note: The balance.mint == intent.in_token constraint is enforced by
     /// the INTENT AND BALANCE VALIDITY proof via proof-linking.
-    pub fn verify_in_balance_constraints(
+    fn verify_in_balance_constraints(
         in_balance: &BalanceVar,
         bounded_match_result: &BoundedMatchResultVar,
         cs: &mut PlonkCircuit,
@@ -280,7 +280,7 @@ impl BoundedSettlementGadget {
     ///
     /// The contract validates that min <= max <= amount_in, so we only need to
     /// check the upper bound here.
-    pub fn verify_out_balance_constraints(
+    fn verify_out_balance_constraints(
         out_balance: &BalanceVar,
         intent: &IntentVar,
         bounded_match_result: &BoundedMatchResultVar,

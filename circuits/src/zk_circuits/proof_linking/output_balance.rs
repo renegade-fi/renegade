@@ -13,7 +13,10 @@ use crate::zk_circuits::{
         OUTPUT_BALANCE_SETTLEMENT_PARTY0_LINK, OUTPUT_BALANCE_SETTLEMENT_PARTY1_LINK,
         intent_and_balance_private_settlement::IntentAndBalancePrivateSettlementCircuit,
     },
-    validity_proofs::output_balance::OutputBalanceValidityCircuit,
+    validity_proofs::{
+        new_output_balance::NewOutputBalanceValidityCircuit,
+        output_balance::OutputBalanceValidityCircuit,
+    },
 };
 
 // --------------------------------------------------------------------
@@ -56,7 +59,7 @@ pub fn link_output_balance_settlement_with_party<const MERKLE_HEIGHT: usize>(
 ) -> Result<PlonkLinkProof, ProverError> {
     // Get the group layout for the validity <-> settlement link group
     let layout = get_group_layout(party_id)?;
-    let pk = OutputBalanceValidityCircuit::<MERKLE_HEIGHT>::proving_key();
+    let pk = NewOutputBalanceValidityCircuit::<MERKLE_HEIGHT>::proving_key();
 
     PlonkKzgSnark::link_proofs::<SolidityTranscript>(
         validity_link_hint,
@@ -259,6 +262,8 @@ mod test {
 
         // Align the settlement witness with the validity witness
         settlement_witness.out_balance = validity_witness.balance.clone();
+        settlement_statement.relayer_fee_recipient =
+            settlement_witness.out_balance.relayer_fee_recipient;
         let out_shares = validity_witness.post_match_balance_shares.clone();
         settlement_witness.pre_settlement_out_balance_shares = out_shares.clone();
         settlement_statement.out_balance_public_shares = out_shares;
@@ -336,6 +341,8 @@ mod test {
 
         // Align the settlement witness with the validity witness
         settlement_witness.out_balance = validity_witness.balance.clone();
+        settlement_statement.relayer_fee_recipient =
+            settlement_witness.out_balance.relayer_fee_recipient;
         let out_shares = validity_witness.post_match_balance_shares.clone();
         settlement_witness.pre_settlement_out_balance_shares = out_shares.clone();
         settlement_statement.out_balance_public_shares = out_shares;
