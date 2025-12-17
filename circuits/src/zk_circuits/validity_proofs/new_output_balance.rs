@@ -102,9 +102,7 @@ impl<const MERKLE_HEIGHT: usize> NewOutputBalanceValidityCircuit<MERKLE_HEIGHT> 
             &new_balance_partial_commitment,
             &statement.new_balance_partial_commitment,
             cs,
-        )?;
-
-        Ok(())
+        )
     }
 
     /// Build the balance state wrapper
@@ -430,10 +428,12 @@ pub mod test_helpers {
 
 #[cfg(test)]
 mod test {
-    use crate::test_helpers::random_scalar;
+    use crate::test_helpers::{random_address, random_amount, random_scalar};
 
     use super::*;
-    use circuit_types::traits::SingleProverCircuit;
+    use circuit_types::{
+        schnorr::SchnorrPrivateKey, state_wrapper::StateWrapper, traits::SingleProverCircuit,
+    };
     use rand::{Rng, thread_rng};
 
     /// A helper to print the number of constraints in the circuit
@@ -456,10 +456,78 @@ mod test {
         assert!(test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
     }
 
+    // --- Invalid Balance Tests --- //
+
+    /// Test the case in which the balance amount is non-zero
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_balance__non_zero_amount() {
+        let (mut witness, statement) = test_helpers::create_sized_witness_statement();
+
+        witness.balance.amount = random_amount();
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the relayer fee balance is non-zero
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_balance__non_zero_relayer_fee_balance() {
+        let (mut witness, statement) = test_helpers::create_sized_witness_statement();
+
+        witness.balance.relayer_fee_balance = random_amount();
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the protocol fee balance is non-zero
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_balance__non_zero_protocol_fee_balance() {
+        let (mut witness, statement) = test_helpers::create_sized_witness_statement();
+
+        witness.balance.protocol_fee_balance = random_amount();
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the balance's owner field doesn't match the
+    /// existing balance
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_balance__owner_mismatch() {
+        let (mut witness, statement) = test_helpers::create_sized_witness_statement();
+
+        witness.balance.owner = random_address();
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the balance's authority field doesn't match the
+    /// existing balance
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_balance__authority_mismatch() {
+        let (mut witness, statement) = test_helpers::create_sized_witness_statement();
+
+        let (_, wrong_authority) = crate::test_helpers::random_schnorr_keypair();
+        witness.balance.authority = wrong_authority;
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the balance's relayer fee recipient field doesn't
+    /// match the existing balance
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_balance__relayer_fee_recipient_mismatch() {
+        let (mut witness, statement) = test_helpers::create_sized_witness_statement();
+
+        witness.balance.relayer_fee_recipient = random_address();
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    // --- Invalid Statement Tests --- //
+
     /// Test the case in which the pre-match balance shares are modified
     #[test]
     #[allow(non_snake_case)]
-    fn test_invalid_witness__pre_match_balance_shares_modified() {
+    fn test_invalid_statement__pre_match_balance_shares_modified() {
         let mut rng = thread_rng();
         let (witness, mut statement) = test_helpers::create_sized_witness_statement();
 
@@ -469,6 +537,76 @@ mod test {
         statement.pre_match_balance_shares =
             PreMatchBalanceShare::from_scalars(&mut shares.into_iter());
 
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the recovery ID is modified
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_statement__recovery_id_modified() {
+        let (witness, mut statement) = test_helpers::create_sized_witness_statement();
+
+        statement.recovery_id = random_scalar();
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the new balance partial commitment is modified
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_statement__new_balance_partial_commitment_modified() {
+        let (witness, mut statement) = test_helpers::create_sized_witness_statement();
+
+        statement.new_balance_partial_commitment.private_commitment = random_scalar();
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    // --- Invalid Witness Tests --- //
+
+    /// Test the case in which the post-match balance shares are modified
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_witness__post_match_balance_shares_modified() {
+        let mut rng = thread_rng();
+        let (mut witness, statement) = test_helpers::create_sized_witness_statement();
+
+        let mut shares = witness.post_match_balance_shares.to_scalars();
+        let idx = rng.gen_range(0..shares.len());
+        shares[idx] = random_scalar();
+        witness.post_match_balance_shares =
+            PostMatchBalanceShare::from_scalars(&mut shares.into_iter());
+
         assert!(!test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
+    }
+
+    /// Test the case in which the Merkle opening is corrupted
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_witness__merkle_opening_corrupted() {
+        let mut rng = thread_rng();
+        let (mut witness, statement) = test_helpers::create_sized_witness_statement();
+
+        let random_index = rng.gen_range(0..witness.existing_balance_opening.elems.len());
+        witness.existing_balance_opening.elems[random_index] = random_scalar();
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the signature is invalid
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_witness__invalid_signature() {
+        let (mut witness, statement) = test_helpers::create_sized_witness_statement();
+
+        // Create a signature with a different key
+        let state_balance = StateWrapper::new(
+            witness.balance.clone(),
+            witness.initial_share_stream.seed,
+            witness.initial_recovery_stream.seed,
+        );
+        let bal_commitment = state_balance.compute_commitment();
+
+        let wrong_private_key = SchnorrPrivateKey::random();
+        let wrong_signature = wrong_private_key.sign(&bal_commitment).unwrap();
+        witness.new_balance_authorization_signature = wrong_signature;
+        assert!(!test_helpers::check_constraints(&witness, &statement));
     }
 }
