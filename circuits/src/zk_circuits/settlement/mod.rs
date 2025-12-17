@@ -14,8 +14,8 @@ pub mod intent_only_public_settlement;
 pub mod settlement_lib;
 
 /// The group name for the INTENT ONLY VALIDITY <-> INTENT ONLY
-/// SETTLEMENT link
-pub const INTENT_ONLY_PUBLIC_SETTLEMENT_LINK: &str = "intent_only_settlement";
+/// SETTLEMENT link for both exact and bounded settlement circuits
+pub const INTENT_ONLY_SETTLEMENT_LINK: &str = "intent_only_settlement";
 
 /// The group name for the INTENT AND BALANCE VALIDITY <-> INTENT
 /// AND BALANCE SETTLEMENT link

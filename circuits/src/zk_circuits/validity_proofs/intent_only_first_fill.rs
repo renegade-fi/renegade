@@ -25,7 +25,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     SingleProverCircuit,
     zk_circuits::settlement::{
-        INTENT_ONLY_PUBLIC_SETTLEMENT_LINK,
+        INTENT_ONLY_SETTLEMENT_LINK,
         intent_only_public_settlement::IntentOnlyPublicSettlementCircuit,
     },
     zk_gadgets::{
@@ -161,13 +161,14 @@ impl SingleProverCircuit for IntentOnlyFirstFillValidityCircuit {
     }
 
     /// INTENT ONLY FIRST FILL VALIDITY has one proof linking group:
-    /// - intent_only_public_settlement: The linking group between INTENT ONLY
-    ///   FIRST FILL VALIDITY and INTENT ONLY PUBLIC SETTLEMENT. This group is
-    ///   placed by the settlement circuit, so we inherit its layout here.
+    /// - intent_only_settlement: The linking group between INTENT ONLY FIRST
+    ///   FILL VALIDITY and both INTENT ONLY PUBLIC SETTLEMENT and INTENT ONLY
+    ///   BOUNDED SETTLEMENT. This group is placed by INTENT ONLY PUBLIC
+    ///   SETTLEMENT, so we inherit its layout here.
     fn proof_linking_groups() -> Result<Vec<(String, Option<GroupLayout>)>, PlonkError> {
         let layout = IntentOnlyPublicSettlementCircuit::get_circuit_layout()?;
-        let settlement_group = layout.get_group_layout(INTENT_ONLY_PUBLIC_SETTLEMENT_LINK);
-        let group_name = INTENT_ONLY_PUBLIC_SETTLEMENT_LINK.to_string();
+        let settlement_group = layout.get_group_layout(INTENT_ONLY_SETTLEMENT_LINK);
+        let group_name = INTENT_ONLY_SETTLEMENT_LINK.to_string();
 
         Ok(vec![(group_name, Some(settlement_group))])
     }
