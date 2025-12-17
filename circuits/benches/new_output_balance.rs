@@ -5,22 +5,23 @@
 
 use circuit_types::PlonkCircuit;
 use circuit_types::traits::{CircuitBaseType, SingleProverCircuit};
-use circuits::zk_circuits::validity_proofs::new_output_balance::NewOutputBalanceValidityCircuit;
+use circuits::zk_circuits::validity_proofs::new_output_balance::SizedNewOutputBalanceValidityCircuit;
 use circuits::zk_circuits::validity_proofs::new_output_balance::test_helpers::create_witness_statement;
 use circuits::{singleprover_prove, verify_singleprover_proof};
+use constants::MERKLE_HEIGHT;
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use mpc_relation::proof_linking::LinkableCircuit;
 
 /// Benchmark applying constraints to a circuit
 pub fn bench_apply_constraints(c: &mut Criterion) {
     // Build a witness and statement
-    let (witness, statement) = create_witness_statement();
+    let (witness, statement) = create_witness_statement::<MERKLE_HEIGHT>();
 
     // Allocate in the constraint system
     let mut cs = PlonkCircuit::new_turbo_plonk();
 
     // Create link groups before allocating variables
-    let layout = NewOutputBalanceValidityCircuit::get_circuit_layout().unwrap();
+    let layout = SizedNewOutputBalanceValidityCircuit::get_circuit_layout().unwrap();
     for (id, group_layout) in layout.group_layouts.into_iter() {
         cs.create_link_group(id, Some(group_layout));
     }
@@ -34,7 +35,7 @@ pub fn bench_apply_constraints(c: &mut Criterion) {
 
     group.bench_function(benchmark_id, |b| {
         b.iter(|| {
-            NewOutputBalanceValidityCircuit::apply_constraints(
+            SizedNewOutputBalanceValidityCircuit::apply_constraints(
                 witness_var.clone(),
                 statement_var.clone(),
                 &mut cs,
@@ -47,12 +48,13 @@ pub fn bench_apply_constraints(c: &mut Criterion) {
 /// Benchmark proving a circuit
 pub fn bench_prover(c: &mut Criterion) {
     // Build a witness and statement
-    let (witness, statement) = create_witness_statement();
+    let (witness, statement) = create_witness_statement::<MERKLE_HEIGHT>();
     let mut group = c.benchmark_group("new_output_balance_validity");
     let benchmark_id = BenchmarkId::new("prover", "");
     group.bench_function(benchmark_id, |b| {
         b.iter(|| {
-            singleprover_prove::<NewOutputBalanceValidityCircuit>(&witness, &statement).unwrap();
+            singleprover_prove::<SizedNewOutputBalanceValidityCircuit>(&witness, &statement)
+                .unwrap();
         });
     });
 }
@@ -60,16 +62,16 @@ pub fn bench_prover(c: &mut Criterion) {
 /// Benchmark verifying a circuit
 pub fn bench_verifier(c: &mut Criterion) {
     // First generate a proof that will be verified multiple times
-    let (witness, statement) = create_witness_statement();
+    let (witness, statement) = create_witness_statement::<MERKLE_HEIGHT>();
     let proof =
-        singleprover_prove::<NewOutputBalanceValidityCircuit>(&witness, &statement).unwrap();
+        singleprover_prove::<SizedNewOutputBalanceValidityCircuit>(&witness, &statement).unwrap();
 
     // Run the benchmark
     let mut group = c.benchmark_group("new_output_balance_validity");
     let benchmark_id = BenchmarkId::new("verifier", "");
     group.bench_function(benchmark_id, |b| {
         b.iter(|| {
-            verify_singleprover_proof::<NewOutputBalanceValidityCircuit>(&statement, &proof)
+            verify_singleprover_proof::<SizedNewOutputBalanceValidityCircuit>(&statement, &proof)
                 .unwrap();
         });
     });
