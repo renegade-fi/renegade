@@ -13,10 +13,9 @@ use circuit_macros::circuit_type;
 use circuit_types::{
     PlonkCircuit,
     balance::{
-        Balance, BalanceShareVar, BalanceVar, DarkpoolStateBalance, DarkpoolStateBalanceVar,
+        Balance, BalanceShareVar, DarkpoolStateBalance, DarkpoolStateBalanceVar,
         PostMatchBalanceShare, PreMatchBalanceShare,
     },
-    csprng::PoseidonCSPRNG,
     merkle::{MerkleOpening, MerkleOpeningVar, MerkleRoot},
     schnorr::SchnorrSignature,
     state_wrapper::PartialCommitment,
@@ -44,7 +43,6 @@ use crate::{
         schnorr::SchnorrGadget,
         shares::ShareGadget,
         state_primitives::{CommitmentGadget, RecoveryIdGadget},
-        stream_cipher::StreamCipherGadget,
     },
 };
 
@@ -74,12 +72,13 @@ impl<const MERKLE_HEIGHT: usize> NewOutputBalanceValidityCircuit<MERKLE_HEIGHT> 
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
         // 1. Validate the newly created balance's fields
-        Self::validate_new_balance(&witness.balance, cs)?;
+        Self::validate_new_balance(witness, cs)?;
 
-        // 2. Build the state wrapper for the balance
-        let (mut balance, private_shares) = Self::build_balance_state(witness, statement, cs)?;
+        // 2. Validate the balance shares and build the private shares
+        let private_shares = Self::validate_balance_shares(witness, statement, cs)?;
 
         // 3. Compute the recovery identifier for the new balance
+        let mut balance = witness.new_balance.clone();
         let initial_balance = balance.clone();
         let recovery_id = RecoveryIdGadget::compute_recovery_id(&mut balance, cs)?;
         EqGadget::constrain_eq(&recovery_id, &statement.recovery_id, cs)?;
@@ -111,45 +110,40 @@ impl<const MERKLE_HEIGHT: usize> NewOutputBalanceValidityCircuit<MERKLE_HEIGHT> 
 
     /// Build the balance state wrapper
     ///
-    /// Returns the state element and the private shares
-    fn build_balance_state(
-        witness: &mut NewOutputBalanceValidityWitnessVar<MERKLE_HEIGHT>,
+    /// Returns the private shares
+    fn validate_balance_shares(
+        witness: &NewOutputBalanceValidityWitnessVar<MERKLE_HEIGHT>,
         statement: &NewOutputBalanceValidityStatementVar,
         cs: &mut PlonkCircuit,
-    ) -> Result<(DarkpoolStateBalanceVar, BalanceShareVar), CircuitError> {
+    ) -> Result<BalanceShareVar, CircuitError> {
         let balance = &witness.balance;
-        let share_stream = &mut witness.initial_share_stream;
-        let recovery_stream = &mut witness.initial_recovery_stream;
+        let public_share = &witness.new_balance.public_share;
 
-        // Sample public and private shares for the balance
-        let (private_shares, public_share) =
-            StreamCipherGadget::encrypt(balance, share_stream, cs)?;
+        // Compute the private shares for the balance
+        let private_shares = ShareGadget::compute_complementary_shares(public_share, balance, cs)?;
 
         // Build the pre-match balance shares and check that they match the statement
-        let pre_match_balance_shares = ShareGadget::build_pre_match_balance_share(&public_share);
+        let pre_match_balance_shares = ShareGadget::build_pre_match_balance_share(public_share);
         EqGadget::constrain_eq(&pre_match_balance_shares, &statement.pre_match_balance_shares, cs)?;
 
         // Build the post-match balance shares
-        let post_match_balance_shares = ShareGadget::build_post_match_balance_share(&public_share);
+        let post_match_balance_shares = ShareGadget::build_post_match_balance_share(public_share);
         EqGadget::constrain_eq(&post_match_balance_shares, &witness.post_match_balance_shares, cs)?;
 
-        // Build the balance state wrapper
-        // This value has the updated share stream state
-        let state_wrapper = DarkpoolStateBalanceVar {
-            recovery_stream: recovery_stream.clone(),
-            share_stream: share_stream.clone(),
-            inner: balance.clone(),
-            public_share,
-        };
-
-        Ok((state_wrapper, private_shares))
+        Ok(private_shares)
     }
 
     /// Validate the newly created balance's fields
     fn validate_new_balance(
-        balance: &BalanceVar,
+        witness: &NewOutputBalanceValidityWitnessVar<MERKLE_HEIGHT>,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
+        // Check that the denormalize balance field matches the state element
+        // We denormalize for proof linking, but prove authorization over the state
+        // element
+        let balance = &witness.balance;
+        EqGadget::constrain_eq(balance, &witness.new_balance.inner, cs)?;
+
         let zero = cs.zero();
         // 1. The balance amount should be zero
         EqGadget::constrain_eq(&balance.amount, &zero, cs)?;
@@ -236,7 +230,12 @@ impl<const MERKLE_HEIGHT: usize> NewOutputBalanceValidityCircuit<MERKLE_HEIGHT> 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NewOutputBalanceValidityWitness<const MERKLE_HEIGHT: usize> {
     // --- New Balance --- //
-    /// The balance
+    /// The initial balance
+    pub new_balance: DarkpoolStateBalance,
+    /// The inner balance
+    ///
+    /// We duplicate this value here to proof-link the balance into the
+    /// settlement circuit.
     #[link_groups = "output_balance_settlement_party0,output_balance_settlement_party1"]
     pub balance: Balance,
     /// The balance public shares which are updated in the settlement circuit
@@ -244,10 +243,6 @@ pub struct NewOutputBalanceValidityWitness<const MERKLE_HEIGHT: usize> {
     /// These values are proof-linked into the settlement circuit
     #[link_groups = "output_balance_settlement_party0,output_balance_settlement_party1"]
     pub post_match_balance_shares: PostMatchBalanceShare,
-    /// The initial share stream of the balance
-    pub initial_share_stream: PoseidonCSPRNG,
-    /// The initial recovery stream of the balance
-    pub initial_recovery_stream: PoseidonCSPRNG,
 
     // --- Bootstrapping Balance --- //
     /// The existing input balance off of which we bootstrap the new balance's
@@ -396,22 +391,20 @@ pub mod test_helpers {
         // Sign a commitment to the new balance
         let new_balance_authorization_signature = private_key.sign(&initial_commitment).unwrap();
 
+        // Build the witness with the initial streams (before mutations)
+        // We need to clone before computing recovery_id since that mutates the balance
+        let new_balance = balance.clone();
+        let post_match_balance_shares = PostMatchBalanceShare::from(balance.public_share.clone());
+        let pre_match_balance_shares = PreMatchBalanceShare::from(balance.public_share.clone());
+
         // Compute the recovery identifier (mutates recovery_stream)
         let recovery_id = balance.compute_recovery_id();
         let new_balance_partial_commitment =
             balance.compute_partial_commitment(NEW_BALANCE_PARTIAL_COMMITMENT_SIZE);
 
-        // Build the witness with the initial streams (before mutations)
-        let mut initial_share_stream = balance.share_stream;
-        let mut initial_recovery_stream = balance.recovery_stream;
-        initial_share_stream.index = 0;
-        initial_recovery_stream.index = 0;
-        let post_match_balance_shares = PostMatchBalanceShare::from(balance.public_share.clone());
-        let pre_match_balance_shares = PreMatchBalanceShare::from(balance.public_share);
         let witness = NewOutputBalanceValidityWitness {
+            new_balance,
             balance: balance.inner,
-            initial_share_stream,
-            initial_recovery_stream,
             post_match_balance_shares,
             existing_balance,
             existing_balance_opening,
@@ -435,9 +428,7 @@ mod test {
     use crate::test_helpers::{random_address, random_amount, random_scalar};
 
     use super::*;
-    use circuit_types::{
-        schnorr::SchnorrPrivateKey, state_wrapper::StateWrapper, traits::SingleProverCircuit,
-    };
+    use circuit_types::{schnorr::SchnorrPrivateKey, traits::SingleProverCircuit};
     use rand::{Rng, thread_rng};
 
     /// A helper to print the number of constraints in the circuit
@@ -601,12 +592,8 @@ mod test {
         let (mut witness, statement) = test_helpers::create_sized_witness_statement();
 
         // Create a signature with a different key
-        let state_balance = StateWrapper::new(
-            witness.balance.clone(),
-            witness.initial_share_stream.seed,
-            witness.initial_recovery_stream.seed,
-        );
-        let bal_commitment = state_balance.compute_commitment();
+        let balance = witness.new_balance.clone();
+        let bal_commitment = balance.compute_commitment();
 
         let wrong_private_key = SchnorrPrivateKey::random();
         let wrong_signature = wrong_private_key.sign(&bal_commitment).unwrap();
