@@ -79,30 +79,34 @@ impl<const MERKLE_HEIGHT: usize> NewOutputBalanceValidityCircuit<MERKLE_HEIGHT> 
         // 2. Build the state wrapper for the balance
         let (mut balance, private_shares) = Self::build_balance_state(witness, statement, cs)?;
 
-        // 3. Authorize the new balance by verifying the existing balance's Merkle
-        //    inclusion
-        let new_balance_commitment =
-            CommitmentGadget::compute_commitment(&balance, &private_shares, cs)?;
-        Self::authorize_new_balance(new_balance_commitment, witness, statement, cs)?;
-
-        // 4. Compute the recovery identifier for the new balance
+        // 3. Compute the recovery identifier for the new balance
+        let initial_balance = balance.clone();
         let recovery_id = RecoveryIdGadget::compute_recovery_id(&mut balance, cs)?;
         EqGadget::constrain_eq(&recovery_id, &statement.recovery_id, cs)?;
 
-        // 5. Compute a partial commitment to the updated balance
-        // This is done after computing the recovery identifier so that we commit to the
-        // progressed recovery stream state
-        let new_balance_partial_commitment = CommitmentGadget::compute_partial_commitment(
-            NEW_BALANCE_PARTIAL_COMMITMENT_SIZE,
-            &private_shares,
-            &balance,
-            cs,
-        )?;
+        // 4. Compute both the initial (full) and partial commitments together using the
+        //    shared prefix gadget. The initial commitment uses the balance before
+        //    recovery_id is computed, and the partial commitment uses the balance after
+        //    recovery_id is computed
+        let (new_balance_commitment, new_balance_partial_commitment) =
+            CommitmentGadget::compute_partial_commitments_with_shared_prefix(
+                NEW_BALANCE_PARTIAL_COMMITMENT_SIZE,
+                &private_shares,
+                &initial_balance,
+                &private_shares,
+                &balance,
+                cs,
+            )?;
+
         EqGadget::constrain_eq(
             &new_balance_partial_commitment,
             &statement.new_balance_partial_commitment,
             cs,
-        )
+        )?;
+
+        // 5. Authorize the new balance by verifying the existing balance's Merkle
+        //    inclusion and checking the signature
+        Self::authorize_new_balance(new_balance_commitment, witness, statement, cs)
     }
 
     /// Build the balance state wrapper
