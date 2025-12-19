@@ -27,7 +27,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     SingleProverCircuit,
     zk_circuits::settlement::{
-        INTENT_ONLY_PUBLIC_SETTLEMENT_LINK,
+        INTENT_ONLY_SETTLEMENT_LINK,
         intent_only_public_settlement::IntentOnlyPublicSettlementCircuit,
     },
     zk_gadgets::{
@@ -155,7 +155,7 @@ pub struct IntentOnlyValidityWitness<const MERKLE_HEIGHT: usize> {
     ///
     /// This value is denormalized from the `old_intent` to enable proof linking
     /// between this circuit's witness and the `INTENT ONLY PUBLIC
-    /// SETTLEMENT` circuit's witness.
+    /// SETTLEMENT` / `INTENT ONLY BOUNDED SETTLEMENT` circuit's witness.
     #[link_groups = "intent_only_settlement"]
     pub intent: Intent,
 }
@@ -213,14 +213,15 @@ impl<const MERKLE_HEIGHT: usize> SingleProverCircuit for IntentOnlyValidityCircu
         format!("Intent Only Validity ({MERKLE_HEIGHT})")
     }
 
-    /// INTENT ONLY VALIDITY has a single proof linking group:
-    /// - intent_only_public_settlement: The linking group between INTENT ONLY
-    ///   VALIDITY and INTENT ONLY PUBLIC SETTLEMENT. This group is placed by
-    ///   the settlement circuit, so we inherit its layout here.
+    /// INTENT ONLY VALIDITY has one proof linking group:
+    /// - intent_only_settlement: The linking group between INTENT ONLY VALIDITY
+    ///   and both INTENT ONLY PUBLIC SETTLEMENT and INTENT ONLY BOUNDED
+    ///   SETTLEMENT. This group is placed by INTENT ONLY PUBLIC SETTLEMENT, so
+    ///   we inherit its layout here.
     fn proof_linking_groups() -> Result<Vec<(String, Option<GroupLayout>)>, PlonkError> {
         let layout = IntentOnlyPublicSettlementCircuit::get_circuit_layout()?;
-        let settlement_group = layout.get_group_layout(INTENT_ONLY_PUBLIC_SETTLEMENT_LINK);
-        let group_name = INTENT_ONLY_PUBLIC_SETTLEMENT_LINK.to_string();
+        let settlement_group = layout.get_group_layout(INTENT_ONLY_SETTLEMENT_LINK);
+        let group_name = INTENT_ONLY_SETTLEMENT_LINK.to_string();
 
         Ok(vec![(group_name, Some(settlement_group))])
     }

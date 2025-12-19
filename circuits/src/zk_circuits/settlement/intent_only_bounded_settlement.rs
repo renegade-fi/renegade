@@ -16,9 +16,17 @@ use circuit_types::{
 };
 use constants::{Scalar, ScalarField};
 use mpc_plonk::errors::PlonkError;
-use mpc_relation::{Variable, errors::CircuitError, proof_linking::GroupLayout, traits::Circuit};
+use mpc_relation::{
+    Variable,
+    errors::CircuitError,
+    proof_linking::{GroupLayout, LinkableCircuit},
+    traits::Circuit,
+};
 use serde::{Deserialize, Serialize};
 
+use super::{
+    INTENT_ONLY_SETTLEMENT_LINK, intent_only_public_settlement::IntentOnlyPublicSettlementCircuit,
+};
 use crate::{
     SingleProverCircuit, zk_circuits::settlement::settlement_lib::BoundedSettlementGadget,
 };
@@ -68,6 +76,7 @@ impl IntentOnlyBoundedSettlementCircuit {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct IntentOnlyBoundedSettlementWitness {
     /// The intent which this circuit is settling a match for
+    #[link_groups = "intent_only_settlement"]
     pub intent: Intent,
 }
 
@@ -118,9 +127,17 @@ impl SingleProverCircuit for IntentOnlyBoundedSettlementCircuit {
         "Intent Only Bounded Settlement".to_string()
     }
 
+    /// INTENT ONLY BOUNDED SETTLEMENT has one proof linking group:
+    /// - intent_only_settlement: The linking group between INTENT ONLY VALIDITY
+    ///   / INTENT ONLY FIRST FILL VALIDITY and INTENT ONLY BOUNDED SETTLEMENT.
+    ///   This group is placed by INTENT ONLY PUBLIC SETTLEMENT, so we inherit
+    ///   its layout here.
     fn proof_linking_groups() -> Result<Vec<(String, Option<GroupLayout>)>, PlonkError> {
-        // TODO: Implement
-        Ok(vec![])
+        // Inherit the layout from the public settlement circuit
+        let public_layout = IntentOnlyPublicSettlementCircuit::get_circuit_layout()?;
+        let settlement_group = public_layout.get_group_layout(INTENT_ONLY_SETTLEMENT_LINK);
+
+        Ok(vec![(INTENT_ONLY_SETTLEMENT_LINK.to_string(), Some(settlement_group))])
     }
 
     fn apply_constraints(

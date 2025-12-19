@@ -24,7 +24,7 @@ use mpc_relation::{
 };
 use serde::{Deserialize, Serialize};
 
-use super::INTENT_ONLY_PUBLIC_SETTLEMENT_LINK;
+use super::INTENT_ONLY_SETTLEMENT_LINK;
 use crate::{SingleProverCircuit, zk_circuits::settlement::settlement_lib::SettlementGadget};
 
 // ----------------------
@@ -115,12 +115,12 @@ impl SingleProverCircuit for IntentOnlyPublicSettlementCircuit {
     }
 
     /// INTENT ONLY PUBLIC SETTLEMENT has one proof linking group:
-    /// - intent_only_public_settlement: The linking group between INTENT ONLY
-    ///   VALIDITY and INTENT ONLY PUBLIC SETTLEMENT. This group is placed by
-    ///   this circuit.
+    /// - intent_only_settlement: The linking group between INTENT ONLY VALIDITY
+    ///   and INTENT ONLY PUBLIC SETTLEMENT. This group is placed by this
+    ///   circuit.
     fn proof_linking_groups() -> Result<Vec<(String, Option<GroupLayout>)>, PlonkError> {
         // Place the linking group (the intent validity circuit will inherit it)
-        Ok(vec![(INTENT_ONLY_PUBLIC_SETTLEMENT_LINK.to_string(), None)])
+        Ok(vec![(INTENT_ONLY_SETTLEMENT_LINK.to_string(), None)])
     }
 
     fn apply_constraints(
