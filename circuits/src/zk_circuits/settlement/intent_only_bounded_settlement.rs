@@ -197,7 +197,11 @@ pub mod test_helpers {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::zk_circuits::settlement::intent_only_bounded_settlement::test_helpers;
+    use crate::{
+        test_helpers::{BOUNDED_MAX_AMT, random_address, random_intent},
+        zk_circuits::settlement::intent_only_bounded_settlement::test_helpers,
+    };
+    use rand::{Rng, thread_rng};
 
     /// A helper to print the number of constraints in the circuit
     ///
@@ -216,5 +220,96 @@ mod test {
     fn test_valid_intent_only_bounded_settlement_constraints() {
         let (witness, statement) = test_helpers::create_witness_statement();
         assert!(test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the max bound would settle the entire intent
+    #[test]
+    fn test_max_bound_full_fill() {
+        let mut rng = thread_rng();
+        let mut intent = random_intent();
+        intent.amount_in = rng.gen_range(1..=BOUNDED_MAX_AMT);
+        let (witness, mut statement) = test_helpers::create_witness_statement_with_intent(&intent);
+
+        // Modify the bounds of the match result to allow for the max amount
+        statement.bounded_match_result.max_internal_party_amount_in = witness.intent.amount_in;
+        statement.bounded_match_result.min_internal_party_amount_in = witness.intent.amount_in / 2;
+        assert!(test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the bounds are the same, enforcing settlement of
+    /// a single trade size
+    #[test]
+    fn test_min_equals_max_bound_trade() {
+        let mut rng = thread_rng();
+        let mut intent = random_intent();
+        intent.amount_in = rng.gen_range(1..=BOUNDED_MAX_AMT);
+        let (witness, mut statement) = test_helpers::create_witness_statement_with_intent(&intent);
+
+        // Modify the bounds of the match result to enforce a single trade size
+        statement.bounded_match_result.max_internal_party_amount_in = witness.intent.amount_in;
+        statement.bounded_match_result.min_internal_party_amount_in = witness.intent.amount_in;
+        assert!(test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the bounded match result's price is at the min
+    /// price of the intent
+    #[test]
+    fn test_price_at_min_price_boundary() {
+        let intent = random_intent();
+        let (witness, mut statement) = test_helpers::create_witness_statement_with_intent(&intent);
+
+        // Modify the price of the match result to be at the min price of the intent
+        statement.bounded_match_result.price = witness.intent.min_price;
+        assert!(test_helpers::check_constraints(&witness, &statement));
+    }
+
+    // --- Invalid Test Cases --- //
+
+    /// Test the case in which the bounded match result's input token does not
+    /// match the intent's input token
+    #[test]
+    fn test_invalid_input_token_in_match_result() {
+        let (witness, mut statement) = test_helpers::create_witness_statement();
+
+        statement.bounded_match_result.internal_party_input_token = random_address();
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the bounded match result's output token does not
+    /// match the intent's output token
+    #[test]
+    fn test_invalid_output_token_in_match_result() {
+        let (witness, mut statement) = test_helpers::create_witness_statement();
+
+        statement.bounded_match_result.internal_party_output_token = random_address();
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the bounded match result's max bound is greater
+    /// than the intent's amount
+    #[test]
+    fn test_invalid_max_bound_exceeds_intent_size() {
+        let mut rng = thread_rng();
+        let mut intent = random_intent();
+        intent.amount_in = rng.gen_range(1..=BOUNDED_MAX_AMT);
+        let (witness, mut statement) = test_helpers::create_witness_statement_with_intent(&intent);
+
+        // Modify the bounds of the match result to allow for the max amount
+        statement.bounded_match_result.max_internal_party_amount_in = witness.intent.amount_in + 1;
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the bounded match result's price is less than the
+    /// intent's min price
+    #[test]
+    fn test_invalid_price_less_than_min_price() {
+        let intent = random_intent();
+        let (witness, mut statement) = test_helpers::create_witness_statement_with_intent(&intent);
+
+        // Modify the price of the match result to be less than the min price of the
+        // intent
+        statement.bounded_match_result.price =
+            witness.intent.min_price - FixedPoint::from_integer(1);
+        assert!(!test_helpers::check_constraints(&witness, &statement));
     }
 }
