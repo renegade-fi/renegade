@@ -77,7 +77,7 @@ impl From<SchnorrSignatureVar> for SignatureVar {
 
 /// A Schnorr private key
 #[cfg_attr(feature = "proof-system-types", circuit_type(serde, singleprover_circuit))]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct SchnorrPrivateKey {
     /// The underlying scalar field element
     pub inner: EmbeddedScalarField,

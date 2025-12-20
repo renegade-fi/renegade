@@ -199,7 +199,6 @@ impl<const MERKLE_HEIGHT: usize> SingleProverCircuit
 
 #[cfg(any(test, feature = "test_helpers"))]
 pub mod test_helpers {
-    use alloy_primitives::Address;
     use circuit_types::{
         balance::{Balance, DarkpoolStateBalance},
         note::Note,
@@ -322,7 +321,6 @@ mod test {
 
     use super::test_helpers::create_dummy_witness_statement_with_balance;
     use super::*;
-    use alloy_primitives::Address;
     use circuit_types::{balance::Balance, traits::SingleProverCircuit};
 
     /// A helper to print the number of constraints in the circuit
