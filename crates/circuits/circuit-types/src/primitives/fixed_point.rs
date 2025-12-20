@@ -10,27 +10,28 @@ use std::{
 use ark_ff::{BigInteger, Field, PrimeField};
 use bigdecimal::{BigDecimal, FromPrimitive, Num};
 use constants::{Scalar, ScalarField};
+use crypto::fields::{
+    bigint_to_scalar, biguint_to_scalar, scalar_to_bigint, scalar_to_biguint, scalar_to_u64,
+};
 use lazy_static::lazy_static;
 use num_bigint::{BigUint, ToBigInt};
 use num_integer::Integer;
 use num_traits::ToPrimitive;
-use crypto::fields::{
-    bigint_to_scalar, biguint_to_scalar, scalar_to_bigint, scalar_to_biguint, scalar_to_u64,
-};
 use serde::{Deserialize, Serialize};
 
-use crate::{Amount, SCALAR_ONE, scalar};
+use crate::{Amount, SCALAR_ONE, scalar, traits::BaseType};
+
+use circuit_macros::circuit_type;
 
 #[cfg(feature = "proof-system-types")]
 use {
     crate::{
         Fabric, PlonkCircuit,
         traits::{
-            BaseType, CircuitBaseType, CircuitVarType, MpcBaseType, MpcType,
-            MultiproverCircuitBaseType, SecretShareBaseType, SecretShareType, SecretShareVarType,
+            CircuitBaseType, CircuitVarType, MpcBaseType, MpcType, MultiproverCircuitBaseType,
+            SecretShareBaseType, SecretShareType, SecretShareVarType,
         },
     },
-    circuit_macros::circuit_type,
     constants::AuthenticatedScalar,
     mpc_relation::{Variable, errors::CircuitError, traits::Circuit},
 };
@@ -78,8 +79,9 @@ pub fn right_shift_scalar_by_m(scalar: Scalar) -> Scalar {
 /// to_scalar, from_scalar interface to modules that commit to this value
 #[cfg_attr(
     feature = "proof-system-types",
-    circuit_type(singleprover_circuit, mpc, multiprover_circuit, secret_share)
+    circuit_type(serde, singleprover_circuit, mpc, multiprover_circuit, secret_share)
 )]
+#[cfg_attr(not(feature = "proof-system-types"), circuit_type(serde))]
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct FixedPoint {
     /// The underlying scalar representing the fixed point variable

@@ -16,7 +16,7 @@ mod test {
     use itertools::Itertools;
     use mpc_relation::traits::Circuit;
     use rand::thread_rng;
-    use crypto::hash::{Poseidon2Sponge, compute_poseidon_hash};
+    use renegade_crypto::hash::{Poseidon2Sponge, compute_poseidon_hash};
 
     use crate::zk_gadgets::primitives::poseidon::PoseidonHashGadget;
 

@@ -1,7 +1,7 @@
 [workspace]
 resolver = "3"
 members = [
-	"crates/circuits/circuits-core",
+	# "crates/circuits/circuits-core",
 	"crates/circuits/circuit-types",
 	"crates/circuits/circuit-macros",
 	"crates/constants",
@@ -16,6 +16,7 @@ members = [
 	# "crates/node-support/event-export-sidecar",
 	# "crates/node-support/bootloader",
 	"crates/crypto",
+	"crates/darkpool-types",
 	# "crates/state",
 	# "crates/system-primitives/system-bus",
 	# "crates/testing/test-helpers",

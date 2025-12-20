@@ -1,5 +1,6 @@
 //! Cryptographic and mathematical primitives used in circuits
 
+pub mod baby_jubjub;
 pub mod csprng;
 pub mod elgamal;
 pub mod fixed_point;

@@ -20,7 +20,7 @@ use common::{
 };
 use itertools::Itertools;
 use num_bigint::BigUint;
-use crypto::fields::{biguint_to_scalar, scalar_to_biguint, scalar_to_u64};
+use renegade_crypto::fields::{biguint_to_scalar, scalar_to_biguint, scalar_to_u64};
 use serde::{Deserialize, Serialize};
 use util::hex::{
     jubjub_from_hex_string, jubjub_to_hex_string, nonnative_scalar_from_hex_string,

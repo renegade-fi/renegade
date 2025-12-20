@@ -1,34 +1,34 @@
 //! Types for Schnorr signatures
 #![allow(missing_docs)]
 
-use constants::{EmbeddedScalarField, Scalar};
+use ark_ec::Group;
+use circuit_macros::circuit_type;
+use constants::{EmbeddedCurveConfig, EmbeddedCurveGroup, EmbeddedScalarField, Scalar};
+use itertools::Itertools;
+use jf_primitives::{
+    circuit::signature::schnorr::{SignatureVar, VerKeyVar},
+    errors::PrimitivesError,
+    signatures::{
+        SchnorrSignatureScheme, SignatureScheme,
+        schnorr::{SignKey, Signature, VerKey},
+    },
+};
+use rand::thread_rng;
 use serde::{Deserialize, Serialize};
 
-#[cfg(feature = "proof-system-types")]
-use crate::elgamal::BabyJubJubPoint;
+use crate::primitives::baby_jubjub::BabyJubJubPoint;
 use crate::ser_embedded_scalar_field;
+use crate::traits::BaseType;
 
 #[cfg(feature = "proof-system-types")]
 use {
     crate::traits::{
-        BaseType, CircuitBaseType, CircuitVarType, SecretShareBaseType, SecretShareType,
-        SecretShareVarType,
+        CircuitBaseType, CircuitVarType, SecretShareBaseType, SecretShareType, SecretShareVarType,
     },
-    ark_ec::Group,
     ark_ff::UniformRand,
-    circuit_macros::circuit_type,
-    constants::EmbeddedCurveConfig,
-    constants::EmbeddedCurveGroup,
     constants::ScalarField,
-    itertools::Itertools,
-    jf_primitives::circuit::signature::schnorr::SignatureVar,
-    jf_primitives::circuit::signature::schnorr::VerKeyVar,
-    jf_primitives::errors::PrimitivesError,
-    jf_primitives::signatures::schnorr::{SignKey, Signature, VerKey},
-    jf_primitives::signatures::{SchnorrSignatureScheme, SignatureScheme},
     mpc_relation::gadgets::ecc::PointVariable,
     mpc_relation::{Variable, traits::Circuit},
-    rand::thread_rng,
     std::ops::Add,
 };
 
@@ -38,6 +38,7 @@ use {
 
 /// A Schnorr signature
 #[cfg_attr(feature = "proof-system-types", circuit_type(serde, singleprover_circuit))]
+#[cfg_attr(not(feature = "proof-system-types"), circuit_type(serde))]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SchnorrSignature {
     /// The s-value of the signature
@@ -77,22 +78,22 @@ impl From<SchnorrSignatureVar> for SignatureVar {
 
 /// A Schnorr private key
 #[cfg_attr(feature = "proof-system-types", circuit_type(serde, singleprover_circuit))]
+#[cfg_attr(not(feature = "proof-system-types"), circuit_type(serde))]
 #[derive(Copy, Clone, Debug)]
 pub struct SchnorrPrivateKey {
     /// The underlying scalar field element
     pub inner: EmbeddedScalarField,
 }
 
-#[cfg(feature = "proof-system-types")]
 impl From<SchnorrPrivateKey> for SignKey<EmbeddedScalarField> {
     fn from(key: SchnorrPrivateKey) -> Self {
         SignKey(key.inner)
     }
 }
 
-#[cfg(feature = "proof-system-types")]
 impl SchnorrPrivateKey {
     /// Generate a random private key
+    #[cfg(feature = "proof-system-types")]
     pub fn random() -> Self {
         let mut rng = thread_rng();
         let inner = EmbeddedScalarField::rand(&mut rng);
@@ -127,13 +128,13 @@ impl SchnorrPrivateKey {
 
 /// A Schnorr public key
 #[cfg_attr(feature = "proof-system-types", circuit_type(serde, singleprover_circuit, secret_share))]
+#[cfg_attr(not(feature = "proof-system-types"), circuit_type(serde))]
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SchnorrPublicKey {
     /// The curve point representing the public key
     pub point: BabyJubJubPoint,
 }
 
-#[cfg(feature = "proof-system-types")]
 impl From<SchnorrPublicKey> for VerKey<EmbeddedCurveConfig> {
     fn from(key: SchnorrPublicKey) -> Self {
         VerKey(key.point.into())

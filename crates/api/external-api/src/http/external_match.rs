@@ -21,7 +21,7 @@ use common::types::{MatchingPoolName, price::TimestampedPrice};
 use constants::{NATIVE_ASSET_ADDRESS, Scalar};
 use num_bigint::BigUint;
 use num_traits::Zero;
-use crypto::fields::scalar_to_u128;
+use renegade_crypto::fields::scalar_to_u128;
 use serde::{Deserialize, Serialize};
 use util::{
     get_current_time_millis,

@@ -130,7 +130,7 @@ pub(crate) mod merkle_test {
     use itertools::Itertools;
     use mpc_relation::traits::Circuit;
     use rand::{Rng, distributions::uniform::SampleRange, thread_rng};
-    use crypto::hash::compute_poseidon_hash;
+    use renegade_crypto::hash::compute_poseidon_hash;
 
     use crate::{test_helpers::random_scalars_vec, zk_gadgets::merkle::PoseidonMerkleHashGadget};
 

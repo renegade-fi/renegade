@@ -2,26 +2,26 @@
 
 #![allow(missing_docs, clippy::missing_docs_in_private_items)]
 
-use itertools::Itertools;
+use circuit_macros::circuit_type;
 use crypto::hash::compute_poseidon_hash;
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::ops::Add;
 
 use constants::Scalar;
 
+use crate::traits::{BaseType, SecretShareBaseType};
+
 #[cfg(feature = "proof-system-types")]
 use {
-    crate::traits::{
-        BaseType, CircuitBaseType, CircuitVarType, SecretShareBaseType, SecretShareType,
-        SecretShareVarType,
-    },
-    circuit_macros::circuit_type,
+    crate::traits::{CircuitBaseType, CircuitVarType, SecretShareType, SecretShareVarType},
     constants::ScalarField,
     mpc_relation::{Variable, traits::Circuit},
 };
 
 /// A CSPRNG's state
 #[cfg_attr(feature = "proof-system-types", circuit_type(serde, singleprover_circuit, secret_share))]
+#[cfg_attr(not(feature = "proof-system-types"), circuit_type(serde))]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PoseidonCSPRNG {
     /// The seed of the CSPRNG
@@ -93,6 +93,7 @@ impl PoseidonCSPRNG {
 }
 
 #[cfg(test)]
+#[cfg(feature = "proof-system-types")]
 mod test {
     use super::*;
     use constants::Scalar;

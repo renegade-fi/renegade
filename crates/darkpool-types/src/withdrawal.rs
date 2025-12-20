@@ -3,15 +3,15 @@
 #![allow(missing_docs, clippy::missing_docs_in_private_items)]
 
 use alloy_primitives::Address;
+use circuit_macros::circuit_type;
+use circuit_types::{Amount, traits::BaseType};
+use constants::Scalar;
 use serde::{Deserialize, Serialize};
-
-use crate::Amount;
 
 #[cfg(feature = "proof-system-types")]
 use {
-    crate::traits::{BaseType, CircuitBaseType, CircuitVarType},
-    circuit_macros::circuit_type,
-    constants::{Scalar, ScalarField},
+    circuit_types::traits::{CircuitBaseType, CircuitVarType},
+    constants::ScalarField,
     mpc_relation::{Variable, traits::Circuit},
 };
 
@@ -21,6 +21,7 @@ use {
 /// external address. As opposed to a deposit, this transfer type requires a
 /// user to sign the external transfer to authorize its execution.
 #[cfg_attr(feature = "proof-system-types", circuit_type(serde, singleprover_circuit))]
+#[cfg_attr(not(feature = "proof-system-types"), circuit_type(serde))]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Withdrawal {
     /// The address to which to withdraw

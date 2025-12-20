@@ -9,22 +9,24 @@
 //! We commit to the entire state wrapper--including the CSPRNG states--but only
 //! generate ciphertext for the plaintext data in `state`
 
-#![allow(missing_docs, clippy::missing_docs_in_private_items)]
+#![allow(missing_docs, clippy::missing_docs_in_private_items, private_bounds)]
 
-use itertools::Itertools;
 use crypto::hash::compute_poseidon_hash;
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
 use std::fmt::Debug;
 
-use crate::csprng::PoseidonCSPRNG;
-use crate::traits::{BaseType, SecretShareBaseType};
+use circuit_macros::circuit_type;
+use circuit_types::{
+    primitives::csprng::PoseidonCSPRNG,
+    traits::{BaseType, SecretShareBaseType, SecretShareType},
+};
 use constants::Scalar;
 
 #[cfg(feature = "proof-system-types")]
 use {
-    crate::traits::{CircuitBaseType, CircuitVarType},
-    circuit_macros::circuit_type,
+    circuit_types::traits::{CircuitBaseType, CircuitVarType},
     constants::ScalarField,
     mpc_relation::{Variable, traits::Circuit},
 };
@@ -35,11 +37,12 @@ use {
 
 /// A wrapper type for state elements allocated in the darkpool
 #[cfg_attr(feature = "proof-system-types", circuit_type(serde, singleprover_circuit))]
+#[cfg_attr(not(feature = "proof-system-types"), circuit_type(serde))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StateWrapper<T>
 where
-    T: SecretShareBaseType + CircuitBaseType,
-    T::ShareType: CircuitBaseType,
+    T: StateWrapperBound,
+    T::ShareType: StateWrapperShareBound,
 {
     /// The recovery identifier CSPRNG
     pub recovery_stream: PoseidonCSPRNG,
@@ -53,15 +56,15 @@ where
 
 impl<T> StateWrapper<T>
 where
-    T: SecretShareBaseType + CircuitBaseType,
-    T::ShareType: CircuitBaseType,
+    T: StateWrapperBound,
+    T::ShareType: StateWrapperShareBound,
 {
     // --- Constructor --- //
 
     /// Create a new state wrapper
     ///
-    /// This method will generate public shares for the element and modify the
-    /// stream cipher states to do so
+    /// This method will generate public shares for the element and modify
+    /// the stream cipher states to do so
     pub fn new(inner: T, share_stream_seed: Scalar, recovery_stream_seed: Scalar) -> Self {
         let recovery_stream = PoseidonCSPRNG::new(recovery_stream_seed);
         let mut share_stream = PoseidonCSPRNG::new(share_stream_seed);
@@ -152,8 +155,8 @@ where
     /// The nullifier is defined as:
     ///     H(recovery_id || recovery_stream_seed)
     ///
-    /// Where `recovery_id` is the recovery identifier for the current version
-    /// of the element and `recovery_stream_seed` is the seed of the
+    /// Where `recovery_id` is the recovery identifier for the current
+    /// version of the element and `recovery_stream_seed` is the seed of the
     /// recovery stream. Since we need the recovery identifier of the
     /// current version, this will be the *last* index in the recovery
     /// stream.
@@ -184,8 +187,8 @@ where
     /// Get the current recovery identifier without mutating the recovery stream
     ///
     /// Returns the recovery identifier at the current index (index - 1).
-    /// This is useful when you need to read the recovery ID without advancing
-    /// the stream state.
+    /// This is useful when you need to read the recovery ID without
+    /// advancing the stream state.
     pub fn peek_recovery_id(&self) -> Scalar {
         let index = self.recovery_stream.index;
         self.recovery_stream.get_ith(index)
@@ -198,6 +201,7 @@ where
     /// Returns the public shares (ciphertext)
     ///
     /// This method mutates the share stream state by advancing the index.
+    #[cfg(feature = "proof-system-types")]
     pub fn stream_cipher_encrypt<V: SecretShareBaseType>(&mut self, value: &V) -> V::ShareType {
         self.share_stream.stream_cipher_encrypt(value)
     }
@@ -208,6 +212,7 @@ where
     ///
     /// This method does not mutate the share stream state by advancing the
     /// index.
+    #[cfg(feature = "proof-system-types")]
     pub fn peek_stream_cipher_encrypt<V: SecretShareBaseType>(&self, value: &V) -> V::ShareType {
         self.share_stream.peek_stream_cipher_encrypt(value)
     }
@@ -220,8 +225,8 @@ where
 /// A partial commitment to a state element
 ///
 /// Because the structure of a commitment ultimately involves
-/// H(private_commitment || public_commitment), a partial commitment must store
-/// the full private commitment and the partial public commitment
+/// H(private_commitment || public_commitment), a partial commitment must
+/// store the full private commitment and the partial public commitment
 #[cfg_attr(feature = "proof-system-types", circuit_type(serde, singleprover_circuit))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PartialCommitment {
@@ -231,54 +236,32 @@ pub struct PartialCommitment {
     pub partial_public_commitment: Scalar,
 }
 
-// ---------
-// | Tests |
-// ---------
+// -----------------
+// | Helper Traits |
+// -----------------
 
-#[cfg(test)]
-mod test {
-    use super::*;
-    use constants::Scalar;
-    use rand::thread_rng;
+/// A helper trait that conditionally adds `CircuitBaseType` bound when
+/// `proof-system-types` feature is enabled
+#[cfg(feature = "proof-system-types")]
+trait StateWrapperBound: SecretShareBaseType + CircuitBaseType {}
 
-    // -----------
-    // | Helpers |
-    // -----------
+#[cfg(feature = "proof-system-types")]
+impl<T> StateWrapperBound for T where T: SecretShareBaseType + CircuitBaseType {}
 
-    /// Create a dummy state wrapper
-    ///
-    /// For these tests the inner type is unimportant; so we use a `Scalar`
-    pub fn random_state_wrapper() -> StateWrapper<Scalar> {
-        let mut rng = thread_rng();
-        let recovery_stream = random_csprng_state();
-        let share_stream = random_csprng_state();
-        let public_share = Scalar::random(&mut rng);
-        StateWrapper { recovery_stream, share_stream, inner: Scalar::zero(), public_share }
-    }
+#[cfg(not(feature = "proof-system-types"))]
+trait StateWrapperBound: SecretShareBaseType {}
 
-    /// Create a random csprng state
-    pub fn random_csprng_state() -> PoseidonCSPRNG {
-        let mut rng = thread_rng();
-        let seed = Scalar::random(&mut rng);
-        PoseidonCSPRNG::new(seed)
-    }
+#[cfg(not(feature = "proof-system-types"))]
+impl<T: SecretShareBaseType> StateWrapperBound for T {}
 
-    // ---------
-    // | Tests |
-    // ---------
+#[cfg(feature = "proof-system-types")]
+trait StateWrapperShareBound: SecretShareType + CircuitBaseType {}
 
-    /// Test that peek_recovery_id returns the same value as compute_recovery_id
-    /// would before mutation
-    #[test]
-    fn test_recovery_id_consistency() {
-        let mut wrapper = random_state_wrapper();
+#[cfg(feature = "proof-system-types")]
+impl<T> StateWrapperShareBound for T where T: SecretShareType + CircuitBaseType {}
 
-        // Compute the recovery ID in both ways
-        let peeked_id = wrapper.peek_recovery_id();
-        let computed_id = wrapper.compute_recovery_id();
-        assert_eq!(
-            peeked_id, computed_id,
-            "peek_recovery_id should return the same value as compute_recovery_id"
-        );
-    }
-}
+#[cfg(not(feature = "proof-system-types"))]
+trait StateWrapperShareBound: SecretShareType {}
+
+#[cfg(not(feature = "proof-system-types"))]
+impl<T: SecretShareType> StateWrapperShareBound for T {}

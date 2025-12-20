@@ -10,7 +10,7 @@ use constants::Scalar;
 use darkpool_client::DarkpoolClient;
 use eyre::Result;
 use rand::thread_rng;
-use crypto::hash::{PoseidonCSPRNG, evaluate_hash_chain};
+use renegade_crypto::hash::{PoseidonCSPRNG, evaluate_hash_chain};
 
 // ---------------------
 // | Wallet Allocation |

@@ -17,16 +17,22 @@
 //!     - Secret share types: Additive sharings of a base type
 
 use alloy_primitives::Address;
+#[cfg(feature = "proof-system-types")]
 use ark_mpc::{algebra::AuthenticatedScalarResult, network::PartyId};
 use async_trait::async_trait;
-use constants::{AuthenticatedScalar, EmbeddedScalarField, Scalar, ScalarField, SystemCurve};
+#[cfg(feature = "proof-system-types")]
+use constants::{AuthenticatedScalar, SystemCurve};
+use constants::{EmbeddedScalarField, Scalar, ScalarField};
 use crypto::fields::{
     address_to_scalar, biguint_to_scalar, jubjub_to_scalar, scalar_to_address, scalar_to_biguint,
     scalar_to_jubjub, scalar_to_u64, scalar_to_u128,
 };
+#[cfg(feature = "proof-system-types")]
 use futures::future::join_all;
 use itertools::Itertools;
+#[cfg(feature = "proof-system-types")]
 use lazy_static::lazy_static;
+#[cfg(feature = "proof-system-types")]
 use mpc_plonk::{
     errors::PlonkError,
     multiprover::proof_system::{CollaborativeProof, MultiproverPlonkKzgSnark},
@@ -36,19 +42,24 @@ use mpc_plonk::{
     },
     transcript::SolidityTranscript,
 };
+#[cfg(feature = "proof-system-types")]
 use mpc_relation::{
     BoolVar, Variable,
     proof_linking::{CircuitLayout, GroupLayout, LinkableCircuit},
     traits::Circuit,
 };
 use num_bigint::BigUint;
+#[cfg(feature = "proof-system-types")]
 use rand::thread_rng;
+use std::fmt::Debug;
+#[cfg(feature = "proof-system-types")]
 use std::{
     collections::HashMap,
     iter,
     sync::{Arc, RwLock},
 };
 
+#[cfg(feature = "proof-system-types")]
 use crate::{
     AuthenticatedBool, CollaborativePlonkProof, Fabric, MpcPlonkCircuit, MpcProofLinkingHint,
     PlonkCircuit, PlonkProof, ProofLinkingHint,
@@ -62,8 +73,10 @@ const ERR_TOO_FEW_SCALARS: &str = "from_scalars: Invalid number of scalars";
 const ERR_TOO_FEW_VARS: &str = "from_vars: Invalid number of variables";
 
 /// A type alias for a pair of shared proving and verifying keys
+#[cfg(feature = "proof-system-types")]
 pub type SharedCircuitKeys = (Arc<ProvingKey<SystemCurve>>, Arc<VerifyingKey<SystemCurve>>);
 
+#[cfg(feature = "proof-system-types")]
 lazy_static! {
     /// The layout cache for the circuits
     ///
@@ -88,7 +101,7 @@ lazy_static! {
 /// Variable, MPC, etc types are implemented automatically from serialization
 /// and deserialization
 #[async_trait]
-pub trait BaseType: Clone {
+pub trait BaseType: Debug + Clone {
     /// The number of scalars required to represent the base type
     const NUM_SCALARS: usize;
     /// Get the number of scalars required to represent the base type
@@ -107,6 +120,7 @@ pub trait BaseType: Clone {
     /// This method is added to the `BaseType` trait for maximum flexibility, so
     /// that types may be shared without requiring them to implement the
     /// full `MpcBaseType` trait
+    #[cfg(feature = "proof-system-types")]
     async fn share_public(&self, owning_party: PartyId, fabric: &Fabric) -> Self {
         let self_scalars = self.to_scalars();
         let res_scalars = join_all(fabric.batch_share_plaintext(self_scalars, owning_party)).await;
@@ -118,6 +132,7 @@ pub trait BaseType: Clone {
 // --- Singleprover Circuit Traits --- //
 
 /// The base type that may be allocated in a single-prover circuit
+#[cfg(feature = "proof-system-types")]
 pub trait CircuitBaseType: BaseType {
     /// The variable type for this base type
     type VarType: CircuitVarType;
@@ -146,6 +161,7 @@ pub trait CircuitBaseType: BaseType {
 
 /// Implementing types are variable types that may appear in constraints in
 /// a constraint system
+#[cfg(feature = "proof-system-types")]
 pub trait CircuitVarType: Clone {
     /// The base type that this variable type is a representation of
     type BaseType: CircuitBaseType;
@@ -178,6 +194,7 @@ pub trait CircuitVarType: Clone {
 // --- MPC Circuit Traits --- //
 
 /// A base type for allocating into an MPC network
+#[cfg(feature = "proof-system-types")]
 pub trait MpcBaseType: BaseType {
     /// The type that results from allocating the base type into an MPC network
     type AllocatedType: MpcType;
@@ -193,6 +210,7 @@ pub trait MpcBaseType: BaseType {
 
 /// An implementing type is the representation of a `BaseType` in an MPC circuit
 /// *outside* of a multiprover constraint system
+#[cfg(feature = "proof-system-types")]
 #[async_trait]
 pub trait MpcType: Clone + Send + Sync {
     /// The native type when the value is opened out of a circuit
@@ -230,6 +248,7 @@ pub trait MpcType: Clone + Send + Sync {
 // --- Multiprover Circuit Traits --- //
 
 /// A base type for allocating within a multiprover constraint system
+#[cfg(feature = "proof-system-types")]
 pub trait MultiproverCircuitBaseType: MpcType<NativeType = Self::BaseType> {
     /// The base type of the multiprover circuit type
     type BaseType: CircuitBaseType;
@@ -273,17 +292,6 @@ pub trait SecretShareBaseType: BaseType {
 pub trait SecretShareType: Sized + BaseType {
     /// The base type that this secret share is a representation of
     type Base: BaseType;
-    /// Apply an additive blinder to each element of the secret shares
-    fn blind(&self, blinder: Scalar) -> Self {
-        let mut res_scalars = self.to_scalars().into_iter().map(|s| s + blinder);
-        Self::from_scalars(&mut res_scalars)
-    }
-
-    /// Remove an additive blind from each element of the secret shares
-    fn unblind(&self, blinder: Scalar) -> Self {
-        let mut res_scalars = self.to_scalars().into_iter().map(|s| s - blinder);
-        Self::from_scalars(&mut res_scalars)
-    }
 
     /// Add two sets of shares to recover the base type
     ///
@@ -300,6 +308,7 @@ pub trait SecretShareType: Sized + BaseType {
 }
 
 /// Implementing types represent a secret share allocated in a constraint system
+#[cfg(feature = "proof-system-types")]
 pub trait SecretShareVarType: Sized + CircuitVarType<BaseType: SecretShareType> {
     /// The base type that this secret share is a representation of
     type Base: CircuitVarType<BaseType: SecretShareBaseType>;
@@ -477,34 +486,42 @@ impl<const N: usize, T: BaseType> BaseType for [T; N] {
 
 // --- Singleprover Circuit Trait Impls --- //
 
+#[cfg(feature = "proof-system-types")]
 impl CircuitBaseType for Scalar {
     type VarType = Variable;
 }
 
+#[cfg(feature = "proof-system-types")]
 impl CircuitBaseType for EmbeddedScalarField {
     type VarType = Variable;
 }
 
+#[cfg(feature = "proof-system-types")]
 impl CircuitBaseType for u64 {
     type VarType = Variable;
 }
 
+#[cfg(feature = "proof-system-types")]
 impl CircuitBaseType for u128 {
     type VarType = Variable;
 }
 
+#[cfg(feature = "proof-system-types")]
 impl CircuitBaseType for usize {
     type VarType = Variable;
 }
 
+#[cfg(feature = "proof-system-types")]
 impl CircuitBaseType for BigUint {
     type VarType = Variable;
 }
 
+#[cfg(feature = "proof-system-types")]
 impl CircuitBaseType for Address {
     type VarType = Variable;
 }
 
+#[cfg(feature = "proof-system-types")]
 impl CircuitBaseType for bool {
     type VarType = BoolVar;
 
@@ -517,14 +534,17 @@ impl CircuitBaseType for bool {
     }
 }
 
+#[cfg(feature = "proof-system-types")]
 impl CircuitBaseType for () {
     type VarType = ();
 }
 
+#[cfg(feature = "proof-system-types")]
 impl<const N: usize, T: CircuitBaseType> CircuitBaseType for [T; N] {
     type VarType = [T::VarType; N];
 }
 
+#[cfg(feature = "proof-system-types")]
 impl CircuitVarType for Variable {
     type BaseType = Scalar;
 
@@ -540,6 +560,7 @@ impl CircuitVarType for Variable {
     }
 }
 
+#[cfg(feature = "proof-system-types")]
 impl CircuitVarType for BoolVar {
     type BaseType = bool;
 
@@ -558,6 +579,7 @@ impl CircuitVarType for BoolVar {
     }
 }
 
+#[cfg(feature = "proof-system-types")]
 impl CircuitVarType for () {
     type BaseType = ();
 
@@ -572,6 +594,7 @@ impl CircuitVarType for () {
     }
 }
 
+#[cfg(feature = "proof-system-types")]
 impl<const N: usize, T: CircuitVarType> CircuitVarType for [T; N] {
     type BaseType = [T::BaseType; N];
 
@@ -594,42 +617,52 @@ impl<const N: usize, T: CircuitVarType> CircuitVarType for [T; N] {
 
 // --- MPC Circuit Trait Impls --- //
 
+#[cfg(feature = "proof-system-types")]
 impl MpcBaseType for Scalar {
     type AllocatedType = AuthenticatedScalar;
 }
 
+#[cfg(feature = "proof-system-types")]
 impl MpcBaseType for EmbeddedScalarField {
     type AllocatedType = AuthenticatedScalar;
 }
 
+#[cfg(feature = "proof-system-types")]
 impl MpcBaseType for u64 {
     type AllocatedType = AuthenticatedScalar;
 }
 
+#[cfg(feature = "proof-system-types")]
 impl MpcBaseType for u128 {
     type AllocatedType = AuthenticatedScalar;
 }
 
+#[cfg(feature = "proof-system-types")]
 impl MpcBaseType for usize {
     type AllocatedType = AuthenticatedScalar;
 }
 
+#[cfg(feature = "proof-system-types")]
 impl MpcBaseType for bool {
     type AllocatedType = AuthenticatedBool;
 }
 
+#[cfg(feature = "proof-system-types")]
 impl MpcBaseType for BigUint {
     type AllocatedType = AuthenticatedScalar;
 }
 
+#[cfg(feature = "proof-system-types")]
 impl MpcBaseType for () {
     type AllocatedType = ();
 }
 
+#[cfg(feature = "proof-system-types")]
 impl<const L: usize, T: MpcBaseType> MpcBaseType for [T; L] {
     type AllocatedType = [T::AllocatedType; L];
 }
 
+#[cfg(feature = "proof-system-types")]
 impl MpcType for AuthenticatedScalar {
     type NativeType = Scalar;
 
@@ -646,6 +679,7 @@ impl MpcType for AuthenticatedScalar {
     }
 }
 
+#[cfg(feature = "proof-system-types")]
 impl MpcType for AuthenticatedBool {
     type NativeType = bool;
 
@@ -662,6 +696,7 @@ impl MpcType for AuthenticatedBool {
     }
 }
 
+#[cfg(feature = "proof-system-types")]
 impl MpcType for () {
     type NativeType = ();
 
@@ -676,6 +711,7 @@ impl MpcType for () {
     }
 }
 
+#[cfg(feature = "proof-system-types")]
 impl<const L: usize, T: MpcType> MpcType for [T; L] {
     type NativeType = [T::NativeType; L];
 
@@ -699,21 +735,25 @@ impl<const L: usize, T: MpcType> MpcType for [T; L] {
 
 // --- Multiprover Circuit Trait Impls --- //
 
+#[cfg(feature = "proof-system-types")]
 impl MultiproverCircuitBaseType for AuthenticatedScalar {
     type BaseType = Scalar;
     type VarType = Variable;
 }
 
+#[cfg(feature = "proof-system-types")]
 impl MultiproverCircuitBaseType for AuthenticatedBool {
     type BaseType = bool;
     type VarType = BoolVar;
 }
 
+#[cfg(feature = "proof-system-types")]
 impl MultiproverCircuitBaseType for () {
     type BaseType = ();
     type VarType = ();
 }
 
+#[cfg(feature = "proof-system-types")]
 impl<const L: usize, T: MultiproverCircuitBaseType> MultiproverCircuitBaseType for [T; L] {
     type BaseType = [T::BaseType; L];
     type VarType = [T::VarType; L];
@@ -761,10 +801,12 @@ impl<const N: usize, T: SecretShareType> SecretShareType for [T; N] {
     type Base = [T::Base; N];
 }
 
+#[cfg(feature = "proof-system-types")]
 impl SecretShareVarType for Variable {
     type Base = Variable;
 }
 
+#[cfg(feature = "proof-system-types")]
 impl<const N: usize, T: SecretShareVarType> SecretShareVarType for [T; N] {
     type Base = [T::Base; N];
 }
@@ -775,6 +817,7 @@ impl<const N: usize, T: SecretShareVarType> SecretShareVarType for [T; N] {
 
 /// A helper to get the proving and verifying keys for a circuit, possibly read
 /// from cache
+#[cfg(feature = "proof-system-types")]
 pub fn setup_preprocessed_keys<C: SingleProverCircuit>()
 -> (Arc<ProvingKey<SystemCurve>>, Arc<VerifyingKey<SystemCurve>>) {
     // Check the cache first for the keys
@@ -821,6 +864,7 @@ pub fn setup_preprocessed_keys<C: SingleProverCircuit>()
 /// but that the verifier does not. The statement is the set of public inputs
 /// and any other circuit meta-parameters that both prover and verifier have
 /// access to
+#[cfg(feature = "proof-system-types")]
 pub trait SingleProverCircuit: Sized {
     /// The witness type, given only to the prover, which generates a blinding
     /// commitment that can be given to the verifier
@@ -986,6 +1030,7 @@ pub trait SingleProverCircuit: Sized {
 /// but that the verifier does not. The statement is the set of public inputs
 /// and any other circuit meta-parameters that both prover and verifier have
 /// access to
+#[cfg(feature = "proof-system-types")]
 pub trait MultiProverCircuit {
     /// The witness type, given only to the prover, which generates a blinding
     /// commitment that can be given to the verifier
@@ -1110,6 +1155,7 @@ pub trait MultiProverCircuit {
 }
 
 #[cfg(test)]
+#[cfg(feature = "proof-system-types")]
 mod test {
     use std::{sync::Arc, thread};
 

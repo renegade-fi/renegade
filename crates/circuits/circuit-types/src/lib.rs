@@ -12,12 +12,7 @@
 pub mod errors;
 #[cfg(feature = "proof-system-types")]
 pub mod macro_tests;
-#[cfg(feature = "proof-system-types")]
 pub mod traits;
-
-// Re-export darkpool state types at the top level
-pub mod darkpool_state_types;
-pub use darkpool_state_types::*;
 
 // Re-export primitives at the top level
 pub mod primitives;
@@ -257,7 +252,6 @@ where
 }
 
 /// A helper for serializing an `EmbeddedScalarField` value
-#[cfg(feature = "proof-system-types")]
 pub mod ser_embedded_scalar_field {
     use ark_mpc::algebra::n_bytes_field;
     use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};

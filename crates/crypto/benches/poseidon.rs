@@ -6,8 +6,8 @@ use constants::Scalar;
 use criterion::{
     BatchSize, BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main,
 };
-use rand::thread_rng;
 use crypto::hash::compute_poseidon_hash;
+use rand::thread_rng;
 
 /// Run a benchmark on the Poseidon 2 hash implementation
 fn bench_poseidon2(c: &mut Criterion) {

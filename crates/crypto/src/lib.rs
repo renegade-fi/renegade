@@ -5,8 +5,9 @@
 #![allow(incomplete_features)]
 #![feature(inherent_associated_types)]
 
-#[cfg(feature = "non-wasm")]
+#[cfg(feature = "elgamal")]
 pub mod elgamal;
-#[cfg(feature = "non-wasm")]
+#[cfg(feature = "fields")]
 pub mod fields;
+#[cfg(feature = "hash")]
 pub mod hash;

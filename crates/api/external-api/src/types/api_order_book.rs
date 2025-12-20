@@ -3,7 +3,7 @@
 use circuit_types::Amount;
 use common::types::network_order::{NetworkOrder, NetworkOrderState};
 use num_bigint::BigUint;
-use crypto::fields::scalar_to_biguint;
+use renegade_crypto::fields::scalar_to_biguint;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 

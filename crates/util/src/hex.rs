@@ -1,13 +1,13 @@
 //! Helpers for converting values to and from hex strings
 use ark_ec::{CurveGroup, twisted_edwards::Projective};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
-use circuit_types::elgamal::BabyJubJubPoint;
 #[cfg(feature = "v1")]
 use circuit_types::keychain::{NonNativeScalar, PublicSigningKey};
+use circuit_types::primitives::baby_jubjub::BabyJubJubPoint;
 use constants::{ADDRESS_BYTE_LENGTH, EmbeddedCurveConfig, Scalar};
+use crypto::fields::{biguint_to_scalar, scalar_to_biguint};
 use num_bigint::BigUint;
 use num_traits::Num;
-use crypto::fields::{biguint_to_scalar, scalar_to_biguint};
 
 use crate::raw_err_str;
 

@@ -65,7 +65,7 @@ macro_rules! print_mpc_wire {
     ($x:expr) => {{
         use circuit_types::traits::MpcType;
         use futures::executor::block_on;
-        use crypto::fields::scalar_to_biguint;
+        use renegade_crypto::fields::scalar_to_biguint;
 
         let x_eval = block_on($x.open());
         if $x.fabric().party_id() == 0 {

@@ -209,12 +209,13 @@ impl Poseidon2Sponge {
 }
 
 #[cfg(test)]
-#[cfg(feature = "non-wasm")]
+#[cfg(feature = "hash")]
 mod test {
 
     use ark_ff::BigInt;
     use itertools::Itertools;
-    use rand::{Rng, thread_rng};
+    use rand::Rng;
+    use rand::thread_rng;
     use zkhash::{
         fields::bn256::FpBN256,
         poseidon2::{poseidon2::Poseidon2, poseidon2_instance_bn256::POSEIDON2_BN256_PARAMS},

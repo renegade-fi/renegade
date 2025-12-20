@@ -2,26 +2,26 @@
 
 #![allow(missing_docs, clippy::missing_docs_in_private_items)]
 
-use std::ops::Add;
-
+use circuit_macros::circuit_type;
+use circuit_types::{Amount, fixed_point::FixedPoint, traits::BaseType};
+use constants::Scalar;
 use crypto::fields::scalar_to_u128;
 use serde::{Deserialize, Serialize};
 
-use crate::{Amount, fixed_point::FixedPoint};
-
 #[cfg(feature = "proof-system-types")]
 use {
-    crate::traits::{
-        BaseType, CircuitBaseType, CircuitVarType, SecretShareBaseType, SecretShareType,
+    circuit_types::traits::{
+        CircuitBaseType, CircuitVarType, SecretShareBaseType, SecretShareType,
         SecretShareVarType,
     },
-    circuit_macros::circuit_type,
-    constants::{Scalar, ScalarField},
+    constants::ScalarField,
     mpc_relation::{Variable, traits::Circuit},
+    std::ops::Add,
 };
 
 /// The type for a fee
 #[cfg_attr(feature = "proof-system-types", circuit_type(serde, singleprover_circuit, secret_share))]
+#[cfg_attr(not(feature = "proof-system-types"), circuit_type(serde))]
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub struct FeeTake {
     /// The relayer fee
@@ -39,6 +39,7 @@ impl FeeTake {
 
 /// A pair of fee rates that generate a fee when multiplied by a match amount
 #[cfg_attr(feature = "proof-system-types", circuit_type(serde, singleprover_circuit, secret_share))]
+#[cfg_attr(not(feature = "proof-system-types"), circuit_type(serde))]
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub struct FeeRates {
     /// The relayer fee rate

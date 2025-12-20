@@ -1,0 +1,40 @@
+[package]
+name = "darkpool-types"
+version = "0.1.0"
+edition = "2024"
+description = "Protocol-level types for the darkpool"
+
+[features]
+default = []
+proof-system-types = [
+    "circuit-types/proof-system-types",
+    "constants/mpc-types",
+    "crypto/hash",
+    "dep:jf-primitives",
+    "dep:mpc-plonk",
+    "dep:mpc-relation",
+]
+zero-copy = ["dep:rkyv"]
+
+[dependencies]
+# === Blockchain === #
+alloy-primitives = { workspace = true, features = ["serde"] }
+
+# === Workspace Crates === #
+circuit-types = { workspace = true }
+circuit-macros = { workspace = true }
+constants = { workspace = true }
+crypto = { workspace = true }
+
+# === Cryptography === #
+jf-primitives = { workspace = true, optional = true }
+mpc-plonk = { workspace = true, optional = true }
+mpc-relation = { workspace = true, optional = true }
+
+# === Serialization === #
+rkyv = { version = "0.8.8", optional = true }
+serde = { workspace = true, features = ["serde_derive"] }
+
+# === Misc === #
+itertools = "0.10"
+rand = "0.8"

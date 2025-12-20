@@ -2,33 +2,34 @@
 
 #![allow(missing_docs, clippy::missing_docs_in_private_items)]
 
-use std::ops::Add;
-
 use alloy_primitives::Address;
+use circuit_macros::circuit_type;
+use circuit_types::{Amount, fixed_point::FixedPoint, traits::BaseType};
+use constants::Scalar;
 use serde::{Deserialize, Serialize};
-
-use crate::{Amount, fixed_point::FixedPoint, settlement_obligation::SettlementObligation};
-
-use super::state_wrapper::{StateWrapper, StateWrapperVar};
 
 #[cfg(feature = "proof-system-types")]
 use {
-    crate::traits::{
-        BaseType, CircuitBaseType, CircuitVarType, SecretShareBaseType, SecretShareType,
+    crate::{settlement_obligation::SettlementObligation, state_wrapper::StateWrapper},
+    circuit_types::traits::{
+        CircuitBaseType, CircuitVarType, SecretShareBaseType, SecretShareType,
         SecretShareVarType,
     },
-    circuit_macros::circuit_type,
-    constants::{Scalar, ScalarField},
+    constants::ScalarField,
     mpc_relation::{Variable, traits::Circuit},
+    std::ops::Add,
 };
 
 /// An intent wrapped in a state wrapper
+#[cfg(feature = "proof-system-types")]
 pub type DarkpoolStateIntent = StateWrapper<Intent>;
 /// An intent wrapped in a state wrapper variable
-pub type DarkpoolStateIntentVar = StateWrapperVar<Intent>;
+#[cfg(feature = "proof-system-types")]
+pub type DarkpoolStateIntentVar = crate::state_wrapper::StateWrapperVar<Intent>;
 
 /// Intent is a struct that represents an intent to buy or sell a token
 #[cfg_attr(feature = "proof-system-types", circuit_type(serde, singleprover_circuit, secret_share))]
+#[cfg_attr(not(feature = "proof-system-types"), circuit_type(serde))]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Intent {
     /// The token to buy
@@ -51,6 +52,7 @@ pub struct Intent {
 /// may leak a `PreMatchIntentShare` in a validity circuit and separately leak
 /// the `amount_in` field thereafter.
 #[cfg_attr(feature = "proof-system-types", circuit_type(serde, singleprover_circuit, secret_share))]
+#[cfg_attr(not(feature = "proof-system-types"), circuit_type(serde))]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PreMatchIntent {
     /// The token to buy
@@ -75,6 +77,7 @@ impl From<Intent> for PreMatchIntent {
     }
 }
 
+#[cfg(feature = "proof-system-types")]
 impl From<IntentShare> for PreMatchIntentShare {
     fn from(intent_share: IntentShare) -> Self {
         PreMatchIntentShare {
@@ -86,6 +89,7 @@ impl From<IntentShare> for PreMatchIntentShare {
     }
 }
 
+#[cfg(feature = "proof-system-types")]
 impl StateWrapper<Intent> {
     /// Re-encrypt the amount in value and update the public share
     pub fn reencrypt_amount_in(&mut self) -> Scalar {

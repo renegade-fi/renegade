@@ -4,25 +4,23 @@
 #![allow(missing_docs, clippy::missing_docs_in_private_items)]
 
 use alloy_primitives::Address;
-#[cfg(feature = "proof-system-types")]
-use constants::EmbeddedScalarField;
-use constants::{Scalar, ScalarField};
+use circuit_macros::circuit_type;
+use circuit_types::{Amount, schnorr::SchnorrPublicKey, traits::BaseType};
+use constants::Scalar;
 use rand::thread_rng;
-use crypto::hash::compute_poseidon_hash;
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "proof-system-types")]
-use crate::elgamal::{ElGamalCiphertext, EncryptionKey};
-use crate::{Amount, schnorr::SchnorrPublicKey};
-
-use super::balance::Balance;
-
-#[cfg(feature = "proof-system-types")]
 use {
-    crate::traits::{BaseType, CircuitBaseType, CircuitVarType},
-    circuit_macros::circuit_type,
-    mpc_relation::{Variable, traits::Circuit},
+    circuit_types::{
+        native_helpers::elgamal_encrypt,
+        primitives::elgamal::{ElGamalCiphertext, EncryptionKey},
+        traits::{CircuitBaseType, CircuitVarType},
+    },
+    constants::{EmbeddedScalarField, ScalarField},
     crypto::fields::address_to_scalar,
+    crypto::hash::compute_poseidon_hash,
+    mpc_relation::{Variable, traits::Circuit},
 };
 
 /// The size of the note ciphertext when encrypted
@@ -38,6 +36,7 @@ pub type NoteCiphertext = ElGamalCiphertext<NOTE_CIPHERTEXT_SIZE>;
 
 /// A note allocated into the protocol state by one user transferring to another
 #[cfg_attr(feature = "proof-system-types", circuit_type(serde, singleprover_circuit))]
+#[cfg_attr(not(feature = "proof-system-types"), circuit_type(serde))]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Note {
     /// The mint of the note
@@ -93,15 +92,13 @@ impl Note {
         &self,
         key: &EncryptionKey,
     ) -> (ElGamalCiphertext<NOTE_CIPHERTEXT_SIZE>, EmbeddedScalarField) {
-        use crate::native_helpers::elgamal_encrypt;
-
         let plaintext = self.plaintext_elements();
         elgamal_encrypt::<NOTE_CIPHERTEXT_SIZE>(&plaintext, key)
     }
 
     /// Get the balance associated with the note
-    pub fn as_balance(&self) -> Balance {
-        Balance {
+    pub fn as_balance(&self) -> crate::balance::Balance {
+        crate::balance::Balance {
             mint: self.mint,
             relayer_fee_recipient: Address::ZERO,
             owner: Address::ZERO,                   // Default owner

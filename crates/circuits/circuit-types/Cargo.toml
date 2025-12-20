@@ -10,13 +10,11 @@ default = ["proof-system-types"]
 # relayer
 proof-system-types = [
     "ark-mpc/default",
-    "circuit-macros",
     "constants/mpc-types",
-    "crypto/non-wasm",
-    "dep:jf-primitives",
+    "crypto/fields",
+    "crypto/hash",
     "dep:mpc-plonk",
     "dep:mpc-relation",
-    "dep:crypto",
 ]
 test-helpers = ["proof-system-types", "mpc-plonk/test-srs"]
 
@@ -27,10 +25,7 @@ ark-ff = "0.4"
 ark-ec = "0.4"
 ark-mpc = { workspace = true, features = ["scalar"] }
 ark-serialize = "0.4"
-jf-primitives = { workspace = true, features = [
-    "std",
-    "parallel",
-], optional = true }
+jf-primitives = { workspace = true, features = ["std", "parallel"] }
 k256 = { version = "0.13", features = ["expose-field"] }
 mpc-plonk = { workspace = true, optional = true }
 mpc-relation = { workspace = true, optional = true }
@@ -50,9 +45,12 @@ async-trait = { workspace = true }
 futures = { workspace = true }
 
 # === Workspace Crates === #
-circuit-macros = { workspace = true, optional = true }
+circuit-macros = { workspace = true }
 constants = { workspace = true, features = ["scalar"] }
-crypto = { workspace = true, optional = true }
+crypto = { workspace = true, default-features = false, features = [
+    "fields",
+    "hash",
+] }
 
 # === Misc === #
 hex = "0.4"

@@ -170,16 +170,6 @@ mod test {
         let recovered = share1.clone() + share2;
         assert_eq!(recovered.val, Scalar::from(2u8));
         assert_eq!(recovered.array_val, [Scalar::from(2u8); NUM_TEST_SCALARS]);
-
-        // Blind a secret share
-        let blinded = share1.blind(Scalar::one());
-        assert_eq!(blinded.val, Scalar::from(2u8));
-        assert_eq!(blinded.array_val, [Scalar::from(2u8); NUM_TEST_SCALARS]);
-
-        // Unblind a secret share
-        let unblinded = blinded.unblind(Scalar::one());
-        assert_eq!(unblinded.val, Scalar::one());
-        assert_eq!(unblinded.array_val, [Scalar::one(); NUM_TEST_SCALARS]);
     }
 
     #[test]

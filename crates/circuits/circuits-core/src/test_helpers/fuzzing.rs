@@ -22,7 +22,7 @@ use circuit_types::{
 use constants::{MAX_RELAYER_FEE_RATE, Scalar};
 use itertools::Itertools;
 use rand::{Rng, distributions::uniform::SampleRange, thread_rng};
-use crypto::fields::scalar_to_u128;
+use renegade_crypto::fields::scalar_to_u128;
 
 /// The bounded maximum amount to prevent `Amount` overflow in tests
 pub const BOUNDED_MAX_AMT: Amount = 2u128.pow((AMOUNT_BITS / 2) as u32);

@@ -1,38 +1,39 @@
-//! Defines the circuit types for a balance in the V2 darkpool
+//! Defines the balance type for the V2 darkpool
 
 #![allow(missing_docs, clippy::missing_docs_in_private_items)]
 
-use std::ops::Add;
-
 use alloy_primitives::Address;
-use rand::thread_rng;
+use circuit_macros::circuit_type;
+use circuit_types::{Amount, primitives::schnorr::SchnorrPublicKey, traits::BaseType};
+use constants::Scalar;
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    Amount, fee::FeeTake, note::Note, schnorr::SchnorrPublicKey,
-    settlement_obligation::SettlementObligation,
-};
-
-use super::state_wrapper::{StateWrapper, StateWrapperVar};
+#[cfg(feature = "proof-system-types")]
+use crate::state_wrapper::{StateWrapper, StateWrapperVar};
 
 #[cfg(feature = "proof-system-types")]
 use {
-    crate::traits::{
-        BaseType, CircuitBaseType, CircuitVarType, SecretShareBaseType, SecretShareType,
+    crate::{fee::FeeTake, note::Note, settlement_obligation::SettlementObligation},
+    circuit_types::traits::{
+        CircuitBaseType, CircuitVarType, SecretShareBaseType, SecretShareType,
         SecretShareVarType,
     },
-    circuit_macros::circuit_type,
-    constants::{Scalar, ScalarField},
+    constants::ScalarField,
     mpc_relation::{Variable, traits::Circuit},
+    rand::thread_rng,
+    std::ops::Add,
 };
 
 /// A balance wrapped in a state wrapper
+#[cfg(feature = "proof-system-types")]
 pub type DarkpoolStateBalance = StateWrapper<Balance>;
 /// A balance wrapped in a state wrapper variable
+#[cfg(feature = "proof-system-types")]
 pub type DarkpoolStateBalanceVar = StateWrapperVar<Balance>;
 
 /// A balance in the V2 darkpool
 #[cfg_attr(feature = "proof-system-types", circuit_type(serde, singleprover_circuit, secret_share))]
+#[cfg_attr(not(feature = "proof-system-types"), circuit_type(serde))]
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct Balance {
     /// The mint of the token in the balance
@@ -95,6 +96,7 @@ impl BalanceShare {
 /// example, we may leak a `PreMatchBalanceShare` in a validity circuit and
 /// separately leak the `amount` or fees fields thereafter.
 #[cfg_attr(feature = "proof-system-types", circuit_type(serde, singleprover_circuit, secret_share))]
+#[cfg_attr(not(feature = "proof-system-types"), circuit_type(serde))]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PreMatchBalance {
     /// The mint of the token in the balance
@@ -112,6 +114,7 @@ pub struct PreMatchBalance {
 ///
 /// These are the values which are updated in a settlement circuit.
 #[cfg_attr(feature = "proof-system-types", circuit_type(serde, singleprover_circuit, secret_share))]
+#[cfg_attr(not(feature = "proof-system-types"), circuit_type(serde))]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PostMatchBalance {
     /// The relayer fee balance of the balance
@@ -143,6 +146,7 @@ impl From<Balance> for PostMatchBalance {
     }
 }
 
+#[cfg(feature = "proof-system-types")]
 impl From<BalanceShare> for PreMatchBalanceShare {
     fn from(balance_share: BalanceShare) -> Self {
         Self {
@@ -154,6 +158,7 @@ impl From<BalanceShare> for PreMatchBalanceShare {
     }
 }
 
+#[cfg(feature = "proof-system-types")]
 impl From<BalanceShare> for PostMatchBalanceShare {
     fn from(balance_share: BalanceShare) -> Self {
         Self {

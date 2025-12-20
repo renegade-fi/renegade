@@ -7,26 +7,26 @@
 
 #![allow(missing_docs, clippy::missing_docs_in_private_items)]
 
-use std::ops::Add;
-
 use alloy_primitives::Address;
+use circuit_macros::circuit_type;
+use circuit_types::{Amount, fixed_point::FixedPoint, traits::BaseType};
+use constants::Scalar;
 use serde::{Deserialize, Serialize};
-
-use crate::{Amount, fixed_point::FixedPoint};
 
 #[cfg(feature = "proof-system-types")]
 use {
-    crate::traits::{
-        BaseType, CircuitBaseType, CircuitVarType, SecretShareBaseType, SecretShareType,
+    circuit_types::traits::{
+        CircuitBaseType, CircuitVarType, SecretShareBaseType, SecretShareType,
         SecretShareVarType,
     },
-    circuit_macros::circuit_type,
-    constants::{Scalar, ScalarField},
+    constants::ScalarField,
     mpc_relation::{Variable, traits::Circuit},
+    std::ops::Add,
 };
 
 /// A bounded match result
 #[cfg_attr(feature = "proof-system-types", circuit_type(serde, singleprover_circuit, secret_share))]
+#[cfg_attr(not(feature = "proof-system-types"), circuit_type(serde))]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BoundedMatchResult {
     /// The internal party's input token

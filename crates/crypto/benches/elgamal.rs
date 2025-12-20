@@ -5,7 +5,7 @@
 use constants::Scalar;
 use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use rand::thread_rng;
-use crypto::elgamal::{decrypt_scalar, encrypt_scalar};
+use renegade_crypto::elgamal::{decrypt_scalar, encrypt_scalar};
 
 /// Run a benchmark on the ElGamal encryption implementation
 fn bench_encrypt(c: &mut Criterion) {

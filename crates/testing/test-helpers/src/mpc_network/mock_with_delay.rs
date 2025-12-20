@@ -138,7 +138,7 @@ mod tests {
     };
     use constants::Scalar;
     use futures::{SinkExt, StreamExt};
-    use crypto::fields::scalar_to_u64;
+    use renegade_crypto::fields::scalar_to_u64;
     use util::get_current_time_millis;
 
     use crate::mpc_network::{mock_with_delay::MockNetworkWithDelay, mocks::UnboundedDuplexStream};

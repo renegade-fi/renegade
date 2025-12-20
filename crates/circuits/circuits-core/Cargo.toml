@@ -163,7 +163,7 @@ circuit-types = { workspace = true, default-features = false, features = [
     "proof-system-types",
 ] }
 constants = { workspace = true, features = ["mpc-types"] }
-crypto = { workspace = true, features = ["non-wasm"] }
+crypto = { workspace = true, features = ["fields", "hash"] }
 util = { workspace = true, features = ["blockchain"] }
 
 # === Misc Dependencies === #

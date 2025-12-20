@@ -8,7 +8,7 @@ use constants::ScalarField;
 use mpc_relation::Variable;
 use mpc_relation::errors::CircuitError;
 use mpc_relation::traits::Circuit;
-use crypto::fields::{biguint_to_scalar, scalar_to_biguint};
+use renegade_crypto::fields::{biguint_to_scalar, scalar_to_biguint};
 
 use num_integer::Integer;
 
@@ -129,7 +129,7 @@ mod arithmetic_tests {
     use num_bigint::BigUint;
     use num_integer::Integer;
     use rand::{RngCore, thread_rng};
-    use crypto::fields::biguint_to_scalar;
+    use renegade_crypto::fields::biguint_to_scalar;
 
     use super::{DivRemGadget, ExpGadget};
 

@@ -124,7 +124,7 @@ mod test {
     };
     use constants::Scalar;
     use rand::{Rng, thread_rng};
-    use crypto::fields::scalar_to_biguint;
+    use renegade_crypto::fields::scalar_to_biguint;
     use test_helpers::mpc_network::execute_mock_mpc;
     use util::matching_engine::{apply_match_to_shares, compute_fee_obligation};
 
