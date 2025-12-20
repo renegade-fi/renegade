@@ -15,8 +15,7 @@ use crate::state_wrapper::{StateWrapper, StateWrapperVar};
 use {
     crate::{fee::FeeTake, note::Note, settlement_obligation::SettlementObligation},
     circuit_types::traits::{
-        CircuitBaseType, CircuitVarType, SecretShareBaseType, SecretShareType,
-        SecretShareVarType,
+        CircuitBaseType, CircuitVarType, SecretShareBaseType, SecretShareType, SecretShareVarType,
     },
     constants::ScalarField,
     mpc_relation::{Variable, traits::Circuit},

@@ -3,9 +3,9 @@
 use circuit_types::merkle::{MerkleOpening, SizedMerkleOpening};
 use constants::MERKLE_HEIGHT;
 use constants::Scalar;
+use crypto::hash::compute_poseidon_hash;
 use itertools::Itertools;
 use num_bigint::BigUint;
-use crypto::hash::compute_poseidon_hash;
 use serde::{Deserialize, Serialize};
 
 /// A wrapper representing the coordinates of a value in a Merkle tree

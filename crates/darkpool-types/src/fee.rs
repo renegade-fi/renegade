@@ -11,8 +11,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "proof-system-types")]
 use {
     circuit_types::traits::{
-        CircuitBaseType, CircuitVarType, SecretShareBaseType, SecretShareType,
-        SecretShareVarType,
+        CircuitBaseType, CircuitVarType, SecretShareBaseType, SecretShareType, SecretShareVarType,
     },
     constants::ScalarField,
     mpc_relation::{Variable, traits::Circuit},
