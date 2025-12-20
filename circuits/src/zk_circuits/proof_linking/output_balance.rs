@@ -271,7 +271,7 @@ mod test {
     /// Prove NEW OUTPUT BALANCE VALIDITY and INTENT AND BALANCE PUBLIC
     /// SETTLEMENT, then link the proofs and verify the link
     fn test_new_output_balance_validity_settlement_link(
-        validity_witness: &NewOutputBalanceValidityWitness,
+        validity_witness: &NewOutputBalanceValidityWitness<TEST_MERKLE_HEIGHT>,
         validity_statement: &NewOutputBalanceValidityStatement,
         settlement_witness: &IntentAndBalancePublicSettlementWitness,
         settlement_statement: &IntentAndBalancePublicSettlementStatement,
@@ -279,7 +279,7 @@ mod test {
         // Create a proof of NEW OUTPUT BALANCE VALIDITY and one of INTENT AND BALANCE
         // PUBLIC SETTLEMENT
         let (validity_proof, validity_hint) = singleprover_prove_with_hint::<
-            NewOutputBalanceValidityCircuit,
+            NewOutputBalanceValidityCircuit<TEST_MERKLE_HEIGHT>,
         >(validity_witness, validity_statement)?;
         let (settlement_proof, settlement_hint) = singleprover_prove_with_hint::<
             IntentAndBalancePublicSettlementCircuit,
@@ -308,13 +308,14 @@ mod test {
     /// This involves modifying the witness and statements for each circuit to
     /// align with one another so that they may be linked
     fn build_new_output_balance_validity_settlement_data() -> (
-        NewOutputBalanceValidityWitness,
+        NewOutputBalanceValidityWitness<TEST_MERKLE_HEIGHT>,
         NewOutputBalanceValidityStatement,
         IntentAndBalancePublicSettlementWitness,
         IntentAndBalancePublicSettlementStatement,
     ) {
         // Create the validity witness and statement
-        let (validity_witness, validity_statement) = create_new_output_balance_witness_statement();
+        let (validity_witness, validity_statement) =
+            create_new_output_balance_witness_statement::<TEST_MERKLE_HEIGHT>();
 
         // Create an intent and input balance for the settlement
         let output_balance = validity_witness.balance.clone();
@@ -455,14 +456,14 @@ mod test {
     /// SETTLEMENT, then link the proofs and verify the link
     fn test_new_output_balance_private_settlement_link(
         party_id: u8,
-        validity_witness: &NewOutputBalanceValidityWitness,
+        validity_witness: &NewOutputBalanceValidityWitness<TEST_MERKLE_HEIGHT>,
         validity_statement: &NewOutputBalanceValidityStatement,
         settlement_witness: &IntentAndBalancePrivateSettlementWitness,
         settlement_statement: &IntentAndBalancePrivateSettlementStatement,
     ) -> Result<(), ProverError> {
         // Create a proof of NEW OUTPUT BALANCE VALIDITY
         let (validity_proof, validity_hint) = singleprover_prove_with_hint::<
-            NewOutputBalanceValidityCircuit,
+            NewOutputBalanceValidityCircuit<TEST_MERKLE_HEIGHT>,
         >(validity_witness, validity_statement)?;
 
         // Create a proof of INTENT AND BALANCE PRIVATE SETTLEMENT
@@ -494,7 +495,7 @@ mod test {
     fn build_new_output_balance_private_settlement_data(
         party_id: u8,
     ) -> (
-        NewOutputBalanceValidityWitness,
+        NewOutputBalanceValidityWitness<TEST_MERKLE_HEIGHT>,
         NewOutputBalanceValidityStatement,
         IntentAndBalancePrivateSettlementWitness,
         IntentAndBalancePrivateSettlementStatement,
@@ -524,7 +525,9 @@ mod test {
 
         // Create the validity witness and statement using the zeroed balance
         let (validity_witness, validity_statement) =
-            create_new_output_balance_witness_statement_with_balance(zeroed_balance);
+            create_new_output_balance_witness_statement_with_balance::<TEST_MERKLE_HEIGHT>(
+                zeroed_balance,
+            );
 
         // Align the settlement witness with the validity witness
         *output_balance = validity_witness.balance.clone();
