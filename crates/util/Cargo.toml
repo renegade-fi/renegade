@@ -1,0 +1,84 @@
+[package]
+name = "util"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = ["hex", "errors"]
+blockchain = ["hex", "concurrency"]
+concurrency = []
+errors = []
+hex = [
+    "errors",
+    "dep:circuit-types",
+    "dep:constants",
+    "dep:renegade-crypto",
+    "constants/default",
+]
+matching-engine = ["blockchain"]
+mocks = []
+channels = []
+networking = []
+serde = []
+telemetry = ["errors"]
+
+[dependencies]
+# === Arithmetic === #
+ark-ec = "0.4"
+ark-serialize = "0.4"
+num-bigint = "0.4"
+num-traits = "0.2"
+
+# === Ethereum === #
+alloy = { workspace = true }
+
+# === Networking === #
+libp2p = { workspace = true }
+
+# === Runtime === #
+futures = { workspace = true }
+tokio = { workspace = true }
+crossbeam = { workspace = true }
+
+# === Workspace Dependencies === #
+circuit-types = { workspace = true, optional = true }
+constants = { workspace = true, optional = true }
+renegade-crypto = { workspace = true, optional = true }
+
+# === Misc === #
+eyre = { workspace = true }
+hex = "0.4"
+json = "0.12"
+rand = "0.8"
+
+# === Logs / Traces === #
+chrono = "0.4"
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+tracing-serde = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing-opentelemetry = { workspace = true }
+opentelemetry_sdk = { version = "0.21", features = ["trace", "rt-tokio"] }
+opentelemetry-otlp = "0.14"
+opentelemetry = { version = "0.21", default-features = false, features = [
+    "trace",
+] }
+opentelemetry-semantic-conventions = "0.13"
+opentelemetry-datadog = "0.9"
+http = "1"
+
+# === Metrics === #
+metrics = { workspace = true }
+metrics-util = "0.16"
+metrics-exporter-statsd = "0.7"
+metrics-tracing-context = "0.15"
+
+[[bench]]
+name = "matching_engine"
+harness = false
+required-features = ["matching-engine"]
+
+[dev-dependencies]
+lazy_static = { workspace = true }
+criterion = { version = "0.5", features = ["async", "async_tokio"] }
