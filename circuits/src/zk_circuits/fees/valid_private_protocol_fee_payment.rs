@@ -239,10 +239,10 @@ pub mod test_helpers {
 
     use crate::{
         test_helpers::{
-            check_constraints_satisfied, random_address, random_amount,
-            random_elgamal_encryption_key,
+            check_constraints_satisfied, create_merkle_opening, create_random_state_wrapper,
+            random_address, random_amount, random_elgamal_encryption_key,
+            random_schnorr_public_key,
         },
-        test_helpers::{create_merkle_opening, create_random_state_wrapper},
         zk_circuits::fees::valid_private_protocol_fee_payment::{
             SizedValidPrivateProtocolFeePayment, SizedValidPrivateProtocolFeePaymentWitness,
         },
@@ -278,7 +278,7 @@ pub mod test_helpers {
             mint: random_address(),
             relayer_fee_recipient: Address::ZERO,
             owner: random_address(),
-            one_time_authority: Address::ZERO,
+            authority: random_schnorr_public_key(),
             relayer_fee_balance: random_amount(),
             protocol_fee_balance: random_amount(),
             amount: random_amount(),

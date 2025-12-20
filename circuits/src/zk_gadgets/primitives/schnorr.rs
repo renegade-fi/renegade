@@ -8,9 +8,8 @@ use jf_primitives::circuit::signature::schnorr::*;
 use mpc_relation::errors::CircuitError;
 
 /// A Schnorr signature verification gadget
-pub struct SchnorrSigVerify;
-
-impl SchnorrSigVerify {
+pub struct SchnorrGadget;
+impl SchnorrGadget {
     /// Verify a Schnorr signature
     pub fn verify_signature<T: CircuitVarType>(
         signature: &SchnorrSignatureVar,
@@ -56,7 +55,7 @@ mod test {
         let msg_var = msg.create_witness(&mut cs);
 
         // Verify the signature
-        SchnorrSigVerify::verify_signature(&sig_var, &msg_var, &pk_var, &mut cs).unwrap();
+        SchnorrGadget::verify_signature(&sig_var, &msg_var, &pk_var, &mut cs).unwrap();
 
         // Check that the circuit is satisfied
         cs.check_circuit_satisfiability(&[]).unwrap();
@@ -81,7 +80,7 @@ mod test {
         let msg_var = msg.create_witness(&mut cs);
 
         // Verify the signature
-        SchnorrSigVerify::verify_signature(&sig_var, &msg_var, &pk_var, &mut cs).unwrap();
+        SchnorrGadget::verify_signature(&sig_var, &msg_var, &pk_var, &mut cs).unwrap();
 
         // Check that the circuit is NOT satisfied
         assert!(cs.check_circuit_satisfiability(&[]).is_err());

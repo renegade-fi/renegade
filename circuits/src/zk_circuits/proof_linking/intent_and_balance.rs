@@ -148,7 +148,8 @@ mod test {
         singleprover_prove_with_hint,
         test_helpers::{
             create_bounded_match_result_with_balance, create_random_state_wrapper,
-            create_settlement_obligation_with_balance, random_intent,
+            create_settlement_obligation_with_balance, random_intent, random_schnorr_keypair,
+            random_schnorr_public_key,
         },
         zk_circuits::{
             settlement::{
@@ -213,20 +214,20 @@ mod test {
     /// Prove INTENT AND BALANCE VALIDITY and INTENT AND BALANCE PUBLIC
     /// SETTLEMENT, then link the proofs and verify the link
     fn test_intent_and_balance_validity_exact_public_settlement_link(
-        validity_witness: IntentAndBalanceValidityWitness<TEST_MERKLE_HEIGHT>,
-        validity_statement: IntentAndBalanceValidityStatement,
-        settlement_witness: IntentAndBalancePublicSettlementWitness,
-        settlement_statement: IntentAndBalancePublicSettlementStatement,
+        validity_witness: &IntentAndBalanceValidityWitness<TEST_MERKLE_HEIGHT>,
+        validity_statement: &IntentAndBalanceValidityStatement,
+        settlement_witness: &IntentAndBalancePublicSettlementWitness,
+        settlement_statement: &IntentAndBalancePublicSettlementStatement,
     ) -> Result<(), ProverError> {
         // Create a proof of INTENT AND BALANCE VALIDITY and one of INTENT AND BALANCE
         // PUBLIC SETTLEMENT
         let (validity_proof, validity_hint) = singleprover_prove_with_hint::<
             SizedIntentAndBalanceValidity,
-        >(&validity_witness, &validity_statement)?;
+        >(validity_witness, validity_statement)?;
         let (settlement_proof, settlement_hint) = singleprover_prove_with_hint::<
             IntentAndBalancePublicSettlementCircuit,
         >(
-            &settlement_witness, &settlement_statement
+            settlement_witness, settlement_statement
         )?;
 
         // Link the proofs and verify the link
@@ -294,20 +295,20 @@ mod test {
     /// Prove INTENT AND BALANCE FIRST FILL VALIDITY and INTENT AND BALANCE
     /// PUBLIC SETTLEMENT, then link the proofs and verify the link
     fn test_intent_and_balance_first_fill_validity_exact_public_settlement_link(
-        validity_witness: IntentAndBalanceFirstFillValidityWitness<TEST_MERKLE_HEIGHT>,
-        validity_statement: IntentAndBalanceFirstFillValidityStatement,
-        settlement_witness: IntentAndBalancePublicSettlementWitness,
-        settlement_statement: IntentAndBalancePublicSettlementStatement,
+        validity_witness: &IntentAndBalanceFirstFillValidityWitness<TEST_MERKLE_HEIGHT>,
+        validity_statement: &IntentAndBalanceFirstFillValidityStatement,
+        settlement_witness: &IntentAndBalancePublicSettlementWitness,
+        settlement_statement: &IntentAndBalancePublicSettlementStatement,
     ) -> Result<(), ProverError> {
         // Create a proof of INTENT AND BALANCE FIRST FILL VALIDITY and one of INTENT
         // AND BALANCE PUBLIC SETTLEMENT
         let (validity_proof, validity_hint) = singleprover_prove_with_hint::<
             SizedIntentAndBalanceFirstFillValidity,
-        >(&validity_witness, &validity_statement)?;
+        >(validity_witness, validity_statement)?;
         let (settlement_proof, settlement_hint) = singleprover_prove_with_hint::<
             IntentAndBalancePublicSettlementCircuit,
         >(
-            &settlement_witness, &settlement_statement
+            settlement_witness, settlement_statement
         )?;
 
         let link_proof = link_intent_and_balance_settlement_with_party::<TEST_MERKLE_HEIGHT>(
@@ -381,10 +382,10 @@ mod test {
             build_intent_and_balance_validity_exact_public_settlement_data();
 
         test_intent_and_balance_validity_exact_public_settlement_link(
-            validity_witness,
-            validity_statement,
-            settlement_witness,
-            settlement_statement,
+            &validity_witness,
+            &validity_statement,
+            &settlement_witness,
+            &settlement_statement,
         )
         .unwrap();
     }
@@ -398,10 +399,10 @@ mod test {
             build_intent_and_balance_first_fill_validity_exact_public_settlement_data();
 
         test_intent_and_balance_first_fill_validity_exact_public_settlement_link(
-            validity_witness,
-            validity_statement,
-            settlement_witness,
-            settlement_statement,
+            &validity_witness,
+            &validity_statement,
+            &settlement_witness,
+            &settlement_statement,
         )
         .unwrap();
     }
@@ -434,10 +435,10 @@ mod test {
 
         // Now the settlement circuit is valid, but the link will fail
         test_intent_and_balance_validity_exact_public_settlement_link(
-            validity_witness,
-            validity_statement,
-            settlement_witness,
-            settlement_statement,
+            &validity_witness,
+            &validity_statement,
+            &settlement_witness,
+            &settlement_statement,
         )
         .unwrap();
     }
@@ -461,17 +462,17 @@ mod test {
             mint: random_address(),
             owner: random_address(),
             relayer_fee_recipient: random_address(),
-            one_time_authority: random_address(),
+            authority: random_schnorr_public_key(),
             relayer_fee_balance: random_amount(),
             protocol_fee_balance: random_amount(),
             amount: random_amount(),
         };
 
         test_intent_and_balance_validity_exact_public_settlement_link(
-            validity_witness,
-            validity_statement,
-            settlement_witness,
-            settlement_statement,
+            &validity_witness,
+            &validity_statement,
+            &settlement_witness,
+            &settlement_statement,
         )
         .unwrap();
     }
@@ -506,10 +507,10 @@ mod test {
         // settlement_witness.pre_settlement_in_balance_shares doesn't match
         // validity_witness.post_match_balance_shares
         test_intent_and_balance_validity_exact_public_settlement_link(
-            validity_witness,
-            validity_statement,
-            settlement_witness,
-            settlement_statement,
+            &validity_witness,
+            &validity_statement,
+            &settlement_witness,
+            &settlement_statement,
         )
         .unwrap();
     }
@@ -527,21 +528,21 @@ mod test {
     /// links
     fn test_intent_and_balance_exact_private_settlement_link(
         party_id: u8,
-        validity_witness: IntentAndBalanceValidityWitness<TEST_MERKLE_HEIGHT>,
-        validity_statement: IntentAndBalanceValidityStatement,
-        settlement_witness: IntentAndBalancePrivateSettlementWitness,
-        settlement_statement: IntentAndBalancePrivateSettlementStatement,
+        validity_witness: &IntentAndBalanceValidityWitness<TEST_MERKLE_HEIGHT>,
+        validity_statement: &IntentAndBalanceValidityStatement,
+        settlement_witness: &IntentAndBalancePrivateSettlementWitness,
+        settlement_statement: &IntentAndBalancePrivateSettlementStatement,
     ) -> Result<(), ProverError> {
         // Create proofs of INTENT AND BALANCE VALIDITY for both parties
         let (validity_proof, validity_hint) = singleprover_prove_with_hint::<
             SizedIntentAndBalanceValidity,
-        >(&validity_witness, &validity_statement)?;
+        >(validity_witness, validity_statement)?;
 
         // Create a proof of INTENT AND BALANCE PRIVATE SETTLEMENT
         let (settlement_proof, settlement_hint) = singleprover_prove_with_hint::<
             IntentAndBalancePrivateSettlementCircuit,
         >(
-            &settlement_witness, &settlement_statement
+            settlement_witness, settlement_statement
         )?;
 
         // Link the proofs and verify the link
@@ -627,21 +628,21 @@ mod test {
     /// PRIVATE SETTLEMENT, then link the proofs and verify the link
     fn test_intent_and_balance_first_fill_exact_private_settlement_link(
         party_id: u8,
-        validity_witness: IntentAndBalanceFirstFillValidityWitness<TEST_MERKLE_HEIGHT>,
-        validity_statement: IntentAndBalanceFirstFillValidityStatement,
-        settlement_witness: IntentAndBalancePrivateSettlementWitness,
-        settlement_statement: IntentAndBalancePrivateSettlementStatement,
+        validity_witness: &IntentAndBalanceFirstFillValidityWitness<TEST_MERKLE_HEIGHT>,
+        validity_statement: &IntentAndBalanceFirstFillValidityStatement,
+        settlement_witness: &IntentAndBalancePrivateSettlementWitness,
+        settlement_statement: &IntentAndBalancePrivateSettlementStatement,
     ) -> Result<(), ProverError> {
         // Create a proof of INTENT AND BALANCE FIRST FILL VALIDITY
         let (validity_proof, validity_hint) = singleprover_prove_with_hint::<
             SizedIntentAndBalanceFirstFillValidity,
-        >(&validity_witness, &validity_statement)?;
+        >(validity_witness, validity_statement)?;
 
         // Create a proof of INTENT AND BALANCE PRIVATE SETTLEMENT
         let (settlement_proof, settlement_hint) = singleprover_prove_with_hint::<
             IntentAndBalancePrivateSettlementCircuit,
         >(
-            &settlement_witness, &settlement_statement
+            settlement_witness, settlement_statement
         )?;
 
         // Link the proofs and verify the link
@@ -675,6 +676,14 @@ mod test {
         let (mut settlement_witness, mut settlement_statement) =
             create_exact_private_settlement_witness_statement();
 
+        // Sample a keypair to authorize the intent creation, then override the
+        // authority keys for all balances
+        let (key, public_key) = random_schnorr_keypair();
+        settlement_witness.input_balance0.authority = public_key;
+        settlement_witness.input_balance1.authority = public_key;
+        settlement_witness.output_balance0.authority = public_key;
+        settlement_witness.output_balance1.authority = public_key;
+
         // Get mutable references to the relevant fields based on the party ID
         let (intent, balance, new_amount_public_share, pre_settlement_in_balance_shares) =
             if party_id == 0 {
@@ -698,6 +707,7 @@ mod test {
             create_first_fill_witness_statement_with_balance::<TEST_MERKLE_HEIGHT>(
                 intent,
                 capitalizing_balance,
+                key,
             );
 
         // Re-align the settlement witness share updates
@@ -729,6 +739,62 @@ mod test {
 
     // --- Valid Test Cases --- //
 
+    /// Tests a valid link between a proof of INTENT AND BALANCE VALIDITY and a
+    /// proof of INTENT AND BALANCE PUBLIC SETTLEMENT
+    #[cfg_attr(feature = "ci", ignore)]
+    #[test]
+    fn test_intent_and_balance_valid_link() {
+        let (validity_witness, validity_statement, settlement_witness, settlement_statement) =
+            build_intent_and_balance_validity_exact_public_settlement_data();
+
+        test_intent_and_balance_validity_exact_public_settlement_link(
+            &validity_witness,
+            &validity_statement,
+            &settlement_witness,
+            &settlement_statement,
+        )
+        .unwrap();
+    }
+
+    /// Tests a valid link between a proof of INTENT AND BALANCE FIRST FILL
+    /// VALIDITY and a proof of INTENT AND BALANCE PUBLIC SETTLEMENT
+    #[cfg_attr(feature = "ci", ignore)]
+    #[test]
+    fn test_intent_and_balance_first_fill_valid_link() {
+        let (validity_witness, validity_statement, settlement_witness, settlement_statement) =
+            build_intent_and_balance_first_fill_validity_exact_public_settlement_data();
+
+        test_intent_and_balance_first_fill_validity_exact_public_settlement_link(
+            &validity_witness,
+            &validity_statement,
+            &settlement_witness,
+            &settlement_statement,
+        )
+        .unwrap();
+    }
+
+    /// Tests an invalid link between a proof of INTENT AND BALANCE VALIDITY
+    /// and a proof of INTENT AND BALANCE PUBLIC SETTLEMENT wherein the intent
+    /// is modified between the two proofs
+    #[cfg_attr(feature = "ci", ignore)]
+    #[test]
+    #[should_panic(expected = "ProofLinkVerification")]
+    #[allow(non_snake_case)]
+    fn test_intent_and_balance_invalid_link__modified_intent() {
+        let (validity_witness, validity_statement, mut settlement_witness, settlement_statement) =
+            build_intent_and_balance_validity_exact_public_settlement_data();
+
+        // Modify the intent in the settlement witness to break the link
+        settlement_witness.intent.amount_in += 1;
+        test_intent_and_balance_validity_exact_public_settlement_link(
+            &validity_witness,
+            &validity_statement,
+            &settlement_witness,
+            &settlement_statement,
+        )
+        .unwrap();
+    }
+
     /// Tests a valid link between a proof of INTENT AND BALANCE VALIDITY (for
     /// both parties) and a proof of INTENT AND BALANCE PRIVATE SETTLEMENT
     #[cfg_attr(feature = "ci", ignore)]
@@ -741,10 +807,10 @@ mod test {
 
         test_intent_and_balance_exact_private_settlement_link(
             party_id,
-            validity_witness,
-            validity_statement,
-            settlement_witness,
-            settlement_statement,
+            &validity_witness,
+            &validity_statement,
+            &settlement_witness,
+            &settlement_statement,
         )
         .unwrap()
     }
@@ -761,10 +827,10 @@ mod test {
 
         test_intent_and_balance_first_fill_exact_private_settlement_link(
             party_id,
-            validity_witness,
-            validity_statement,
-            settlement_witness,
-            settlement_statement,
+            &validity_witness,
+            &validity_statement,
+            &settlement_witness,
+            &settlement_statement,
         )
         .unwrap()
     }
@@ -780,20 +846,20 @@ mod test {
     /// Prove INTENT AND BALANCE VALIDITY and INTENT AND BALANCE BOUNDED
     /// SETTLEMENT, then link the proofs and verify the link
     fn test_intent_and_balance_validity_bounded_settlement_link(
-        validity_witness: IntentAndBalanceValidityWitness<TEST_MERKLE_HEIGHT>,
-        validity_statement: IntentAndBalanceValidityStatement,
-        settlement_witness: IntentAndBalanceBoundedSettlementWitness,
-        settlement_statement: IntentAndBalanceBoundedSettlementStatement,
+        validity_witness: &IntentAndBalanceValidityWitness<TEST_MERKLE_HEIGHT>,
+        validity_statement: &IntentAndBalanceValidityStatement,
+        settlement_witness: &IntentAndBalanceBoundedSettlementWitness,
+        settlement_statement: &IntentAndBalanceBoundedSettlementStatement,
     ) -> Result<(), ProverError> {
         // Create a proof of INTENT AND BALANCE VALIDITY and one of INTENT AND BALANCE
         // BOUNDED SETTLEMENT
         let (validity_proof, validity_hint) = singleprover_prove_with_hint::<
             SizedIntentAndBalanceValidity,
-        >(&validity_witness, &validity_statement)?;
+        >(validity_witness, validity_statement)?;
         let (settlement_proof, settlement_hint) = singleprover_prove_with_hint::<
             IntentAndBalanceBoundedSettlementCircuit,
         >(
-            &settlement_witness, &settlement_statement
+            settlement_witness, settlement_statement
         )?;
 
         // Link the proofs and verify the link
@@ -862,20 +928,20 @@ mod test {
     /// Prove INTENT AND BALANCE FIRST FILL VALIDITY and INTENT AND BALANCE
     /// BOUNDED SETTLEMENT, then link the proofs and verify the link
     fn test_intent_and_balance_first_fill_validity_bounded_settlement_link(
-        validity_witness: IntentAndBalanceFirstFillValidityWitness<TEST_MERKLE_HEIGHT>,
-        validity_statement: IntentAndBalanceFirstFillValidityStatement,
-        settlement_witness: IntentAndBalanceBoundedSettlementWitness,
-        settlement_statement: IntentAndBalanceBoundedSettlementStatement,
+        validity_witness: &IntentAndBalanceFirstFillValidityWitness<TEST_MERKLE_HEIGHT>,
+        validity_statement: &IntentAndBalanceFirstFillValidityStatement,
+        settlement_witness: &IntentAndBalanceBoundedSettlementWitness,
+        settlement_statement: &IntentAndBalanceBoundedSettlementStatement,
     ) -> Result<(), ProverError> {
         // Create a proof of INTENT AND BALANCE FIRST FILL VALIDITY and one of INTENT
         // AND BALANCE BOUNDED SETTLEMENT
         let (validity_proof, validity_hint) = singleprover_prove_with_hint::<
             SizedIntentAndBalanceFirstFillValidity,
-        >(&validity_witness, &validity_statement)?;
+        >(validity_witness, validity_statement)?;
         let (settlement_proof, settlement_hint) = singleprover_prove_with_hint::<
             IntentAndBalanceBoundedSettlementCircuit,
         >(
-            &settlement_witness, &settlement_statement
+            settlement_witness, settlement_statement
         )?;
 
         let link_proof = link_intent_and_balance_settlement_with_party::<TEST_MERKLE_HEIGHT>(
@@ -950,10 +1016,10 @@ mod test {
             build_intent_and_balance_validity_bounded_settlement_data();
 
         test_intent_and_balance_validity_bounded_settlement_link(
-            validity_witness,
-            validity_statement,
-            settlement_witness,
-            settlement_statement,
+            &validity_witness,
+            &validity_statement,
+            &settlement_witness,
+            &settlement_statement,
         )
         .unwrap();
     }
@@ -967,10 +1033,10 @@ mod test {
             build_intent_and_balance_first_fill_validity_bounded_settlement_data();
 
         test_intent_and_balance_first_fill_validity_bounded_settlement_link(
-            validity_witness,
-            validity_statement,
-            settlement_witness,
-            settlement_statement,
+            &validity_witness,
+            &validity_statement,
+            &settlement_witness,
+            &settlement_statement,
         )
         .unwrap();
     }
@@ -991,10 +1057,10 @@ mod test {
         // Modify the intent in the settlement witness to break the link
         settlement_witness.intent.amount_in += 1;
         test_intent_and_balance_validity_bounded_settlement_link(
-            validity_witness,
-            validity_statement,
-            settlement_witness,
-            settlement_statement,
+            &validity_witness,
+            &validity_statement,
+            &settlement_witness,
+            &settlement_statement,
         )
         .unwrap();
     }
@@ -1027,10 +1093,10 @@ mod test {
 
         // Now the settlement circuit is valid, but the link will fail
         test_intent_and_balance_validity_bounded_settlement_link(
-            validity_witness,
-            validity_statement,
-            settlement_witness,
-            settlement_statement,
+            &validity_witness,
+            &validity_statement,
+            &settlement_witness,
+            &settlement_statement,
         )
         .unwrap();
     }
@@ -1054,17 +1120,17 @@ mod test {
             mint: random_address(),
             owner: random_address(),
             relayer_fee_recipient: random_address(),
-            one_time_authority: random_address(),
+            authority: random_schnorr_public_key(),
             relayer_fee_balance: random_amount(),
             protocol_fee_balance: random_amount(),
             amount: random_amount(),
         };
 
         test_intent_and_balance_validity_bounded_settlement_link(
-            validity_witness,
-            validity_statement,
-            settlement_witness,
-            settlement_statement,
+            &validity_witness,
+            &validity_statement,
+            &settlement_witness,
+            &settlement_statement,
         )
         .unwrap();
     }
@@ -1099,10 +1165,10 @@ mod test {
         // settlement_witness.pre_settlement_in_balance_shares doesn't match
         // validity_witness.post_match_balance_shares
         test_intent_and_balance_validity_bounded_settlement_link(
-            validity_witness,
-            validity_statement,
-            settlement_witness,
-            settlement_statement,
+            &validity_witness,
+            &validity_statement,
+            &settlement_witness,
+            &settlement_statement,
         )
         .unwrap();
     }

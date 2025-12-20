@@ -210,7 +210,7 @@ pub mod test_helpers {
     use crate::{
         test_helpers::{
             check_constraints_satisfied, create_merkle_opening, create_random_state_wrapper,
-            random_address, random_amount,
+            random_address, random_amount, random_schnorr_public_key,
         },
         zk_circuits::fees::valid_public_relayer_fee_payment::{
             SizedValidPublicRelayerFeePayment, SizedValidPublicRelayerFeePaymentWitness,
@@ -243,7 +243,7 @@ pub mod test_helpers {
             mint: random_address(),
             relayer_fee_recipient: random_address(),
             owner: random_address(),
-            one_time_authority: Address::ZERO,
+            authority: random_schnorr_public_key(),
             relayer_fee_balance: random_amount(),
             protocol_fee_balance: random_amount(),
             amount: random_amount(),
@@ -316,7 +316,9 @@ pub mod test_helpers {
 #[cfg(test)]
 mod test {
 
-    use crate::test_helpers::{create_random_state_wrapper, random_address, random_amount};
+    use crate::test_helpers::{
+        create_random_state_wrapper, random_address, random_amount, random_schnorr_public_key,
+    };
 
     use super::test_helpers::create_dummy_witness_statement_with_balance;
     use super::*;
@@ -353,7 +355,7 @@ mod test {
             mint: random_address(),
             relayer_fee_recipient: random_address(),
             owner: random_address(),
-            one_time_authority: Address::ZERO,
+            authority: random_schnorr_public_key(),
             relayer_fee_balance: 0u128,
             protocol_fee_balance: random_amount(),
             amount: random_amount(),

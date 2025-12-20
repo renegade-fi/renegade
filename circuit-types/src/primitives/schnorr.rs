@@ -1,10 +1,12 @@
 //! Types for Schnorr signatures
 #![allow(missing_docs)]
 
-#[cfg(feature = "proof-system-types")]
-use crate::elgamal::BabyJubJubPoint;
 use constants::{EmbeddedScalarField, Scalar};
 use serde::{Deserialize, Serialize};
+
+#[cfg(feature = "proof-system-types")]
+use crate::elgamal::BabyJubJubPoint;
+use crate::ser_embedded_scalar_field;
 
 #[cfg(feature = "proof-system-types")]
 use {
@@ -36,11 +38,12 @@ use {
 
 /// A Schnorr signature
 #[cfg_attr(feature = "proof-system-types", circuit_type(serde, singleprover_circuit))]
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SchnorrSignature {
     /// The s-value of the signature
     ///
     /// s = H(M || r) * private_key + k
+    #[serde(with = "ser_embedded_scalar_field")]
     pub s: EmbeddedScalarField,
     /// The R-value of the signature
     ///

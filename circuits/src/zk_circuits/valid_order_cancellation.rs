@@ -165,12 +165,12 @@ pub mod test_helpers {
     pub fn create_dummy_witness_statement()
     -> (SizedValidOrderCancellationWitness, ValidOrderCancellationStatement) {
         let intent = random_intent();
-        create_dummy_witness_statement_with_intent(intent)
+        create_dummy_witness_statement_with_intent(&intent)
     }
 
     /// Create a dummy witness and statement with a given intent
     pub fn create_dummy_witness_statement_with_intent(
-        intent: Intent,
+        intent: &Intent,
     ) -> (SizedValidOrderCancellationWitness, ValidOrderCancellationStatement) {
         // Create the old intent with initial stream states
         let old_intent = create_random_state_wrapper(intent.clone());

@@ -200,8 +200,10 @@ pub mod test_helpers {
     use constants::Scalar;
 
     use crate::{
-        test_helpers::{check_constraints_satisfied, random_amount, random_deposit},
-        test_helpers::{create_merkle_opening, create_random_state_wrapper},
+        test_helpers::{
+            check_constraints_satisfied, create_merkle_opening, create_random_state_wrapper,
+            random_amount, random_deposit, random_schnorr_public_key,
+        },
         zk_circuits::valid_deposit::{SizedValidDeposit, SizedValidDepositWitness},
     };
 
@@ -238,7 +240,7 @@ pub mod test_helpers {
             mint: deposit.token,
             relayer_fee_recipient: Address::ZERO,
             owner: deposit.from,
-            one_time_authority: Address::ZERO,
+            authority: random_schnorr_public_key(),
             relayer_fee_balance: random_amount(),
             protocol_fee_balance: random_amount(),
             amount: random_amount(),

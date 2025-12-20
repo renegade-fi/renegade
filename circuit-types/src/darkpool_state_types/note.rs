@@ -11,9 +11,9 @@ use rand::thread_rng;
 use renegade_crypto::hash::compute_poseidon_hash;
 use serde::{Deserialize, Serialize};
 
-use crate::Amount;
 #[cfg(feature = "proof-system-types")]
 use crate::elgamal::{ElGamalCiphertext, EncryptionKey};
+use crate::{Amount, schnorr::SchnorrPublicKey};
 
 use super::balance::Balance;
 
@@ -32,6 +32,9 @@ use {
 /// decrypt the note to know if they own it.
 #[cfg(feature = "proof-system-types")]
 pub const NOTE_CIPHERTEXT_SIZE: usize = Note::NUM_SCALARS - 1;
+/// A note ciphertext type alias
+#[cfg(feature = "proof-system-types")]
+pub type NoteCiphertext = ElGamalCiphertext<NOTE_CIPHERTEXT_SIZE>;
 
 /// A note allocated into the protocol state by one user transferring to another
 #[cfg_attr(feature = "proof-system-types", circuit_type(serde, singleprover_circuit))]
@@ -101,8 +104,8 @@ impl Note {
         Balance {
             mint: self.mint,
             relayer_fee_recipient: Address::ZERO,
-            owner: Address::ZERO,              // Default owner
-            one_time_authority: Address::ZERO, // Default one-time authority
+            owner: Address::ZERO,                   // Default owner
+            authority: SchnorrPublicKey::default(), // Default authority
             relayer_fee_balance: 0,
             protocol_fee_balance: 0,
             amount: self.amount,

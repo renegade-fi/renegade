@@ -79,7 +79,7 @@ impl ShareGadget {
             mint: balance_share.mint,
             owner: balance_share.owner,
             relayer_fee_recipient: balance_share.relayer_fee_recipient,
-            one_time_authority: balance_share.one_time_authority,
+            authority: balance_share.authority.clone(),
         }
     }
 
