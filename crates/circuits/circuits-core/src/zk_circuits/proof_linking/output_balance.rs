@@ -179,8 +179,8 @@ mod test {
             },
         },
     };
-    use circuit_types::fee::FeeRates;
     use constants::Scalar;
+    use darkpool_types::fee::FeeRates;
     use rand::{seq::SliceRandom, thread_rng};
 
     /// The Merkle height used for testing

@@ -5,24 +5,26 @@ use std::cmp;
 use alloy_primitives::Address;
 use circuit_types::{
     AMOUNT_BITS, Amount,
-    balance::{Balance, PostMatchBalanceShare},
-    bounded_match_result::BoundedMatchResult,
     csprng::PoseidonCSPRNG,
-    deposit::Deposit,
     elgamal::{DecryptionKey, EncryptionKey},
     fixed_point::FixedPoint,
-    intent::Intent,
     max_amount,
     schnorr::{SchnorrPrivateKey, SchnorrPublicKey},
-    settlement_obligation::SettlementObligation,
-    state_wrapper::StateWrapper,
     traits::{BaseType, CircuitBaseType, SecretShareBaseType},
-    withdrawal::Withdrawal,
 };
 use constants::{MAX_RELAYER_FEE_RATE, Scalar};
+use crypto::fields::scalar_to_u128;
+use darkpool_types::{
+    balance::{Balance, PostMatchBalanceShare},
+    bounded_match_result::BoundedMatchResult,
+    deposit::Deposit,
+    intent::Intent,
+    settlement_obligation::SettlementObligation,
+    state_wrapper::StateWrapper,
+    withdrawal::Withdrawal,
+};
 use itertools::Itertools;
 use rand::{Rng, distributions::uniform::SampleRange, thread_rng};
-use renegade_crypto::fields::scalar_to_u128;
 
 /// The bounded maximum amount to prevent `Amount` overflow in tests
 pub const BOUNDED_MAX_AMT: Amount = 2u128.pow((AMOUNT_BITS / 2) as u32);

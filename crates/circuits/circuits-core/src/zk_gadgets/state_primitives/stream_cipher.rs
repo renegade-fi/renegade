@@ -40,8 +40,9 @@ impl StreamCipherGadget {
 
 #[cfg(test)]
 mod test {
-    use circuit_types::{PlonkCircuit, balance::Balance, traits::CircuitBaseType};
+    use circuit_types::{PlonkCircuit, traits::CircuitBaseType};
     use constants::Scalar;
+    use darkpool_types::balance::Balance;
     use eyre::Result;
     use mpc_relation::Variable;
     use mpc_relation::traits::Circuit;

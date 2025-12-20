@@ -3,9 +3,9 @@
 use circuit_types::{
     PlonkCircuit,
     elgamal::{ElGamalCiphertextVar, EncryptionKeyVar},
-    note::{NOTE_CIPHERTEXT_SIZE, NoteVar},
     traits::CircuitVarType,
 };
+use darkpool_types::note::{NOTE_CIPHERTEXT_SIZE, NoteVar};
 use mpc_relation::{Variable, errors::CircuitError, traits::Circuit};
 
 use crate::zk_gadgets::primitives::{

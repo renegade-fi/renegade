@@ -3,11 +3,9 @@
 
 use ark_ff::{One, Zero};
 use constants::ScalarField;
+use crypto::hash::{CAPACITY, FULL_ROUND_CONSTANTS, PARTIAL_ROUND_CONSTANTS, R_F, R_P, RATE};
 use itertools::Itertools;
 use mpc_relation::{Variable, errors::CircuitError, traits::Circuit};
-use renegade_crypto::hash::{
-    CAPACITY, FULL_ROUND_CONSTANTS, PARTIAL_ROUND_CONSTANTS, R_F, R_P, RATE,
-};
 
 use super::gates::{FusedExternalSboxMDSGate, FusedInternalSboxMDSGate};
 

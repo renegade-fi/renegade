@@ -1,10 +1,7 @@
 //! Fee gadgets for zero knowledge circuits
 
-use circuit_types::{
-    FEE_BITS, PlonkCircuit,
-    fee::{FeeRatesVar, FeeTakeVar},
-    fixed_point::FixedPointVar,
-};
+use circuit_types::{FEE_BITS, PlonkCircuit, fixed_point::FixedPointVar};
+use darkpool_types::fee::{FeeRatesVar, FeeTakeVar};
 use mpc_relation::{Variable, errors::CircuitError, traits::Circuit};
 
 use crate::zk_gadgets::{bits::BitRangeGadget, fixed_point::FixedPointGadget};
@@ -51,13 +48,9 @@ impl FeeGadget {
 
 #[cfg(test)]
 mod test {
-    use circuit_types::{
-        FEE_BITS, PlonkCircuit,
-        fee::{FeeRates, FeeTake},
-        fixed_point::FixedPoint,
-        traits::CircuitBaseType,
-    };
+    use circuit_types::{FEE_BITS, PlonkCircuit, fixed_point::FixedPoint, traits::CircuitBaseType};
     use constants::Scalar;
+    use darkpool_types::fee::{FeeRates, FeeTake};
     use eyre::Result;
     use mpc_relation::traits::Circuit;
 

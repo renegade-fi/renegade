@@ -164,6 +164,9 @@ circuit-types = { workspace = true, default-features = false, features = [
 ] }
 constants = { workspace = true, features = ["mpc-types"] }
 crypto = { workspace = true, features = ["fields", "hash"] }
+darkpool-types = { workspace = true, default-features = false, features = [
+    "proof-system-types",
+] }
 util = { workspace = true, features = ["blockchain"] }
 
 # === Misc Dependencies === #

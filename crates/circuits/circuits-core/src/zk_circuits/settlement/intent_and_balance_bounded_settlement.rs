@@ -12,13 +12,15 @@ use alloy_primitives::Address;
 use circuit_macros::circuit_type;
 use circuit_types::{
     PlonkCircuit,
-    balance::{Balance, PostMatchBalanceShare},
-    bounded_match_result::BoundedMatchResult,
     fixed_point::FixedPoint,
-    intent::Intent,
     traits::{BaseType, CircuitBaseType, CircuitVarType},
 };
 use constants::{Scalar, ScalarField};
+use darkpool_types::{
+    balance::{Balance, PostMatchBalanceShare},
+    bounded_match_result::BoundedMatchResult,
+    intent::Intent,
+};
 use mpc_plonk::errors::PlonkError;
 use mpc_relation::{
     Variable,
@@ -223,8 +225,9 @@ impl SingleProverCircuit for IntentAndBalanceBoundedSettlementCircuit {
 #[cfg(any(test, feature = "test_helpers"))]
 pub mod test_helpers {
     use alloy_primitives::Address;
-    use circuit_types::{
-        balance::Balance, bounded_match_result::BoundedMatchResult, intent::Intent, max_amount,
+    use circuit_types::max_amount;
+    use darkpool_types::{
+        balance::Balance, bounded_match_result::BoundedMatchResult, intent::Intent,
     };
     use rand::{Rng, thread_rng};
 
@@ -358,7 +361,8 @@ mod test {
         },
         zk_circuits::settlement::intent_and_balance_bounded_settlement::test_helpers,
     };
-    use circuit_types::{balance::PostMatchBalanceShare, max_amount, traits::SingleProverCircuit};
+    use circuit_types::{max_amount, traits::SingleProverCircuit};
+    use darkpool_types::balance::PostMatchBalanceShare;
     use rand::{Rng, thread_rng};
 
     /// A helper to print the number of constraints in the circuit

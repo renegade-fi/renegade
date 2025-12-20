@@ -4,14 +4,14 @@
 //! from the balance.
 
 use circuit_macros::circuit_type;
-use circuit_types::balance::{
-    BalanceShareVar, BalanceVar, DarkpoolStateBalance, DarkpoolStateBalanceVar,
-};
 use circuit_types::merkle::{MerkleOpening, MerkleRoot};
 use circuit_types::traits::{BaseType, CircuitBaseType, CircuitVarType};
-use circuit_types::withdrawal::Withdrawal;
 use circuit_types::{AMOUNT_BITS, Commitment, Nullifier, PlonkCircuit};
 use constants::{MERKLE_HEIGHT, Scalar, ScalarField};
+use darkpool_types::balance::{
+    BalanceShareVar, BalanceVar, DarkpoolStateBalance, DarkpoolStateBalanceVar,
+};
+use darkpool_types::withdrawal::Withdrawal;
 use mpc_plonk::errors::PlonkError;
 use mpc_relation::{Variable, errors::CircuitError, traits::Circuit};
 use serde::{Deserialize, Serialize};
@@ -209,11 +209,11 @@ impl<const MERKLE_HEIGHT: usize> SingleProverCircuit for ValidWithdrawal<MERKLE_
 
 #[cfg(any(test, feature = "test_helpers"))]
 pub mod test_helpers {
-    use circuit_types::{
+    use constants::Scalar;
+    use darkpool_types::{
         balance::{Balance, DarkpoolStateBalance},
         withdrawal::Withdrawal,
     };
-    use constants::Scalar;
 
     use crate::{
         test_helpers::{
@@ -315,8 +315,9 @@ mod test {
     };
 
     use super::*;
-    use circuit_types::{balance::Balance, max_amount, traits::SingleProverCircuit};
+    use circuit_types::{max_amount, traits::SingleProverCircuit};
     use constants::MERKLE_HEIGHT;
+    use darkpool_types::balance::Balance;
     use itertools::Itertools;
     use rand::{Rng, thread_rng};
 

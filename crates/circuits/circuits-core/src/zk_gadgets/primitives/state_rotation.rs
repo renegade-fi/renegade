@@ -176,7 +176,7 @@ mod test {
     use circuit_macros::circuit_type;
     use circuit_types::fixed_point::FixedPoint;
     use circuit_types::merkle::MerkleOpening;
-    use circuit_types::state_wrapper::{PartialCommitment, StateWrapper};
+    use darkpool_types::state_wrapper::{PartialCommitment, StateWrapper};
     use circuit_types::{PlonkCircuit, traits::*};
     use constants::{Scalar, ScalarField};
     use eyre::Result;

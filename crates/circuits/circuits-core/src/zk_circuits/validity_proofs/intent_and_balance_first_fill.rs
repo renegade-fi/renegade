@@ -8,20 +8,22 @@
 //! leaked key.
 
 use circuit_macros::circuit_type;
+use circuit_types::traits::{BaseType, CircuitBaseType, CircuitVarType};
 use circuit_types::{
     Commitment, Nullifier, PlonkCircuit,
+    csprng::PoseidonCSPRNG,
+    merkle::{MerkleOpening, MerkleRoot},
+    schnorr::SchnorrSignature,
+};
+use constants::{MERKLE_HEIGHT, Scalar, ScalarField};
+use darkpool_types::{
     balance::{
         Balance, BalanceShareVar, DarkpoolStateBalance, DarkpoolStateBalanceVar, PostMatchBalance,
         PostMatchBalanceShare, PostMatchBalanceShareVar,
     },
-    csprng::PoseidonCSPRNG,
     intent::{DarkpoolStateIntentVar, Intent, IntentShare, PreMatchIntentShare},
-    merkle::{MerkleOpening, MerkleRoot},
-    schnorr::SchnorrSignature,
     state_wrapper::PartialCommitment,
-    traits::{BaseType, CircuitBaseType, CircuitVarType},
 };
-use constants::{MERKLE_HEIGHT, Scalar, ScalarField};
 use mpc_plonk::errors::PlonkError;
 use mpc_relation::{
     Variable,
@@ -417,10 +419,10 @@ impl<const MERKLE_HEIGHT: usize> SingleProverCircuit
 
 #[cfg(any(test, feature = "test_helpers"))]
 pub mod test_helpers {
-    use circuit_types::{
+    use circuit_types::schnorr::SchnorrPrivateKey;
+    use darkpool_types::{
         balance::{Balance, DarkpoolStateBalance, PostMatchBalance},
         intent::{Intent, PreMatchIntentShare},
-        schnorr::SchnorrPrivateKey,
     };
 
     use crate::{

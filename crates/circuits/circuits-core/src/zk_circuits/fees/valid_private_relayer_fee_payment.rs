@@ -4,12 +4,12 @@
 
 use alloy_primitives::Address;
 use circuit_macros::circuit_type;
-use circuit_types::balance::{BalanceShareVar, DarkpoolStateBalance, DarkpoolStateBalanceVar};
 use circuit_types::merkle::{MerkleOpening, MerkleRoot};
-use circuit_types::note::NoteVar;
 use circuit_types::traits::{BaseType, CircuitBaseType, CircuitVarType};
 use circuit_types::{Commitment, Nullifier, PlonkCircuit};
 use constants::{MERKLE_HEIGHT, Scalar, ScalarField};
+use darkpool_types::balance::{BalanceShareVar, DarkpoolStateBalance, DarkpoolStateBalanceVar};
+use darkpool_types::note::NoteVar;
 use mpc_plonk::errors::PlonkError;
 use mpc_relation::{Variable, errors::CircuitError, traits::Circuit};
 use serde::{Deserialize, Serialize};
@@ -213,11 +213,11 @@ impl<const MERKLE_HEIGHT: usize> SingleProverCircuit
 
 #[cfg(any(test, feature = "test_helpers"))]
 pub mod test_helpers {
-    use circuit_types::{
+    use constants::Scalar;
+    use darkpool_types::{
         balance::{Balance, DarkpoolStateBalance},
         note::Note,
     };
-    use constants::Scalar;
     use rand::thread_rng;
 
     use crate::{
@@ -341,7 +341,8 @@ mod test {
 
     use super::test_helpers::create_dummy_witness_statement_with_balance;
     use super::*;
-    use circuit_types::{balance::Balance, note::Note, traits::SingleProverCircuit};
+    use circuit_types::traits::SingleProverCircuit;
+    use darkpool_types::{balance::Balance, note::Note};
 
     /// A helper to print the number of constraints in the circuit
     ///

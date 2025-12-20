@@ -1,7 +1,7 @@
 [workspace]
 resolver = "3"
 members = [
-	# "crates/circuits/circuits-core",
+	"crates/circuits/circuits-core",
 	"crates/circuits/circuit-types",
 	"crates/circuits/circuit-macros",
 	"crates/constants",
@@ -89,6 +89,7 @@ constants = { path = "crates/constants", default-features = false }
 circuits-core = { path = "crates/circuits/circuits-core", default-features = false }
 circuit-macros = { path = "crates/circuits/circuit-macros", default-features = false }
 circuit-types = { path = "crates/circuits/circuit-types", default-features = false }
+darkpool-types = { path = "crates/darkpool-types", default-features = false }
 common = { path = "crates/common", default-features = false }
 config = { path = "crates/config", default-features = false }
 event-manager = { path = "crates/workers/event-manager", default-features = false }

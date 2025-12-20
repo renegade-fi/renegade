@@ -1732,6 +1732,7 @@ dependencies = [
  "criterion",
  "crypto",
  "ctor",
+ "darkpool-types",
  "dns-lookup",
  "eyre",
  "futures",

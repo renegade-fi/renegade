@@ -28,9 +28,9 @@ use std::cmp;
 
 use circuit_types::{
     PlonkCircuit,
-    state_wrapper::{PartialCommitmentVar, StateWrapperVar},
     traits::{CircuitBaseType, CircuitVarType, SecretShareBaseType},
 };
+use darkpool_types::state_wrapper::{PartialCommitmentVar, StateWrapperVar};
 use mpc_relation::{Variable, errors::CircuitError, traits::Circuit};
 
 use crate::zk_gadgets::primitives::poseidon::PoseidonHashGadget;

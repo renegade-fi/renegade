@@ -6,9 +6,8 @@
 
 use ark_ec::AffineRepr;
 use circuit_types::PlonkCircuit;
-use circuit_types::elgamal::{
-    BabyJubJubPointVar, DecryptionKeyVar, ElGamalCiphertextVar, EncryptionKeyVar,
-};
+use circuit_types::elgamal::{DecryptionKeyVar, ElGamalCiphertextVar, EncryptionKeyVar};
+use circuit_types::primitives::baby_jubjub::BabyJubJubPointVar;
 use constants::EmbeddedCurveConfig;
 use constants::EmbeddedCurveGroupAffine;
 use jf_primitives::circuit::elgamal::{ElGamalEncryptionGadget, EncKeyVars};

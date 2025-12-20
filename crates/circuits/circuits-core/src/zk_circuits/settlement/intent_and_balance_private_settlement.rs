@@ -6,14 +6,16 @@
 use circuit_macros::circuit_type;
 use circuit_types::{
     PlonkCircuit,
-    balance::{Balance, PostMatchBalanceShare},
-    fee::FeeRatesVar,
     fixed_point::FixedPoint,
-    intent::Intent,
-    settlement_obligation::SettlementObligation,
     traits::{BaseType, CircuitBaseType, CircuitVarType},
 };
 use constants::{Scalar, ScalarField};
+use darkpool_types::{
+    balance::{Balance, PostMatchBalanceShare},
+    fee::FeeRatesVar,
+    intent::Intent,
+    settlement_obligation::SettlementObligation,
+};
 use mpc_plonk::errors::PlonkError;
 use mpc_relation::{
     Variable,
@@ -269,15 +271,15 @@ impl SingleProverCircuit for IntentAndBalancePrivateSettlementCircuit {
 #[cfg(any(test, feature = "test_helpers"))]
 pub mod test_helpers {
     use alloy_primitives::Address;
-    use circuit_types::{
+    use circuit_types::fixed_point::FixedPoint;
+    use circuit_types::max_amount;
+    use constants::Scalar;
+    use darkpool_types::{
         balance::{Balance, PostMatchBalanceShare},
         fee::FeeRates,
-        fixed_point::FixedPoint,
         intent::Intent,
-        max_amount,
         settlement_obligation::SettlementObligation,
     };
-    use constants::Scalar;
     use rand::{Rng, thread_rng};
 
     use crate::{

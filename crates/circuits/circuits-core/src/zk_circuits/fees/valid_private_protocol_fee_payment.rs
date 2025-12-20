@@ -6,14 +6,12 @@ use alloy_primitives::Address;
 use circuit_macros::circuit_type;
 use circuit_types::elgamal::{ElGamalCiphertext, EncryptionKey};
 use circuit_types::merkle::{MerkleOpening, MerkleRoot};
-use circuit_types::note::{NOTE_CIPHERTEXT_SIZE, NoteVar};
+use circuit_types::ser_embedded_scalar_field;
 use circuit_types::traits::{BaseType, CircuitBaseType, CircuitVarType};
 use circuit_types::{Commitment, Nullifier, PlonkCircuit};
-use circuit_types::{
-    balance::{BalanceShareVar, DarkpoolStateBalance, DarkpoolStateBalanceVar},
-    ser_embedded_scalar_field,
-};
 use constants::{EmbeddedScalarField, MERKLE_HEIGHT, Scalar, ScalarField};
+use darkpool_types::balance::{BalanceShareVar, DarkpoolStateBalance, DarkpoolStateBalanceVar};
+use darkpool_types::note::{NOTE_CIPHERTEXT_SIZE, NoteVar};
 use mpc_plonk::errors::PlonkError;
 use mpc_relation::{Variable, errors::CircuitError, traits::Circuit};
 use serde::{Deserialize, Serialize};
@@ -230,11 +228,11 @@ impl<const MERKLE_HEIGHT: usize> SingleProverCircuit
 #[cfg(any(test, feature = "test_helpers"))]
 pub mod test_helpers {
     use alloy_primitives::Address;
-    use circuit_types::{
+    use constants::Scalar;
+    use darkpool_types::{
         balance::{Balance, DarkpoolStateBalance},
         note::Note,
     };
-    use constants::Scalar;
     use rand::thread_rng;
 
     use crate::{
@@ -357,7 +355,8 @@ mod test {
     use crate::test_helpers::{random_address, random_elgamal_encryption_key, random_scalar};
 
     use super::*;
-    use circuit_types::{note::Note, traits::SingleProverCircuit};
+    use circuit_types::traits::SingleProverCircuit;
+    use darkpool_types::note::Note;
     use rand::{Rng, RngCore, thread_rng};
 
     /// A helper to print the number of constraints in the circuit

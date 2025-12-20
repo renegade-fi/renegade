@@ -5,12 +5,14 @@
 use circuit_macros::circuit_type;
 use circuit_types::{
     Commitment, Nullifier, PlonkCircuit,
-    balance::{BalanceShareVar, DarkpoolStateBalance, DarkpoolStateBalanceVar},
-    deposit::Deposit,
     merkle::{MerkleOpening, MerkleRoot},
     traits::{BaseType, CircuitBaseType, CircuitVarType},
 };
 use constants::{MERKLE_HEIGHT, Scalar, ScalarField};
+use darkpool_types::{
+    balance::{BalanceShareVar, DarkpoolStateBalance, DarkpoolStateBalanceVar},
+    deposit::Deposit,
+};
 use mpc_plonk::errors::PlonkError;
 use mpc_relation::{Variable, errors::CircuitError, traits::Circuit};
 use serde::{Deserialize, Serialize};
@@ -196,8 +198,8 @@ impl<const MERKLE_HEIGHT: usize> SingleProverCircuit for ValidDeposit<MERKLE_HEI
 #[cfg(any(test, feature = "test_helpers"))]
 pub mod test_helpers {
     use alloy_primitives::Address;
-    use circuit_types::{balance::Balance, deposit::Deposit};
     use constants::Scalar;
+    use darkpool_types::{balance::Balance, deposit::Deposit};
 
     use crate::{
         test_helpers::{

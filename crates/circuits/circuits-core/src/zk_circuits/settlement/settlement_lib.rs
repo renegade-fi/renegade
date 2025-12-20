@@ -2,8 +2,8 @@
 //!
 //! This module contains helpers for settlement circuits.
 
-use circuit_types::{
-    AMOUNT_BITS, PRICE_BITS, PlonkCircuit,
+use circuit_types::{AMOUNT_BITS, PRICE_BITS, PlonkCircuit};
+use darkpool_types::{
     balance::{BalanceVar, PostMatchBalanceShareVar},
     bounded_match_result::BoundedMatchResultVar,
     fee::FeeRatesVar,

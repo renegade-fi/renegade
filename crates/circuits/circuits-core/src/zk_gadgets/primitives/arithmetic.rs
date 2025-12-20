@@ -5,10 +5,10 @@ use ark_ff::One;
 use circuit_types::PlonkCircuit;
 use circuit_types::traits::{CircuitBaseType, CircuitVarType};
 use constants::ScalarField;
+use crypto::fields::{biguint_to_scalar, scalar_to_biguint};
 use mpc_relation::Variable;
 use mpc_relation::errors::CircuitError;
 use mpc_relation::traits::Circuit;
-use renegade_crypto::fields::{biguint_to_scalar, scalar_to_biguint};
 
 use num_integer::Integer;
 
@@ -125,11 +125,11 @@ impl ExpGadget {
 mod arithmetic_tests {
     use circuit_types::{PlonkCircuit, traits::CircuitBaseType};
     use constants::Scalar;
+    use crypto::fields::biguint_to_scalar;
     use mpc_relation::traits::Circuit;
     use num_bigint::BigUint;
     use num_integer::Integer;
     use rand::{RngCore, thread_rng};
-    use renegade_crypto::fields::biguint_to_scalar;
 
     use super::{DivRemGadget, ExpGadget};
 

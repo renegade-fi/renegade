@@ -452,7 +452,7 @@ mod test {
     #[allow(non_snake_case)]
     fn test_intent_and_balance_exact_public_settlement_invalid_link__modified_balance() {
         use crate::test_helpers::{random_address, random_amount};
-        use circuit_types::balance::Balance;
+        use darkpool_types::balance::Balance;
 
         let (validity_witness, validity_statement, mut settlement_witness, settlement_statement) =
             build_intent_and_balance_validity_exact_public_settlement_data();
@@ -1110,7 +1110,7 @@ mod test {
     #[allow(non_snake_case)]
     fn test_intent_and_balance_bounded_settlement_invalid_link__modified_balance() {
         use crate::test_helpers::{random_address, random_amount};
-        use circuit_types::balance::Balance;
+        use darkpool_types::balance::Balance;
 
         let (validity_witness, validity_statement, mut settlement_witness, settlement_statement) =
             build_intent_and_balance_validity_bounded_settlement_data();

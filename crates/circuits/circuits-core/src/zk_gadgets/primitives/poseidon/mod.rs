@@ -13,10 +13,10 @@ pub use hash::*;
 mod test {
     use circuit_types::{PlonkCircuit, traits::CircuitBaseType};
     use constants::Scalar;
+    use crypto::hash::{Poseidon2Sponge, compute_poseidon_hash};
     use itertools::Itertools;
     use mpc_relation::traits::Circuit;
     use rand::thread_rng;
-    use renegade_crypto::hash::{Poseidon2Sponge, compute_poseidon_hash};
 
     use crate::zk_gadgets::primitives::poseidon::PoseidonHashGadget;
 

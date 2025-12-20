@@ -2,8 +2,8 @@
 
 use circuit_types::merkle::MerkleOpening;
 use constants::Scalar;
+use crypto::hash::compute_poseidon_hash;
 use itertools::Itertools;
-use renegade_crypto::hash::compute_poseidon_hash;
 
 /// Create a Merkle opening for a single leaf
 ///

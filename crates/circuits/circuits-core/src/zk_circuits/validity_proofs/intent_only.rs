@@ -9,12 +9,14 @@ use alloy_primitives::Address;
 use circuit_macros::circuit_type;
 use circuit_types::{
     Nullifier, PlonkCircuit,
-    intent::{DarkpoolStateIntent, DarkpoolStateIntentVar, Intent, IntentShare},
     merkle::{MerkleOpening, MerkleRoot},
-    state_wrapper::PartialCommitment,
     traits::{BaseType, CircuitBaseType, CircuitVarType},
 };
 use constants::{MERKLE_HEIGHT, Scalar, ScalarField};
+use darkpool_types::{
+    intent::{DarkpoolStateIntent, DarkpoolStateIntentVar, Intent, IntentShare},
+    state_wrapper::PartialCommitment,
+};
 use mpc_plonk::errors::PlonkError;
 use mpc_relation::{
     Variable,
@@ -241,7 +243,7 @@ impl<const MERKLE_HEIGHT: usize> SingleProverCircuit for IntentOnlyValidityCircu
 
 #[cfg(any(test, feature = "test_helpers"))]
 pub mod test_helpers {
-    use circuit_types::intent::{DarkpoolStateIntent, Intent};
+    use darkpool_types::intent::{DarkpoolStateIntent, Intent};
 
     use crate::{
         test_helpers::{

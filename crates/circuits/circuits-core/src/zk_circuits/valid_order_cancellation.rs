@@ -9,11 +9,11 @@ use alloy_primitives::Address;
 use circuit_macros::circuit_type;
 use circuit_types::{
     Nullifier, PlonkCircuit,
-    intent::DarkpoolStateIntent,
     merkle::{MerkleOpening, MerkleRoot},
     traits::{BaseType, CircuitBaseType, CircuitVarType},
 };
 use constants::{MERKLE_HEIGHT, Scalar, ScalarField};
+use darkpool_types::intent::DarkpoolStateIntent;
 use mpc_plonk::errors::PlonkError;
 use mpc_relation::{Variable, errors::CircuitError, traits::Circuit};
 use serde::{Deserialize, Serialize};
@@ -131,7 +131,7 @@ impl<const MERKLE_HEIGHT: usize> SingleProverCircuit
 
 #[cfg(any(test, feature = "test_helpers"))]
 pub mod test_helpers {
-    use circuit_types::intent::Intent;
+    use darkpool_types::intent::Intent;
 
     use crate::{
         test_helpers::{
@@ -199,7 +199,8 @@ pub mod test_helpers {
 mod test {
     use super::*;
     use crate::test_helpers::{random_address, random_scalar};
-    use circuit_types::{intent::IntentShare, traits::SingleProverCircuit};
+    use circuit_types::traits::SingleProverCircuit;
+    use darkpool_types::intent::IntentShare;
     use rand::{Rng, thread_rng};
 
     /// A helper to print the number of constraints in the circuit

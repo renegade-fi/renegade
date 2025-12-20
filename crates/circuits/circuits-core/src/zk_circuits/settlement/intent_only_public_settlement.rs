@@ -10,11 +10,10 @@ use circuit_macros::circuit_type;
 use circuit_types::{
     PlonkCircuit,
     fixed_point::FixedPoint,
-    intent::Intent,
-    settlement_obligation::SettlementObligation,
     traits::{BaseType, CircuitBaseType, CircuitVarType},
 };
 use constants::{Scalar, ScalarField};
+use darkpool_types::{intent::Intent, settlement_obligation::SettlementObligation};
 use mpc_plonk::errors::PlonkError;
 use mpc_relation::{
     Variable,
@@ -138,7 +137,7 @@ impl SingleProverCircuit for IntentOnlyPublicSettlementCircuit {
 
 #[cfg(any(test, feature = "test_helpers"))]
 pub mod test_helpers {
-    use circuit_types::{intent::Intent, settlement_obligation::SettlementObligation};
+    use darkpool_types::{intent::Intent, settlement_obligation::SettlementObligation};
 
     use crate::{
         test_helpers::{

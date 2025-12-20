@@ -185,10 +185,10 @@ mod bits_test {
         traits::{CircuitBaseType, MpcBaseType, MultiproverCircuitBaseType},
     };
     use constants::Scalar;
+    use crypto::fields::{bigint_to_scalar_bits, scalar_to_bigint};
     use itertools::Itertools;
     use mpc_relation::traits::Circuit;
     use rand::{Rng, RngCore, thread_rng};
-    use renegade_crypto::fields::{bigint_to_scalar_bits, scalar_to_bigint};
     use test_helpers::mpc_network::execute_mock_mpc;
 
     use crate::{

@@ -9,10 +9,10 @@ use circuit_macros::circuit_type;
 use circuit_types::{
     Commitment, PlonkCircuit,
     csprng::PoseidonCSPRNG,
-    intent::{DarkpoolStateIntentVar, Intent, IntentShare},
     traits::{BaseType, CircuitBaseType, CircuitVarType},
 };
 use constants::{Scalar, ScalarField};
+use darkpool_types::intent::{DarkpoolStateIntentVar, Intent, IntentShare};
 use mpc_plonk::errors::PlonkError;
 use mpc_relation::{
     Variable,
@@ -188,7 +188,7 @@ impl SingleProverCircuit for IntentOnlyFirstFillValidityCircuit {
 
 #[cfg(any(test, feature = "test_helpers"))]
 pub mod test_helpers {
-    use circuit_types::intent::Intent;
+    use darkpool_types::intent::Intent;
 
     use crate::{
         test_helpers::{check_constraints_satisfied, create_state_wrapper, random_intent},

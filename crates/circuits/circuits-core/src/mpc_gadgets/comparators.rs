@@ -244,10 +244,10 @@ mod test {
     use ark_mpc::PARTY0;
     use circuit_types::traits::MpcBaseType;
     use constants::Scalar;
+    use crypto::fields::biguint_to_scalar;
     use itertools::Itertools;
     use num_bigint::RandBigInt;
     use rand::{Rng, RngCore, thread_rng};
-    use renegade_crypto::fields::biguint_to_scalar;
     use test_helpers::mpc_network::execute_mock_mpc;
 
     use crate::{

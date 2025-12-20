@@ -3,9 +3,9 @@
 use circuit_types::{
     PlonkCircuit,
     merkle::MerkleOpeningVar,
-    state_wrapper::{PartialCommitmentVar, StateWrapperVar},
     traits::{CircuitBaseType, SecretShareBaseType},
 };
+use darkpool_types::state_wrapper::{PartialCommitmentVar, StateWrapperVar};
 use mpc_relation::{Variable, errors::CircuitError, traits::Circuit};
 
 use crate::zk_gadgets::{
@@ -175,9 +175,9 @@ mod test {
     use circuit_macros::circuit_type;
     use circuit_types::fixed_point::FixedPoint;
     use circuit_types::merkle::MerkleOpening;
-    use circuit_types::state_wrapper::{PartialCommitment, StateWrapper};
     use circuit_types::{PlonkCircuit, traits::*};
     use constants::{Scalar, ScalarField};
+    use darkpool_types::state_wrapper::{PartialCommitment, StateWrapper};
     use eyre::Result;
     use mpc_relation::{Variable, traits::Circuit};
     use rand::{Rng, thread_rng};
@@ -197,7 +197,7 @@ mod test {
     const MERKLE_HEIGHT: usize = 10;
 
     /// A test state element
-    #[derive(Clone)]
+    #[derive(Clone, Debug)]
     #[circuit_type(singleprover_circuit, secret_share)]
     struct TestStateElement {
         /// A scalar value
@@ -209,7 +209,7 @@ mod test {
     }
 
     /// A test nested state element
-    #[derive(Clone)]
+    #[derive(Clone, Debug)]
     #[circuit_type(singleprover_circuit, secret_share)]
     struct TestNestedStateElement {
         /// A fixed point value

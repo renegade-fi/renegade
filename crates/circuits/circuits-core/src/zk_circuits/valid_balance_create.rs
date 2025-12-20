@@ -7,12 +7,14 @@
 use circuit_macros::circuit_type;
 use circuit_types::{
     Commitment, PlonkCircuit,
-    balance::{Balance, BalanceShare, BalanceShareVar, BalanceVar, DarkpoolStateBalanceVar},
     csprng::PoseidonCSPRNG,
-    deposit::{Deposit, DepositVar},
     traits::{BaseType, CircuitBaseType, CircuitVarType},
 };
 use constants::{Scalar, ScalarField};
+use darkpool_types::{
+    balance::{Balance, BalanceShare, BalanceShareVar, BalanceVar, DarkpoolStateBalanceVar},
+    deposit::{Deposit, DepositVar},
+};
 use mpc_plonk::errors::PlonkError;
 use mpc_relation::{Variable, errors::CircuitError, traits::Circuit};
 use serde::{Deserialize, Serialize};
@@ -191,7 +193,7 @@ impl SingleProverCircuit for ValidBalanceCreate {
 
 #[cfg(any(test, feature = "test_helpers"))]
 pub mod test_helpers {
-    use circuit_types::{balance::Balance, deposit::Deposit};
+    use darkpool_types::{balance::Balance, deposit::Deposit};
 
     use crate::{
         test_helpers::{
@@ -284,7 +286,8 @@ mod test {
     };
 
     use super::*;
-    use circuit_types::{balance::Balance, traits::SingleProverCircuit};
+    use circuit_types::traits::SingleProverCircuit;
+    use darkpool_types::balance::Balance;
     use rand::{Rng, thread_rng};
 
     /// A helper to print the number of constraints in the circuit

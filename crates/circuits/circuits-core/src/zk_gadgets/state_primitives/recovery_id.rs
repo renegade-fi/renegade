@@ -2,9 +2,9 @@
 
 use circuit_types::{
     PlonkCircuit,
-    state_wrapper::StateWrapperVar,
     traits::{CircuitBaseType, SecretShareBaseType},
 };
+use darkpool_types::state_wrapper::StateWrapperVar;
 use mpc_relation::{Variable, errors::CircuitError};
 
 use crate::zk_gadgets::state_primitives::csprng::CSPRNGGadget;

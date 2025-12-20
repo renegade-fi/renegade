@@ -12,10 +12,10 @@
 
 use circuit_macros::circuit_type;
 use circuit_types::merkle::{MerkleOpening, MerkleRoot};
-use circuit_types::note::Note;
 use circuit_types::traits::{BaseType, CircuitBaseType, CircuitVarType};
 use circuit_types::{Nullifier, PlonkCircuit};
 use constants::{MERKLE_HEIGHT, Scalar, ScalarField};
+use darkpool_types::note::Note;
 use mpc_plonk::errors::PlonkError;
 use mpc_relation::{Variable, errors::CircuitError, traits::Circuit};
 use serde::{Deserialize, Serialize};
@@ -122,7 +122,7 @@ impl<const MERKLE_HEIGHT: usize> SingleProverCircuit for ValidNoteRedemption<MER
 
 #[cfg(any(test, feature = "test_helpers"))]
 pub mod test_helpers {
-    use circuit_types::note::Note;
+    use darkpool_types::note::Note;
 
     use crate::{
         test_helpers::create_merkle_opening,

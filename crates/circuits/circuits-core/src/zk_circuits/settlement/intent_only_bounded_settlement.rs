@@ -9,12 +9,11 @@ use alloy_primitives::Address;
 use circuit_macros::circuit_type;
 use circuit_types::{
     PlonkCircuit,
-    bounded_match_result::BoundedMatchResult,
     fixed_point::FixedPoint,
-    intent::Intent,
     traits::{BaseType, CircuitBaseType, CircuitVarType},
 };
 use constants::{Scalar, ScalarField};
+use darkpool_types::{bounded_match_result::BoundedMatchResult, intent::Intent};
 use mpc_plonk::errors::PlonkError;
 use mpc_relation::{
     Variable,
@@ -164,7 +163,7 @@ pub mod test_helpers {
             IntentOnlyBoundedSettlementWitness,
         },
     };
-    use circuit_types::{bounded_match_result::BoundedMatchResult, intent::Intent};
+    use darkpool_types::{bounded_match_result::BoundedMatchResult, intent::Intent};
 
     // -----------
     // | Helpers |

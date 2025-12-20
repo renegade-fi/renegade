@@ -6,15 +6,17 @@
 use circuit_macros::circuit_type;
 use circuit_types::{
     Nullifier, PlonkCircuit,
+    merkle::{MerkleOpening, MerkleRoot},
+    traits::{BaseType, CircuitBaseType, CircuitVarType},
+};
+use constants::{MERKLE_HEIGHT, Scalar, ScalarField};
+use darkpool_types::{
     balance::{
         Balance, BalanceShareVar, DarkpoolStateBalance, DarkpoolStateBalanceVar,
         PostMatchBalanceShare,
     },
-    merkle::{MerkleOpening, MerkleRoot},
     state_wrapper::PartialCommitment,
-    traits::{BaseType, CircuitBaseType, CircuitVarType},
 };
-use constants::{MERKLE_HEIGHT, Scalar, ScalarField};
 use mpc_plonk::errors::PlonkError;
 use mpc_relation::{
     Variable,
@@ -217,7 +219,7 @@ impl<const MERKLE_HEIGHT: usize> SingleProverCircuit
 
 #[cfg(any(test, feature = "test_helpers"))]
 pub mod test_helpers {
-    use circuit_types::balance::PostMatchBalance;
+    use darkpool_types::balance::PostMatchBalance;
 
     use crate::test_helpers::{
         check_constraints_satisfied, create_merkle_opening, create_random_state_wrapper,

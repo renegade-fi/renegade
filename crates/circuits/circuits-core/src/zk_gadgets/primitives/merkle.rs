@@ -127,10 +127,10 @@ pub(crate) mod merkle_test {
     };
     use circuit_types::{PlonkCircuit, merkle::MerkleOpening, scalar, traits::CircuitBaseType};
     use constants::{Scalar, ScalarField};
+    use crypto::hash::compute_poseidon_hash;
     use itertools::Itertools;
     use mpc_relation::traits::Circuit;
     use rand::{Rng, distributions::uniform::SampleRange, thread_rng};
-    use renegade_crypto::hash::compute_poseidon_hash;
 
     use crate::{test_helpers::random_scalars_vec, zk_gadgets::merkle::PoseidonMerkleHashGadget};
 

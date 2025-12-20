@@ -2,12 +2,14 @@
 
 use circuit_types::{
     PlonkCircuit,
+    traits::{CircuitVarType, SecretShareVarType},
+};
+use darkpool_types::{
     balance::{
         BalanceShareVar, BalanceVar, PostMatchBalanceShareVar, PostMatchBalanceVar,
         PreMatchBalanceShareVar,
     },
     intent::{IntentShareVar, PreMatchIntentShareVar},
-    traits::{CircuitVarType, SecretShareVarType},
 };
 use mpc_relation::traits::Circuit;
 use mpc_relation::{Variable, errors::CircuitError};
