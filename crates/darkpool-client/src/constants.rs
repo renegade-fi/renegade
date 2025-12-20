@@ -5,7 +5,7 @@ use std::{marker::PhantomData, time::Duration};
 use ark_ff::{BigInt, Fp};
 use constants::{MERKLE_HEIGHT, Scalar};
 use lazy_static::lazy_static;
-use renegade_crypto::hash::compute_poseidon_hash;
+use crypto::hash::compute_poseidon_hash;
 
 /// The interval at which to poll for pending transactions
 pub const BLOCK_POLLING_INTERVAL: Duration = Duration::from_millis(100);

@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use circuit_types::{PlonkLinkProof, PlonkProof, ProofLinkingHint};
-use circuits::zk_circuits::{
+use circuits_core::zk_circuits::{
     valid_commitments::{SizedValidCommitmentsWitness, ValidCommitmentsStatement},
     valid_fee_redemption::{SizedValidFeeRedemptionStatement, ValidFeeRedemptionStatement},
     valid_malleable_match_settle_atomic::{
@@ -640,7 +640,7 @@ pub mod mocks {
     use ark_ec::{CurveGroup, pairing::Pairing};
     use ark_poly::univariate::DensePolynomial;
     use circuit_types::{PlonkLinkProof, PlonkProof, ProofLinkingHint, traits::BaseType};
-    use circuits::zk_circuits::{
+    use circuits_core::zk_circuits::{
         valid_commitments::{SizedValidCommitmentsWitness, ValidCommitmentsStatement},
         valid_fee_redemption::ValidFeeRedemptionStatement,
         valid_match_settle::ValidMatchSettleStatement,

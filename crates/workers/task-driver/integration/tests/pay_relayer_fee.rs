@@ -1,7 +1,7 @@
 //! Tests the `PayRelayerFee` task
 
 use circuit_types::balance::Balance;
-use circuits::test_helpers::random_wallet_amount;
+use circuits_core::test_helpers::random_wallet_amount;
 use common::types::{
     tasks::PayRelayerFeeTaskDescriptor, wallet::Wallet, wallet_mocks::mock_empty_wallet,
 };
@@ -9,7 +9,7 @@ use constants::Scalar;
 use eyre::{Result, eyre};
 use num_bigint::BigUint;
 use rand::thread_rng;
-use renegade_crypto::fields::scalar_to_biguint;
+use crypto::fields::scalar_to_biguint;
 use test_helpers::{
     assert_eq_result, contract_interaction::new_wallet_in_darkpool, integration_test_async,
 };

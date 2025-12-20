@@ -11,7 +11,7 @@ use constants::Scalar;
 use darkpool_client::conversion::address_to_biguint;
 use mock_node::MockNodeController;
 use num_bigint::BigUint;
-use renegade_crypto::fields::scalar_to_u128;
+use crypto::fields::scalar_to_u128;
 use state::test_helpers::tmp_db_path;
 
 mod external_match;

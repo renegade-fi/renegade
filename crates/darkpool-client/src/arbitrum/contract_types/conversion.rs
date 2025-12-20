@@ -17,7 +17,7 @@ use circuit_types::{
     traits::BaseType,
     transfers::{ExternalTransfer, ExternalTransferDirection},
 };
-use circuits::zk_circuits::{
+use circuits_core::zk_circuits::{
     valid_commitments::ValidCommitmentsStatement,
     valid_fee_redemption::SizedValidFeeRedemptionStatement,
     valid_malleable_match_settle_atomic::SizedValidMalleableMatchSettleAtomicStatement,

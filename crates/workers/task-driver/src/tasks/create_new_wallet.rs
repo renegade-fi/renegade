@@ -15,7 +15,7 @@ use std::str::FromStr;
 use alloy::rpc::types::TransactionReceipt;
 use async_trait::async_trait;
 use circuit_types::native_helpers::compute_wallet_share_commitment;
-use circuits::zk_circuits::valid_wallet_create::{
+use circuits_core::zk_circuits::valid_wallet_create::{
     SizedValidWalletCreateStatement, SizedValidWalletCreateWitness, ValidWalletCreateStatement,
     ValidWalletCreateWitness,
 };

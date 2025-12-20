@@ -5,7 +5,7 @@ use constants::MERKLE_HEIGHT;
 use constants::Scalar;
 use itertools::Itertools;
 use num_bigint::BigUint;
-use renegade_crypto::hash::compute_poseidon_hash;
+use crypto::hash::compute_poseidon_hash;
 use serde::{Deserialize, Serialize};
 
 /// A wrapper representing the coordinates of a value in a Merkle tree

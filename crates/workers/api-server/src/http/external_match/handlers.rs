@@ -19,7 +19,7 @@ use external_api::http::external_match::{
     SignedExternalQuote,
 };
 use hyper::HeaderMap;
-use renegade_crypto::fields::scalar_to_u128;
+use crypto::fields::scalar_to_u128;
 use state::State;
 use util::{hex::bytes_to_hex_string, on_chain::get_external_match_fee};
 

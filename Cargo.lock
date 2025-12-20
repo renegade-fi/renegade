@@ -1671,6 +1671,7 @@ dependencies = [
  "byteorder",
  "circuit-macros",
  "constants",
+ "crypto",
  "futures",
  "hex",
  "itertools 0.10.5",
@@ -1683,7 +1684,6 @@ dependencies = [
  "num-integer",
  "num-traits",
  "rand 0.8.5",
- "renegade-crypto",
  "serde",
  "serde_json",
  "test-helpers",
@@ -1691,7 +1691,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "circuits"
+name = "circuits-core"
 version = "0.1.0"
 dependencies = [
  "alloy-primitives",
@@ -1707,6 +1707,7 @@ dependencies = [
  "colored",
  "constants",
  "criterion",
+ "crypto",
  "ctor",
  "dns-lookup",
  "eyre",
@@ -1721,7 +1722,6 @@ dependencies = [
  "num-bigint",
  "num-integer",
  "rand 0.8.5",
- "renegade-crypto",
  "serde",
  "serde_json",
  "test-helpers",
@@ -1806,9 +1806,10 @@ dependencies = [
  "base64 0.22.1",
  "bimap",
  "circuit-types",
- "circuits",
+ "circuits-core",
  "constants",
  "crossbeam",
+ "crypto",
  "derivative",
  "ecdsa",
  "ed25519-dalek 1.0.1",
@@ -1827,7 +1828,6 @@ dependencies = [
  "num-traits",
  "rand 0.8.5",
  "rand_core 0.5.1",
- "renegade-crypto",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -2060,6 +2060,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "460fbee9c2c2f33933d720630a6a0bac33ba7053db5344fac858d4b8952d77d5"
 
 [[package]]
+name = "crypto"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "ark-ec",
+ "ark-ff 0.4.2",
+ "ark-mpc",
+ "bigdecimal",
+ "constants",
+ "criterion",
+ "itertools 0.10.5",
+ "lazy_static",
+ "num-bigint",
+ "rand 0.8.5",
+ "serde",
+ "serde_json",
+ "zkhash",
+]
+
+[[package]]
 name = "crypto-bigint"
 version = "0.5.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2158,11 +2178,12 @@ dependencies = [
  "ark-ff 0.4.2",
  "async-trait",
  "circuit-types",
- "circuits",
+ "circuits-core",
  "clap",
  "colored",
  "common",
  "constants",
+ "crypto",
  "eyre",
  "inventory",
  "itertools 0.12.1",
@@ -2172,7 +2193,6 @@ dependencies = [
  "num-traits",
  "postcard",
  "rand 0.8.5",
- "renegade-crypto",
  "ruint",
  "serde",
  "serde_with",
@@ -5062,26 +5082,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7a2d987857b319362043e95f5353c0535c1f58eec5336fdfcf626430af7def58"
 
 [[package]]
-name = "renegade-crypto"
-version = "0.1.0"
-dependencies = [
- "alloy-primitives",
- "ark-ec",
- "ark-ff 0.4.2",
- "ark-mpc",
- "bigdecimal",
- "constants",
- "criterion",
- "itertools 0.10.5",
- "lazy_static",
- "num-bigint",
- "rand 0.8.5",
- "serde",
- "serde_json",
- "zkhash",
-]
-
-[[package]]
 name = "reqwest"
 version = "0.12.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5976,6 +5976,7 @@ dependencies = [
  "circuit-types",
  "common",
  "constants",
+ "crypto",
  "darkpool-client",
  "dns-lookup",
  "eyre",
@@ -5984,7 +5985,6 @@ dependencies = [
  "k256",
  "num-bigint",
  "rand 0.8.5",
- "renegade-crypto",
  "serde",
  "serde_json",
  "tokio",
@@ -6558,6 +6558,7 @@ dependencies = [
  "constants",
  "criterion",
  "crossbeam",
+ "crypto",
  "eyre",
  "futures",
  "hex",
@@ -6577,7 +6578,6 @@ dependencies = [
  "opentelemetry-semantic-conventions",
  "opentelemetry_sdk",
  "rand 0.8.5",
- "renegade-crypto",
  "serde",
  "serde_json",
  "tokio",

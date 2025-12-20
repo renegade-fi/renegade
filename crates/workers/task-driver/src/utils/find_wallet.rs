@@ -6,7 +6,7 @@ use circuit_types::{SizedWallet, SizedWalletShare, traits::BaseType};
 use constants::Scalar;
 use darkpool_client::DarkpoolClient;
 use itertools::Itertools;
-use renegade_crypto::hash::PoseidonCSPRNG;
+use crypto::hash::PoseidonCSPRNG;
 
 use super::ERR_WALLET_NOT_FOUND;
 

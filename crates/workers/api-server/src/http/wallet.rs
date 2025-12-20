@@ -31,7 +31,7 @@ use hyper::HeaderMap;
 use num_bigint::BigUint;
 use num_traits::ToPrimitive;
 use price_state::PriceStreamStates;
-use renegade_crypto::fields::biguint_to_scalar;
+use crypto::fields::biguint_to_scalar;
 use reqwest::Url;
 use state::State;
 use task_driver::simulation::simulate_wallet_tasks;

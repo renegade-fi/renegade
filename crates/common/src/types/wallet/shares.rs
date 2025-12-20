@@ -11,7 +11,7 @@ use circuit_types::{
     wallet::{Nullifier, WalletShare, WalletShareStateCommitment},
 };
 use constants::Scalar;
-use renegade_crypto::hash::evaluate_hash_chain;
+use crypto::hash::evaluate_hash_chain;
 
 use super::Wallet;
 

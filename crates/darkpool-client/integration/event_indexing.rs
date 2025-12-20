@@ -1,7 +1,7 @@
 //! Integration tests for event indexing client functionality
 
 use circuit_types::merkle::MerkleOpening;
-use circuits::zk_circuits::test_helpers::create_multi_opening_with_default_leaf;
+use circuits_core::zk_circuits::test_helpers::create_multi_opening_with_default_leaf;
 use constants::MERKLE_HEIGHT;
 use darkpool_client::constants::EMPTY_LEAF_VALUE;
 use eyre::Result;

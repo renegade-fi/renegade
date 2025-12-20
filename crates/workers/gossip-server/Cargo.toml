@@ -14,7 +14,7 @@ libp2p = { workspace = true }
 
 # === Workspace Dependencies === #
 darkpool-client = { workspace = true }
-circuits = { workspace = true }
+circuits-core = { workspace = true }
 circuit-types = { workspace = true }
 common = { workspace = true }
 constants = { workspace = true }

@@ -5,7 +5,7 @@
 //! of the types defined here
 
 use circuit_types::ProofLinkingHint;
-use circuits::zk_circuits::{
+use circuits_core::zk_circuits::{
     valid_commitments::{SizedValidCommitmentsWitness, ValidCommitmentsStatement},
     valid_fee_redemption::{SizedValidFeeRedemptionStatement, SizedValidFeeRedemptionWitness},
     valid_malleable_match_settle_atomic::{

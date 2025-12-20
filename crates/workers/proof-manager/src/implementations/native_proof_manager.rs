@@ -7,7 +7,7 @@ use circuit_types::{
     PlonkLinkProof, ProofLinkingHint,
     traits::{SingleProverCircuit, setup_preprocessed_keys},
 };
-use circuits::{
+use circuits_core::{
     singleprover_prove, singleprover_prove_with_hint,
     zk_circuits::{
         proof_linking::{

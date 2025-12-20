@@ -13,7 +13,7 @@
 #![deny(clippy::unused_async)]
 
 use circuit_types::{PlonkLinkProof, PlonkProof, ProofLinkingHint};
-use circuits::{
+use circuits_core::{
     self,
     zk_circuits::{
         valid_commitments::{SizedValidCommitmentsWitness, ValidCommitmentsStatement},

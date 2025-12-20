@@ -7,7 +7,7 @@ use alloy::rpc::types::TransactionReceipt;
 use async_trait::async_trait;
 use circuit_types::Amount;
 use circuit_types::balance::Balance;
-use circuits::zk_circuits::valid_relayer_fee_settlement::{
+use circuits_core::zk_circuits::valid_relayer_fee_settlement::{
     SizedValidRelayerFeeSettlementStatement, SizedValidRelayerFeeSettlementWitness,
 };
 use common::types::proof_bundles::RelayerFeeSettlementBundle;

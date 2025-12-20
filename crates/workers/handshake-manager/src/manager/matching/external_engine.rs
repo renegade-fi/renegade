@@ -28,7 +28,7 @@ use common::types::{
 use constants::Scalar;
 use external_api::bus_message::SystemBusMessage;
 use job_types::handshake_manager::ExternalMatchingEngineOptions;
-use renegade_crypto::fields::scalar_to_u128;
+use crypto::fields::scalar_to_u128;
 use tracing::{info, instrument, warn};
 use util::{matching_engine::compute_max_amount, telemetry::helpers::backfill_trace_field};
 

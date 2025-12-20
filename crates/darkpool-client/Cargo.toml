@@ -11,7 +11,7 @@ all-chains = ["arbitrum", "base"]
 integration = [
     "dep:rand",
     "circuit-types/test-helpers",
-    "circuits/test_helpers",
+    "circuits-core/test_helpers",
     "common/mocks",
     "test-helpers/arbitrum",
 ]
@@ -41,9 +41,9 @@ alloy-sol-types = { workspace = true }
 # === Workspace Dependencies === #
 constants = { workspace = true }
 circuit-types = { workspace = true }
-circuits = { workspace = true }
+circuits-core = { workspace = true }
 common = { workspace = true, features = ["internal-types"] }
-renegade-crypto = { workspace = true }
+crypto = { workspace = true }
 renegade-solidity-abi = { package = "abi", git = "https://github.com/renegade-fi/renegade-solidity-contracts", optional = true }
 util = { workspace = true, features = ["telemetry"] }
 

@@ -13,7 +13,7 @@ use crate::utils::{
 use alloy::rpc::types::TransactionReceipt;
 use async_trait::async_trait;
 use circuit_types::r#match::MatchResult;
-use circuits::zk_circuits::valid_match_settle::{
+use circuits_core::zk_circuits::valid_match_settle::{
     SizedValidMatchSettleStatement, SizedValidMatchSettleWitness,
 };
 use common::types::price::{TimestampedPrice, TimestampedPriceFp};

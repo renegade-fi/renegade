@@ -12,10 +12,10 @@ use circuit_types::native_helpers::{
 };
 use circuit_types::order::Order;
 use circuit_types::{PlonkLinkProof, ProofLinkingHint, SizedWallet};
-use circuits::zk_circuits::valid_commitments::{
+use circuits_core::zk_circuits::valid_commitments::{
     SizedValidCommitmentsWitness, ValidCommitmentsStatement, ValidCommitmentsWitness,
 };
-use circuits::zk_circuits::valid_reblind::{
+use circuits_core::zk_circuits::valid_reblind::{
     SizedValidReblindWitness, ValidReblindStatement, ValidReblindWitness,
 };
 use common::types::proof_bundles::{

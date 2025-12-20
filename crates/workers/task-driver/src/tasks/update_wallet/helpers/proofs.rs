@@ -2,7 +2,7 @@
 
 use crate::tasks::update_wallet::{UpdateWalletTask, UpdateWalletTaskError};
 use circuit_types::transfers::{ExternalTransfer, ExternalTransferDirection};
-use circuits::zk_circuits::valid_wallet_update::{
+use circuits_core::zk_circuits::valid_wallet_update::{
     SizedValidWalletUpdateStatement, SizedValidWalletUpdateWitness,
 };
 use common::types::{

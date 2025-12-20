@@ -7,12 +7,12 @@ edition = "2024"
 default = ["all-types"]
 hmac = []
 wallet = ["hmac", "proof-system-types", "util/matching-engine"]
-proof-system-types = ["dep:circuits", "constants/default"]
+proof-system-types = ["dep:circuits-core", "constants/default"]
 # Types used by the relayer for internal operation
 # We add this feature flag to allow external clients to opt-out of these types
 internal-types = [
     "wallet",
-    "dep:circuits",
+    "dep:circuits-core",
     "constants/default",
     "util/networking",
     "util/telemetry",
@@ -58,10 +58,10 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 
 # === Workspace Dependencies === #
-circuits = { workspace = true, optional = true }
+circuits-core = { workspace = true, optional = true }
 circuit-types = { workspace = true }
 constants = { workspace = true }
-renegade-crypto = { workspace = true }
+crypto = { workspace = true }
 util = { workspace = true, features = ["serde"] }
 
 # === Misc Dependencies === #

@@ -13,7 +13,7 @@ use circuit_types::{
 #[cfg(feature = "v1")]
 use constants::Scalar;
 #[cfg(feature = "v1")]
-use renegade_crypto::fields::scalar_to_u128;
+use crypto::fields::scalar_to_u128;
 
 #[cfg(feature = "v1")]
 use crate::on_chain::get_protocol_fee;
@@ -255,7 +255,7 @@ mod tests {
     use lazy_static::lazy_static;
     use num_bigint::RandBigInt;
     use rand::{Rng, distributions::uniform::SampleRange, thread_rng};
-    use renegade_crypto::fields::scalar_to_biguint;
+    use crypto::fields::scalar_to_biguint;
 
     // --------------
     // | Dummy Data |

@@ -7,7 +7,7 @@ use circuit_types::keychain::{NonNativeScalar, PublicSigningKey};
 use constants::{ADDRESS_BYTE_LENGTH, EmbeddedCurveConfig, Scalar};
 use num_bigint::BigUint;
 use num_traits::Num;
-use renegade_crypto::fields::{biguint_to_scalar, scalar_to_biguint};
+use crypto::fields::{biguint_to_scalar, scalar_to_biguint};
 
 use crate::raw_err_str;
 

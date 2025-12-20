@@ -1,24 +1,24 @@
 [workspace]
 resolver = "3"
 members = [
-	"crates/circuits",
-	"crates/circuit-types",
-	"crates/circuit-macros",
+	"crates/circuits/circuits-core",
+	"crates/circuits/circuit-types",
+	"crates/circuits/circuit-macros",
 	"crates/constants",
 	# "crates/common",
 	# "crates/config",
 	# "crates/core",
 	# "crates/darkpool-client",
-	# "crates/external-api",
-	# "crates/gossip-api",
-	# "crates/mock-node",
+	# "crates/api/external-api",
+	# "crates/api/gossip-api",
+	# "crates/testing/mock-node",
 	# "crates/node-support/snapshot-sidecar",
 	# "crates/node-support/event-export-sidecar",
 	# "crates/node-support/bootloader",
-	"crates/renegade-crypto",
+	"crates/crypto",
 	# "crates/state",
-	# "crates/system-bus",
-	# "crates/test-helpers",
+	# "crates/system-primitives/system-bus",
+	# "crates/testing/test-helpers",
 	"crates/util",
 	# "crates/workers/api-server",
 	# "crates/workers/api-server/benches/api-server-bench-util",
@@ -32,9 +32,9 @@ members = [
 	# "crates/workers/price-reporter/price-state",
 	# "crates/workers/proof-manager",
 	# "crates/workers/task-driver",
-	# "crates/renegade-metrics",
-	# "crates/system-clock",
-	# "crates/metrics-sampler",
+	# "crates/metrics/renegade-metrics",
+	# "crates/system-primitives/system-clock",
+	# "crates/metrics/metrics-sampler",
 ]
 
 [profile.bench]
@@ -85,30 +85,30 @@ darkpool-client = { path = "crates/darkpool-client" }
 api-server = { path = "crates/workers/api-server" }
 chain-events = { path = "crates/workers/chain-events" }
 constants = { path = "crates/constants", default-features = false }
-circuits = { path = "crates/circuits", default-features = false }
-circuit-macros = { path = "crates/circuit-macros", default-features = false }
-circuit-types = { path = "crates/circuit-types", default-features = false }
+circuits-core = { path = "crates/circuits/circuits-core", default-features = false }
+circuit-macros = { path = "crates/circuits/circuit-macros", default-features = false }
+circuit-types = { path = "crates/circuits/circuit-types", default-features = false }
 common = { path = "crates/common", default-features = false }
 config = { path = "crates/config", default-features = false }
 event-manager = { path = "crates/workers/event-manager", default-features = false }
-external-api = { path = "crates/external-api", default-features = false }
-gossip-api = { path = "crates/gossip-api", default-features = false }
+external-api = { path = "crates/api/external-api", default-features = false }
+gossip-api = { path = "crates/api/gossip-api", default-features = false }
 gossip-server = { path = "crates/workers/gossip-server", default-features = false }
 handshake-manager = { path = "crates/workers/handshake-manager", default-features = false }
 job-types = { path = "crates/workers/job-types", default-features = false }
-metrics-sampler = { path = "crates/metrics-sampler", default-features = false }
-mock-node = { path = "crates/mock-node", default-features = false }
+metrics-sampler = { path = "crates/metrics/metrics-sampler", default-features = false }
+mock-node = { path = "crates/testing/mock-node", default-features = false }
 network-manager = { path = "crates/workers/network-manager", default-features = false }
 price-reporter = { path = "crates/workers/price-reporter/worker", default-features = false }
 price-state = { path = "crates/workers/price-reporter/price-state", default-features = false }
 proof-manager = { path = "crates/workers/proof-manager", default-features = false }
-renegade-crypto = { path = "crates/renegade-crypto", default-features = false }
-renegade-metrics = { path = "crates/renegade-metrics", default-features = false }
+crypto = { path = "crates/crypto", default-features = false }
+renegade-metrics = { path = "crates/metrics/renegade-metrics", default-features = false }
 state = { path = "crates/state", default-features = false }
-system-bus = { path = "crates/system-bus", default-features = false }
-system-clock = { path = "crates/system-clock", default-features = false }
+system-bus = { path = "crates/system-primitives/system-bus", default-features = false }
+system-clock = { path = "crates/system-primitives/system-clock", default-features = false }
 task-driver = { path = "crates/workers/task-driver", default-features = false }
-test-helpers = { path = "crates/test-helpers", default-features = false }
+test-helpers = { path = "crates/testing/test-helpers", default-features = false }
 util = { path = "crates/util", default-features = false }
 
 # === Misc === #

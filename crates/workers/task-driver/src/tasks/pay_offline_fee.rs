@@ -10,7 +10,7 @@ use std::{
 use alloy::rpc::types::TransactionReceipt;
 use async_trait::async_trait;
 use circuit_types::{native_helpers::encrypt_note, note::Note};
-use circuits::zk_circuits::valid_offline_fee_settlement::{
+use circuits_core::zk_circuits::valid_offline_fee_settlement::{
     SizedValidOfflineFeeSettlementStatement, SizedValidOfflineFeeSettlementWitness,
 };
 use common::types::{

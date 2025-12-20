@@ -12,7 +12,7 @@ hex = [
     "errors",
     "dep:circuit-types",
     "dep:constants",
-    "dep:renegade-crypto",
+    "dep:crypto",
     "constants/default",
 ]
 matching-engine = ["blockchain"]
@@ -43,7 +43,7 @@ crossbeam = { workspace = true }
 # === Workspace Dependencies === #
 circuit-types = { workspace = true, optional = true }
 constants = { workspace = true, optional = true }
-renegade-crypto = { workspace = true, optional = true }
+crypto = { workspace = true, optional = true }
 
 # === Misc === #
 eyre = { workspace = true }

@@ -11,7 +11,7 @@ use crate::utils::enqueue_proof_job;
 use async_trait::async_trait;
 use circuit_types::fixed_point::FixedPoint;
 use circuit_types::r#match::MatchResult;
-use circuits::zk_circuits::valid_match_settle_atomic::{
+use circuits_core::zk_circuits::valid_match_settle_atomic::{
     SizedValidMatchSettleAtomicStatement, SizedValidMatchSettleAtomicWitness,
 };
 use common::types::price::TimestampedPriceFp;

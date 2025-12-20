@@ -5,7 +5,7 @@
 use std::{sync::Arc, thread::JoinHandle};
 
 use circuit_types::traits::{SingleProverCircuit, setup_preprocessed_keys};
-use circuits::{
+use circuits_core::{
     singleprover_prove_with_hint,
     zk_circuits::{
         valid_commitments::{

@@ -13,7 +13,7 @@ use circuit_types::{
     order::Order,
     traits::{MpcBaseType, MpcType},
 };
-use circuits::{
+use circuits_core::{
     mpc_circuits::{r#match::compute_match, settle::settle_match},
     multiprover_prove_with_hint, verify_singleprover_proof,
     zk_circuits::{

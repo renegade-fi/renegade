@@ -5,7 +5,7 @@ use std::{error::Error, fmt::Display};
 use alloy::rpc::types::TransactionReceipt;
 use async_trait::async_trait;
 use circuit_types::{balance::Balance, elgamal::DecryptionKey, note::Note};
-use circuits::zk_circuits::valid_fee_redemption::{
+use circuits_core::zk_circuits::valid_fee_redemption::{
     SizedValidFeeRedemptionStatement, SizedValidFeeRedemptionWitness,
 };
 use common::types::{

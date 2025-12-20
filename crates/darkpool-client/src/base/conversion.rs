@@ -18,17 +18,17 @@ use circuit_types::note::NOTE_CIPHERTEXT_SIZE;
 use circuit_types::traits::BaseType;
 use circuit_types::transfers::ExternalTransfer as CircuitExternalTransfer;
 use circuit_types::transfers::ExternalTransferDirection;
-use circuits::zk_circuits::valid_commitments::ValidCommitmentsStatement as CircuitValidCommitmentsStatement;
-use circuits::zk_circuits::valid_fee_redemption::SizedValidFeeRedemptionStatement;
-use circuits::zk_circuits::valid_malleable_match_settle_atomic::SizedValidMalleableMatchSettleAtomicStatement;
-use circuits::zk_circuits::valid_match_settle::{
+use circuits_core::zk_circuits::valid_commitments::ValidCommitmentsStatement as CircuitValidCommitmentsStatement;
+use circuits_core::zk_circuits::valid_fee_redemption::SizedValidFeeRedemptionStatement;
+use circuits_core::zk_circuits::valid_malleable_match_settle_atomic::SizedValidMalleableMatchSettleAtomicStatement;
+use circuits_core::zk_circuits::valid_match_settle::{
     SizedValidMatchSettleStatement, SizedValidMatchSettleWithCommitmentsStatement,
 };
-use circuits::zk_circuits::valid_match_settle_atomic::SizedValidMatchSettleAtomicStatement;
-use circuits::zk_circuits::valid_offline_fee_settlement::SizedValidOfflineFeeSettlementStatement;
-use circuits::zk_circuits::valid_reblind::ValidReblindStatement as CircuitValidReblindStatement;
-use circuits::zk_circuits::valid_wallet_create::SizedValidWalletCreateStatement;
-use circuits::zk_circuits::valid_wallet_update::SizedValidWalletUpdateStatement;
+use circuits_core::zk_circuits::valid_match_settle_atomic::SizedValidMatchSettleAtomicStatement;
+use circuits_core::zk_circuits::valid_offline_fee_settlement::SizedValidOfflineFeeSettlementStatement;
+use circuits_core::zk_circuits::valid_reblind::ValidReblindStatement as CircuitValidReblindStatement;
+use circuits_core::zk_circuits::valid_wallet_create::SizedValidWalletCreateStatement;
+use circuits_core::zk_circuits::valid_wallet_update::SizedValidWalletUpdateStatement;
 use common::types::proof_bundles::OrderValidityProofBundle;
 use common::types::transfer_auth::TransferAuth as CircuitTransferAuth;
 use constants::Scalar;

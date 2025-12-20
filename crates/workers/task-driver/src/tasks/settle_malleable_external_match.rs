@@ -17,7 +17,7 @@ use async_trait::async_trait;
 use circuit_types::fees::FeeTakeRate;
 use circuit_types::fixed_point::FixedPoint;
 use circuit_types::r#match::BoundedMatchResult;
-use circuits::zk_circuits::valid_malleable_match_settle_atomic::{
+use circuits_core::zk_circuits::valid_malleable_match_settle_atomic::{
     SizedValidMalleableMatchSettleAtomicStatement, SizedValidMalleableMatchSettleAtomicWitness,
 };
 use common::types::proof_bundles::{

@@ -1,11 +1,11 @@
 //! Protocol fee payment tests
 use circuit_types::balance::Balance;
-use circuits::test_helpers::random_wallet_amount;
+use circuits_core::test_helpers::random_wallet_amount;
 use common::types::{tasks::PayOfflineFeeTaskDescriptor, wallet_mocks::mock_empty_wallet};
 use constants::Scalar;
 use eyre::{Result, eyre};
 use rand::thread_rng;
-use renegade_crypto::fields::scalar_to_biguint;
+use crypto::fields::scalar_to_biguint;
 use test_helpers::{assert_eq_result, integration_test_async};
 
 use crate::{

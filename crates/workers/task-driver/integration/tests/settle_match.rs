@@ -14,7 +14,7 @@ use circuit_types::{
     r#match::{MatchResult, OrderSettlementIndices},
     order::OrderSide,
 };
-use circuits::zk_circuits::valid_match_settle::{
+use circuits_core::zk_circuits::valid_match_settle::{
     ValidMatchSettleStatement, ValidMatchSettleWitness,
 };
 use common::types::{

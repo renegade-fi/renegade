@@ -57,7 +57,7 @@ renegade-compliance-api = { git = "https://github.com/renegade-fi/relayer-extens
 config = { workspace = true }
 common = { workspace = true }
 constants = { workspace = true }
-renegade-crypto = { workspace = true }
+crypto = { workspace = true }
 external-api = { workspace = true, features = ["auth"] }
 gossip-api = { workspace = true }
 job-types = { workspace = true }

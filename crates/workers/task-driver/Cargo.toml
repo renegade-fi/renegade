@@ -34,14 +34,14 @@ alloy = { workspace = true }
 
 # === Workspace Dependencies === #
 darkpool-client = { workspace = true }
-circuits = { workspace = true }
+circuits-core = { workspace = true }
 circuit-types = { workspace = true }
 common = { workspace = true }
 constants = { workspace = true }
 external-api = { workspace = true }
 gossip-api = { workspace = true }
 job-types = { workspace = true }
-renegade-crypto = { workspace = true }
+crypto = { workspace = true }
 state = { workspace = true }
 system-bus = { workspace = true }
 util = { workspace = true }

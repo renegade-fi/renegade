@@ -2,7 +2,7 @@
 //! instead immediately returns dummy proofs that will not verify
 
 use circuit_types::traits::SingleProverCircuit;
-use circuits::zk_circuits::{
+use circuits_core::zk_circuits::{
     check_constraint_satisfaction,
     valid_commitments::{
         SizedValidCommitments, SizedValidCommitmentsWitness, ValidCommitmentsStatement,

@@ -2,7 +2,7 @@
 //! events elsewhere in the local node or the network
 
 use circuit_types::wallet::Nullifier;
-use circuits::{
+use circuits_core::{
     verify_singleprover_proof,
     zk_circuits::{
         proof_linking::validate_sized_commitments_reblind_link,
