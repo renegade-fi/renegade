@@ -16,21 +16,21 @@ RUN apt-get update && \
     apt-get install -y libssl-dev
 
 COPY Cargo.toml Cargo.lock ./
-COPY ./core/Cargo.toml ./core/Cargo.toml
-COPY ./circuits ./circuits
-COPY ./renegade-crypto ./renegade-crypto
-COPY ./circuit-macros ./circuit-macros
+COPY ./crates/core/Cargo.toml ./crates/core/Cargo.toml
+COPY ./crates/circuits ./crates/circuits
+COPY ./crates/renegade-crypto ./crates/renegade-crypto
+COPY ./crates/circuit-macros ./crates/circuit-macros
 COPY ./integration-helpers ./integration-helpers
 
 # Create a dummy entrypoint to build the dependencies
-RUN mkdir core/src
-RUN echo 'fn main() { println!("dummy main!") }' >> core/src/main.rs
+RUN mkdir -p crates/core/src
+RUN echo 'fn main() { println!("dummy main!") }' >> crates/core/src/main.rs
 
 # Build the dependencies
 RUN cargo build
 
 # Copy the real sources into the build directory and rebuild without the dummy main
-COPY ./core ./core
+COPY ./crates/core ./crates/core
 
 # Disable compiler warnings and enable backtraces for panic debugging
 ENV RUSTFLAGS=-Awarnings
@@ -48,6 +48,6 @@ RUN apt-get update && \
 
 # Copy the binary from the build stage
 COPY --from=builder /build/target/debug/renegade-relayer /bin/renegade-relayer
-COPY ./core/resources/no_commit/release.toml /config.toml
+COPY ./crates/core/resources/no_commit/release.toml /config.toml
 
 ENTRYPOINT [ "/bin/renegade-relayer", "--config-file", "/config.toml" ]
