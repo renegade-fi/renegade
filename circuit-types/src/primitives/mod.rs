@@ -4,6 +4,7 @@ pub mod csprng;
 pub mod elgamal;
 pub mod fixed_point;
 pub mod merkle;
+pub mod schnorr;
 #[cfg(feature = "proof-system-types")]
 pub mod srs;
 
