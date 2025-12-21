@@ -14,7 +14,7 @@ proof-system-types = [
     "dep:mpc-plonk",
     "dep:mpc-relation",
 ]
-zero-copy = ["dep:rkyv"]
+zero-copy = ["dep:rkyv", "dep:ark-ff", "dep:ark-bn254"]
 
 [dependencies]
 # === Blockchain === #
@@ -32,8 +32,12 @@ mpc-plonk = { workspace = true, optional = true }
 mpc-relation = { workspace = true, optional = true }
 
 # === Serialization === #
-rkyv = { version = "0.8.8", optional = true }
+rkyv = { version = "0.8.8", optional = true, features = ["std", "alloc"] }
 serde = { workspace = true, features = ["serde_derive"] }
+
+# === Cryptography === #
+ark-bn254 = { version = "0.4", optional = true }
+ark-ff = { version = "0.4", optional = true }
 
 # === Misc === #
 itertools = "0.10"
