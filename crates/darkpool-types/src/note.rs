@@ -10,6 +10,11 @@ use constants::Scalar;
 use rand::thread_rng;
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "zero-copy")]
+use crate::rkyv_remotes::{AddressDef, ScalarDef};
+#[cfg(feature = "zero-copy")]
+use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
+
 #[cfg(feature = "proof-system-types")]
 use {
     circuit_types::{
@@ -38,14 +43,18 @@ pub type NoteCiphertext = ElGamalCiphertext<NOTE_CIPHERTEXT_SIZE>;
 #[cfg_attr(feature = "proof-system-types", circuit_type(serde, singleprover_circuit))]
 #[cfg_attr(not(feature = "proof-system-types"), circuit_type(serde))]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "zero-copy", derive(Archive, RkyvDeserialize, RkyvSerialize))]
 pub struct Note {
     /// The mint of the note
+    #[cfg_attr(feature = "zero-copy", rkyv(with = AddressDef))]
     pub mint: Address,
     /// The amount of the note
     pub amount: Amount,
     /// The receiver's EOA address
+    #[cfg_attr(feature = "zero-copy", rkyv(with = AddressDef))]
     pub receiver: Address,
     /// The blinder of the note
+    #[cfg_attr(feature = "zero-copy", rkyv(with = ScalarDef))]
     pub blinder: Scalar,
 }
 

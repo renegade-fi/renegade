@@ -12,3 +12,6 @@ pub mod note;
 pub mod settlement_obligation;
 pub mod state_wrapper;
 pub mod withdrawal;
+
+#[cfg(feature = "zero-copy")]
+pub mod rkyv_remotes;

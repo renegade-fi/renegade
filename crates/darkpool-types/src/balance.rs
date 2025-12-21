@@ -8,6 +8,11 @@ use circuit_types::{Amount, primitives::schnorr::SchnorrPublicKey, traits::BaseT
 use constants::Scalar;
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "zero-copy")]
+use crate::rkyv_remotes::{AddressDef, SchnorrPublicKeyDef};
+#[cfg(feature = "zero-copy")]
+use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
+
 #[cfg(feature = "proof-system-types")]
 use crate::state_wrapper::{StateWrapper, StateWrapperVar};
 
@@ -15,8 +20,7 @@ use crate::state_wrapper::{StateWrapper, StateWrapperVar};
 use {
     crate::{fee::FeeTake, note::Note, settlement_obligation::SettlementObligation},
     circuit_types::traits::{
-        CircuitBaseType, CircuitVarType, SecretShareBaseType, SecretShareType,
-        SecretShareVarType,
+        CircuitBaseType, CircuitVarType, SecretShareBaseType, SecretShareType, SecretShareVarType,
     },
     constants::ScalarField,
     mpc_relation::{Variable, traits::Circuit},
@@ -34,15 +38,20 @@ pub type DarkpoolStateBalanceVar = StateWrapperVar<Balance>;
 /// A balance in the V2 darkpool
 #[cfg_attr(feature = "proof-system-types", circuit_type(serde, singleprover_circuit, secret_share))]
 #[cfg_attr(not(feature = "proof-system-types"), circuit_type(serde))]
-#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "zero-copy", derive(Archive, RkyvDeserialize, RkyvSerialize))]
 pub struct Balance {
     /// The mint of the token in the balance
+    #[cfg_attr(feature = "zero-copy", rkyv(with = AddressDef))]
     pub mint: Address,
     /// The owner of the balance
+    #[cfg_attr(feature = "zero-copy", rkyv(with = AddressDef))]
     pub owner: Address,
     /// The address to which the relayer fees are paid
+    #[cfg_attr(feature = "zero-copy", rkyv(with = AddressDef))]
     pub relayer_fee_recipient: Address,
     /// The public key which authorizes the creation of new state elements
+    #[cfg_attr(feature = "zero-copy", rkyv(with = SchnorrPublicKeyDef))]
     pub authority: SchnorrPublicKey,
     /// The relayer fee balance of the balance
     pub relayer_fee_balance: Amount,
@@ -306,5 +315,63 @@ impl StateWrapper<Balance> {
             self.stream_cipher_encrypt(&protocol_fee_balance);
         self.public_share.protocol_fee_balance = new_protocol_fee_balance_public_share;
         new_protocol_fee_balance_public_share
+    }
+}
+
+// ---------
+// | Tests |
+// ---------
+
+#[cfg(all(test, feature = "zero-copy"))]
+mod rkyv_tests {
+    #![allow(unsafe_code)]
+
+    use super::*;
+    use circuit_types::primitives::baby_jubjub::BabyJubJubPoint;
+    use rand::{Rng, RngCore, thread_rng};
+
+    /// Generate a random address
+    fn random_address() -> Address {
+        let mut rng = thread_rng();
+        let mut bytes = [0u8; 20];
+        rng.fill_bytes(&mut bytes);
+        Address::from(bytes)
+    }
+
+    /// Generate a random SchnorrPublicKey
+    fn random_schnorr_public_key() -> SchnorrPublicKey {
+        let mut rng = thread_rng();
+        let x = Scalar::random(&mut rng);
+        let y = Scalar::random(&mut rng);
+        SchnorrPublicKey { point: BabyJubJubPoint { x, y } }
+    }
+
+    /// Generate a random Balance
+    fn random_balance() -> Balance {
+        let mut rng = thread_rng();
+        Balance {
+            mint: random_address(),
+            owner: random_address(),
+            relayer_fee_recipient: random_address(),
+            authority: random_schnorr_public_key(),
+            relayer_fee_balance: rng.r#gen(),
+            protocol_fee_balance: rng.r#gen(),
+            amount: rng.r#gen(),
+        }
+    }
+
+    #[test]
+    fn test_balance_rkyv_roundtrip() {
+        let original = random_balance();
+
+        // Serialize
+        let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&original).expect("Failed to serialize");
+
+        // Deserialize
+        let archived = unsafe { rkyv::access_unchecked::<ArchivedBalance>(&bytes) };
+        let deserialized: Balance =
+            rkyv::deserialize::<_, rkyv::rancor::Error>(archived).expect("Failed to deserialize");
+
+        assert_eq!(original, deserialized);
     }
 }
