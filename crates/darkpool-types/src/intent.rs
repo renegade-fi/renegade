@@ -17,8 +17,7 @@ use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
 use {
     crate::{settlement_obligation::SettlementObligation, state_wrapper::StateWrapper},
     circuit_types::traits::{
-        CircuitBaseType, CircuitVarType, SecretShareBaseType, SecretShareType,
-        SecretShareVarType,
+        CircuitBaseType, CircuitVarType, SecretShareBaseType, SecretShareType, SecretShareVarType,
     },
     constants::ScalarField,
     mpc_relation::{Variable, traits::Circuit},

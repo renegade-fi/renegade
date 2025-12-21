@@ -190,8 +190,7 @@ mod tests {
         let original = AddressWrapper(Address::from(address_bytes));
 
         // Serialize
-        let bytes =
-            rkyv::to_bytes::<rkyv::rancor::Error>(&original).expect("Failed to serialize");
+        let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&original).expect("Failed to serialize");
 
         // Deserialize
         let archived = unsafe { rkyv::access_unchecked::<ArchivedAddressWrapper>(&bytes) };
@@ -207,8 +206,7 @@ mod tests {
         let original = ScalarWrapper(Scalar::random(&mut rng));
 
         // Serialize
-        let bytes =
-            rkyv::to_bytes::<rkyv::rancor::Error>(&original).expect("Failed to serialize");
+        let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&original).expect("Failed to serialize");
 
         // Deserialize
         let archived = unsafe { rkyv::access_unchecked::<ArchivedScalarWrapper>(&bytes) };

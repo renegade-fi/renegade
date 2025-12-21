@@ -252,10 +252,10 @@ mod tests {
         traits::BaseType,
     };
     use constants::{MAX_BALANCES, MAX_ORDERS, Scalar};
+    use crypto::fields::scalar_to_biguint;
     use lazy_static::lazy_static;
     use num_bigint::RandBigInt;
     use rand::{Rng, distributions::uniform::SampleRange, thread_rng};
-    use crypto::fields::scalar_to_biguint;
 
     // --------------
     // | Dummy Data |
