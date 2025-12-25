@@ -164,13 +164,17 @@ pub struct IntentAndBalanceBoundedSettlementStatement {
     /// This value is also leaked from the witness so that the contracts can
     /// update it directly on-chain.
     pub out_balance_public_shares: PostMatchBalanceShare,
-    /// The relayer fee which is charged for the settlement
+    /// The relayer fee which is charged to the internal party for the
+    /// settlement
     ///
     /// We place this field in the statement so that it is included in the
     /// Fiat-Shamir transcript and therefore is not malleable transaction
     /// calldata. This allows the relayer to set the fee and be sure it cannot
     /// be modified by mempool observers.
-    pub relayer_fee: FixedPoint,
+    pub internal_relayer_fee: FixedPoint,
+    /// The relayer fee which is charged to the external party for the
+    /// settlement
+    pub external_relayer_fee: FixedPoint,
     /// The recipient of the relayer fee
     ///
     /// This must match the value on the output balance where the fee is
@@ -320,7 +324,8 @@ pub mod test_helpers {
             amount_public_share: pre_settlement_amount_public_share,
             in_balance_public_shares: pre_settlement_in_balance_shares,
             out_balance_public_shares: pre_settlement_out_balance_shares,
-            relayer_fee: random_fee(),
+            internal_relayer_fee: random_fee(),
+            external_relayer_fee: random_fee(),
             relayer_fee_recipient,
         };
 
