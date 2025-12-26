@@ -67,4 +67,10 @@ impl StorageError {
     pub fn other<T: ToString>(msg: T) -> Self {
         Self::Other(msg.to_string())
     }
+
+    /// Create a new `Serialization` error
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn serialization<T: ToString>(msg: T) -> Self {
+        Self::Serialization(msg.to_string())
+    }
 }

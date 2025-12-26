@@ -11,8 +11,8 @@ use sha2::Sha256;
 use tracing::instrument;
 use util::telemetry::helpers::backfill_trace_field;
 
-pub mod pubsub;
-pub mod request_response;
+// pub mod pubsub;
+// pub mod request_response;
 
 /// Type alias for the hmac core implementation
 pub type HmacSha256 = hmac::Hmac<Sha256>;
@@ -47,21 +47,21 @@ pub enum GossipDestination {
     NetworkManager,
 }
 
-#[cfg(test)]
-mod tests {
-    use crate::request_response::{GossipRequest, GossipRequestType};
+// #[cfg(test)]
+// mod tests {
+//     use crate::request_response::{GossipRequest, GossipRequestType};
 
-    use super::*;
+//     use super::*;
 
-    #[test]
-    fn test_hmac() {
-        const SIZE: usize = 10_000;
-        let key = HmacKey([20u8; 32]);
+//     #[test]
+//     fn test_hmac() {
+//         const SIZE: usize = 10_000;
+//         let key = HmacKey([20u8; 32]);
 
-        let body = vec![0u8; SIZE];
-        let message = GossipRequest::new(GossipRequestType::Raft(body));
-        let hmac = create_hmac(&message, &key);
+//         let body = vec![0u8; SIZE];
+//         let message = GossipRequest::new(GossipRequestType::Raft(body));
+//         let hmac = create_hmac(&message, &key);
 
-        assert!(check_hmac(&message, &hmac, &key));
-    }
-}
+//         assert!(check_hmac(&message, &hmac, &key));
+//     }
+// }

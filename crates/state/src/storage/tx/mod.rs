@@ -8,32 +8,29 @@
 //! Each of the files in this module are named after the high level interface
 //! they expose
 
-pub mod matching_pools;
-pub mod node_metadata;
-pub mod order_book;
-pub mod order_history;
-pub mod peer_index;
-pub mod proofs;
-pub mod raft_log;
-pub mod relayer_fees;
-pub mod task_assignments;
-pub mod task_history;
-pub mod task_queue;
-pub mod wallet_index;
-
-use std::collections::VecDeque;
+// pub mod matching_pools;
+// pub mod node_metadata;
+// pub mod order_book;
+// pub mod order_history;
+// pub mod peer_index;
+// pub mod proofs;
+// pub mod raft_log;
+// pub mod relayer_fees;
+// pub mod task_assignments;
+// pub mod task_history;
+// pub mod task_queue;
+// pub mod wallet_index;
 
 use libmdbx::{
     Error as MdbxError, RW, Table, TableFlags, Transaction, TransactionKind, WriteFlags, WriteMap,
 };
+use lifetimed_bytes::Bytes as LifetimedBytes;
 use tracing::instrument;
 
 use crate::ALL_TABLES;
 
 use super::{
-    CowBuffer,
-    cursor::DbCursor,
-    db::{deserialize_value, serialize_value},
+    // cursor::DbCursor,
     error::StorageError,
     traits::{Key, Value},
 };
@@ -66,28 +63,6 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
     #[instrument(skip(self))]
     pub fn commit(self) -> Result<(), StorageError> {
         self.inner.commit()
-    }
-
-    /// Read a set type from a table
-    ///
-    /// Assumes the set is represented by a vector
-    pub fn read_set<K: Key, V: Value>(
-        &self,
-        table_name: &str,
-        key: &K,
-    ) -> Result<Vec<V>, StorageError> {
-        Ok(self.inner().read(table_name, key)?.unwrap_or_default())
-    }
-
-    /// Read a queue type from a table
-    ///
-    /// Assumes the queue is represented by a vector    
-    pub fn read_queue<K: Key, V: Value>(
-        &self,
-        table_name: &str,
-        key: &K,
-    ) -> Result<VecDeque<V>, StorageError> {
-        Ok(self.inner().read(table_name, key)?.unwrap_or_default())
     }
 }
 
@@ -122,61 +97,6 @@ impl StateTxn<'_, RW> {
 
         Ok(())
     }
-
-    // --------
-    // | Sets |
-    // --------
-
-    /// Add a value to a set type
-    ///
-    /// Assumes the underlying set is represented by a vector
-    pub(crate) fn add_to_set<K: Key, V: Value + PartialEq>(
-        &self,
-        table_name: &str,
-        key: &K,
-        value: &V,
-    ) -> Result<(), StorageError> {
-        // Read the set
-        let mut set = self.read_set(table_name, key)?;
-
-        // Check if the value is already in the set
-        if !set.contains(value) {
-            set.push(value.clone());
-            self.write_set(table_name, key, &set)?;
-        }
-
-        Ok(())
-    }
-
-    /// Remove a value from a set type
-    ///
-    /// Assumes the underlying set is represented by a vector
-    pub(crate) fn remove_from_set<K: Key, V: Value + PartialEq>(
-        &self,
-        table_name: &str,
-        key: &K,
-        value: &V,
-    ) -> Result<(), StorageError> {
-        // Read the set
-        let mut set = self.read_set::<K, V>(table_name, key)?;
-
-        // Remove the value if it exists in the set
-        set.retain(|v| v != value);
-
-        // Write the updated set back to the database
-        self.write_set(table_name, key, &set)?;
-        Ok(())
-    }
-
-    /// Write a set type to the database
-    pub(crate) fn write_set<K: Key, V: Value>(
-        &self,
-        table_name: &str,
-        key: &K,
-        value: &Vec<V>,
-    ) -> Result<(), StorageError> {
-        self.inner().write(table_name, key, value)
-    }
 }
 
 // -------------------------
@@ -198,14 +118,25 @@ impl<'db, T: TransactionKind> DbTxn<'db, T> {
     }
 
     /// Get a key from the database
-    pub fn read<K: Key, V: Value>(
-        &self,
+    #[allow(unsafe_code)]
+    pub fn read<'txn, K: Key, V: Value>(
+        &'txn self,
         table_name: &str,
         key: &K,
-    ) -> Result<Option<V>, StorageError> {
-        // Read bytes then deserialize as a `serde::Serialize`
-        let value_bytes = self.read_bytes(table_name, key)?;
-        value_bytes.map(|bytes| deserialize_value(&bytes)).transpose()
+    ) -> Result<Option<&'txn V::Archived>, StorageError> {
+        let value_bytes: Option<lifetimed_bytes::Bytes<'_>> = self.read_bytes(table_name, key)?;
+
+        match value_bytes {
+            Some(buf) => {
+                // SAFETY: The bytes are returned by mdbx's transaction and are valid
+                // for the transaction lifetime 'txn. LifetimedBytes<'txn> tracks this
+                // lifetime but its Deref impl doesn't preserve it. Since 'txn is tied
+                // to &self and the data comes from self.txn, this is sound.
+                let bytes: &'txn [u8] = unsafe { std::mem::transmute::<&[u8], &'txn [u8]>(&*buf) };
+                Ok(Some(V::rkyv_access(bytes)?))
+            },
+            None => Ok(None),
+        }
     }
 
     /// Check if a table exists in the database
@@ -217,16 +148,16 @@ impl<'db, T: TransactionKind> DbTxn<'db, T> {
         }
     }
 
-    /// Open a cursor in the txn
-    pub fn cursor<K: Key, V: Value>(
-        &self,
-        table_name: &str,
-    ) -> Result<DbCursor<'_, T, K, V>, StorageError> {
-        let table = self.open_table(table_name)?;
-        let cursor = self.txn.cursor(&table).map_err(StorageError::TxOp)?;
+    // /// Open a cursor in the txn
+    // pub fn cursor<K: Key, V: Value>(
+    //     &self,
+    //     table_name: &str,
+    // ) -> Result<DbCursor<'_, T, K, V>, StorageError> {
+    //     let table = self.open_table(table_name)?;
+    //     let cursor = self.txn.cursor(&table).map_err(StorageError::TxOp)?;
 
-        Ok(DbCursor::new(cursor))
-    }
+    //     Ok(DbCursor::new(cursor))
+    // }
 
     /// Commit the transaction
     pub fn commit(self) -> Result<(), StorageError> {
@@ -238,13 +169,13 @@ impl<'db, T: TransactionKind> DbTxn<'db, T> {
     // -----------
 
     /// Read a byte array directly from the database
-    fn read_bytes<K: Key>(
-        &self,
+    fn read_bytes<'txn, K: Key>(
+        &'txn self,
         table_name: &str,
         key: &K,
-    ) -> Result<Option<CowBuffer>, StorageError> {
+    ) -> Result<Option<LifetimedBytes<'txn>>, StorageError> {
         // Serialize the key
-        let key_bytes = serialize_value(key)?;
+        let key_bytes = key.rkyv_serialize()?;
 
         // Get the value
         let table = self.open_table(table_name)?;
@@ -307,33 +238,33 @@ impl DbTxn<'_, RW> {
         key: &K,
         value: &V,
     ) -> Result<(), StorageError> {
-        let value_bytes = serialize_value(value)?;
+        let value_bytes = value.rkyv_serialize()?;
         self.write_bytes(table_name, key, &value_bytes)
     }
 
     /// Remove a key from the database
     pub fn delete<K: Key>(&self, table_name: &str, key: &K) -> Result<bool, StorageError> {
         // Serialize the key
-        let key_bytes = serialize_value(key)?;
+        let key_bytes = key.rkyv_serialize()?;
 
         // Delete the value
         let table = self.open_table(table_name)?;
         self.txn.del(&table, key_bytes, None /* data */).map_err(StorageError::TxOp)
     }
 
-    /// Copy the contents of a cursor into a table
-    pub fn copy_cursor_to_table<T: TransactionKind>(
-        &self,
-        table_name: &str,
-        mut cursor: DbCursor<'_, T, CowBuffer, CowBuffer>,
-    ) -> Result<(), StorageError> {
-        while !cursor.seek_next_raw()? {
-            let (k, v) = cursor.get_current_raw()?.unwrap();
-            self.write_raw(table_name, &k, &v)?;
-        }
+    // /// Copy the contents of a cursor into a table
+    // pub fn copy_cursor_to_table<T: TransactionKind>(
+    //     &self,
+    //     table_name: &str,
+    //     mut cursor: DbCursor<'_, T, CowBuffer, CowBuffer>,
+    // ) -> Result<(), StorageError> {
+    //     while !cursor.seek_next_raw()? {
+    //         let (k, v) = cursor.get_current_raw()?.unwrap();
+    //         self.write_raw(table_name, &k, &v)?;
+    //     }
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 
     // -----------
     // | Helpers |
@@ -347,7 +278,7 @@ impl DbTxn<'_, RW> {
         value_bytes: &[u8],
     ) -> Result<(), StorageError> {
         // Serialize the key
-        let key_bytes = serialize_value(key)?;
+        let key_bytes = key.rkyv_serialize()?;
 
         // Set the value
         let table = self.open_table(table_name)?;
@@ -370,6 +301,7 @@ impl DbTxn<'_, RW> {
 
 #[cfg(test)]
 mod test {
+
     use crate::test_helpers::mock_db;
 
     /// Tests that dropping a tx aborts it
@@ -392,7 +324,7 @@ mod test {
 
         // Check that the update was aborted
         let tx = db.new_read_tx().unwrap();
-        let value: Option<i32> = tx.inner().read(TABLE_NAME, &"a".to_string()).unwrap();
+        let value = tx.inner().read::<_, i32>(TABLE_NAME, &"a".to_string()).unwrap();
         assert_eq!(value, None);
     }
 

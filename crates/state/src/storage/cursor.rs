@@ -8,11 +8,10 @@ use std::marker::PhantomData;
 
 use libmdbx::{Cursor, RW, TransactionKind, WriteFlags};
 
-use crate::storage::{db::deserialize_value, error::StorageError};
+use crate::storage::{deserialize_value, error::StorageError};
 
 use super::{
-    CowBuffer,
-    db::serialize_value,
+    CowBuffer, serialize_value,
     traits::{Key, Value},
 };
 
@@ -140,7 +139,7 @@ impl<'txn, Tx: TransactionKind, K: Key, V: Value> DbCursor<'txn, Tx, K, V> {
             )));
         }
 
-        let k_bytes = serialize_value(&k)?;
+        let k_bytes = serialize_value(k)?;
         self.inner.set_key::<CowBuffer, CowBuffer>(&k_bytes).map_err(StorageError::TxOp).map(|_| ())
     }
 

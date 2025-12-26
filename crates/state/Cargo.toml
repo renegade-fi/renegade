@@ -37,8 +37,8 @@ openraft = { version = "=0.9.13", features = ["serde", "storage-v2"] }
 bincode = "1.3"
 ciborium = "0.2"
 flate2 = "1.0"
-libmdbx = "0.3"
-serde = { workspace = true, features = ["derive"] }
+libmdbx = { version = "0.3", features = ["lifetimed-bytes"] }
+lifetimed-bytes = "0.1"
 
 # === Messaging + Concurrency === #
 crossbeam = { workspace = true }
@@ -46,18 +46,19 @@ futures = { workspace = true }
 tokio = { workspace = true }
 
 # === Workspace Dependencies === #
-circuit-types = { workspace = true }
 common = { workspace = true }
 config = { workspace = true }
 constants = { workspace = true }
-external-api = { workspace = true }
 gossip-api = { workspace = true }
-job-types = { workspace = true }
 system-bus = { workspace = true }
 system-clock = { workspace = true }
-util = { workspace = true }
 test-helpers = { workspace = true, optional = true, features = ["mocks"] }
-renegade-metrics = { workspace = true }
+util = { workspace = true }
+
+# === Serialization === #
+rkyv = { workspace = true, features = ["unaligned"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
 
 # === Misc === #
 async-trait = { workspace = true }
@@ -67,7 +68,6 @@ fxhash = "0.2"
 lazy_static = { workspace = true }
 libp2p = { workspace = true }
 rand = "0.8"
-serde_json = "1.0"
 slog = { version = "2.2", features = ["max_level_trace"] }
 tempfile = { version = "3.8", optional = true }
 thiserror = { workspace = true }

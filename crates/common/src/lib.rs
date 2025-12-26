@@ -12,7 +12,7 @@
 // pub mod default_wrapper;
 // #[cfg(feature = "wallet")]
 // pub mod keyed_list;
-// #[cfg(feature = "internal-types")]
-// pub mod worker;
+#[cfg(feature = "internal-types")]
+pub mod worker;
 
 pub mod types;

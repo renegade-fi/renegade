@@ -1,13 +1,8 @@
 //! Types for task history storage
 
-use ark_mpc::PARTY1;
-use circuit_types::{Amount, r#match::MatchResult};
-use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
 
-use super::{
-    QueuedTask, QueuedTaskState, TaskDescriptor, TaskIdentifier, TaskQueueKey, WalletUpdateType,
-};
+use super::{QueuedTask, QueuedTaskState, TaskDescriptor, TaskIdentifier, TaskQueueKey};
 
 /// A historical task executed by the task driver
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -40,90 +35,15 @@ impl HistoricalTask {
 /// runtime information irrelevant for storage
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum HistoricalTaskDescription {
-    /// A new wallet was created
-    NewWallet,
-    /// An update to a wallet
-    UpdateWallet(WalletUpdateType),
-    /// A match was settled
-    SettleMatch(MatchResult),
-    /// A fee was paid
-    PayOfflineFee {
-        /// The mind the fee was paid from
-        mint: BigUint,
-        /// The amount of the fee
-        amount: Amount,
-        /// Whether the fee was paid for a protocol fee
-        is_protocol: bool,
-    },
-    /// A wallet was looked up
-    LookupWallet,
-    /// A wallet was refreshed
-    RefreshWallet,
+    /// A new account was created
+    NewAccount,
 }
 
 impl HistoricalTaskDescription {
     /// Create a historical task description from a task descriptor
-    pub fn from_task_descriptor(key: TaskQueueKey, desc: &TaskDescriptor) -> Option<Self> {
+    pub fn from_task_descriptor(_key: TaskQueueKey, desc: &TaskDescriptor) -> Option<Self> {
         match desc {
-            TaskDescriptor::NewWallet(_) => Some(Self::NewWallet),
-            TaskDescriptor::UpdateWallet(desc) => {
-                Some(Self::UpdateWallet(desc.description.clone()))
-            },
-            TaskDescriptor::SettleMatch(desc) => {
-                let mut match_res = desc.match_res.clone();
-                let was_party1 = desc.handshake_state.role.get_party_id() == PARTY1;
-
-                // Flip the direction if the local party was party1, so that the
-                // direction is consistent with the local party's perspective
-                let my_direction = was_party1 ^ desc.match_res.direction;
-                match_res.direction = my_direction;
-                Some(Self::SettleMatch(match_res))
-            },
-            TaskDescriptor::SettleMatchInternal(desc) => {
-                let mut match_res = desc.match_result.clone();
-                let was_party1 = key == desc.wallet_id2;
-
-                let my_direction = was_party1 ^ desc.match_result.direction;
-                match_res.direction = my_direction;
-                Some(Self::SettleMatch(match_res))
-            },
-            TaskDescriptor::OfflineFee(desc) => Some(Self::PayOfflineFee {
-                mint: desc.mint.clone(),
-                amount: desc.amount,
-                is_protocol: desc.is_protocol_fee,
-            }),
-            TaskDescriptor::LookupWallet(_) => Some(Self::LookupWallet),
-            TaskDescriptor::RefreshWallet(_) => Some(Self::RefreshWallet),
-            _ => None,
-        }
-    }
-}
-
-/// Mock helpers for testing task history
-#[cfg(feature = "mocks")]
-pub mod historical_mocks {
-
-    use rand::{RngCore, thread_rng};
-
-    use crate::types::{
-        tasks::{QueuedTaskState, TaskIdentifier, WalletUpdateType},
-        wallet::OrderIdentifier,
-        wallet_mocks::mock_order,
-    };
-
-    use super::{HistoricalTask, HistoricalTaskDescription};
-
-    /// Return a mock historical task
-    pub fn mock_historical_task() -> HistoricalTask {
-        let mut rng = thread_rng();
-        let id = OrderIdentifier::new_v4();
-        let ty = WalletUpdateType::PlaceOrder { order: mock_order(), id, matching_pool: None };
-
-        HistoricalTask {
-            id: TaskIdentifier::new_v4(),
-            state: QueuedTaskState::Completed,
-            created_at: rng.next_u64(),
-            task_info: HistoricalTaskDescription::UpdateWallet(ty),
+            TaskDescriptor::NewAccount(_) => Some(Self::NewAccount),
         }
     }
 }
