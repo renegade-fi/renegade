@@ -17,7 +17,7 @@ members = [
 	# "crates/node-support/bootloader",
 	"crates/crypto",
 	"crates/darkpool-types",
-	# "crates/state",
+	"crates/state",
 	# "crates/system-primitives/system-bus",
 	# "crates/testing/test-helpers",
 	"crates/util",
@@ -125,6 +125,9 @@ tracing = "0.1"
 tracing-opentelemetry = "0.22"
 metrics = "=0.22.3"
 lazy_static = "1.4"
+
+# === Serialization === #
+rkyv = "0.8.8"
 
 [patch.crates-io]
 # We patch `ahash` here since version mismatches w/ the contracts code have

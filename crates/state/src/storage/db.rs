@@ -6,36 +6,20 @@
 use std::{ops::Bound, path::Path};
 
 use libmdbx::{Database, Geometry, RO, RW, WriteMap};
-use serde::{Deserialize, Serialize};
 use tracing::instrument;
-use util::err_str;
 
-use crate::{NUM_TABLES, ciborium_serialize};
+use crate::{
+    NUM_TABLES,
+    storage::traits::{Key, Value},
+};
 
 use super::{
     error::StorageError,
-    traits::{Key, Value},
     tx::{DbTxn, StateTxn},
 };
 
 /// The total maximum size of the DB in bytes
 const MAX_DB_SIZE_BYTES: usize = 1 << 36; // 64 GB
-
-// -----------
-// | Helpers |
-// -----------
-
-/// Serialize a value to a `flexbuffers` byte vector
-pub(crate) fn serialize_value<V: Serialize>(value: &V) -> Result<Vec<u8>, StorageError> {
-    ciborium_serialize(value).map_err(err_str!(StorageError::Serialization))
-}
-
-/// Deserialize a value from a `flexbuffers` byte vector
-pub(crate) fn deserialize_value<V: for<'de> Deserialize<'de>>(
-    value_bytes: &[u8],
-) -> Result<V, StorageError> {
-    ciborium::de::from_reader(value_bytes).map_err(err_str!(StorageError::Deserialization))
-}
 
 // ------------
 // | Database |
@@ -120,7 +104,8 @@ impl DB {
         key: &K,
     ) -> Result<Option<V>, StorageError> {
         let tx = self.new_raw_read_tx()?;
-        let val = tx.read(table_name, key)?;
+        let archived: Option<&V::Archived> = tx.read::<_, V>(table_name, key)?;
+        let val = archived.map(|a| V::rkyv_deserialize(a));
         tx.commit()?;
 
         Ok(val)
@@ -186,7 +171,7 @@ impl DB {
 mod test {
     use std::{sync::Arc, thread};
 
-    use serde::{Deserialize, Serialize};
+    use rkyv::{Archive, Deserialize, Serialize};
 
     use crate::test_helpers::mock_db;
 
@@ -200,7 +185,8 @@ mod test {
     // -----------
 
     /// A structure to store for testing
-    #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+    #[derive(Archive, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+    #[rkyv(compare(PartialEq), derive(Debug))]
     struct TestValue {
         a: u64,
         b: Vec<String>,
@@ -293,12 +279,10 @@ mod test {
 
         // Create a read only transaction and read the value twice
         let tx = db.new_raw_read_tx().unwrap();
-        let v1: Option<TestValue> = tx.read(TABLE_NAME, &key).unwrap();
-        let v2: Option<TestValue> = tx.read(TABLE_NAME, &key).unwrap();
-        tx.commit().unwrap();
-
-        assert_eq!(v1.unwrap(), value);
-        assert_eq!(v2.unwrap(), value);
+        let archived_v1 = tx.read::<_, TestValue>(TABLE_NAME, &key).unwrap();
+        let archived_v2 = tx.read::<_, TestValue>(TABLE_NAME, &key).unwrap();
+        assert_eq!(archived_v1.unwrap(), &value);
+        assert_eq!(archived_v2.unwrap(), &value);
     }
 
     /// Tests a read-write tx to a table
@@ -321,12 +305,10 @@ mod test {
 
         // Read the values back
         let tx = db.new_raw_read_tx().unwrap();
-        let v1: Option<TestValue> = tx.read(TABLE_NAME, &key1).unwrap();
-        let v2: Option<TestValue> = tx.read(TABLE_NAME, &key2).unwrap();
-        tx.commit().unwrap();
-
-        assert_eq!(v1.unwrap(), value1);
-        assert_eq!(v2.unwrap(), value2);
+        let v1 = tx.read::<_, TestValue>(TABLE_NAME, &key1).unwrap();
+        let v2 = tx.read::<_, TestValue>(TABLE_NAME, &key2).unwrap();
+        assert_eq!(v1.unwrap(), &value1);
+        assert_eq!(v2.unwrap(), &value2);
     }
 
     /// Tests reading and writing to multiple tables in a tx
@@ -352,12 +334,10 @@ mod test {
 
         // Read the values back
         let tx = db.new_raw_read_tx().unwrap();
-        let v1: Option<TestValue> = tx.read(TABLE_NAME, &key1).unwrap();
-        let v2: Option<TestValue> = tx.read(TABLE_NAME2, &key2).unwrap();
-        tx.commit().unwrap();
-
-        assert_eq!(v1.unwrap(), value1);
-        assert_eq!(v2.unwrap(), value2);
+        let v1 = tx.read::<_, TestValue>(TABLE_NAME, &key1).unwrap();
+        let v2 = tx.read::<_, TestValue>(TABLE_NAME2, &key2).unwrap();
+        assert_eq!(v1.unwrap(), &value1);
+        assert_eq!(v2.unwrap(), &value2);
     }
 
     /// Tests concurrent transaction isolation
@@ -381,8 +361,9 @@ mod test {
 
             let handle = thread::spawn(move || {
                 let tx = db_clone.new_raw_write_tx().unwrap();
-                let value: u64 = tx.read(TABLE_NAME, &key_clone).unwrap().unwrap();
-                tx.write(TABLE_NAME, &key_clone, &(value + 1)).unwrap();
+                let value = tx.read::<_, u64>(TABLE_NAME, &key_clone).unwrap().unwrap();
+                let new_val = value + 1;
+                tx.write(TABLE_NAME, &key_clone, &new_val).unwrap();
                 tx.commit().unwrap();
             });
 
@@ -394,10 +375,8 @@ mod test {
 
         // Now read back the value, it should be incremented twice
         let tx = db.new_raw_read_tx().unwrap();
-        let value: u64 = tx.read(TABLE_NAME, &key).unwrap().unwrap();
-        tx.commit().unwrap();
-
-        assert_eq!(value, 3);
+        let value = tx.read::<_, u64>(TABLE_NAME, &key).unwrap().unwrap();
+        assert_eq!(*value, 3);
     }
 
     /// Tests recovering from a crash
@@ -423,9 +402,7 @@ mod test {
         let db = Arc::new(DB::new(&DbConfig { path, num_tables: 1 }).unwrap());
 
         let tx = db.new_raw_read_tx().unwrap();
-        let val: Option<TestValue> = tx.read(TABLE_NAME, &key).unwrap();
-        tx.commit().unwrap();
-
-        assert_eq!(val.unwrap(), value);
+        let val = tx.read::<_, TestValue>(TABLE_NAME, &key).unwrap();
+        assert_eq!(val.unwrap(), &value);
     }
 }

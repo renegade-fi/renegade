@@ -1,16 +1,16 @@
 //! Defines common types that many crates can depend on
 
 // --- Internal Types --- //
-// #[cfg(feature = "internal-types")]
-// pub mod gossip;
+#[cfg(feature = "internal-types")]
+pub mod gossip;
 // #[cfg(feature = "internal-types")]
 // pub mod handshake;
 // #[cfg(feature = "internal-types")]
 // pub mod network_order;
 // #[cfg(feature = "internal-types")]
 // pub mod proof_bundles;
-// #[cfg(feature = "internal-types")]
-// pub mod tasks;
+#[cfg(feature = "internal-types")]
+pub mod tasks;
 // #[cfg(feature = "internal-types")]
 // pub mod transfer_auth;
 
@@ -25,6 +25,9 @@ pub mod price;
 pub mod token;
 // #[cfg(feature = "wallet")]
 // pub mod wallet;
+
+/// A type alias for the account identifier type, currently a UUID
+pub type AccountId = uuid::Uuid;
 
 // Re-export the mock types
 // #[cfg(feature = "mocks")]

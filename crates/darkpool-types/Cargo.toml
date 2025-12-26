@@ -32,7 +32,7 @@ mpc-plonk = { workspace = true, optional = true }
 mpc-relation = { workspace = true, optional = true }
 
 # === Serialization === #
-rkyv = { version = "0.8.8", optional = true, features = ["std", "alloc"] }
+rkyv = { workspace = true, optional = true, features = ["std", "alloc"] }
 serde = { workspace = true, features = ["serde_derive"] }
 
 # === Cryptography === #
