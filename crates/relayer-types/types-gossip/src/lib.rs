@@ -10,20 +10,20 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use base64::{engine::general_purpose::STANDARD as b64_standard, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as b64_standard};
 use derivative::Derivative;
 use ed25519_dalek::{
-    Digest, Keypair, PublicKey, SecretKey, Sha512, Signature, SignatureError, SECRET_KEY_LENGTH,
+    Digest, Keypair, PublicKey, SECRET_KEY_LENGTH, SecretKey, Sha512, Signature, SignatureError,
 };
 use libp2p::{Multiaddr, PeerId};
 use libp2p_identity::{
-    ed25519::Keypair as LibP2PKeypair, ed25519::SecretKey as LibP2PSecretKey,
-    ParseError as PeerIdParseError,
+    ParseError as PeerIdParseError, ed25519::Keypair as LibP2PKeypair,
+    ed25519::SecretKey as LibP2PSecretKey,
 };
 use rand_core::OsRng;
 use serde::{
-    de::{Error as SerdeErr, Visitor},
     Deserialize, Serialize,
+    de::{Error as SerdeErr, Visitor},
 };
 use std::{
     fmt::{Display, Formatter, Result as FmtResult},
@@ -379,7 +379,7 @@ pub mod mocks {
 #[cfg(test)]
 mod tests {
     use ed25519_dalek::Keypair as DalekKeypair;
-    use libp2p::{identity::Keypair, Multiaddr, PeerId};
+    use libp2p::{Multiaddr, PeerId, identity::Keypair};
     use rand_core::OsRng;
 
     use super::{ClusterId, PeerInfo, WrappedPeerId};

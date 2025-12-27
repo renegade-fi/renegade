@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use types_core::AccountId;
 use util::{
     get_current_time_millis,
-    telemetry::propagation::{set_parent_span_from_context, trace_context, TraceContext},
+    telemetry::propagation::{TraceContext, set_parent_span_from_context, trace_context},
 };
 use uuid::Uuid;
 
