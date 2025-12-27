@@ -1572,6 +1572,7 @@ dependencies = [
  "ptr_meta",
  "rancor",
  "simdutf8",
+ "uuid",
 ]
 
 [[package]]
@@ -4014,7 +4015,6 @@ dependencies = [
  "derive_more 0.99.20",
  "indexmap 1.9.3",
  "libc",
- "lifetimed-bytes",
  "mdbx-sys",
  "parking_lot",
  "thiserror 1.0.69",
@@ -4127,15 +4127,6 @@ dependencies = [
  "rand 0.8.5",
  "smallvec",
  "void",
-]
-
-[[package]]
-name = "lifetimed-bytes"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4c970c8ea4c7b023a41cfa4af4c785a16694604c2f2a3b0d1f20a9bcb73fa550"
-dependencies = [
- "bytes",
 ]
 
 [[package]]
@@ -6526,7 +6517,6 @@ dependencies = [
  "lazy_static",
  "libmdbx",
  "libp2p",
- "lifetimed-bytes",
  "metrics",
  "multiaddr",
  "num-bigint",
@@ -6549,6 +6539,7 @@ dependencies = [
  "tracing-slog",
  "tui",
  "tui-logger",
+ "types-tasks",
  "util",
  "uuid",
 ]
@@ -7359,6 +7350,7 @@ dependencies = [
 name = "types-tasks"
 version = "0.1.0"
 dependencies = [
+ "rkyv",
  "serde",
  "types-core",
  "util",

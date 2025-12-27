@@ -33,12 +33,13 @@ impl<T: RkyvValue> Value for T {}
 pub trait RkyvValue: Archive<Archived = Self::ArchivedType> + RkyvSerializable + Sized {
     /// The archived type of the value
     type ArchivedType: Portable
+        + Debug
         + for<'a> CheckBytes<HighValidator<'a, rancor::Error>>
         + Deserialize<Self, Strategy<Pool, rancor::Error>>;
 
     /// Deserialize the value from an archived type
-    fn rkyv_deserialize(bytes: &Self::ArchivedType) -> Result<Self, StorageError> {
-        rkyv::deserialize::<_, rancor::Error>(bytes).map_err(StorageError::serialization)
+    fn rkyv_deserialize(archived: &Self::ArchivedType) -> Result<Self, StorageError> {
+        rkyv::deserialize::<_, rancor::Error>(archived).map_err(StorageError::serialization)
     }
 
     /// Deserialize the value from bytes
@@ -79,6 +80,7 @@ pub trait RkyvValue: Archive<Archived = Self::ArchivedType> + RkyvSerializable +
 impl<T: Archive + RkyvSerializable> RkyvValue for T
 where
     T::Archived: Portable
+        + Debug
         + for<'a> CheckBytes<HighValidator<'a, rancor::Error>>
         + Deserialize<T, Strategy<Pool, rancor::Error>>,
 {

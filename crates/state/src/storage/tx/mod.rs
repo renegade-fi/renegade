@@ -18,18 +18,18 @@
 // pub mod relayer_fees;
 // pub mod task_assignments;
 // pub mod task_history;
-// pub mod task_queue;
+pub mod task_queue;
 // pub mod wallet_index;
 
 use libmdbx::{
     Error as MdbxError, RW, Table, TableFlags, Transaction, TransactionKind, WriteFlags, WriteMap,
 };
-use lifetimed_bytes::Bytes as LifetimedBytes;
 use tracing::instrument;
 
 use crate::{ALL_TABLES, storage::cursor::DbCursor};
 
 use super::{
+    archived_value::{ArchivedValue, CowBuffer},
     error::StorageError,
     traits::{Key, Value},
 };
@@ -117,28 +117,16 @@ impl<'db, T: TransactionKind> DbTxn<'db, T> {
     }
 
     /// Get a key from the database
-    #[allow(unsafe_code)]
+    ///
+    /// Returns an `ArchivedValue` wrapper that provides zero-copy access to the
+    /// archived data via `Deref`, and can be deserialized to an owned value.
     pub fn read<'txn, K: Key, V: Value>(
         &'txn self,
         table_name: &str,
         key: &K,
-    ) -> Result<Option<&'txn V::Archived>, StorageError> {
-        let value_bytes: Option<LifetimedBytes<'txn>> = self.read_bytes(table_name, key)?;
-
-        match value_bytes {
-            Some(buf) => {
-                // SAFETY: The bytes are returned by mdbx's transaction and are valid
-                // for the transaction lifetime 'txn. LifetimedBytes<'txn> tracks this
-                // lifetime but its Deref impl doesn't preserve it. Since 'txn is tied
-                // to &self and the data comes from self.txn, this is sound.
-                unsafe {
-                    let bytes: &'txn [u8] = std::mem::transmute::<&[u8], &'txn [u8]>(&*buf);
-                    let archived = V::rkyv_access(bytes);
-                    Ok(Some(archived))
-                }
-            },
-            None => Ok(None),
-        }
+    ) -> Result<Option<ArchivedValue<'txn, V>>, StorageError> {
+        let value_bytes = self.read_bytes(table_name, key)?;
+        Ok(value_bytes.map(ArchivedValue::new))
     }
 
     /// Check if a table exists in the database
@@ -171,17 +159,14 @@ impl<'db, T: TransactionKind> DbTxn<'db, T> {
     // -----------
 
     /// Read a byte array directly from the database
-    fn read_bytes<'txn, K: Key>(
+    pub(crate) fn read_bytes<'txn, K: Key>(
         &'txn self,
         table_name: &str,
         key: &K,
-    ) -> Result<Option<LifetimedBytes<'txn>>, StorageError> {
-        // Serialize the key
+    ) -> Result<Option<CowBuffer<'txn>>, StorageError> {
         let key_bytes = key.rkyv_serialize()?;
-
-        // Get the value
         let table = self.open_table(table_name)?;
-        self.txn.get::<LifetimedBytes<'txn>>(&table, &key_bytes).map_err(StorageError::TxOp)
+        self.txn.get::<CowBuffer<'txn>>(&table, &key_bytes).map_err(StorageError::TxOp)
     }
 
     /// Open a table if the transaction has not done so already
@@ -327,7 +312,7 @@ mod test {
         // Check that the update was aborted
         let tx = db.new_read_tx().unwrap();
         let value = tx.inner().read::<_, i32>(TABLE_NAME, &"a".to_string()).unwrap();
-        assert_eq!(value, None);
+        assert!(value.is_none());
     }
 
     /// Tests checking if a table exists

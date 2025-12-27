@@ -1,9 +1,13 @@
 //! Descriptors of tasks used to parameterize their execution
+// Allow missing docs on generated rkyv Archived types
+#![cfg_attr(feature = "rkyv", allow(missing_docs))]
 
 mod new_account;
 
 pub use new_account::*;
 
+#[cfg(feature = "rkyv")]
+use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize, with::Skip};
 use serde::{Deserialize, Serialize};
 use types_core::AccountId;
 use util::{
@@ -20,6 +24,8 @@ pub type TaskQueueKey = Uuid;
 
 /// A task in the task queue
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "rkyv", derive(Archive, RkyvSerialize, RkyvDeserialize))]
+#[cfg_attr(feature = "rkyv", rkyv(derive(Debug)))]
 pub struct QueuedTask {
     /// The ID of the task
     pub id: TaskIdentifier,
@@ -31,6 +37,7 @@ pub struct QueuedTask {
     pub created_at: u64,
     /// The tracing context in which the task was created
     #[serde(default)]
+    #[cfg_attr(feature = "rkyv", rkyv(with = Skip))]
     pub trace_context: TraceContext,
 }
 
@@ -54,6 +61,8 @@ impl QueuedTask {
 
 /// The state of a queued task
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "rkyv", derive(Archive, RkyvSerialize, RkyvDeserialize))]
+#[cfg_attr(feature = "rkyv", rkyv(derive(Debug), attr(allow(missing_docs))))]
 pub enum QueuedTaskState {
     /// The task is waiting in the queue
     Queued,
@@ -101,6 +110,8 @@ impl QueuedTaskState {
 
 /// A wrapper around the task descriptors
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "rkyv", derive(Archive, RkyvSerialize, RkyvDeserialize))]
+#[cfg_attr(feature = "rkyv", rkyv(derive(Debug)))]
 #[allow(clippy::large_enum_variant)]
 pub enum TaskDescriptor {
     /// The task descriptor for the `NewAccount` task
