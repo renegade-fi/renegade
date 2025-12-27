@@ -27,10 +27,9 @@ use libmdbx::{
 use lifetimed_bytes::Bytes as LifetimedBytes;
 use tracing::instrument;
 
-use crate::ALL_TABLES;
+use crate::{ALL_TABLES, storage::cursor::DbCursor};
 
 use super::{
-    // cursor::DbCursor,
     error::StorageError,
     traits::{Key, Value},
 };
@@ -124,7 +123,7 @@ impl<'db, T: TransactionKind> DbTxn<'db, T> {
         table_name: &str,
         key: &K,
     ) -> Result<Option<&'txn V::Archived>, StorageError> {
-        let value_bytes: Option<lifetimed_bytes::Bytes<'_>> = self.read_bytes(table_name, key)?;
+        let value_bytes: Option<LifetimedBytes<'txn>> = self.read_bytes(table_name, key)?;
 
         match value_bytes {
             Some(buf) => {
@@ -132,8 +131,11 @@ impl<'db, T: TransactionKind> DbTxn<'db, T> {
                 // for the transaction lifetime 'txn. LifetimedBytes<'txn> tracks this
                 // lifetime but its Deref impl doesn't preserve it. Since 'txn is tied
                 // to &self and the data comes from self.txn, this is sound.
-                let bytes: &'txn [u8] = unsafe { std::mem::transmute::<&[u8], &'txn [u8]>(&*buf) };
-                Ok(Some(V::rkyv_access(bytes)?))
+                unsafe {
+                    let bytes: &'txn [u8] = std::mem::transmute::<&[u8], &'txn [u8]>(&*buf);
+                    let archived = V::rkyv_access(bytes);
+                    Ok(Some(archived))
+                }
             },
             None => Ok(None),
         }
@@ -148,16 +150,16 @@ impl<'db, T: TransactionKind> DbTxn<'db, T> {
         }
     }
 
-    // /// Open a cursor in the txn
-    // pub fn cursor<K: Key, V: Value>(
-    //     &self,
-    //     table_name: &str,
-    // ) -> Result<DbCursor<'_, T, K, V>, StorageError> {
-    //     let table = self.open_table(table_name)?;
-    //     let cursor = self.txn.cursor(&table).map_err(StorageError::TxOp)?;
+    /// Open a cursor in the txn
+    pub fn cursor<K: Key, V: Value>(
+        &self,
+        table_name: &str,
+    ) -> Result<DbCursor<'_, T, K, V>, StorageError> {
+        let table = self.open_table(table_name)?;
+        let cursor = self.txn.cursor(&table).map_err(StorageError::TxOp)?;
 
-    //     Ok(DbCursor::new(cursor))
-    // }
+        Ok(DbCursor::new(cursor))
+    }
 
     /// Commit the transaction
     pub fn commit(self) -> Result<(), StorageError> {
@@ -179,7 +181,7 @@ impl<'db, T: TransactionKind> DbTxn<'db, T> {
 
         // Get the value
         let table = self.open_table(table_name)?;
-        self.txn.get(&table, &key_bytes).map_err(StorageError::TxOp)
+        self.txn.get::<LifetimedBytes<'txn>>(&table, &key_bytes).map_err(StorageError::TxOp)
     }
 
     /// Open a table if the transaction has not done so already
@@ -252,19 +254,19 @@ impl DbTxn<'_, RW> {
         self.txn.del(&table, key_bytes, None /* data */).map_err(StorageError::TxOp)
     }
 
-    // /// Copy the contents of a cursor into a table
-    // pub fn copy_cursor_to_table<T: TransactionKind>(
-    //     &self,
-    //     table_name: &str,
-    //     mut cursor: DbCursor<'_, T, CowBuffer, CowBuffer>,
-    // ) -> Result<(), StorageError> {
-    //     while !cursor.seek_next_raw()? {
-    //         let (k, v) = cursor.get_current_raw()?.unwrap();
-    //         self.write_raw(table_name, &k, &v)?;
-    //     }
+    /// Copy the contents of a cursor into a table
+    pub fn copy_cursor_to_table<T: TransactionKind>(
+        &self,
+        table_name: &str,
+        mut cursor: DbCursor<'_, T, Vec<u8>, Vec<u8>>,
+    ) -> Result<(), StorageError> {
+        while !cursor.seek_next_raw()? {
+            let (k, v) = cursor.get_current_raw()?.unwrap();
+            self.write_raw(table_name, &k, &v)?;
+        }
 
-    //     Ok(())
-    // }
+        Ok(())
+    }
 
     // -----------
     // | Helpers |

@@ -7,13 +7,11 @@
 use std::marker::PhantomData;
 
 use libmdbx::{Cursor, RW, TransactionKind, WriteFlags};
+use lifetimed_bytes::Bytes as LifetimedBytes;
 
-use crate::storage::{deserialize_value, error::StorageError};
+use crate::storage::error::StorageError;
 
-use super::{
-    CowBuffer, serialize_value,
-    traits::{Key, Value},
-};
+use super::traits::{Key, Value};
 
 /// A cursor in a table
 pub struct DbCursor<'txn, Tx: TransactionKind, K: Key, V: Value> {
@@ -27,7 +25,7 @@ pub struct DbCursor<'txn, Tx: TransactionKind, K: Key, V: Value> {
     /// Note however that the filter does not affect the position of the cursor,
     /// so while methods like `next` and `prev` will skip over keys that do not
     /// pass the filter, the cursor will still be positioned at those keys
-    key_filter: Option<fn(&K) -> bool>,
+    key_filter: Option<fn(&K::Archived) -> bool>,
     /// A phantom data field to hold the deserialized type of
     /// the table
     _phantom: PhantomData<(K, V)>,
@@ -38,6 +36,9 @@ pub struct DbCursor<'txn, Tx: TransactionKind, K: Key, V: Value> {
 // -----------------
 
 impl<'txn, Tx: TransactionKind, K: Key, V: Value> DbCursor<'txn, Tx, K, V> {
+    /// A type alias for lifetimed bytes with the transaction lifetime
+    pub type TxBytes = LifetimedBytes<'txn>;
+
     /// Constructor
     pub fn new(cursor: Cursor<'txn, Tx>) -> Self {
         Self { inner: cursor, key_filter: None, _phantom: PhantomData }
@@ -46,7 +47,7 @@ impl<'txn, Tx: TransactionKind, K: Key, V: Value> DbCursor<'txn, Tx, K, V> {
     /// Set a filter on the keys
     ///
     /// Consumes the cursor to provide a builder-like pattern
-    pub fn with_key_filter(mut self, filter: fn(&K) -> bool) -> Self {
+    pub fn with_key_filter(mut self, filter: fn(&K::Archived) -> bool) -> Self {
         self.key_filter = Some(filter);
         self
     }
@@ -54,7 +55,7 @@ impl<'txn, Tx: TransactionKind, K: Key, V: Value> DbCursor<'txn, Tx, K, V> {
     /// Whether the item under the cursor exists, returns false when the cursor
     /// is exhausted
     pub fn has_current(&mut self) -> Result<bool, StorageError> {
-        let res = self.inner.get_current::<CowBuffer, CowBuffer>().map_err(StorageError::TxOp)?;
+        let res = self.inner.get_current::<(), ()>().map_err(StorageError::TxOp)?;
         Ok(res.is_some())
     }
 
@@ -63,7 +64,9 @@ impl<'txn, Tx: TransactionKind, K: Key, V: Value> DbCursor<'txn, Tx, K, V> {
     /// Assumes that the cursor is positioned at a valid key/value pair for the
     /// filter, this invariant should be maintained by other cursor methods
     pub fn get_current(&mut self) -> Result<Option<(K, V)>, StorageError> {
-        let res = self.inner.get_current::<CowBuffer, CowBuffer>().map_err(StorageError::TxOp)?;
+        let res =
+            self.inner.get_current::<Self::TxBytes, Self::TxBytes>().map_err(StorageError::TxOp)?;
+
         match res {
             None => Ok(None),
             Some(kv) => self.deserialize_and_filter(kv),
@@ -71,8 +74,11 @@ impl<'txn, Tx: TransactionKind, K: Key, V: Value> DbCursor<'txn, Tx, K, V> {
     }
 
     /// Get the key/value at the current position position without deserializing
-    pub fn get_current_raw(&mut self) -> Result<Option<(CowBuffer, CowBuffer)>, StorageError> {
-        self.inner.get_current::<CowBuffer, CowBuffer>().map_err(StorageError::TxOp)
+    #[allow(clippy::type_complexity)]
+    pub fn get_current_raw(
+        &mut self,
+    ) -> Result<Option<(Self::TxBytes, Self::TxBytes)>, StorageError> {
+        self.inner.get_current::<Self::TxBytes, Self::TxBytes>().map_err(StorageError::TxOp)
     }
 
     /// Position the cursor at the next key value pair
@@ -80,7 +86,8 @@ impl<'txn, Tx: TransactionKind, K: Key, V: Value> DbCursor<'txn, Tx, K, V> {
     /// Returns `true` if the cursor has reached the end of the table
     pub fn seek_next(&mut self) -> Result<bool, StorageError> {
         // Move the cursor forward and return early if it is exhausted
-        if self.inner.next::<CowBuffer, CowBuffer>().map_err(StorageError::TxOp)?.is_none() {
+        if self.inner.next::<Self::TxBytes, Self::TxBytes>().map_err(StorageError::TxOp)?.is_none()
+        {
             return Ok(true);
         }
 
@@ -93,7 +100,7 @@ impl<'txn, Tx: TransactionKind, K: Key, V: Value> DbCursor<'txn, Tx, K, V> {
     ///
     /// Returns `true` if the cursor has reached the end of the table
     pub fn seek_next_raw(&mut self) -> Result<bool, StorageError> {
-        Ok(self.inner.next::<CowBuffer, CowBuffer>().map_err(StorageError::TxOp)?.is_none())
+        Ok(self.inner.next::<Self::TxBytes, Self::TxBytes>().map_err(StorageError::TxOp)?.is_none())
     }
 
     /// Position the cursor at the previous key value pair
@@ -101,7 +108,8 @@ impl<'txn, Tx: TransactionKind, K: Key, V: Value> DbCursor<'txn, Tx, K, V> {
     /// Returns `true` if the cursor has reached the start of the table
     pub fn seek_prev(&mut self) -> Result<bool, StorageError> {
         // Move the cursor back and return early if it is exhausted
-        if self.inner.prev::<CowBuffer, CowBuffer>().map_err(StorageError::TxOp)?.is_none() {
+        if self.inner.prev::<Self::TxBytes, Self::TxBytes>().map_err(StorageError::TxOp)?.is_none()
+        {
             return Ok(true);
         }
 
@@ -113,14 +121,14 @@ impl<'txn, Tx: TransactionKind, K: Key, V: Value> DbCursor<'txn, Tx, K, V> {
     /// Seek to the first key in the table
     pub fn seek_first(&mut self) -> Result<(), StorageError> {
         // Position the cursor at the first key then seek forward to the next valid key
-        self.inner.first::<CowBuffer, CowBuffer>().map_err(StorageError::TxOp)?;
+        self.inner.first::<Self::TxBytes, Self::TxBytes>().map_err(StorageError::TxOp)?;
         self.seek_next_filtered(true /* forward */).map(|_| ())
     }
 
     /// Seek to the last key in the table
     pub fn seek_last(&mut self) -> Result<(), StorageError> {
         // Position the cursor at the last key then seek backwards to the next valid key
-        self.inner.last::<CowBuffer, CowBuffer>().map_err(StorageError::TxOp)?;
+        self.inner.last::<Self::TxBytes, Self::TxBytes>().map_err(StorageError::TxOp)?;
         self.seek_next_filtered(false /* forward */).map(|_| ())
     }
 
@@ -131,23 +139,30 @@ impl<'txn, Tx: TransactionKind, K: Key, V: Value> DbCursor<'txn, Tx, K, V> {
     /// operations
     pub fn seek(&mut self, k: &K) -> Result<(), StorageError> {
         // Validate the key
+        let k_bytes = k.rkyv_serialize()?;
+        let k_archived = K::rkyv_access_validated(&k_bytes)?;
         if let Some(filter) = self.key_filter
-            && !filter(k)
+            && !filter(k_archived)
         {
             return Err(StorageError::InvalidKey(format!(
                 "Key {k:?} passed to `Cursor::seek` does not pass filter"
             )));
         }
 
-        let k_bytes = serialize_value(k)?;
-        self.inner.set_key::<CowBuffer, CowBuffer>(&k_bytes).map_err(StorageError::TxOp).map(|_| ())
+        let k_bytes = k.rkyv_serialize()?;
+        self.inner
+            .set_key::<Self::TxBytes, Self::TxBytes>(&k_bytes)
+            .map_err(StorageError::TxOp)
+            .map(|_| ())
     }
 
     /// Position at the first key greater than or equal to the given key
     pub fn seek_geq(&mut self, k: &K) -> Result<(), StorageError> {
         // Position the cursor at the first key then seek forward to the next valid key
-        let k_bytes = serialize_value(k)?;
-        self.inner.set_range::<CowBuffer, CowBuffer>(&k_bytes).map_err(StorageError::TxOp)?;
+        let k_bytes = k.rkyv_serialize()?;
+        self.inner
+            .set_range::<Self::TxBytes, Self::TxBytes>(&k_bytes)
+            .map_err(StorageError::TxOp)?;
         self.seek_next_filtered(true /* forward */).map(|_| ())
     }
 
@@ -162,7 +177,8 @@ impl<'txn, Tx: TransactionKind, K: Key, V: Value> DbCursor<'txn, Tx, K, V> {
     /// The `forward` parameter determines the direction of the search
     fn seek_next_filtered(&mut self, forward: bool) -> Result<Option<(K, V)>, StorageError> {
         // Try the current position
-        let curr = self.inner.get_current::<CowBuffer, CowBuffer>().map_err(StorageError::TxOp)?;
+        let curr =
+            self.inner.get_current::<Self::TxBytes, Self::TxBytes>().map_err(StorageError::TxOp)?;
         if let Some(val) = curr
             && let Some(kv) = self.deserialize_and_filter(val)?
         {
@@ -171,9 +187,9 @@ impl<'txn, Tx: TransactionKind, K: Key, V: Value> DbCursor<'txn, Tx, K, V> {
 
         // Otherwise, directionally search for the next valid key
         let next_fn = if forward {
-            Cursor::<Tx>::next::<CowBuffer, CowBuffer>
+            Cursor::<Tx>::next::<Self::TxBytes, Self::TxBytes>
         } else {
-            Cursor::<Tx>::prev::<CowBuffer, CowBuffer>
+            Cursor::<Tx>::prev::<Self::TxBytes, Self::TxBytes>
         };
 
         while let Some(kv) = next_fn(&mut self.inner).map_err(StorageError::TxOp)? {
@@ -186,22 +202,24 @@ impl<'txn, Tx: TransactionKind, K: Key, V: Value> DbCursor<'txn, Tx, K, V> {
     }
 
     /// Deserialize a key-value pair and filter the key
+    #[allow(unsafe_code)]
     fn deserialize_and_filter(
         &self,
-        kv: (CowBuffer, CowBuffer),
+        kv: (Self::TxBytes, Self::TxBytes),
     ) -> Result<Option<(K, V)>, StorageError> {
         let (k_buf, v_buf) = kv;
 
         // Deserialize and filter the key
-        let key = deserialize_value(&k_buf)?;
+        let key = unsafe { K::rkyv_access(&k_buf) };
         if let Some(filter) = self.key_filter
-            && !filter(&key)
+            && !filter(key)
         {
             return Ok(None);
         }
 
         // Deserialize the value
-        let value = deserialize_value(&v_buf)?;
+        let key = K::rkyv_deserialize(key)?;
+        let value = V::rkyv_deserialize_from_bytes(&v_buf)?;
         Ok(Some((key, value)))
     }
 }
@@ -214,8 +232,8 @@ impl<K: Key, V: Value> DbCursor<'_, RW, K, V> {
     /// Insert a key/value pair into the table, the cursor will be positioned at
     /// the inserted key or near it when this method fails
     pub fn put(&mut self, k: &K, v: &V) -> Result<(), StorageError> {
-        let k_bytes = serialize_value(k)?;
-        let v_bytes = serialize_value(v)?;
+        let k_bytes = k.rkyv_serialize()?;
+        let v_bytes = v.rkyv_serialize()?;
 
         self.inner.put(&k_bytes, &v_bytes, WriteFlags::default()).map_err(StorageError::TxOp)
     }
@@ -290,6 +308,12 @@ mod test {
 
     use crate::{storage::db::DB, test_helpers::mock_db};
 
+    /// A fixed-width byte array key that preserves numeric ordering
+    ///
+    /// Uses big-endian encoding so that lexicographic byte order matches
+    /// numeric order
+    type ByteKey = [u8; 8];
+
     /// The name of the table used for testing
     const TEST_TABLE: &str = "test-table";
 
@@ -297,14 +321,15 @@ mod test {
     // | Helpers |
     // -----------
 
-    /// Inserts 0..n into the table as "{i}" -> i in random order
+    /// Inserts 0..n into the table as big-endian [u8; 8] -> i in random order
+    /// This preserves numeric ordering when used as keys
     fn insert_n_random(db: &DB, n: usize) {
         let mut values = (0..n).collect::<Vec<_>>();
         values.shuffle(&mut thread_rng());
 
         let tx = db.new_raw_write_tx().unwrap();
         for i in values.into_iter() {
-            let key = i.to_string();
+            let key: ByteKey = (i as u64).to_be_bytes();
             tx.write(TEST_TABLE, &key, &i).unwrap();
         }
         tx.commit().unwrap();
@@ -360,11 +385,14 @@ mod test {
 
         // Read the last key, it should be `Some`
         let tx = db.new_raw_read_tx().unwrap();
-        let mut cursor = tx.cursor::<String, usize>(TEST_TABLE).unwrap();
+        let mut cursor = tx.cursor::<ByteKey, usize>(TEST_TABLE).unwrap();
         cursor.seek_last().unwrap();
         let last = cursor.get_current().unwrap();
 
-        assert_eq!(last.unwrap(), ((N - 1).to_string(), N - 1));
+        let (key_bytes, value) = last.unwrap();
+        let key = u64::from_be_bytes(key_bytes) as usize;
+        assert_eq!(key, N - 1);
+        assert_eq!(value, N - 1);
     }
 
     /// Tests deleting the item under the cursor
@@ -440,10 +468,11 @@ mod test {
 
         // Run a cursor over the table
         let tx = db.new_raw_read_tx().unwrap();
-        let cursor = tx.cursor::<String, usize>(TEST_TABLE).unwrap();
+        let cursor = tx.cursor::<ByteKey, usize>(TEST_TABLE).unwrap();
         for (i, pair) in cursor.into_iter().enumerate() {
-            let (k, v) = pair.unwrap();
-            assert_eq!(k, i.to_string());
+            let (k_bytes, v) = pair.unwrap();
+            let k = u64::from_be_bytes(k_bytes) as usize;
+            assert_eq!(k, i);
             assert_eq!(v, i);
         }
     }
@@ -461,23 +490,27 @@ mod test {
 
         // Choose a random seek index
         let seek_index = (0..(N - 1)).choose(&mut thread_rng()).unwrap();
+        let seek_key: ByteKey = (seek_index as u64).to_be_bytes();
 
         // Seek to the value, assert its correctness, then check the next value
         let tx = db.new_raw_read_tx().unwrap();
-        let mut cursor = tx.cursor::<String, usize>(TEST_TABLE).unwrap();
-        cursor.seek(&seek_index.to_string()).unwrap();
-        let (k, v) = cursor.get_current().unwrap().unwrap();
+        let mut cursor = tx.cursor::<ByteKey, usize>(TEST_TABLE).unwrap();
+        cursor.seek(&seek_key).unwrap();
+        let (k_bytes, v) = cursor.get_current().unwrap().unwrap();
+        let k = u64::from_be_bytes(k_bytes) as usize;
 
-        assert_eq!(k, seek_index.to_string());
+        assert_eq!(k, seek_index);
         assert_eq!(v, seek_index);
 
-        let (k, v) = cursor.get_current().unwrap().unwrap();
-        assert_eq!(k, seek_index.to_string());
+        let (k_bytes, v) = cursor.get_current().unwrap().unwrap();
+        let k = u64::from_be_bytes(k_bytes) as usize;
+        assert_eq!(k, seek_index);
         assert_eq!(v, seek_index);
 
         cursor.seek_next().unwrap();
-        let (k, v) = cursor.get_current().unwrap().unwrap();
-        assert_eq!(k, (seek_index + 1).to_string());
+        let (k_bytes, v) = cursor.get_current().unwrap().unwrap();
+        let k = u64::from_be_bytes(k_bytes) as usize;
+        assert_eq!(k, seek_index + 1);
         assert_eq!(v, seek_index + 1);
     }
 
@@ -494,23 +527,27 @@ mod test {
 
         // Choose a random seek index
         let seek_index = (1..N).choose(&mut thread_rng()).unwrap();
+        let seek_key: ByteKey = (seek_index as u64).to_be_bytes();
 
         // Seek to the value, assert its correctness, then check the previous value
         let tx = db.new_raw_read_tx().unwrap();
-        let mut cursor = tx.cursor::<String, usize>(TEST_TABLE).unwrap();
-        cursor.seek(&seek_index.to_string()).unwrap();
-        let (k, v) = cursor.get_current().unwrap().unwrap();
+        let mut cursor = tx.cursor::<ByteKey, usize>(TEST_TABLE).unwrap();
+        cursor.seek(&seek_key).unwrap();
+        let (k_bytes, v) = cursor.get_current().unwrap().unwrap();
+        let k = u64::from_be_bytes(k_bytes) as usize;
 
-        assert_eq!(k, seek_index.to_string());
+        assert_eq!(k, seek_index);
         assert_eq!(v, seek_index);
 
-        let (k, v) = cursor.get_current().unwrap().unwrap();
-        assert_eq!(k, seek_index.to_string());
+        let (k_bytes, v) = cursor.get_current().unwrap().unwrap();
+        let k = u64::from_be_bytes(k_bytes) as usize;
+        assert_eq!(k, seek_index);
         assert_eq!(v, seek_index);
 
         cursor.seek_prev().unwrap();
-        let (k, v) = cursor.get_current().unwrap().unwrap();
-        assert_eq!(k, (seek_index - 1).to_string());
+        let (k_bytes, v) = cursor.get_current().unwrap().unwrap();
+        let k = u64::from_be_bytes(k_bytes) as usize;
+        assert_eq!(k, seek_index - 1);
         assert_eq!(v, seek_index - 1);
     }
 
@@ -535,34 +572,38 @@ mod test {
                 continue;
             }
 
-            let key = i.to_string();
+            let key: ByteKey = (i as u64).to_be_bytes();
             tx.write(TEST_TABLE, &key, &i).unwrap();
         }
         tx.commit().unwrap();
 
         // Test `seek_geq` to a key that does exist
         let seek_ind = exclude - 1;
+        let seek_key: ByteKey = (seek_ind as u64).to_be_bytes();
 
         let tx = db.new_raw_read_tx().unwrap();
-        let mut cursor = tx.cursor::<String, usize>(TEST_TABLE).unwrap();
-        cursor.seek_geq(&seek_ind.to_string()).unwrap();
-        let (k, v) = cursor.get_current().unwrap().unwrap();
+        let mut cursor = tx.cursor::<ByteKey, usize>(TEST_TABLE).unwrap();
+        cursor.seek_geq(&seek_key).unwrap();
+        let (k_bytes, v) = cursor.get_current().unwrap().unwrap();
+        let k = u64::from_be_bytes(k_bytes) as usize;
 
-        assert_eq!(k, seek_ind.to_string());
+        assert_eq!(k, seek_ind);
         assert_eq!(v, seek_ind);
 
         tx.commit().unwrap();
 
         // Now try seeking to a key that doesn't exist
         let seek_ind = exclude;
+        let seek_key: ByteKey = (seek_ind as u64).to_be_bytes();
 
         let tx = db.new_raw_read_tx().unwrap();
-        let mut cursor = tx.cursor::<String, usize>(TEST_TABLE).unwrap();
-        cursor.seek_geq(&seek_ind.to_string()).unwrap();
-        let (k, v) = cursor.get_current().unwrap().unwrap();
+        let mut cursor = tx.cursor::<ByteKey, usize>(TEST_TABLE).unwrap();
+        cursor.seek_geq(&seek_key).unwrap();
+        let (k_bytes, v) = cursor.get_current().unwrap().unwrap();
+        let k = u64::from_be_bytes(k_bytes) as usize;
 
         let expected = seek_ind + 1;
-        assert_eq!(k, expected.to_string());
+        assert_eq!(k, expected);
         assert_eq!(v, expected);
     }
 
@@ -578,35 +619,45 @@ mod test {
 
         // Create a filtered cursor that only returns odd keys
         let tx = db.new_raw_read_tx().unwrap();
-        let mut cursor = tx
-            .cursor::<String, usize>(TEST_TABLE)
-            .unwrap()
-            .with_key_filter(|k| k.parse::<usize>().unwrap() % 2 == 1);
+        let mut cursor = tx.cursor::<ByteKey, usize>(TEST_TABLE).unwrap().with_key_filter(|k| {
+            let key_val = u64::from_be_bytes(*k) as usize;
+            key_val % 2 == 1
+        });
         cursor.seek_first().unwrap();
 
         // Cursor is positioned at one, should return `Some`
-        let kv = cursor.get_current().unwrap().unwrap();
-        assert_eq!(kv, ("1".to_string(), 1));
+        let (k_bytes, v) = cursor.get_current().unwrap().unwrap();
+        let k = u64::from_be_bytes(k_bytes) as usize;
+        assert_eq!(k, 1);
+        assert_eq!(v, 1);
 
         // Move the cursor to the next key, should be the next odd key
         cursor.seek_next().unwrap();
-        let next = cursor.get_current().unwrap().unwrap();
-        assert_eq!(next, ("3".to_string(), 3));
+        let (k_bytes, v) = cursor.get_current().unwrap().unwrap();
+        let k = u64::from_be_bytes(k_bytes) as usize;
+        assert_eq!(k, 3);
+        assert_eq!(v, 3);
 
         // Get the current key, should still be the second odd key
-        let curr = cursor.get_current().unwrap();
-        assert_eq!(curr.unwrap(), ("3".to_string(), 3));
+        let (k_bytes, v) = cursor.get_current().unwrap().unwrap();
+        let k = u64::from_be_bytes(k_bytes) as usize;
+        assert_eq!(k, 3);
+        assert_eq!(v, 3);
 
         // Get the previous key, should return `Some`
         cursor.seek_prev().unwrap();
-        let prev = cursor.get_current().unwrap().unwrap();
-        assert_eq!(prev, ("1".to_string(), 1));
+        let (k_bytes, v) = cursor.get_current().unwrap().unwrap();
+        let k = u64::from_be_bytes(k_bytes) as usize;
+        assert_eq!(k, 1);
+        assert_eq!(v, 1);
 
         // Seek to the last key, should be N - 1
         cursor.seek_last().unwrap();
-        let last = cursor.get_current().unwrap().unwrap();
+        let (k_bytes, v) = cursor.get_current().unwrap().unwrap();
+        let k = u64::from_be_bytes(k_bytes) as usize;
         let idx = N - 1;
-        assert_eq!(last, (idx.to_string(), idx));
+        assert_eq!(k, idx);
+        assert_eq!(v, idx);
 
         // Iterate over the cursor, should only return odd keys
         cursor.seek_first().unwrap();
@@ -616,8 +667,9 @@ mod test {
         for (i, pair) in elems.into_iter().enumerate() {
             let idx = i * 2 + 1;
 
-            let (k, v) = pair;
-            assert_eq!(k, idx.to_string());
+            let (k_bytes, v) = pair;
+            let k = u64::from_be_bytes(k_bytes) as usize;
+            assert_eq!(k, idx);
             assert_eq!(v, idx);
         }
     }
