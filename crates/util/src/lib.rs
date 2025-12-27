@@ -11,9 +11,11 @@ use std::time::{SystemTime, UNIX_EPOCH};
 pub mod channels;
 #[cfg(feature = "concurrency")]
 pub mod concurrency;
+mod default_wrapper;
+pub use default_wrapper::*;
 #[cfg(feature = "errors")]
 pub mod errors;
-#[cfg(feature = "hex")]
+#[cfg(any(feature = "hex", feature = "hex-core"))]
 pub mod hex;
 #[cfg(all(feature = "matching-engine", feature = "v1"))]
 pub mod matching_engine;

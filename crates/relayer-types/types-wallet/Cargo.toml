@@ -1,0 +1,37 @@
+[package]
+name = "types-wallet"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = []
+mocks = ["rand"]
+proof-system-types = []
+
+[dependencies]
+# === Cryptography === #
+k256 = { version = "0.13", features = ["ecdsa"] }
+num-bigint = { workspace = true }
+num-traits = "0.2"
+signature = "2.0"
+
+# === Ethereum === #
+alloy = { workspace = true }
+
+# === Serialization === #
+derivative = "2.2"
+itertools = { workspace = true }
+lazy_static = { workspace = true }
+serde = { workspace = true }
+uuid = { version = "1.1.2", features = ["v4", "serde"] }
+
+# === Optional === #
+rand = { workspace = true, optional = true }
+
+# === Workspace Dependencies === #
+circuit-types = { workspace = true, features = ["default"] }
+circuits-core = { workspace = true }
+constants = { workspace = true, features = ["default"] }
+crypto = { workspace = true, features = ["default"] }
+types-core = { workspace = true }
+util = { workspace = true, features = ["hex-core", "errors"] }

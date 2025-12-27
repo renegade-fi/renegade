@@ -1,0 +1,15 @@
+[package]
+name = "types-tasks"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = []
+
+[dependencies]
+serde = { workspace = true }
+uuid = { version = "1.1.2", features = ["v4", "serde"] }
+
+# === Workspace Dependencies === #
+types-core = { workspace = true }
+util = { workspace = true, features = ["telemetry"] }

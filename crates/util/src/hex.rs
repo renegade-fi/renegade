@@ -1,15 +1,31 @@
 //! Helpers for converting values to and from hex strings
+//!
+//! This module provides two levels of functionality:
+//! - `hex-core` feature: Lightweight biguint/bytes hex conversions (no circuit
+//!   deps)
+//! - `hex` feature: Full hex utilities including scalar/jubjub conversions
+
+#[cfg(feature = "hex")]
 use ark_ec::{CurveGroup, twisted_edwards::Projective};
+#[cfg(feature = "hex")]
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
-#[cfg(feature = "v1")]
+#[cfg(all(feature = "hex", feature = "v1"))]
 use circuit_types::keychain::{NonNativeScalar, PublicSigningKey};
+#[cfg(feature = "hex")]
 use circuit_types::primitives::baby_jubjub::BabyJubJubPoint;
-use constants::{ADDRESS_BYTE_LENGTH, EmbeddedCurveConfig, Scalar};
+#[cfg(feature = "hex")]
+use constants::{EmbeddedCurveConfig, Scalar};
+#[cfg(feature = "hex")]
 use crypto::fields::{biguint_to_scalar, scalar_to_biguint};
 use num_bigint::BigUint;
 use num_traits::Num;
 
+#[cfg(feature = "hex")]
 use crate::raw_err_str;
+
+/// The byte length of an Ethereum address (inlined to avoid constants dep for
+/// hex-core)
+const ADDRESS_BYTE_LENGTH: usize = 20;
 
 /// Convert a byte array to a hex string
 pub fn bytes_to_hex_string(bytes: &[u8]) -> String {
@@ -50,20 +66,24 @@ pub fn biguint_from_hex_string(hex: &str) -> Result<BigUint, String> {
         .map_err(|e| format!("error deserializing BigUint from hex string: {e}"))
 }
 
+// --- Full hex feature functions (require circuit deps) --- //
+
 /// A helper to serialize a scalar to a hex string
+#[cfg(feature = "hex")]
 pub fn scalar_to_hex_string(val: &Scalar) -> String {
     let biguint = scalar_to_biguint(val);
     biguint_to_hex_string(&biguint)
 }
 
 /// A helper to deserialize a scalar from a hex string
+#[cfg(feature = "hex")]
 pub fn scalar_from_hex_string(hex: &str) -> Result<Scalar, String> {
     let biguint = biguint_from_hex_string(hex)?;
     Ok(biguint_to_scalar(&biguint))
 }
 
 /// A helper to serialize a nonnative scalar to a hex string
-#[cfg(feature = "v1")]
+#[cfg(all(feature = "hex", feature = "v1"))]
 pub fn nonnative_scalar_to_hex_string<const NUM_WORDS: usize>(
     val: &NonNativeScalar<NUM_WORDS>,
 ) -> String {
@@ -71,7 +91,7 @@ pub fn nonnative_scalar_to_hex_string<const NUM_WORDS: usize>(
 }
 
 /// A helper method to deserialize a nonnative scalar from a hex string
-#[cfg(feature = "v1")]
+#[cfg(all(feature = "hex", feature = "v1"))]
 pub fn nonnative_scalar_from_hex_string<const NUM_WORDS: usize>(
     hex: &str,
 ) -> Result<NonNativeScalar<NUM_WORDS>, String> {
@@ -80,14 +100,14 @@ pub fn nonnative_scalar_from_hex_string<const NUM_WORDS: usize>(
 }
 
 /// A helper to serialize a signing key to a hex string
-#[cfg(feature = "v1")]
+#[cfg(all(feature = "hex", feature = "v1"))]
 pub fn public_sign_key_to_hex_string(val: &PublicSigningKey) -> String {
     let bytes = val.to_uncompressed_bytes();
     format!("0x{}", hex::encode(bytes))
 }
 
 /// A helper to deserialize a signing key from a hex string
-#[cfg(feature = "v1")]
+#[cfg(all(feature = "hex", feature = "v1"))]
 pub fn public_sign_key_from_hex_string(hex: &str) -> Result<PublicSigningKey, String> {
     // Deserialize as a string and remove "0x" if present
     let stripped = hex.strip_prefix("0x").unwrap_or(hex);
@@ -99,6 +119,7 @@ pub fn public_sign_key_from_hex_string(hex: &str) -> Result<PublicSigningKey, St
 }
 
 /// Convert a Baby-JubJub point to a hex string
+#[cfg(feature = "hex")]
 pub fn jubjub_to_hex_string(point: &BabyJubJubPoint) -> String {
     let converted_point = Projective::<EmbeddedCurveConfig>::from(*point);
     let mut bytes = vec![];
@@ -108,6 +129,7 @@ pub fn jubjub_to_hex_string(point: &BabyJubJubPoint) -> String {
 }
 
 /// Deserialize a Baby-JubJub point from a hex string
+#[cfg(feature = "hex")]
 pub fn jubjub_from_hex_string(hex: &str) -> Result<BabyJubJubPoint, String> {
     // Deserialize as a string and remove "0x" if present
     let stripped = hex.strip_prefix("0x").unwrap_or(hex);
@@ -121,6 +143,7 @@ pub fn jubjub_from_hex_string(hex: &str) -> Result<BabyJubJubPoint, String> {
 
 #[cfg(test)]
 mod tests {
+    use alloy::primitives::Address;
     use rand::{RngCore, thread_rng};
 
     use super::*;
@@ -141,7 +164,8 @@ mod tests {
     fn test_addr_serialize_deserialize() {
         // Generate a random address as a BigUint
         let mut rng = thread_rng();
-        let mut addr_bytes = [0_u8; ADDRESS_BYTE_LENGTH];
+        // Use the inlined constant for address byte length
+        let mut addr_bytes = [0_u8; Address::len_bytes()];
         rng.fill_bytes(&mut addr_bytes);
         let addr_biguint = BigUint::from_bytes_be(&addr_bytes);
 
