@@ -105,7 +105,7 @@ impl DB {
     ) -> Result<Option<V>, StorageError> {
         let tx = self.new_raw_read_tx()?;
         let archived: Option<&V::Archived> = tx.read::<_, V>(table_name, key)?;
-        let val = archived.map(|a| V::rkyv_deserialize(a));
+        let val = archived.map(|a| V::rkyv_deserialize(a)).transpose()?;
         tx.commit()?;
 
         Ok(val)

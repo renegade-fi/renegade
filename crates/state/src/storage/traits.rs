@@ -37,8 +37,13 @@ pub trait RkyvValue: Archive<Archived = Self::ArchivedType> + RkyvSerializable +
         + Deserialize<Self, Strategy<Pool, rancor::Error>>;
 
     /// Deserialize the value from an archived type
-    fn rkyv_deserialize(bytes: &Self::ArchivedType) -> Self {
-        rkyv::deserialize::<_, rancor::Error>(bytes).map_err(StorageError::serialization).unwrap()
+    fn rkyv_deserialize(bytes: &Self::ArchivedType) -> Result<Self, StorageError> {
+        rkyv::deserialize::<_, rancor::Error>(bytes).map_err(StorageError::serialization)
+    }
+
+    /// Deserialize the value from bytes
+    fn rkyv_deserialize_from_bytes(bytes: &[u8]) -> Result<Self, StorageError> {
+        rkyv::from_bytes::<_, rancor::Error>(bytes).map_err(StorageError::serialization)
     }
 
     /// Serialize the value to a byte vector
@@ -54,7 +59,19 @@ pub trait RkyvValue: Archive<Archived = Self::ArchivedType> + RkyvSerializable +
     /// Access the value without deserializing it
     ///
     /// This method is zero-copy
-    fn rkyv_access(value_bytes: &[u8]) -> Result<&Self::Archived, StorageError> {
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the bytes are a valid serialized value of
+    /// the type. The bytes must have been produced by rkyv serialization
+    /// and must be valid for the lifetime of the returned reference.
+    #[allow(unsafe_code)]
+    unsafe fn rkyv_access(value_bytes: &[u8]) -> &Self::Archived {
+        unsafe { rkyv::access_unchecked::<Self::Archived>(value_bytes) }
+    }
+
+    /// Access the value and validate the bytes
+    fn rkyv_access_validated(value_bytes: &[u8]) -> Result<&Self::Archived, StorageError> {
         rkyv::access::<Self::Archived, rancor::Error>(value_bytes)
             .map_err(StorageError::serialization)
     }
