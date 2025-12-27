@@ -10,6 +10,8 @@
 
 mod descriptors;
 mod history;
+#[cfg(feature = "mocks")]
+pub mod mocks;
 
 pub use descriptors::*;
 pub use history::*;

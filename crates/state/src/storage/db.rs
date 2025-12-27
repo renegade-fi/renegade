@@ -104,8 +104,8 @@ impl DB {
         key: &K,
     ) -> Result<Option<V>, StorageError> {
         let tx = self.new_raw_read_tx()?;
-        let archived: Option<&V::Archived> = tx.read::<_, V>(table_name, key)?;
-        let val = archived.map(|a| V::rkyv_deserialize(a)).transpose()?;
+        let archived = tx.read::<_, V>(table_name, key)?;
+        let val = archived.map(|a| a.deserialize()).transpose()?;
         tx.commit()?;
 
         Ok(val)
@@ -279,10 +279,10 @@ mod test {
 
         // Create a read only transaction and read the value twice
         let tx = db.new_raw_read_tx().unwrap();
-        let archived_v1 = tx.read::<_, TestValue>(TABLE_NAME, &key).unwrap();
-        let archived_v2 = tx.read::<_, TestValue>(TABLE_NAME, &key).unwrap();
-        assert_eq!(archived_v1.unwrap(), &value);
-        assert_eq!(archived_v2.unwrap(), &value);
+        let v1 = tx.read::<_, TestValue>(TABLE_NAME, &key).unwrap();
+        let v2 = tx.read::<_, TestValue>(TABLE_NAME, &key).unwrap();
+        assert_eq!(&*v1.unwrap(), &value);
+        assert_eq!(&*v2.unwrap(), &value);
     }
 
     /// Tests a read-write tx to a table
@@ -307,8 +307,8 @@ mod test {
         let tx = db.new_raw_read_tx().unwrap();
         let v1 = tx.read::<_, TestValue>(TABLE_NAME, &key1).unwrap();
         let v2 = tx.read::<_, TestValue>(TABLE_NAME, &key2).unwrap();
-        assert_eq!(v1.unwrap(), &value1);
-        assert_eq!(v2.unwrap(), &value2);
+        assert_eq!(&*v1.unwrap(), &value1);
+        assert_eq!(&*v2.unwrap(), &value2);
     }
 
     /// Tests reading and writing to multiple tables in a tx
@@ -336,8 +336,8 @@ mod test {
         let tx = db.new_raw_read_tx().unwrap();
         let v1 = tx.read::<_, TestValue>(TABLE_NAME, &key1).unwrap();
         let v2 = tx.read::<_, TestValue>(TABLE_NAME2, &key2).unwrap();
-        assert_eq!(v1.unwrap(), &value1);
-        assert_eq!(v2.unwrap(), &value2);
+        assert_eq!(&*v1.unwrap(), &value1);
+        assert_eq!(&*v2.unwrap(), &value2);
     }
 
     /// Tests concurrent transaction isolation
@@ -361,7 +361,7 @@ mod test {
 
             let handle = thread::spawn(move || {
                 let tx = db_clone.new_raw_write_tx().unwrap();
-                let value = tx.read::<_, u64>(TABLE_NAME, &key_clone).unwrap().unwrap();
+                let value = *tx.read::<_, u64>(TABLE_NAME, &key_clone).unwrap().unwrap();
                 let new_val = value + 1;
                 tx.write(TABLE_NAME, &key_clone, &new_val).unwrap();
                 tx.commit().unwrap();
@@ -403,6 +403,6 @@ mod test {
 
         let tx = db.new_raw_read_tx().unwrap();
         let val = tx.read::<_, TestValue>(TABLE_NAME, &key).unwrap();
-        assert_eq!(val.unwrap(), &value);
+        assert_eq!(&*val.unwrap(), &value);
     }
 }

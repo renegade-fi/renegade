@@ -1,5 +1,7 @@
 //! Types for task history storage
 
+#[cfg(feature = "rkyv")]
+use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
 use serde::{Deserialize, Serialize};
 
 use crate::descriptors::{
@@ -8,6 +10,8 @@ use crate::descriptors::{
 
 /// A historical task executed by the task driver
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "rkyv", derive(Archive, RkyvSerialize, RkyvDeserialize))]
+#[cfg_attr(feature = "rkyv", rkyv(derive(Debug)))]
 pub struct HistoricalTask {
     /// The ID of the task
     pub id: TaskIdentifier,
@@ -36,6 +40,8 @@ impl HistoricalTask {
 /// Separated out from the task descriptors as the descriptors may contain
 /// runtime information irrelevant for storage
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "rkyv", derive(Archive, RkyvSerialize, RkyvDeserialize))]
+#[cfg_attr(feature = "rkyv", rkyv(derive(Debug)))]
 pub enum HistoricalTaskDescription {
     /// A new account was created
     NewAccount,

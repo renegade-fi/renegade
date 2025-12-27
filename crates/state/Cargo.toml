@@ -37,8 +37,7 @@ openraft = { version = "=0.9.13", features = ["serde", "storage-v2"] }
 bincode = "1.3"
 ciborium = "0.2"
 flate2 = "1.0"
-libmdbx = { version = "0.3", features = ["lifetimed-bytes"] }
-lifetimed-bytes = "0.1"
+libmdbx = "0.3"
 
 # === Messaging + Concurrency === #
 crossbeam = { workspace = true }
@@ -53,6 +52,7 @@ gossip-api = { workspace = true }
 system-bus = { workspace = true }
 system-clock = { workspace = true }
 test-helpers = { workspace = true, optional = true, features = ["mocks"] }
+types-tasks = { workspace = true, features = ["rkyv"] }
 util = { workspace = true }
 
 # === Serialization === #
@@ -89,6 +89,7 @@ tempfile = "3.8"
 rand = { workspace = true }
 uuid = "1.4"
 test-helpers = { workspace = true, features = ["mocks"] }
+types-tasks = { workspace = true, features = ["mocks", "rkyv"] }
 tokio-stream = "0.1"
 
 # Silence config warnings for testing

@@ -529,7 +529,9 @@ mod test {
 
         // Check the task was added to the queue
         let tx = applicator.db().new_read_tx()?;
-        let queue = tx.get_task_queue(&task_queue_key)?;
+        let queue = tx.get_task_queue(&task_queue_key)?
+            .ok_or_else(|| StateApplicatorError::reject("queue not found"))?
+            .deserialize()?;
         let task_retrieved = tx.get_task(&task_id)?.unwrap();
 
         let expected_queue = TaskQueue { serial_tasks: vec![task_id], ..Default::default() };
@@ -558,7 +560,9 @@ mod test {
 
         // Check the task was not started
         let tx = applicator.db().new_read_tx()?;
-        let queue = tx.get_task_queue(&task_queue_key)?;
+        let queue = tx.get_task_queue(&task_queue_key)?
+            .ok_or_else(|| StateApplicatorError::reject("queue not found"))?
+            .deserialize()?;
         let expected_queue = TaskQueue { serial_tasks: vec![task.id], ..Default::default() };
         assert_eq!(queue, expected_queue);
         assert!(task_recv.is_empty());
@@ -581,7 +585,9 @@ mod test {
 
         // Ensure that the second task is in the db's queue, not marked as running
         let tx = applicator.db().new_read_tx()?;
-        let queue = tx.get_task_queue(&task_queue_key)?;
+        let queue = tx.get_task_queue(&task_queue_key)?
+            .ok_or_else(|| StateApplicatorError::reject("queue not found"))?
+            .deserialize()?;
         let task2_retrieved = tx.get_task(&task2.id)?.unwrap();
         let expected_queue =
             TaskQueue { serial_tasks: vec![task1_id, task2.id], ..Default::default() };
@@ -610,7 +616,10 @@ mod test {
 
         // Ensure the task was removed from the queue
         let tx = applicator.db().new_read_tx()?;
-        let queue = tx.get_task_queue(&wallet_id)?;
+        let queue = tx.get_task_queue(&wallet_id)?
+            .map(|q| q.deserialize())
+            .transpose()?
+            .unwrap_or_default();
         let expected_queue = TaskQueue::default();
         assert_eq!(queue, expected_queue);
 
@@ -862,7 +871,10 @@ mod test {
 
         // Check the task queue
         let tx = applicator.db().new_read_tx()?;
-        let task_queue = tx.get_task_queue(&task_queue_key)?;
+        let task_queue = tx.get_task_queue(&task_queue_key)?
+            .map(|q| q.deserialize())
+            .transpose()?
+            .unwrap_or_default();
         assert_eq!(task_queue, TaskQueue::default());
         Ok(())
     }
@@ -894,7 +906,9 @@ mod test {
 
         // Ensure the task queue has updated
         let tx = applicator.db().new_read_tx()?;
-        let task_queue = tx.get_task_queue(&task_queue_key)?;
+        let task_queue = tx.get_task_queue(&task_queue_key)?
+            .ok_or_else(|| StateApplicatorError::reject("queue not found"))?
+            .deserialize()?;
         let expected_queue = TaskQueue {
             serial_tasks: vec![preemptive_task.id, serial_task.id],
             preemption_state: TaskQueuePreemptionState::SerialPreemptionQueued,
@@ -937,7 +951,9 @@ mod test {
 
         // Check that the queue has been updated correctly
         let tx = applicator.db().new_read_tx()?;
-        let task_queue = tx.get_task_queue(&task_queue_key)?;
+        let task_queue = tx.get_task_queue(&task_queue_key)?
+            .ok_or_else(|| StateApplicatorError::reject("queue not found"))?
+            .deserialize()?;
         let expected_queue = TaskQueue {
             concurrent_tasks: vec![task1.id, task2.id],
             preemption_state: TaskQueuePreemptionState::ConcurrentPreemptionsQueued,
@@ -1061,8 +1077,12 @@ mod test {
 
         // Check that the queues have been updated correctly
         let tx = applicator.db().new_read_tx()?;
-        let task_queue1 = tx.get_task_queue(&queue_key1)?;
-        let task_queue2 = tx.get_task_queue(&queue_key2)?;
+        let task_queue1 = tx.get_task_queue(&queue_key1)?
+            .ok_or_else(|| StateApplicatorError::reject("queue not found"))?
+            .deserialize()?;
+        let task_queue2 = tx.get_task_queue(&queue_key2)?
+            .ok_or_else(|| StateApplicatorError::reject("queue not found"))?
+            .deserialize()?;
         tx.commit()?;
 
         let expected_queue1 = TaskQueue {

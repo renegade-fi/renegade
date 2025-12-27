@@ -4,10 +4,10 @@
 //! provides serialization and deserialization of the keys and values in the
 //! database
 
+use std::borrow::Cow;
 use std::marker::PhantomData;
 
 use libmdbx::{Cursor, RW, TransactionKind, WriteFlags};
-use lifetimed_bytes::Bytes as LifetimedBytes;
 
 use crate::storage::error::StorageError;
 
@@ -36,8 +36,8 @@ pub struct DbCursor<'txn, Tx: TransactionKind, K: Key, V: Value> {
 // -----------------
 
 impl<'txn, Tx: TransactionKind, K: Key, V: Value> DbCursor<'txn, Tx, K, V> {
-    /// A type alias for lifetimed bytes with the transaction lifetime
-    pub type TxBytes = LifetimedBytes<'txn>;
+    /// A type alias for a Cow buffer with the transaction lifetime
+    pub type TxBytes = Cow<'txn, [u8]>;
 
     /// Constructor
     pub fn new(cursor: Cursor<'txn, Tx>) -> Self {

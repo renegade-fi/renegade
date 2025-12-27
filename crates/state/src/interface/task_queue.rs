@@ -32,8 +32,9 @@ impl StateInner {
         let key = *key;
         self.with_read_tx(move |tx| {
             let queue = tx.get_task_queue(&key)?;
-            let paused_serial =
-                queue.preemption_state == TaskQueuePreemptionState::SerialPreemptionQueued;
+            let paused_serial = queue
+                .map(|q| q.preemption_state == TaskQueuePreemptionState::SerialPreemptionQueued)
+                .unwrap_or(false);
             Ok(paused_serial)
         })
         .await
@@ -50,7 +51,7 @@ impl StateInner {
         let key = *key;
         self.with_read_tx(move |tx| {
             let queue = tx.get_task_queue(&key)?;
-            Ok(queue.serial_tasks.len())
+            Ok(queue.map(|q| q.serial_tasks.len()).unwrap_or(0))
         })
         .await
     }
