@@ -1,0 +1,26 @@
+[package]
+name = "types-gossip"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = []
+mocks = []
+
+[dependencies]
+# === Cryptography === #
+base64 = { version = "0.22" }
+ed25519-dalek = { version = "1.0.1", features = ["serde"] }
+rand_core = { workspace = true }
+
+# === Networking === #
+libp2p = { workspace = true }
+libp2p-identity = { workspace = true }
+
+# === Serialization === #
+derivative = "2.2"
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# === Workspace Dependencies === #
+util = { workspace = true, features = ["networking", "errors"] }

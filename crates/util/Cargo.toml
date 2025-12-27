@@ -8,8 +8,11 @@ default = ["hex", "errors"]
 blockchain = ["hex", "concurrency"]
 concurrency = []
 errors = []
+# Lightweight hex utilities (biguint/bytes conversion only, no circuit deps)
+hex-core = ["errors"]
+# Full hex utilities including scalar/jubjub conversions (requires circuit deps)
 hex = [
-    "errors",
+    "hex-core",
     "dep:circuit-types",
     "dep:constants",
     "dep:crypto",

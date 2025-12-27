@@ -6,6 +6,11 @@ members = [
 	"crates/circuits/circuit-macros",
 	"crates/constants",
 	# "crates/common",
+	"crates/relayer-types/types-core",
+	"crates/relayer-types/types-runtime",
+	"crates/relayer-types/types-gossip",
+	"crates/relayer-types/types-tasks",
+	# "crates/relayer-types/types-wallet",
 	# "crates/config",
 	# "crates/core",
 	# "crates/darkpool-client",
@@ -82,16 +87,17 @@ reqwest = { version = "0.12", features = ["json"] }
 http = { version = "1.3.1" }
 
 # === Workspace Dependencies === #
-darkpool-client = { path = "crates/darkpool-client" }
 api-server = { path = "crates/workers/api-server" }
 chain-events = { path = "crates/workers/chain-events" }
-constants = { path = "crates/constants", default-features = false }
-circuits-core = { path = "crates/circuits/circuits-core", default-features = false }
 circuit-macros = { path = "crates/circuits/circuit-macros", default-features = false }
 circuit-types = { path = "crates/circuits/circuit-types", default-features = false }
-darkpool-types = { path = "crates/darkpool-types", default-features = false }
+circuits-core = { path = "crates/circuits/circuits-core", default-features = false }
 common = { path = "crates/common", default-features = false }
 config = { path = "crates/config", default-features = false }
+constants = { path = "crates/constants", default-features = false }
+crypto = { path = "crates/crypto", default-features = false }
+darkpool-client = { path = "crates/darkpool-client" }
+darkpool-types = { path = "crates/darkpool-types", default-features = false }
 event-manager = { path = "crates/workers/event-manager", default-features = false }
 external-api = { path = "crates/api/external-api", default-features = false }
 gossip-api = { path = "crates/api/gossip-api", default-features = false }
@@ -104,13 +110,17 @@ network-manager = { path = "crates/workers/network-manager", default-features = 
 price-reporter = { path = "crates/workers/price-reporter/worker", default-features = false }
 price-state = { path = "crates/workers/price-reporter/price-state", default-features = false }
 proof-manager = { path = "crates/workers/proof-manager", default-features = false }
-crypto = { path = "crates/crypto", default-features = false }
 renegade-metrics = { path = "crates/metrics/renegade-metrics", default-features = false }
 state = { path = "crates/state", default-features = false }
 system-bus = { path = "crates/system-primitives/system-bus", default-features = false }
 system-clock = { path = "crates/system-primitives/system-clock", default-features = false }
 task-driver = { path = "crates/workers/task-driver", default-features = false }
 test-helpers = { path = "crates/testing/test-helpers", default-features = false }
+types-core = { path = "crates/relayer-types/types-core", default-features = false }
+types-gossip = { path = "crates/relayer-types/types-gossip", default-features = false }
+types-runtime = { path = "crates/relayer-types/types-runtime", default-features = false }
+types-tasks = { path = "crates/relayer-types/types-tasks", default-features = false }
+# types-wallet = { path = "crates/relayer-types/types-wallet", default-features = false }
 util = { path = "crates/util", default-features = false }
 
 # === Misc === #
