@@ -2,10 +2,9 @@
 
 use std::time::Duration;
 
-use common::types::{
-    network_order::NetworkOrderState, price::Price, token::Token,
-    wallet::order_metadata::OrderMetadata,
-};
+use common::types::network_order::NetworkOrderState;
+use types_core::{price::Price, token::Token};
+use types_wallet::wallet::order_metadata::OrderMetadata;
 use futures::future::join_all;
 use num_bigint::BigUint;
 use price_state::PriceStreamStates;

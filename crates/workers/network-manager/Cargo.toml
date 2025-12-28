@@ -24,7 +24,9 @@ ark-mpc = { workspace = true }
 ed25519-dalek = { version = "1.0.1", features = ["serde"] }
 
 # === Workspace Dependencies === #
-common = { workspace = true }
+types-core = { workspace = true, features = ["hmac"] }
+types-gossip = { workspace = true }
+types-runtime = { workspace = true }
 external-api = { workspace = true }
 gossip-api = { workspace = true }
 job-types = { workspace = true }

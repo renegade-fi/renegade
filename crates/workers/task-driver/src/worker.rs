@@ -3,9 +3,10 @@
 use std::thread::{self, JoinHandle};
 
 use async_trait::async_trait;
-use common::{default_wrapper::DefaultOption, worker::Worker};
+use util::default_wrapper::DefaultOption;
+use types_runtime::worker::Worker;
 use darkpool_client::DarkpoolClient;
-use external_api::bus_message::SystemBusMessage;
+use system_bus::SystemBusMessage;
 use job_types::{
     event_manager::EventManagerQueue,
     network_manager::NetworkManagerQueue,

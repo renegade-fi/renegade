@@ -1,7 +1,7 @@
 //! Helpers for accessing wallet index information in the database
 
 use circuit_types::wallet::Nullifier;
-use common::types::wallet::{OrderIdentifier, Wallet, WalletAuthenticationPath, WalletIdentifier};
+use types_wallet::wallet::{IntentIdentifier, Wallet, WalletAuthenticationPath, WalletIdentifier};
 use libmdbx::{RW, TransactionKind};
 use util::res_some;
 
@@ -37,7 +37,7 @@ impl<T: TransactionKind> StateTxn<'_, T> {
     /// Get the wallet ID managing a given order
     pub fn get_wallet_id_for_order(
         &self,
-        order_id: &OrderIdentifier,
+        order_id: &IntentIdentifier,
     ) -> Result<Option<WalletIdentifier>, StorageError> {
         self.inner().read(ORDER_TO_WALLET_TABLE, order_id)
     }
@@ -45,7 +45,7 @@ impl<T: TransactionKind> StateTxn<'_, T> {
     /// Get the wallet for a given order
     pub fn get_wallet_for_order(
         &self,
-        order_id: &OrderIdentifier,
+        order_id: &IntentIdentifier,
     ) -> Result<Option<Wallet>, StorageError> {
         let wallet_id = res_some!(self.get_wallet_id_for_order(order_id)?);
         self.get_wallet(&wallet_id)
@@ -110,7 +110,7 @@ impl StateTxn<'_, RW> {
     pub fn index_orders(
         &self,
         wallet_id: &WalletIdentifier,
-        orders: &[OrderIdentifier],
+        orders: &[IntentIdentifier],
     ) -> Result<(), StorageError> {
         for order in orders.iter() {
             self.inner().write(ORDER_TO_WALLET_TABLE, order, wallet_id)?;
@@ -147,7 +147,7 @@ impl StateTxn<'_, RW> {
 #[cfg(test)]
 mod test {
     use common::types::{
-        wallet::{OrderIdentifier, WalletIdentifier},
+        wallet::{IntentIdentifier, WalletIdentifier},
         wallet_mocks::{mock_empty_wallet, mock_merkle_path},
     };
     use itertools::Itertools;
@@ -229,9 +229,9 @@ mod test {
         db.create_table(ORDER_TO_WALLET_TABLE).unwrap();
 
         // Write the mapping
-        let order_id1 = OrderIdentifier::new_v4();
-        let order_id2 = OrderIdentifier::new_v4();
-        let order_id3 = OrderIdentifier::new_v4();
+        let order_id1 = IntentIdentifier::new_v4();
+        let order_id2 = IntentIdentifier::new_v4();
+        let order_id3 = IntentIdentifier::new_v4();
         let wallet_id1 = WalletIdentifier::new_v4();
         let wallet_id2 = WalletIdentifier::new_v4();
 

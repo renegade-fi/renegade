@@ -1,9 +1,9 @@
 //! Job types for the task driver
 
-use common::types::tasks::{QueuedTask, TaskIdentifier};
 use tokio::sync::oneshot::{
     Receiver as OneshotReceiver, Sender as OneshotSender, channel as oneshot_channel,
 };
+use types_tasks::{QueuedTask, TaskIdentifier};
 use util::channels::{
     TracedCrossbeamReceiver, TracedCrossbeamSender, new_traced_crossbeam_channel,
 };

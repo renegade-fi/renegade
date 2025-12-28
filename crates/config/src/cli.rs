@@ -7,13 +7,6 @@ use circuit_types::{
     fixed_point::FixedPoint,
 };
 use clap::Parser;
-use common::types::{
-    chain::Chain,
-    exchange::Exchange,
-    gossip::{ClusterAsymmetricKeypair, ClusterId, WrappedPeerId},
-    hmac::HmacKey,
-    token::Token,
-};
 use libp2p::{Multiaddr, identity::Keypair};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -21,6 +14,8 @@ use std::{
     net::{IpAddr, SocketAddr},
     path::Path,
 };
+use types_core::{chain::Chain, exchange::Exchange, hmac::HmacKey, token::Token};
+use types_gossip::{ClusterAsymmetricKeypair, ClusterId, WrappedPeerId};
 use url::Url;
 use util::telemetry::configure_telemetry;
 

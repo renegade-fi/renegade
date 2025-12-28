@@ -1,6 +1,6 @@
 //! Applicator methods for matching pools
 
-use common::types::wallet::OrderIdentifier;
+use types_wallet::wallet::IntentIdentifier;
 
 use crate::storage::tx::matching_pools::MATCHING_POOL_DOES_NOT_EXIST_ERR;
 
@@ -39,7 +39,7 @@ impl StateApplicator {
     /// Assign an order to a matching pool
     pub fn assign_order_to_matching_pool(
         &self,
-        order_id: &OrderIdentifier,
+        order_id: &IntentIdentifier,
         pool_name: &str,
     ) -> Result<ApplicatorReturnType, StateApplicatorError> {
         let tx = self.db().new_write_tx()?;

@@ -4,7 +4,8 @@
 // | Constants |
 // -------------
 
-use common::types::{MatchingPoolName, wallet::OrderIdentifier};
+use types_runtime::MatchingPoolName;
+use types_wallet::wallet::IntentIdentifier;
 
 use crate::{StateInner, StateTransition, error::StateError, notifications::ProposalWaiter};
 
@@ -17,7 +18,7 @@ impl StateInner {
     /// assigned to one
     pub async fn get_matching_pool_for_order(
         &self,
-        order_id: &OrderIdentifier,
+        order_id: &IntentIdentifier,
     ) -> Result<MatchingPoolName, StateError> {
         let order_id = *order_id;
         self.with_read_tx(move |tx| {
@@ -62,7 +63,7 @@ impl StateInner {
     /// Assign an order to a matching pool
     pub async fn assign_order_to_matching_pool(
         &self,
-        order_id: OrderIdentifier,
+        order_id: IntentIdentifier,
         pool_name: MatchingPoolName,
     ) -> Result<ProposalWaiter, StateError> {
         self.send_proposal(StateTransition::AssignOrderToMatchingPool { order_id, pool_name }).await

@@ -1,10 +1,8 @@
 //! Helpers for emitting events after a wallet update
 
-use common::types::{
-    MatchingPoolName,
-    tasks::WalletUpdateType,
-    wallet::{Order, OrderIdentifier},
-};
+use types_runtime::MatchingPoolName;
+use types_tasks::WalletUpdateType;
+use types_wallet::wallet::{Order, IntentIdentifier};
 use job_types::event_manager::{
     ExternalTransferEvent, OrderCancellationEvent, OrderPlacementEvent, OrderUpdateEvent,
     RelayerEventType, try_send_event,
@@ -63,7 +61,7 @@ impl UpdateWalletTask {
     /// depending on whether the order already exists in the new wallet
     fn construct_order_placement_or_update_event(
         &self,
-        order_id: &OrderIdentifier,
+        order_id: &IntentIdentifier,
         order: &Order,
         matching_pool: &Option<MatchingPoolName>,
     ) -> RelayerEventType {
@@ -92,7 +90,7 @@ impl UpdateWalletTask {
     /// Construct an order cancellation event
     async fn construct_order_cancellation_event(
         &self,
-        order_id: OrderIdentifier,
+        order_id: IntentIdentifier,
         order: &Order,
     ) -> Result<RelayerEventType, UpdateWalletTaskError> {
         let wallet_id = self.new_wallet.wallet_id;

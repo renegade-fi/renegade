@@ -11,8 +11,8 @@
 use std::collections::HashMap;
 
 use circuit_types::{Amount, order::OrderSide};
-use common::types::wallet::Pair;
 use tokio::sync::RwLock;
+use types_wallet::wallet::Pair;
 
 use super::RwLockHashMap;
 

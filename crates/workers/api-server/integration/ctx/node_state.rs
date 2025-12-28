@@ -1,6 +1,7 @@
 //! Helpers for working with the integration node's state
 
-use common::types::{MatchingPoolName, wallet::OrderIdentifier};
+use types_runtime::MatchingPoolName;
+use types_wallet::wallet::IntentIdentifier;
 use eyre::Result;
 use state::State;
 
@@ -40,7 +41,7 @@ impl IntegrationTestCtx {
     /// Move a given order into the given matching pool
     pub async fn move_order_into_pool(
         &self,
-        oid: OrderIdentifier,
+        oid: IntentIdentifier,
         pool: MatchingPoolName,
     ) -> Result<()> {
         let state = self.state();

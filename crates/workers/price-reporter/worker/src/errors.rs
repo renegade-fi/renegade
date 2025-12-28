@@ -3,7 +3,7 @@
 use std::error::Error;
 use std::fmt::{self, Display};
 
-use common::types::{exchange::Exchange, token::Token};
+use types_core::{exchange::Exchange, token::Token};
 use thiserror::Error;
 
 /// The core error type used by the ExchangeConnection. All thrown errors are

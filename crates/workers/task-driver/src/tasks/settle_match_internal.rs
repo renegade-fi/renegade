@@ -16,14 +16,12 @@ use circuit_types::r#match::MatchResult;
 use circuits_core::zk_circuits::valid_match_settle::{
     SizedValidMatchSettleStatement, SizedValidMatchSettleWitness,
 };
-use common::types::price::{TimestampedPrice, TimestampedPriceFp};
+use types_core::price::{TimestampedPrice, TimestampedPriceFp};
 use common::types::proof_bundles::ValidMatchSettleBundle;
-use common::types::tasks::SettleMatchInternalTaskDescriptor;
-use common::types::wallet::{OrderIdentifier, WalletIdentifier};
-use common::types::{
-    proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle},
-    wallet::Wallet,
-};
+use types_tasks::SettleMatchInternalTaskDescriptor;
+use types_wallet::wallet::{IntentIdentifier, WalletIdentifier};
+use common::types::proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle};
+use types_wallet::wallet::Wallet;
 use constants::Scalar;
 use darkpool_client::errors::DarkpoolClientError;
 use job_types::event_manager::{FillEvent, RelayerEventType, try_send_event};
@@ -174,9 +172,9 @@ pub struct SettleMatchInternalTask {
     /// The price at which the match was executed
     execution_price: TimestampedPriceFp,
     /// The identifier of the first order
-    order_id1: OrderIdentifier,
+    order_id1: IntentIdentifier,
     /// The identifier of the second order
-    order_id2: OrderIdentifier,
+    order_id2: IntentIdentifier,
     /// The identifier of the first order's wallet
     wallet_id1: WalletIdentifier,
     /// The identifier of the second order's wallet

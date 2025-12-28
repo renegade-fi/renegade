@@ -1,6 +1,6 @@
 //! State interface methods for order metadata
 
-use common::types::wallet::{OrderIdentifier, WalletIdentifier, order_metadata::OrderMetadata};
+use types_wallet::wallet::{IntentIdentifier, WalletIdentifier, order_metadata::OrderMetadata};
 use util::res_some;
 
 use crate::{
@@ -19,7 +19,7 @@ impl StateInner {
     /// Get the metadata for an order
     pub async fn get_order_metadata(
         &self,
-        order_id: &OrderIdentifier,
+        order_id: &IntentIdentifier,
     ) -> Result<Option<OrderMetadata>, StateError> {
         let oid = *order_id;
         self.with_read_tx(move |tx| {
@@ -79,7 +79,7 @@ pub mod test {
         let mut rng = thread_rng();
         let data = mock_order();
         OrderMetadata {
-            id: OrderIdentifier::new_v4(),
+            id: IntentIdentifier::new_v4(),
             data,
             state: OrderState::Created,
             fills: vec![],

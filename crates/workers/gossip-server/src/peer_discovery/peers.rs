@@ -1,6 +1,6 @@
 //! Handles bootstrap requests and responses
 
-use common::types::gossip::{PeerInfo, WrappedPeerId};
+use types_gossip::{PeerInfo, WrappedPeerId};
 use gossip_api::{
     pubsub::{
         PubsubMessage,

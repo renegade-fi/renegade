@@ -6,9 +6,9 @@
 use std::collections::HashSet;
 
 use circuit_types::{Amount, order::OrderSide};
-use common::types::wallet::{Order, OrderIdentifier, Pair};
 use tokio::sync::RwLock;
 use tracing::instrument;
+use types_wallet::wallet::{Order, IntentIdentifier, Pair};
 
 use crate::storage::{db::DB, error::StorageError};
 
@@ -42,7 +42,7 @@ pub struct OrderBookCache {
     /// This may not be a subset of `matchable_orders`, some externally
     /// matchable orders may not be yet matchable, e.g. if they are waiting for
     /// validity proofs
-    externally_enabled_orders: RwLockHashSet<OrderIdentifier>,
+    externally_enabled_orders: RwLockHashSet<IntentIdentifier>,
     /// The index of order metadata
     order_metadata_index: OrderMetadataIndex,
     /// Mapping of matchable amount at the midpoint of a pair
@@ -62,7 +62,7 @@ impl OrderBookCache {
     // --- Getters --- //
 
     /// Get orders matching a filter
-    pub async fn get_orders(&self, filter: OrderBookFilter) -> Vec<OrderIdentifier> {
+    pub async fn get_orders(&self, filter: OrderBookFilter) -> Vec<IntentIdentifier> {
         let orders = self.order_metadata_index.get_orders(&filter.pair, filter.side).await;
         if filter.external {
             let externally_matchable = self.externally_enabled_orders.read().await;
@@ -73,12 +73,12 @@ impl OrderBookCache {
     }
 
     /// Returns whether an order exists in the cache
-    pub fn order_exists(&self, id: OrderIdentifier) -> bool {
+    pub fn order_exists(&self, id: IntentIdentifier) -> bool {
         self.order_metadata_index.order_exists(&id)
     }
 
     /// Get all orders that match any filter
-    pub async fn get_all_orders(&self) -> Vec<OrderIdentifier> {
+    pub async fn get_all_orders(&self) -> Vec<IntentIdentifier> {
         self.order_metadata_index.get_all_orders().await
     }
 
@@ -93,7 +93,7 @@ impl OrderBookCache {
     // --- Setters --- //
 
     /// Add an order to the cache
-    pub async fn add_order(&self, id: OrderIdentifier, order: &Order, matchable_amount: Amount) {
+    pub async fn add_order(&self, id: IntentIdentifier, order: &Order, matchable_amount: Amount) {
         self.order_metadata_index.add_order(id, order, matchable_amount).await;
         if order.allow_external_matches {
             self.externally_enabled_orders.write().await.insert(id);
@@ -103,7 +103,7 @@ impl OrderBookCache {
     }
 
     /// Add an order to the cache in a blocking fashion
-    pub fn add_order_blocking(&self, id: OrderIdentifier, order: &Order, matchable_amount: Amount) {
+    pub fn add_order_blocking(&self, id: IntentIdentifier, order: &Order, matchable_amount: Amount) {
         let rt = tokio::runtime::Handle::current();
         rt.block_on(self.add_order(id, order, matchable_amount));
 
@@ -113,7 +113,7 @@ impl OrderBookCache {
     }
 
     /// Update an order in the cache
-    pub async fn update_order(&self, id: OrderIdentifier, matchable_amount: Amount) {
+    pub async fn update_order(&self, id: IntentIdentifier, matchable_amount: Amount) {
         let (pair, side) = self.order_metadata_index.get_pair_and_side(&id).await.unwrap();
 
         // Update the index and get the previous matchable amount
@@ -136,23 +136,23 @@ impl OrderBookCache {
     }
 
     /// Update an order in the cache in a blocking fashion
-    pub fn update_order_blocking(&self, id: OrderIdentifier, matchable_amount: Amount) {
+    pub fn update_order_blocking(&self, id: IntentIdentifier, matchable_amount: Amount) {
         let rt = tokio::runtime::Handle::current();
         rt.block_on(self.update_order(id, matchable_amount));
     }
 
     /// Mark an order as externally matchable
-    pub async fn mark_order_externally_matchable(&self, order: OrderIdentifier) {
+    pub async fn mark_order_externally_matchable(&self, order: IntentIdentifier) {
         self.externally_enabled_orders.write().await.insert(order);
     }
 
     /// Mark an order as externally matchable in a blocking fashion
-    pub fn mark_order_externally_matchable_blocking(&self, order: OrderIdentifier) {
+    pub fn mark_order_externally_matchable_blocking(&self, order: IntentIdentifier) {
         self.externally_enabled_orders.blocking_write().insert(order);
     }
 
     /// Remove an order from the cache entirely
-    pub async fn remove_order(&self, order: OrderIdentifier) {
+    pub async fn remove_order(&self, order: IntentIdentifier) {
         let maybe_info = self.order_metadata_index.remove_order(&order).await;
         if maybe_info.is_none() {
             return;
@@ -165,7 +165,7 @@ impl OrderBookCache {
     }
 
     /// Remove an order in a blocking fashion
-    pub fn remove_order_blocking(&self, order: OrderIdentifier) {
+    pub fn remove_order_blocking(&self, order: IntentIdentifier) {
         let rt = tokio::runtime::Handle::current();
         rt.block_on(self.remove_order(order));
 
@@ -173,12 +173,12 @@ impl OrderBookCache {
     }
 
     /// Remove an externally enabled order
-    pub async fn remove_externally_enabled_order(&self, order: OrderIdentifier) {
+    pub async fn remove_externally_enabled_order(&self, order: IntentIdentifier) {
         self.externally_enabled_orders.write().await.remove(&order);
     }
 
     /// Remove an externally enabled order in a blocking fashion
-    pub fn remove_externally_enabled_order_blocking(&self, order: OrderIdentifier) {
+    pub fn remove_externally_enabled_order_blocking(&self, order: IntentIdentifier) {
         self.externally_enabled_orders.blocking_write().remove(&order);
     }
 
@@ -227,7 +227,7 @@ mod test {
     #[tokio::test]
     async fn test_get_orders_basic() {
         let cache = OrderBookCache::new();
-        let order_id = OrderIdentifier::new_v4();
+        let order_id = IntentIdentifier::new_v4();
         let order = mock_order();
 
         // Add an order to the cache
@@ -248,9 +248,9 @@ mod test {
     #[tokio::test]
     async fn test_get_orders_multiple() {
         let cache = OrderBookCache::new();
-        let order_id1 = OrderIdentifier::new_v4();
-        let order_id2 = OrderIdentifier::new_v4();
-        let order_id3 = OrderIdentifier::new_v4();
+        let order_id1 = IntentIdentifier::new_v4();
+        let order_id2 = IntentIdentifier::new_v4();
+        let order_id3 = IntentIdentifier::new_v4();
         let order = mock_order();
 
         cache.add_order(order_id1, &order, 100 /* matchable_amount */).await;
@@ -273,9 +273,9 @@ mod test {
     #[tokio::test]
     async fn test_get_orders_external() {
         let cache = OrderBookCache::new();
-        let order_id1 = OrderIdentifier::new_v4();
-        let order_id2 = OrderIdentifier::new_v4();
-        let order_id3 = OrderIdentifier::new_v4();
+        let order_id1 = IntentIdentifier::new_v4();
+        let order_id2 = IntentIdentifier::new_v4();
+        let order_id3 = IntentIdentifier::new_v4();
         let mut order1 = mock_order();
         let mut order2 = order1.clone();
         let mut order3 = order1.clone();
@@ -303,9 +303,9 @@ mod test {
     #[tokio::test]
     async fn test_get_orders_different_pairs() {
         let cache = OrderBookCache::new();
-        let order_id1 = OrderIdentifier::new_v4();
-        let order_id2 = OrderIdentifier::new_v4();
-        let order_id3 = OrderIdentifier::new_v4();
+        let order_id1 = IntentIdentifier::new_v4();
+        let order_id2 = IntentIdentifier::new_v4();
+        let order_id3 = IntentIdentifier::new_v4();
         let order1 = mock_order();
         let order2 = mock_order();
         let order3 = order1.clone();

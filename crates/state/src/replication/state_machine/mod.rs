@@ -317,7 +317,7 @@ impl RaftStateMachine<TypeConfig> for StateMachine {
 
 #[cfg(test)]
 mod test {
-    use common::types::wallet_mocks::mock_empty_wallet;
+    use types_wallet::wallet::mocks::mock_empty_wallet;
     use openraft::{Entry, EntryPayload, LeaderId, LogId, storage::RaftStateMachine};
 
     use crate::{Proposal, StateTransition, replication::test_helpers::mock_state_machine};

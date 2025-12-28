@@ -1,6 +1,6 @@
 //! Removes old proofs from the state
 
-use common::types::wallet::OrderIdentifier;
+use types_wallet::wallet::IntentIdentifier;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use state::{State, storage::tx::RwTxn};
 use tracing::{info, warn};
@@ -29,7 +29,7 @@ fn remove_old_proofs_with_tx(tx: &RwTxn) -> Result<(), String> {
     for res in iter {
         let (k, _v) = res.map_err(|e| e.to_string())?;
         let oid = k.split(":").last().unwrap();
-        let oid = OrderIdentifier::parse_str(oid).map_err(|e| e.to_string())?;
+        let oid = IntentIdentifier::parse_str(oid).map_err(|e| e.to_string())?;
 
         if tx.contains_order(&oid).map_err(|e| e.to_string())? {
             continue;

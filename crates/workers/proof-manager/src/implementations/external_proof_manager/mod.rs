@@ -1,6 +1,6 @@
 //! An implementation of the proof manager which uses an external prover service
 
-use common::types::CancelChannel;
+use types_runtime::CancelChannel;
 use constants::in_bootstrap_mode;
 use job_types::proof_manager::{ProofJob, ProofManagerJob, ProofManagerReceiver};
 use tracing::{error, info, instrument};

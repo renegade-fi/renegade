@@ -2,15 +2,15 @@
 
 use std::iter;
 use std::sync::{
-    atomic::{AtomicUsize, Ordering},
     Arc,
+    atomic::{AtomicUsize, Ordering},
 };
 
 use circuit_types::csprng_state::PoseidonCSPRNG;
 use circuit_types::{
-    balance::Balance, elgamal::EncryptionKey, fixed_point::FixedPoint,
-    native_helpers::create_wallet_shares_with_randomness, order::Order as CircuitOrder,
-    traits::BaseType, SizedWallet as SizedCircuitWallet, SizedWalletShare,
+    SizedWallet as SizedCircuitWallet, SizedWalletShare, balance::Balance, elgamal::EncryptionKey,
+    fixed_point::FixedPoint, native_helpers::create_wallet_shares_with_randomness,
+    order::Order as CircuitOrder, traits::BaseType,
 };
 use constants::Scalar;
 use derivative::Derivative;
@@ -19,20 +19,12 @@ use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::{keyed_list::KeyedList, MerkleAuthenticationPath};
+use crate::{MerkleAuthenticationPath, keyed_list::KeyedList};
 
 use super::{
     keychain::{KeyChain, PrivateKeyChain},
     orders::Order,
 };
-
-/// A type alias for the wallet identifier type, currently a UUID
-pub type WalletIdentifier = Uuid;
-/// An identifier of an order used for caching
-pub type OrderIdentifier = Uuid;
-
-/// The Merkle opening from the wallet shares' commitment to the global root
-pub type WalletAuthenticationPath = MerkleAuthenticationPath;
 
 /// Represents a wallet managed by the local relayer
 #[derive(Clone, Debug, Serialize, Derivative, Deserialize)]
@@ -45,7 +37,7 @@ pub struct Wallet {
     /// We use an `IndexMap` here to preserve the order of insertion
     /// on the orders. This is necessary because we must have
     /// order parity with the secret shared wallet stored on-chain
-    pub orders: KeyedList<OrderIdentifier, Order>,
+    pub orders: KeyedList<IntentIdentifier, Order>,
     /// A mapping of mint to Balance information
     pub balances: KeyedList<BigUint, Balance>,
     /// The keys that the relayer has access to for this wallet
@@ -152,7 +144,7 @@ impl Wallet {
         let orders = recovered_wallet
             .orders
             .into_iter()
-            .map(|o| (OrderIdentifier::new_v4(), o.into()))
+            .map(|o| (IntentIdentifier::new_v4(), o.into()))
             .collect();
 
         Wallet {

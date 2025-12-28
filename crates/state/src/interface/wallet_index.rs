@@ -4,10 +4,8 @@
 //! order them
 
 use circuit_types::{balance::Balance, wallet::Nullifier};
-use common::types::{
-    tasks::QueuedTask,
-    wallet::{Order, OrderIdentifier, Wallet, WalletIdentifier},
-};
+use types_tasks::QueuedTask;
+use types_wallet::wallet::{Order, IntentIdentifier, Wallet, WalletIdentifier};
 use util::res_some;
 
 use crate::{StateInner, StateTransition, error::StateError, notifications::ProposalWaiter};
@@ -61,7 +59,7 @@ impl StateInner {
     /// Get the plaintext order for a locally managed order ID
     pub async fn get_managed_order(
         &self,
-        id: &OrderIdentifier,
+        id: &IntentIdentifier,
     ) -> Result<Option<Order>, StateError> {
         let id = *id;
         self.with_read_tx(move |tx| {
@@ -74,7 +72,7 @@ impl StateInner {
     /// Get the order for a given order ID and the balance that capitalizes it
     pub async fn get_managed_order_and_balance(
         &self,
-        id: &OrderIdentifier,
+        id: &IntentIdentifier,
     ) -> Result<Option<(Order, Balance)>, StateError> {
         let id = *id;
         self.with_read_tx(move |tx| {
@@ -92,7 +90,7 @@ impl StateInner {
     /// Get the wallet ID that contains the given order ID
     pub async fn get_wallet_id_for_order(
         &self,
-        order_id: &OrderIdentifier,
+        order_id: &IntentIdentifier,
     ) -> Result<Option<WalletIdentifier>, StateError> {
         let oid = *order_id;
         self.with_read_tx(move |tx| {
@@ -105,7 +103,7 @@ impl StateInner {
     /// Get the wallet that contains the given order ID
     pub async fn get_wallet_for_order(
         &self,
-        order_id: &OrderIdentifier,
+        order_id: &IntentIdentifier,
     ) -> Result<Option<Wallet>, StateError> {
         let oid = *order_id;
         self.with_read_tx(move |tx| {
@@ -164,7 +162,7 @@ mod test {
     use common::types::{
         price::TimestampedPrice,
         wallet::{
-            OrderIdentifier, WalletIdentifier,
+            IntentIdentifier, WalletIdentifier,
             order_metadata::{OrderMetadata, OrderState, PartialOrderFill},
         },
         wallet_mocks::{mock_empty_wallet, mock_order},
@@ -179,7 +177,7 @@ mod test {
         let fill = PartialOrderFill::new(1, TimestampedPrice::new(5.));
         let history = (0..n)
             .map(|_| OrderMetadata {
-                id: OrderIdentifier::new_v4(),
+                id: IntentIdentifier::new_v4(),
                 state: OrderState::Filled,
                 fills: vec![fill],
                 created: 0,
@@ -198,7 +196,7 @@ mod test {
 
         let mut wallet = mock_empty_wallet();
         let order = mock_order();
-        let order_id = OrderIdentifier::new_v4();
+        let order_id = IntentIdentifier::new_v4();
         wallet.add_order(order_id, order.clone()).unwrap();
 
         // Add the wallet to state
@@ -220,7 +218,7 @@ mod test {
         let state = mock_state().await;
         let mut wallet = mock_empty_wallet();
         let order = mock_order();
-        let order_id = OrderIdentifier::new_v4();
+        let order_id = IntentIdentifier::new_v4();
         wallet.add_order(order_id, order.clone()).unwrap();
 
         // Update the wallet
@@ -260,7 +258,7 @@ mod test {
         create_mock_historical_orders(N, wallet.wallet_id, &state);
 
         // Add an existing order
-        let order_id = OrderIdentifier::new_v4();
+        let order_id = IntentIdentifier::new_v4();
         let order = mock_order();
         wallet.add_order(order_id, order).unwrap();
 
@@ -270,7 +268,7 @@ mod test {
 
         // Now remove this order and add another
         wallet.remove_order(&order_id).unwrap();
-        let order_id2 = OrderIdentifier::new_v4();
+        let order_id2 = IntentIdentifier::new_v4();
         let order = mock_order();
         wallet.add_order(order_id2, order).unwrap();
 

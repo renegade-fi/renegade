@@ -14,7 +14,7 @@ tokio = { workspace = true, features = ["full"] }
 
 # === Workspace Dependencies === #
 config = { workspace = true }
-common = { workspace = true, features = ["hmac"] }
+types-core = { workspace = true, features = ["hmac"] }
 external-api = { workspace = true, features = ["auth"] }
 util = { workspace = true }
 

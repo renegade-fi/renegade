@@ -7,7 +7,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use common::types::gossip::WrappedPeerId;
+use types_gossip::WrappedPeerId;
 use tokio::sync::{RwLockReadGuard, RwLockWriteGuard};
 use util::concurrency::{AsyncShared, new_async_shared};
 

@@ -3,25 +3,22 @@
 
 use std::sync::Arc;
 
-use common::types::gossip::ClusterId;
-use external_api::bus_message::SystemBusMessage;
-use job_types::{
-    event_manager::EventManagerQueue, handshake_manager::HandshakeManagerQueue,
-    task_driver::TaskDriverQueue,
-};
+use types_gossip::ClusterId;
+use job_types::task_driver::TaskDriverQueue;
 use system_bus::SystemBus;
 
-use crate::{StateTransition, caching::order_cache::OrderBookCache, storage::db::DB};
+use crate::state_transition::StateTransition;
+use crate::storage::db::DB;
 
 use self::{error::StateApplicatorError, return_type::ApplicatorReturnType};
 
 pub mod error;
-pub mod matching_pools;
-pub mod order_book;
-pub mod order_history;
+// pub mod matching_pools;
+// pub mod order_book;
+// pub mod order_history;
 pub mod return_type;
 pub mod task_queue;
-pub mod wallet_index;
+// pub mod wallet_index;
 
 // -------------
 // | Constants |
@@ -43,16 +40,17 @@ pub struct StateApplicatorConfig {
     pub cluster_id: ClusterId,
     /// A sender to the task driver's work queue
     pub task_queue: TaskDriverQueue,
-    /// The handshake manager's work queue
-    pub handshake_manager_queue: HandshakeManagerQueue,
-    /// The event manager's work queue
-    pub event_queue: EventManagerQueue,
-    /// The order book cache
-    pub order_cache: Arc<OrderBookCache>,
+    // TODO: Add back these fields when their implementations are added
+    // /// The handshake manager's work queue
+    // pub handshake_manager_queue: HandshakeManagerQueue,
+    // /// The event manager's work queue
+    // pub event_queue: EventManagerQueue,
+    // /// The order book cache
+    // pub order_cache: Arc<OrderBookCache>,
     /// A handle to the database underlying the storage layer
     pub db: Arc<DB>,
-    /// A handle to the system bus used for internal pubsub
-    pub system_bus: SystemBus<SystemBusMessage>,
+    // /// A handle to the system bus used for internal pubsub
+    // pub system_bus: SystemBus<SystemBusMessage>,
 }
 
 /// The applicator applies state updates to the global state and persists them
@@ -80,23 +78,11 @@ impl StateApplicator {
         transition: Box<StateTransition>,
     ) -> Result<ApplicatorReturnType> {
         match *transition {
-            StateTransition::AddWallet { wallet } => self.add_wallet(&wallet),
-            StateTransition::UpdateWallet { wallet } => self.update_wallet(&wallet),
-            StateTransition::AddOrderValidityBundle { order_id, proof, witness } => {
-                self.add_order_validity_proof(order_id, &proof, &witness)
-            },
-            StateTransition::AddOrderCancellationProofs { proofs } => {
-                self.add_order_cancellation_proofs(&proofs)
-            },
-            StateTransition::UpdateOrderMetadata { meta } => self.update_order_metadata(meta),
             StateTransition::CreateMatchingPool { pool_name } => {
-                self.create_matching_pool(&pool_name)
+                todo!()
             },
             StateTransition::DestroyMatchingPool { pool_name } => {
-                self.destroy_matching_pool(&pool_name)
-            },
-            StateTransition::AssignOrderToMatchingPool { order_id, pool_name } => {
-                self.assign_order_to_matching_pool(&order_id, &pool_name)
+                todo!()
             },
             StateTransition::AppendTask { task, executor } => self.append_task(&task, &executor),
             StateTransition::PopTask { task_id, success } => self.pop_task(task_id, success),
@@ -108,7 +94,6 @@ impl StateApplicator {
                 self.enqueue_preemptive_task(&keys, &task, &executor, serial)
             },
             StateTransition::ReassignTasks { from, to } => self.reassign_tasks(&from, &to),
-            _ => unimplemented!("Unsupported state transition forwarded to applicator"),
         }
     }
 
@@ -117,15 +102,15 @@ impl StateApplicator {
         &self.config.db
     }
 
-    /// Get a reference to the system bus
-    fn system_bus(&self) -> &SystemBus<SystemBusMessage> {
-        &self.config.system_bus
-    }
+    // /// Get a reference to the system bus
+    // fn system_bus(&self) -> &SystemBus<SystemBusMessage> {
+    //     &self.config.system_bus
+    // }
 
-    /// Get a reference to the order cache
-    pub(crate) fn order_cache(&self) -> &OrderBookCache {
-        &self.config.order_cache
-    }
+    // /// Get a reference to the order cache
+    // pub(crate) fn order_cache(&self) -> &OrderBookCache {
+    //     &self.config.order_cache
+    // }
 }
 
 /// Test helpers for mock state applicator
@@ -135,13 +120,13 @@ pub mod test_helpers {
 
     use common::types::gossip::ClusterId;
     use job_types::{
-        event_manager::new_event_manager_queue,
-        handshake_manager::new_handshake_manager_queue,
+        // event_manager::new_event_manager_queue,
+        // handshake_manager::new_handshake_manager_queue,
         task_driver::{TaskDriverQueue, new_task_driver_queue},
     };
     use system_bus::SystemBus;
 
-    use crate::{caching::order_cache::OrderBookCache, test_helpers::mock_db};
+    use crate::test_helpers::mock_db;
 
     use super::{StateApplicator, StateApplicatorConfig};
 
@@ -155,20 +140,20 @@ pub mod test_helpers {
 
     /// Create a mock `StateApplicator` with the given task queue
     pub(crate) fn mock_applicator_with_task_queue(task_queue: TaskDriverQueue) -> StateApplicator {
-        let (handshake_manager_queue, _recv) = new_handshake_manager_queue();
-        mem::forget(_recv);
+        // let (handshake_manager_queue, _recv) = new_handshake_manager_queue();
+        // mem::forget(_recv);
 
-        let (event_queue, _recv) = new_event_manager_queue();
-        mem::forget(_recv);
+        // let (event_queue, _recv) = new_event_manager_queue();
+        // mem::forget(_recv);
 
         let config = StateApplicatorConfig {
             allow_local: true,
             task_queue,
-            order_cache: Arc::new(OrderBookCache::new()),
+            // order_cache: Arc::new(OrderBookCache::new()),
             db: Arc::new(mock_db()),
-            handshake_manager_queue,
-            event_queue,
-            system_bus: SystemBus::new(),
+            // handshake_manager_queue,
+            // event_queue,
+            // system_bus: SystemBus::new(),
             cluster_id: ClusterId::from_str("test-cluster").unwrap(),
         };
 

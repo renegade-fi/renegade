@@ -3,13 +3,11 @@
 use std::thread::{Builder, JoinHandle};
 
 use async_trait::async_trait;
-use common::{
-    types::{CancelChannel, chain::Chain},
-    worker::Worker,
-};
 use job_types::event_manager::EventManagerReceiver;
 use tokio::runtime::Builder as RuntimeBuilder;
 use tracing::info;
+use types_core::chain::Chain;
+use types_runtime::{CancelChannel, worker::Worker};
 use url::Url;
 use util::err_str;
 

@@ -1,27 +1,25 @@
 //! API types for wallet information
 
 use circuit_types::{
-    Amount, SizedWalletShare,
     balance::Balance,
     fixed_point::FixedPoint,
     keychain::{PublicIdentificationKey, PublicKeyChain, SecretIdentificationKey},
     order::OrderSide,
     traits::BaseType,
-};
-use common::{
-    keyed_list::KeyedList,
-    types::{
-        hmac::HmacKey,
-        wallet::{
-            Order, OrderIdentifier, Wallet, WalletIdentifier,
-            keychain::{KeyChain, PrivateKeyChain},
-        },
-    },
+    Amount, SizedWalletShare,
 };
 use itertools::Itertools;
 use num_bigint::BigUint;
 use renegade_crypto::fields::{biguint_to_scalar, scalar_to_biguint, scalar_to_u64};
 use serde::{Deserialize, Serialize};
+use types_core::hmac::HmacKey;
+use types_wallet::{
+    keyed_list::KeyedList,
+    wallet::{
+        keychain::{KeyChain, PrivateKeyChain},
+        Order, IntentIdentifier, Wallet, WalletIdentifier,
+    },
+};
 use util::hex::{
     jubjub_from_hex_string, jubjub_to_hex_string, nonnative_scalar_from_hex_string,
     nonnative_scalar_to_hex_string, public_sign_key_from_hex_string, public_sign_key_to_hex_string,
@@ -170,8 +168,8 @@ pub struct ApiOrder {
     pub allow_external_matches: bool,
 }
 
-impl From<(OrderIdentifier, Order)> for ApiOrder {
-    fn from((order_id, order): (OrderIdentifier, Order)) -> Self {
+impl From<(IntentIdentifier, Order)> for ApiOrder {
+    fn from((order_id, order): (IntentIdentifier, Order)) -> Self {
         ApiOrder {
             id: order_id,
             quote_mint: order.quote_mint,

@@ -1,10 +1,8 @@
 //! Stores state information relating to the node's configuration
 
 use circuit_types::{Address, fixed_point::FixedPoint};
-use common::types::{
-    gossip::{ClusterId, PeerInfo, WrappedPeerId},
-    wallet::{Wallet, WalletIdentifier, derivation::derive_wallet_id},
-};
+use types_gossip::{ClusterId, PeerInfo, WrappedPeerId};
+use types_wallet::wallet::{Wallet, WalletIdentifier, derivation::derive_wallet_id};
 use config::{RelayerConfig, RelayerFeeKey};
 use libp2p::{core::Multiaddr, identity::Keypair};
 use tracing::warn;

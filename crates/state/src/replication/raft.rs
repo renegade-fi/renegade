@@ -6,10 +6,10 @@ use std::{
     time::Duration,
 };
 
-use common::types::gossip::WrappedPeerId;
 use openraft::{ChangeMembers, Config as RaftConfig, Membership, RaftMetrics, ServerState};
 use tokio::sync::Mutex;
 use tracing::{error, info, instrument};
+use types_gossip::WrappedPeerId;
 use util::{err_str, telemetry::helpers::backfill_trace_field};
 
 use crate::{

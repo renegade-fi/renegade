@@ -2,16 +2,14 @@
 #![allow(missing_docs, clippy::missing_docs_in_private_items)]
 use std::time::{Duration, Instant};
 
-use common::types::{
-    gossip::WrappedPeerId,
-    tasks::{QueuedTaskState, mocks::mock_queued_task},
-    wallet_mocks::mock_empty_wallet,
-};
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use state::{
     StateTransition,
     applicator::{StateApplicator, test_helpers::mock_applicator},
 };
+use types_gossip::WrappedPeerId;
+use types_tasks::{QueuedTaskState, mocks::mock_queued_task};
+use types_wallet::wallet::mocks::mock_empty_wallet;
 use uuid::Uuid;
 
 /// Create a mock applicator with necessary DB entries filled in

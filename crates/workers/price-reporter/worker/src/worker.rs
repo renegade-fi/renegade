@@ -2,11 +2,9 @@
 //! dispatches jobs to the PriceReporterExecutor.
 
 use async_trait::async_trait;
-use common::{
-    types::{CancelChannel, exchange::Exchange},
-    worker::Worker,
-};
-use external_api::bus_message::SystemBusMessage;
+use types_runtime::{CancelChannel, worker::Worker};
+use types_core::exchange::Exchange;
+use system_bus::SystemBusMessage;
 use price_state::PriceStreamStates;
 use std::thread::{self, JoinHandle};
 use system_bus::SystemBus;

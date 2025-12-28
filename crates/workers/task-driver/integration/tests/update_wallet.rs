@@ -7,12 +7,9 @@ use circuit_types::{
     order::OrderSide,
     transfers::{ExternalTransfer, ExternalTransferDirection},
 };
-use common::types::{
-    tasks::{UpdateWalletTaskDescriptor, WalletUpdateType, mocks::gen_wallet_update_sig},
-    transfer_auth::ExternalTransferWithAuth,
-    wallet::{Order, OrderBuilder, OrderIdentifier, Wallet},
-    wallet_mocks::{mock_empty_wallet, mock_order},
-};
+use types_tasks::{UpdateWalletTaskDescriptor, WalletUpdateType, mocks::gen_wallet_update_sig};
+use common::types::transfer_auth::ExternalTransferWithAuth;
+use types_wallet::wallet::{Order, OrderBuilder, IntentIdentifier, Wallet, mocks::{mock_empty_wallet, mock_order}};
 use constants::Scalar;
 use eyre::Result;
 use lazy_static::lazy_static;
@@ -95,7 +92,7 @@ async fn execute_wallet_update_and_verify_shares(
 ) -> Result<()> {
     let desc = WalletUpdateType::PlaceOrder {
         order: mock_order(),
-        id: OrderIdentifier::new_v4(),
+        id: IntentIdentifier::new_v4(),
         matching_pool: None,
     };
     execute_wallet_update(

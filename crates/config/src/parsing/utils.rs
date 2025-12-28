@@ -3,8 +3,9 @@
 use std::{collections::HashMap, str::FromStr};
 
 use circuit_types::elgamal::DecryptionKey;
-use common::types::{gossip::ClusterAsymmetricKeypair, hmac::HmacKey};
 use rand::thread_rng;
+use types_core::hmac::HmacKey;
+use types_gossip::ClusterAsymmetricKeypair;
 use util::hex::jubjub_from_hex_string;
 
 use crate::{Cli, RelayerFeeKey};

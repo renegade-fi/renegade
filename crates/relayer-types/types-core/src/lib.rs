@@ -11,12 +11,14 @@
 
 mod chain;
 mod exchange;
+#[cfg(feature = "hmac")]
 mod hmac;
 mod price;
 mod token;
 
 pub use chain::*;
 pub use exchange::*;
+#[cfg(feature = "hmac")]
 pub use hmac::*;
 pub use price::*;
 pub use token::*;

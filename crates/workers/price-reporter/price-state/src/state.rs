@@ -9,7 +9,7 @@ use std::{
 };
 
 use atomic_float::AtomicF64;
-use common::types::{
+use types_core::{
     exchange::{Exchange, PriceReporterState},
     price::{Price, TimestampedPrice},
     token::{Token, default_exchange_stable, is_pair_named},

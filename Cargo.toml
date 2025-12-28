@@ -5,12 +5,11 @@ members = [
 	"crates/circuits/circuit-types",
 	"crates/circuits/circuit-macros",
 	"crates/constants",
-	# "crates/common",
 	"crates/relayer-types/types-core",
 	"crates/relayer-types/types-runtime",
 	"crates/relayer-types/types-gossip",
 	"crates/relayer-types/types-tasks",
-	# "crates/relayer-types/types-wallet",
+	"crates/relayer-types/types-wallet",
 	# "crates/config",
 	# "crates/core",
 	# "crates/darkpool-client",
@@ -29,10 +28,10 @@ members = [
 	# "crates/workers/api-server",
 	# "crates/workers/api-server/benches/api-server-bench-util",
 	# "crates/workers/chain-events",
-	# "crates/workers/event-manager",
+	"crates/workers/event-manager",
 	# "crates/workers/gossip-server",
 	# "crates/workers/handshake-manager",
-	# "crates/workers/job-types",
+	"crates/workers/job-types",
 	# "crates/workers/network-manager",
 	# "crates/workers/price-reporter/worker",
 	# "crates/workers/price-reporter/price-state",
@@ -92,7 +91,6 @@ chain-events = { path = "crates/workers/chain-events" }
 circuit-macros = { path = "crates/circuits/circuit-macros", default-features = false }
 circuit-types = { path = "crates/circuits/circuit-types", default-features = false }
 circuits-core = { path = "crates/circuits/circuits-core", default-features = false }
-common = { path = "crates/common", default-features = false }
 config = { path = "crates/config", default-features = false }
 constants = { path = "crates/constants", default-features = false }
 crypto = { path = "crates/crypto", default-features = false }
@@ -120,7 +118,7 @@ types-core = { path = "crates/relayer-types/types-core", default-features = fals
 types-gossip = { path = "crates/relayer-types/types-gossip", default-features = false }
 types-runtime = { path = "crates/relayer-types/types-runtime", default-features = false }
 types-tasks = { path = "crates/relayer-types/types-tasks", default-features = false }
-# types-wallet = { path = "crates/relayer-types/types-wallet", default-features = false }
+types-wallet = { path = "crates/relayer-types/types-wallet", default-features = false }
 util = { path = "crates/util", default-features = false }
 
 # === Misc === #

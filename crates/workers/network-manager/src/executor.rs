@@ -5,10 +5,10 @@ mod identify;
 mod pubsub;
 mod request_response;
 
-use common::{
-    default_wrapper::{DefaultOption, DefaultWrapper},
-    types::{CancelChannel, gossip::WrappedPeerId, hmac::HmacKey},
-};
+use util::default_wrapper::{DefaultOption, DefaultWrapper};
+use types_runtime::CancelChannel;
+use types_gossip::WrappedPeerId;
+use types_core::hmac::HmacKey;
 use futures::StreamExt;
 use gossip_api::pubsub::PubsubMessage;
 use job_types::{

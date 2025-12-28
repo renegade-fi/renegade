@@ -1,13 +1,11 @@
 //! Applicator methods for the wallet index, separated out for discoverability
 
-use common::types::{
-    network_order::NetworkOrder,
-    wallet::{
-        Order, OrderIdentifier, Wallet,
-        order_metadata::{OrderMetadata, OrderState},
-    },
+use common::types::network_order::NetworkOrder;
+use types_wallet::wallet::{
+    Order, IntentIdentifier, Wallet,
+    order_metadata::{OrderMetadata, OrderState},
 };
-use external_api::bus_message::{ADMIN_WALLET_UPDATES_TOPIC, SystemBusMessage, wallet_topic};
+use system_bus::{ADMIN_WALLET_UPDATES_TOPIC, SystemBusMessage, wallet_topic};
 use itertools::Itertools;
 use libmdbx::RW;
 
@@ -163,7 +161,7 @@ impl StateApplicator {
     }
 
     /// Handle a new order
-    fn handle_new_order(&self, id: OrderIdentifier, o: Order, tx: &StateTxn<RW>) -> Result<()> {
+    fn handle_new_order(&self, id: IntentIdentifier, o: Order, tx: &StateTxn<RW>) -> Result<()> {
         // Update the order metadata to reflect the new order
         let new_state = OrderMetadata::new(id, o);
         self.update_order_metadata_with_tx(new_state, tx)?;

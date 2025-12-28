@@ -5,6 +5,7 @@ edition = "2024"
 
 [features]
 default = []
+hmac = []
 
 [dependencies]
 # === Core Dependencies === #

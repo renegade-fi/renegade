@@ -5,7 +5,7 @@ edition = "2024"
 
 [features]
 default = ["full-api"]
-auth = ["http", "thiserror", "common/hmac"]
+auth = ["http", "thiserror", "types-core/hmac"]
 external-match-api = []
 admin-api = ["full-api"]
 network-api = []
@@ -13,7 +13,6 @@ order-book-api = []
 task-api = []
 wallet-api = []
 full-api = [
-    "common/default",
     "circuit-types/default",
     "external-match-api",
     "admin-api",
@@ -33,9 +32,13 @@ thiserror = { workspace = true, optional = true }
 
 # === Workspace Dependencies === #
 circuit-types = { workspace = true }
-common = { workspace = true }
+types-core = { workspace = true }
+types-gossip = { workspace = true }
+types-tasks = { workspace = true }
+types-wallet = { workspace = true }
+types-runtime = { workspace = true }
 constants = { workspace = true }
-renegade-crypto = { workspace = true }
+crypto = { workspace = true }
 util = { workspace = true }
 
 # === Misc Dependencies === #

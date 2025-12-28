@@ -45,14 +45,18 @@ futures = { workspace = true }
 tokio = { workspace = true }
 
 # === Workspace Dependencies === #
-common = { workspace = true }
+types-core = { workspace = true }
+types-gossip = { workspace = true }
+types-tasks = { workspace = true, features = ["rkyv"] }
+types-wallet = { workspace = true }
+types-runtime = { workspace = true }
 config = { workspace = true }
 constants = { workspace = true }
 gossip-api = { workspace = true }
+job-types = { workspace = true }
 system-bus = { workspace = true }
 system-clock = { workspace = true }
 test-helpers = { workspace = true, optional = true, features = ["mocks"] }
-types-tasks = { workspace = true, features = ["rkyv"] }
 util = { workspace = true }
 
 # === Serialization === #

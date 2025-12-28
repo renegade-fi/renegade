@@ -1,7 +1,7 @@
 //! Groups price reporting API types
 
-use common::types::{exchange::PriceReporterState, price::Price, token::Token};
 use serde::{Deserialize, Serialize};
+use types_core::{exchange::PriceReporterState, price::Price, token::Token};
 
 use crate::{
     deserialize_token_from_hex_string, f64_string_serde, serialize_token_as_hex_string,

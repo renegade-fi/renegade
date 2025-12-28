@@ -13,10 +13,10 @@ pub(crate) mod state_machine;
 
 pub use network::gossip::GossipNetwork;
 
-use common::types::gossip::WrappedPeerId;
 use fxhash::hash64 as fxhash64;
 use openraft::{Raft as RaftInner, RaftTypeConfig};
 use serde::{Deserialize, Serialize};
+use types_gossip::WrappedPeerId;
 
 use crate::Proposal;
 

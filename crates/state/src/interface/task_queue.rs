@@ -1,13 +1,11 @@
 //! The interface for interacting with the task queue
 
-use common::types::{
-    gossip::WrappedPeerId,
-    tasks::{
-        HistoricalTask, QueuedTask, QueuedTaskState, RefreshWalletTaskDescriptor, TaskDescriptor,
-        TaskIdentifier, TaskQueueKey,
-    },
-    wallet::WalletIdentifier,
+use types_gossip::WrappedPeerId;
+use types_tasks::{
+    HistoricalTask, QueuedTask, QueuedTaskState, RefreshWalletTaskDescriptor, TaskDescriptor,
+    TaskIdentifier, TaskQueueKey,
 };
+use types_wallet::wallet::WalletIdentifier;
 use tracing::instrument;
 use util::telemetry::helpers::backfill_trace_field;
 

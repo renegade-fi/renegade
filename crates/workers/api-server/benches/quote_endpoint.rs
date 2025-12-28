@@ -9,7 +9,7 @@ use api_server_bench_util::{
     base_mint, quote_mint, send_admin_post_req, setup_internal_order, setup_mock_node,
 };
 use circuit_types::{Amount, order::OrderSide};
-use common::types::hmac::HmacKey;
+use types_core::hmac::HmacKey;
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use external_api::http::external_match::{
     ExternalOrder, ExternalQuoteRequest, ExternalQuoteResponse, REQUEST_EXTERNAL_QUOTE_ROUTE,

@@ -2,7 +2,7 @@
 
 use std::sync::atomic::Ordering;
 
-use common::types::gossip::WrappedPeerId;
+use types_gossip::WrappedPeerId;
 use gossip_api::{
     GossipDestination,
     pubsub::{

@@ -55,7 +55,11 @@ darkpool-client = { workspace = true }
 circuit-types = { workspace = true }
 renegade-compliance-api = { git = "https://github.com/renegade-fi/relayer-extensions", package = "compliance-api" }
 config = { workspace = true }
-common = { workspace = true }
+types-core = { workspace = true, features = ["hmac"] }
+types-gossip = { workspace = true }
+types-tasks = { workspace = true }
+types-wallet = { workspace = true }
+types-runtime = { workspace = true }
 constants = { workspace = true }
 crypto = { workspace = true }
 external-api = { workspace = true, features = ["auth"] }

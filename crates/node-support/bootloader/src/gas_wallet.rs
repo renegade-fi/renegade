@@ -1,6 +1,6 @@
 //! Helpers for setting up a gas wallet for the relayer
 
-use common::types::hmac::HmacKey;
+use types_core::hmac::HmacKey;
 use external_api::auth::add_expiring_auth_to_headers;
 use reqwest::{
     Client,

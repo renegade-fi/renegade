@@ -19,7 +19,7 @@ api-server = { workspace = true }
 darkpool-client = { workspace = true }
 circuit-types = { workspace = true }
 chain-events = { workspace = true }
-common = { workspace = true }
+types-runtime = { workspace = true }
 constants = { workspace = true }
 config = { workspace = true }
 external-api = { workspace = true }

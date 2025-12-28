@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use common::types::chain::Chain;
+use types_core::chain::Chain;
 use external_api::{
     EmptyRequestResponse,
     http::network::{GetClusterInfoResponse, GetNetworkTopologyResponse, GetPeerInfoResponse},

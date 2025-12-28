@@ -3,7 +3,7 @@
 
 use std::time::Duration;
 
-use common::types::CancelChannel;
+use types_runtime::CancelChannel;
 use constants::in_bootstrap_mode;
 use job_types::handshake_manager::{HandshakeManagerJob, HandshakeManagerQueue};
 use state::State;

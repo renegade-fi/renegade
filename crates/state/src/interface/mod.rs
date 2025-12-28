@@ -13,19 +13,19 @@ pub mod wallet_index;
 
 use std::{sync::Arc, time::Duration};
 
-use common::worker::WorkerFailureSender;
 use config::RelayerConfig;
 use crossbeam::channel::Sender as UnboundedSender;
-use external_api::bus_message::SystemBusMessage;
 use job_types::{
     event_manager::EventManagerQueue, handshake_manager::HandshakeManagerQueue,
     network_manager::NetworkManagerQueue, task_driver::TaskDriverQueue,
 };
 use libmdbx::{RO, RW};
 use system_bus::SystemBus;
+use system_bus::SystemBusMessage;
 use system_clock::SystemClock;
 use tracing::{Span, error, info_span, instrument};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
+use types_runtime::worker::WorkerFailureSender;
 use util::{err_str, raw_err_str, telemetry::propagation::set_parent_span};
 
 use crate::{

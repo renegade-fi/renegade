@@ -2,8 +2,8 @@
 
 use std::fmt::Display;
 
-use common::types::tasks::QueuedTaskState;
 use serde::Serialize;
+use types_tasks::QueuedTaskState;
 
 use crate::{
     tasks::{

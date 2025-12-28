@@ -1,11 +1,13 @@
 //! A mock price reporter used for testing
 
-use common::types::chain::Chain;
-use common::types::exchange::Exchange;
-use common::types::price::Price;
-use common::types::token::{
-    Token, USD_TICKER, USDC_TICKER, USDT_TICKER, default_exchange_stable, set_default_chain,
-    write_token_remaps,
+use types_core::{
+    chain::Chain,
+    exchange::Exchange,
+    price::Price,
+    token::{
+        Token, USD_TICKER, USDC_TICKER, USDT_TICKER, default_exchange_stable, set_default_chain,
+        write_token_remaps,
+    },
 };
 use itertools::Itertools;
 use price_state::PriceStreamStates;

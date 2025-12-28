@@ -1,9 +1,9 @@
 //! Pubsub message types for broadcasting order information to peers
 
 use circuit_types::wallet::Nullifier;
-use common::types::{
-    gossip::ClusterId, proof_bundles::OrderValidityProofBundle, wallet::OrderIdentifier,
-};
+use types_gossip::ClusterId;
+use common::types::proof_bundles::OrderValidityProofBundle;
+use types_wallet::wallet::IntentIdentifier;
 use serde::{Deserialize, Serialize};
 
 /// The network pubsub topic to use for listening to orderbook changes
@@ -16,7 +16,7 @@ pub enum OrderBookManagementMessage {
     /// received state in their local book
     OrderReceived {
         /// The identifier of the new order
-        order_id: OrderIdentifier,
+        order_id: IntentIdentifier,
         /// The public share nullifier of the new order's wallet
         nullifier: Nullifier,
         /// The cluster that manages this order
@@ -26,7 +26,7 @@ pub enum OrderBookManagementMessage {
     /// be placed in the `Verified` state after local peers verify the proof
     OrderProofUpdated {
         /// The identifier of the now updated order
-        order_id: OrderIdentifier,
+        order_id: IntentIdentifier,
         /// The cluster that manages this order
         cluster: ClusterId,
         /// The new validity proof bundle for the order, containing a proof of

@@ -1,9 +1,7 @@
 //! Storage access methods for the local node's metadata
 use circuit_types::{Address, fixed_point::FixedPoint};
-use common::types::{
-    gossip::{ClusterId, WrappedPeerId},
-    wallet::WalletIdentifier,
-};
+use types_gossip::{ClusterId, WrappedPeerId};
+use types_wallet::wallet::WalletIdentifier;
 use config::RelayerFeeKey;
 use libmdbx::{RW, TransactionKind};
 use libp2p::core::Multiaddr;

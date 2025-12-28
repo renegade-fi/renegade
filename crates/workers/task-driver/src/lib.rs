@@ -25,7 +25,7 @@ pub(crate) mod utils;
 pub mod worker;
 
 use ::state::State;
-use common::types::tasks::TaskDescriptor;
+use types_tasks::TaskDescriptor;
 use job_types::task_driver::{TaskDriverQueue, new_task_notification};
 
 /// A helper to enqueue a task and await its completion

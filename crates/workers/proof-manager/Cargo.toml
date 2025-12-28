@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [features]
-mocks = ["common/mocks"]
+mocks = ["types-wallet/mocks"]
 
 [dependencies]
 # === Cryptography === #
@@ -25,7 +25,10 @@ serde_json = { workspace = true }
 # === Workspace Dependencies === #
 circuits-core = { workspace = true }
 circuit-types = { workspace = true }
-common = { workspace = true }
+types-core = { workspace = true }
+types-tasks = { workspace = true }
+types-wallet = { workspace = true }
+types-runtime = { workspace = true }
 constants = { workspace = true }
 job-types = { workspace = true }
 renegade-metrics = { workspace = true }

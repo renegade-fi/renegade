@@ -4,12 +4,10 @@
 // | URL Captures |
 // ----------------
 
-use common::types::{
-    MatchingPoolName,
-    gossip::{ClusterId, WrappedPeerId},
-    tasks::TaskIdentifier,
-    token::Token,
-};
+use types_runtime::MatchingPoolName;
+use types_gossip::{ClusterId, WrappedPeerId};
+use types_tasks::TaskIdentifier;
+use types_core::token::Token;
 use num_bigint::BigUint;
 use num_traits::Num;
 use uuid::Uuid;

@@ -9,16 +9,14 @@ use std::{error::Error, fmt::Display, iter, time::Duration};
 
 use alloy::signers::{k256::ecdsa::SigningKey, local::PrivateKeySigner};
 use async_trait::async_trait;
-use common::types::{
-    tasks::{LookupWalletTaskDescriptor, NewWalletTaskDescriptor, NodeStartupTaskDescriptor},
-    token::{Token, get_all_tokens},
-    wallet::{
-        Wallet, WalletIdentifier,
-        derivation::{
-            derive_blinder_seed, derive_share_seed, derive_wallet_id, derive_wallet_keychain,
-        },
-        keychain::KeyChain,
+use types_tasks::{LookupWalletTaskDescriptor, NewWalletTaskDescriptor, NodeStartupTaskDescriptor};
+use types_core::token::{Token, get_all_tokens};
+use types_wallet::wallet::{
+    Wallet, WalletIdentifier,
+    derivation::{
+        derive_blinder_seed, derive_share_seed, derive_wallet_id, derive_wallet_keychain,
     },
+    keychain::KeyChain,
 };
 use constants::{NATIVE_ASSET_ADDRESS, Scalar, in_bootstrap_mode};
 use darkpool_client::{DarkpoolClient, errors::DarkpoolClientError};

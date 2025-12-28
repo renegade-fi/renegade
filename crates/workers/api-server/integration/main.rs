@@ -3,7 +3,7 @@
 use api_server::http::PING_ROUTE;
 use circuit_types::fixed_point::FixedPoint;
 use clap::Parser;
-use common::types::{chain::Chain, hmac::HmacKey};
+use types_core::{chain::Chain, hmac::HmacKey};
 use config::setup_token_remaps;
 use external_api::{EmptyRequestResponse, http::PingResponse};
 use eyre::Result;

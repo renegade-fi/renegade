@@ -12,10 +12,8 @@ use alloy::{
 };
 use circuit_types::r#match::ExternalMatchResult;
 use circuit_types::wallet::Nullifier;
-use common::types::{
-    CancelChannel,
-    wallet::{OrderIdentifier, WalletIdentifier},
-};
+use types_runtime::CancelChannel;
+use types_wallet::wallet::{IntentIdentifier, WalletIdentifier};
 use constants::in_bootstrap_mode;
 use darkpool_client::{
     DarkpoolClient, DarkpoolImplementation, conversion::u256_to_scalar, traits::DarkpoolImpl,
@@ -384,7 +382,7 @@ impl OnChainEventListenerExecutor {
         &self,
         wallet_id: WalletIdentifier,
         ext_match: &ExternalMatchResult,
-    ) -> Result<OrderIdentifier, OnChainEventListenerError> {
+    ) -> Result<IntentIdentifier, OnChainEventListenerError> {
         let wallet = self
             .state()
             .get_wallet(&wallet_id)

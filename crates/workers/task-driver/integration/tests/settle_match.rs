@@ -17,17 +17,14 @@ use circuit_types::{
 use circuits_core::zk_circuits::valid_match_settle::{
     ValidMatchSettleStatement, ValidMatchSettleWitness,
 };
-use common::types::{
-    TimestampedPrice,
-    handshake::{HandshakeState, mocks::mock_handshake_state},
-    proof_bundles::{
-        MatchBundle, OrderValidityProofBundle, OrderValidityWitnessBundle, ValidMatchSettleBundle,
-        mocks::dummy_link_proof,
-    },
-    tasks::{SettleMatchInternalTaskDescriptor, SettleMatchTaskDescriptor},
-    wallet::{Order, OrderBuilder, Wallet},
-    wallet_mocks::mock_empty_wallet,
+use types_core::price::TimestampedPrice;
+use common::types::handshake::{HandshakeState, mocks::mock_handshake_state};
+use common::types::proof_bundles::{
+    MatchBundle, OrderValidityProofBundle, OrderValidityWitnessBundle, ValidMatchSettleBundle,
+    mocks::dummy_link_proof,
 };
+use types_tasks::{SettleMatchInternalTaskDescriptor, SettleMatchTaskDescriptor};
+use types_wallet::wallet::{Order, OrderBuilder, Wallet, mocks::mock_empty_wallet};
 use constants::Scalar;
 use eyre::{Result, eyre};
 use job_types::proof_manager::{ProofJob, ProofManagerJob};

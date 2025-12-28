@@ -1,17 +1,17 @@
 //! State transition types for the state machine
 
-use common::types::{
-    MatchingPoolName,
-    gossip::WrappedPeerId,
-    tasks::{QueuedTask, QueuedTaskState, TaskIdentifier, TaskQueueKey},
-};
 use serde::{Deserialize, Serialize};
+use types_gossip::WrappedPeerId;
+use types_runtime::MatchingPoolName;
+use types_tasks::{QueuedTask, QueuedTaskState, TaskIdentifier, TaskQueueKey};
 use uuid::Uuid;
 
 // ---------------------
 // | State Transitions |
 // ---------------------
 
+/// A type alias for the proposal ID
+pub type ProposalId = Uuid;
 /// The proposal submitted to the state machine
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Proposal {
@@ -56,12 +56,12 @@ pub enum StateTransition {
     ReassignTasks { from: WrappedPeerId, to: WrappedPeerId },
 
     // --- Raft --- //
-    /// Add a raft learner to the cluster
-    AddRaftLearners { learners: Vec<(NodeId, RaftNode)> },
-    /// Add a raft peer to the local consensus cluster
-    AddRaftVoters { peer_ids: Vec<NodeId> },
-    /// Remove a raft peer from the local consensus cluster
-    RemoveRaftPeers { peer_ids: Vec<NodeId> },
+    // /// Add a raft learner to the cluster
+    // AddRaftLearners { learners: Vec<(NodeId, RaftNode)> },
+    // /// Add a raft peer to the local consensus cluster
+    // AddRaftVoters { peer_ids: Vec<NodeId> },
+    // /// Remove a raft peer from the local consensus cluster
+    // RemoveRaftPeers { peer_ids: Vec<NodeId> },
 }
 
 impl From<StateTransition> for Proposal {

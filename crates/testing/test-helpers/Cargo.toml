@@ -12,9 +12,7 @@ blockchain = [
     "dep:alloy",
     "dep:alloy-primitives",
     "dep:alloy-sol-types",
-    "dep:darkpool-client",
     "dep:circuit-types",
-    "dep:common",
     "dep:constants",
     "dep:darkpool-client",
     "dep:num-bigint",
@@ -22,7 +20,7 @@ blockchain = [
     "dep:crypto",
 ]
 test-harness = ["dep:futures", "dep:tokio"]
-mocks = ["dep:common"]
+mocks = ["dep:types-runtime"]
 mpc-network = [
     "dep:ark-mpc",
     "dep:async-trait",
@@ -54,9 +52,9 @@ alloy-sol-types = { workspace = true, optional = true }
 # === Workspace Dependencies === # 
 darkpool-client = { workspace = true, optional = true }
 circuit-types = { workspace = true, optional = true }
-common = { workspace = true, features = ["mocks"], optional = true }
 constants = { workspace = true, optional = true }
 crypto = { workspace = true, optional = true }
+types-runtime = { workspace = true, optional = true }
 util = { workspace = true, optional = true }
 
 # === Misc Dependencies === #

@@ -3,12 +3,10 @@
 use std::{net::SocketAddr, sync::Arc};
 
 use constants::{HANDSHAKE_STATUS_TOPIC, ORDER_STATE_CHANGE_TOPIC, in_bootstrap_mode};
-use external_api::{
-    bus_message::{
-        ADMIN_WALLET_UPDATES_TOPIC, NETWORK_TOPOLOGY_TOPIC, SystemBusMessage,
-        SystemBusMessageWithTopic,
-    },
-    websocket::{ClientWebsocketMessage, SubscriptionResponse, WebsocketMessage},
+use external_api::websocket::{ClientWebsocketMessage, SubscriptionResponse, WebsocketMessage};
+use system_bus::{
+    ADMIN_WALLET_UPDATES_TOPIC, NETWORK_TOPOLOGY_TOPIC, SystemBusMessage,
+    SystemBusMessageWithTopic,
 };
 use futures::{SinkExt, StreamExt, stream::SplitSink};
 use hyper::{HeaderMap, http::HeaderValue};

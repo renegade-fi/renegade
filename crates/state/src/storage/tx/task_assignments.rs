@@ -5,7 +5,8 @@
 // | Getters |
 // -----------
 
-use common::types::{gossip::WrappedPeerId, tasks::TaskIdentifier};
+use types_gossip::WrappedPeerId;
+use types_tasks::TaskIdentifier;
 use libmdbx::{RW, TransactionKind};
 
 use crate::{TASK_ASSIGNMENT_TABLE, storage::error::StorageError};

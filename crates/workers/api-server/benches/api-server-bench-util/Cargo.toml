@@ -7,7 +7,11 @@ edition = "2024"
 # === Renegade Dependencies === #
 circuit-types = { workspace = true }
 config = { workspace = true }
-common = { workspace = true }
+types-core = { workspace = true }
+types-gossip = { workspace = true }
+types-tasks = { workspace = true }
+types-wallet = { workspace = true }
+types-runtime = { workspace = true }
 darkpool-client = { workspace = true }
 external-api = { workspace = true }
 mock-node = { workspace = true }

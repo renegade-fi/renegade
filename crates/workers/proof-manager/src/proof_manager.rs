@@ -43,10 +43,9 @@ use circuits_core::{
         },
     },
 };
-use common::{
-    default_wrapper::DefaultOption,
-    types::{CancelChannel, proof_bundles::ProofBundle},
-};
+use util::default_wrapper::DefaultOption;
+use types_runtime::CancelChannel;
+use common::types::proof_bundles::ProofBundle;
 use constants::in_bootstrap_mode;
 use job_types::proof_manager::{ProofJob, ProofManagerJob, ProofManagerReceiver};
 use rayon::ThreadPool;

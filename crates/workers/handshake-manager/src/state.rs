@@ -3,11 +3,9 @@
 use std::collections::{HashMap, HashSet};
 
 use super::error::HandshakeManagerError;
-use common::types::{
-    handshake::{ConnectionRole, HandshakeState},
-    price::TimestampedPrice,
-    wallet::OrderIdentifier,
-};
+use common::types::handshake::{ConnectionRole, HandshakeState};
+use types_core::price::TimestampedPrice;
+use types_wallet::wallet::IntentIdentifier;
 use constants::Scalar;
 use crossbeam::channel::Sender;
 use state::State;
@@ -52,8 +50,8 @@ impl HandshakeStateIndex {
         &self,
         request_id: Uuid,
         role: ConnectionRole,
-        peer_order_id: OrderIdentifier,
-        local_order_id: OrderIdentifier,
+        peer_order_id: IntentIdentifier,
+        local_order_id: IntentIdentifier,
         execution_price: TimestampedPrice,
     ) -> Result<(), HandshakeManagerError> {
         // Lookup the public share nullifiers for the order

@@ -17,7 +17,8 @@ alloy = { workspace = true }
 # === Workspace Dependencies === #
 darkpool-client = { workspace = true }
 circuit-types = { workspace = true }
-common = { workspace = true }
+types-core = { workspace = true, features = ["hmac"] }
+types-gossip = { workspace = true }
 constants = { workspace = true }
 util = { workspace = true }
 

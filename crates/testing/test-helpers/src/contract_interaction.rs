@@ -2,10 +2,8 @@
 use circuit_types::{
     SizedWalletShare, native_helpers::create_wallet_shares_from_private, traits::BaseType,
 };
-use common::types::{
-    proof_bundles::mocks::dummy_valid_wallet_create_bundle,
-    wallet::{Wallet, mocks::mock_empty_wallet},
-};
+use common::types::proof_bundles::mocks::dummy_valid_wallet_create_bundle;
+use types_wallet::wallet::{Wallet, mocks::mock_empty_wallet};
 use constants::Scalar;
 use darkpool_client::DarkpoolClient;
 use eyre::Result;

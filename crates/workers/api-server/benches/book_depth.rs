@@ -7,7 +7,7 @@ use std::{
 
 use api_server_bench_util::{send_admin_get_req, setup_internal_order_on_token, setup_mock_node};
 use circuit_types::order::OrderSide;
-use common::types::{hmac::HmacKey, token::get_all_tokens};
+use types_core::{hmac::HmacKey, token::get_all_tokens};
 use config::RelayerConfig;
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use external_api::http::order_book::{GET_DEPTH_FOR_ALL_PAIRS_ROUTE, GetDepthForAllPairsResponse};

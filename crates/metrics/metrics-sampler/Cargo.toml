@@ -5,7 +5,10 @@ edition = "2024"
 
 [dependencies]
 # === Workspace Dependencies === #
-common = { workspace = true }
+types-core = { workspace = true }
+types-gossip = { workspace = true }
+types-tasks = { workspace = true }
+types-wallet = { workspace = true }
 job-types = { workspace = true }
 price-state = { workspace = true }
 state = { workspace = true }

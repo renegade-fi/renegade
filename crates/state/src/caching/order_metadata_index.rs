@@ -9,13 +9,13 @@
 use std::collections::HashMap;
 
 use circuit_types::{Amount, order::OrderSide};
-use common::types::wallet::{Order, OrderIdentifier, Pair};
+use types_wallet::wallet::{Order, IntentIdentifier, Pair};
 use tokio::sync::RwLock;
 
 use super::RwLockHashMap;
 
 /// A type alias for a the inner index mapping
-type OrderSideIndex = HashMap<OrderSide, SortedVec<(Amount, OrderIdentifier)>>;
+type OrderSideIndex = HashMap<OrderSide, SortedVec<(Amount, IntentIdentifier)>>;
 
 /// The order metadata index
 #[derive(Default)]
@@ -26,7 +26,7 @@ pub struct OrderMetadataIndex {
     ///
     /// This is used to efficiently query the index by order_id for updates and
     /// deletion
-    reverse_index: RwLockHashMap<OrderIdentifier, (Pair, OrderSide)>,
+    reverse_index: RwLockHashMap<IntentIdentifier, (Pair, OrderSide)>,
 }
 
 impl OrderMetadataIndex {
@@ -40,7 +40,7 @@ impl OrderMetadataIndex {
     // --- Getters --- //
 
     /// Get all orders for a given pair and side, sorted by matchable amount
-    pub async fn get_orders(&self, pair: &Pair, side: OrderSide) -> Vec<OrderIdentifier> {
+    pub async fn get_orders(&self, pair: &Pair, side: OrderSide) -> Vec<IntentIdentifier> {
         let index = self.index.read().await;
         let orders_vec = index.get(pair).and_then(|side_index| side_index.get(&side));
         match orders_vec {
@@ -53,17 +53,17 @@ impl OrderMetadataIndex {
     ///
     /// No sort ordering is guaranteed, given that the units on which individual
     /// orders are sorted may differ
-    pub async fn get_all_orders(&self) -> Vec<OrderIdentifier> {
+    pub async fn get_all_orders(&self) -> Vec<IntentIdentifier> {
         self.reverse_index.read().await.keys().copied().collect()
     }
 
     /// Get the pair and side for a given order_id
-    pub async fn get_pair_and_side(&self, order_id: &OrderIdentifier) -> Option<(Pair, OrderSide)> {
+    pub async fn get_pair_and_side(&self, order_id: &IntentIdentifier) -> Option<(Pair, OrderSide)> {
         self.reverse_index.read().await.get(order_id).cloned()
     }
 
     /// Returns whether an order exists in the index synchronously
-    pub fn order_exists(&self, order_id: &OrderIdentifier) -> bool {
+    pub fn order_exists(&self, order_id: &IntentIdentifier) -> bool {
         self.reverse_index.blocking_read().contains_key(order_id)
     }
 
@@ -72,7 +72,7 @@ impl OrderMetadataIndex {
     /// Add an order to the index
     pub async fn add_order(
         &self,
-        order_id: OrderIdentifier,
+        order_id: IntentIdentifier,
         order: &Order,
         matchable_amount: Amount,
     ) {
@@ -91,7 +91,7 @@ impl OrderMetadataIndex {
     /// Returns the old matchable amount if it was updated, otherwise None
     pub async fn update_matchable_amount(
         &self,
-        order_id: OrderIdentifier,
+        order_id: IntentIdentifier,
         matchable_amount: Amount,
     ) -> Option<Amount> {
         let (pair, side) = self.get_pair_and_side(&order_id).await.unwrap();
@@ -122,7 +122,7 @@ impl OrderMetadataIndex {
     /// otherwise None
     pub async fn remove_order(
         &self,
-        order_id: &OrderIdentifier,
+        order_id: &IntentIdentifier,
     ) -> Option<(Pair, OrderSide, Amount)> {
         // Get the pair and side from the reverse index
         let (pair, side) = self.get_pair_and_side(order_id).await?;
@@ -288,9 +288,9 @@ mod order_index_tests {
     #[tokio::test]
     async fn test_get_all_orders() {
         let index = OrderMetadataIndex::new();
-        let order_id1 = OrderIdentifier::new_v4();
-        let order_id2 = OrderIdentifier::new_v4();
-        let order_id3 = OrderIdentifier::new_v4();
+        let order_id1 = IntentIdentifier::new_v4();
+        let order_id2 = IntentIdentifier::new_v4();
+        let order_id3 = IntentIdentifier::new_v4();
 
         // Create mock orders
         let order1 = mock_order();
@@ -304,7 +304,7 @@ mod order_index_tests {
 
         // Get all orders and verify
         let all_orders = index.get_all_orders().await;
-        let mut orders: Vec<OrderIdentifier> = all_orders.into_iter().collect();
+        let mut orders: Vec<IntentIdentifier> = all_orders.into_iter().collect();
         orders.sort();
 
         let mut expected = vec![order_id1, order_id2, order_id3];
@@ -326,7 +326,7 @@ mod order_index_tests {
     #[tokio::test]
     async fn test_add_and_get_single_order() {
         let index = OrderMetadataIndex::new();
-        let order_id = OrderIdentifier::new_v4();
+        let order_id = IntentIdentifier::new_v4();
         let order = mock_order();
         let pair = order.pair();
 
@@ -344,10 +344,10 @@ mod order_index_tests {
         let pair = order.pair();
 
         // Add orders with different matchable amounts
-        let order_id1 = OrderIdentifier::new_v4();
-        let order_id2 = OrderIdentifier::new_v4();
-        let order_id3 = OrderIdentifier::new_v4();
-        let order_id4 = OrderIdentifier::new_v4();
+        let order_id1 = IntentIdentifier::new_v4();
+        let order_id2 = IntentIdentifier::new_v4();
+        let order_id3 = IntentIdentifier::new_v4();
+        let order_id4 = IntentIdentifier::new_v4();
 
         index.add_order(order_id1, &order, 300).await;
         index.add_order(order_id2, &order, 100).await;
@@ -371,10 +371,10 @@ mod order_index_tests {
         let pair1 = order1.pair();
         let pair2 = order2.pair();
 
-        let order_id1 = OrderIdentifier::new_v4();
-        let order_id2 = OrderIdentifier::new_v4();
-        let order_id3 = OrderIdentifier::new_v4();
-        let order_id4 = OrderIdentifier::new_v4();
+        let order_id1 = IntentIdentifier::new_v4();
+        let order_id2 = IntentIdentifier::new_v4();
+        let order_id3 = IntentIdentifier::new_v4();
+        let order_id4 = IntentIdentifier::new_v4();
 
         index.add_order(order_id1, &order1, 100).await;
         index.add_order(order_id2, &order2, 200).await;
@@ -395,7 +395,7 @@ mod order_index_tests {
     #[tokio::test]
     async fn test_update_matchable_amount() {
         let index = OrderMetadataIndex::new();
-        let order_id = OrderIdentifier::new_v4();
+        let order_id = IntentIdentifier::new_v4();
         let order = mock_order();
         let pair = order.pair();
 
@@ -429,8 +429,8 @@ mod order_index_tests {
         let pair = order.pair();
 
         // Add two orders with initial amounts
-        let order_id1 = OrderIdentifier::new_v4();
-        let order_id2 = OrderIdentifier::new_v4();
+        let order_id1 = IntentIdentifier::new_v4();
+        let order_id2 = IntentIdentifier::new_v4();
 
         index.add_order(order_id1, &order, 200).await;
         index.add_order(order_id2, &order, 100).await;
@@ -457,7 +457,7 @@ mod order_index_tests {
     #[tokio::test]
     async fn test_remove_order() {
         let index = OrderMetadataIndex::new();
-        let order_id = OrderIdentifier::new_v4();
+        let order_id = IntentIdentifier::new_v4();
         let order = mock_order();
         let pair = order.pair().clone();
 
@@ -485,7 +485,7 @@ mod order_index_tests {
     #[tokio::test]
     async fn test_remove_nonexistent_order() {
         let index = OrderMetadataIndex::new();
-        let order_id = OrderIdentifier::new_v4();
+        let order_id = IntentIdentifier::new_v4();
 
         // Try to remove a nonexistent order
         let result = index.remove_order(&order_id).await;
@@ -499,9 +499,9 @@ mod order_index_tests {
         let pair = order.pair().clone();
 
         // Add three orders
-        let order_id1 = OrderIdentifier::new_v4();
-        let order_id2 = OrderIdentifier::new_v4();
-        let order_id3 = OrderIdentifier::new_v4();
+        let order_id1 = IntentIdentifier::new_v4();
+        let order_id2 = IntentIdentifier::new_v4();
+        let order_id3 = IntentIdentifier::new_v4();
 
         index.add_order(order_id1, &order, 300).await;
         index.add_order(order_id2, &order, 200).await;

@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use common::types::gossip::{ClusterId, PeerInfo, WrappedPeerId};
+use types_gossip::{ClusterId, PeerInfo, WrappedPeerId};
 use libmdbx::{RW, TransactionKind};
 use libp2p::core::Multiaddr;
 

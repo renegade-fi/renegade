@@ -1,7 +1,8 @@
 //! Protocol fee payment tests
 use circuit_types::balance::Balance;
 use circuits_core::test_helpers::random_wallet_amount;
-use common::types::{tasks::PayOfflineFeeTaskDescriptor, wallet_mocks::mock_empty_wallet};
+use types_tasks::PayOfflineFeeTaskDescriptor;
+use types_wallet::wallet::mocks::mock_empty_wallet;
 use constants::Scalar;
 use eyre::{Result, eyre};
 use rand::thread_rng;

@@ -4,8 +4,9 @@
 // | HTTP Routes |
 // ---------------
 
-use common::types::{MatchingPoolName, wallet::OrderIdentifier};
 use serde::{Deserialize, Serialize};
+use types_runtime::MatchingPoolName;
+use types_wallet::wallet::IntentIdentifier;
 
 use crate::{
     http::wallet::CreateOrderOptions,
@@ -58,7 +59,7 @@ pub struct IsLeaderResponse {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct OpenOrdersResponse {
     /// The open order IDs
-    pub orders: Vec<OrderIdentifier>,
+    pub orders: Vec<IntentIdentifier>,
 }
 
 /// The request type to add a new order to a given wallet, within a non-global
@@ -95,5 +96,5 @@ pub struct AdminGetOrderMatchingPoolResponse {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AdminWalletMatchableOrderIdsResponse {
     /// The order IDs
-    pub order_ids: Vec<OrderIdentifier>,
+    pub order_ids: Vec<IntentIdentifier>,
 }

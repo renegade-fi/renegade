@@ -21,8 +21,8 @@ use circuits_core::zk_circuits::valid_reblind::{
 use common::types::proof_bundles::{
     OrderValidityProofBundle, OrderValidityWitnessBundle, ProofBundle,
 };
-use common::types::token::Token;
-use common::types::wallet::{OrderIdentifier, Wallet};
+use types_core::token::Token;
+use types_wallet::wallet::{IntentIdentifier, Wallet};
 use gossip_api::pubsub::PubsubMessage;
 use gossip_api::pubsub::orderbook::{ORDER_BOOK_TOPIC, OrderBookManagementMessage};
 use job_types::network_manager::NetworkManagerJob;
@@ -308,7 +308,7 @@ fn get_relayer_fee_for_order(
 /// bundle and schedule matches on the proven order
 #[instrument(skip_all)]
 async fn link_and_store_proofs(
-    order_id: &OrderIdentifier,
+    order_id: &IntentIdentifier,
     commitments_witness: &SizedValidCommitmentsWitness,
     reblind_witness: &SizedValidReblindWitness,
     commitments_bundle: ProofBundle,

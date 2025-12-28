@@ -17,7 +17,7 @@ use alloy_primitives::{Log, Selector, TxHash};
 use alloy_sol_types::SolEvent;
 use circuit_types::SizedWalletShare;
 use circuit_types::r#match::ExternalMatchResult;
-use common::types::merkle::MerkleAuthenticationPath;
+use types_wallet::MerkleAuthenticationPath;
 use constants::{MERKLE_HEIGHT, Scalar};
 use itertools::Itertools;
 use num_bigint::BigUint;
