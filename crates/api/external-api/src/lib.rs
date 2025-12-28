@@ -4,20 +4,20 @@
 
 use std::fmt;
 
-use base64::{engine::general_purpose::STANDARD_NO_PAD, Engine};
+use base64::{Engine, engine::general_purpose::STANDARD_NO_PAD};
 use num_bigint::BigUint;
 use serde::{
-    de::{self, Error as DeserializeError, SeqAccess, Visitor},
     Deserialize, Deserializer, Serialize, Serializer,
+    de::{self, Error as DeserializeError, SeqAccess, Visitor},
 };
-use types_core::token::Token;
+use types_core::Token;
 use util::hex::{biguint_from_hex_string, biguint_to_hex_addr};
 
 #[cfg(feature = "auth")]
 pub mod auth;
 pub mod http;
 pub mod types;
-pub mod websocket;
+// pub mod websocket;
 
 /// Header name for the HTTP auth signature; lower cased
 pub const RENEGADE_AUTH_HEADER_NAME: &str = "x-renegade-auth";
@@ -237,7 +237,7 @@ pub(crate) mod f64_string_serde {
 
 #[cfg(test)]
 mod test {
-    use rand::{thread_rng, RngCore};
+    use rand::{RngCore, thread_rng};
     use serde::{Deserialize, Serialize};
     use serde_json::json;
 

@@ -28,6 +28,9 @@ use std::{
 };
 use tokio::macros::support::poll_fn;
 
+/// A type alias for the bus using the default message
+pub type SystemBus = MessageBus<SystemBusMessage>;
+
 /// A type alias for a shared reference to a wrapped type
 type Shared<T> = Arc<RwLock<T>>;
 
@@ -35,7 +38,8 @@ type Shared<T> = Arc<RwLock<T>>;
 const BUS_BUFFER_SIZE: usize = 10;
 
 /// A wrapper around `BusReader` that allows us to store topic-relevant
-/// information, add reference counts, and build pollable methods around reading
+/// information, add reference counts, and build poll-able methods around
+/// reading
 ///
 /// The trait bounds on the message (Clone + Sync) are required by the Bus
 /// implementation
@@ -230,14 +234,14 @@ impl<M: Clone + Sync> TopicFabric<M> {
 ///
 /// Note that publishing to a topic with no subscribers is a no-op
 #[derive(Clone, Debug)]
-pub struct SystemBus<M> {
+pub struct MessageBus<M> {
     /// The topic mesh connects publishers to subscribers, it is concretely
     /// implemented as a mapping from topic name (String) to a bus
     /// (single-producer, multi-consumer)
     topic_mesh: Shared<HashMap<String, Shared<TopicFabric<M>>>>,
 }
 
-impl<M: Clone + Sync> SystemBus<M> {
+impl<M: Clone + Sync> MessageBus<M> {
     /// Construct a new system bus
     pub fn new() -> Self {
         Self { topic_mesh: Arc::new(RwLock::new(HashMap::new())) }
@@ -311,7 +315,7 @@ impl<M: Clone + Sync> SystemBus<M> {
     }
 }
 
-impl<M: Clone + Sync> Default for SystemBus<M> {
+impl<M: Clone + Sync> Default for MessageBus<M> {
     fn default() -> Self {
         Self::new()
     }
@@ -321,7 +325,7 @@ impl<M: Clone + Sync> Default for SystemBus<M> {
 mod system_bus_tests {
     use rand::{RngCore, thread_rng};
 
-    use super::SystemBus;
+    use super::MessageBus;
 
     const TEST_TOPIC: &str = "test topic";
 
@@ -332,7 +336,7 @@ mod system_bus_tests {
         let message = rng.next_u64();
 
         // Setup the pubsub mesh
-        let pubsub = SystemBus::<u64>::new();
+        let pubsub = MessageBus::<u64>::new();
         let mut reader = pubsub.subscribe(TEST_TOPIC.to_string());
 
         // Publish a message
@@ -351,7 +355,7 @@ mod system_bus_tests {
         let message2 = rng.next_u64();
 
         // Setup pubsub mesh
-        let pubsub = SystemBus::<u64>::new();
+        let pubsub = MessageBus::<u64>::new();
         let mut reader = pubsub.subscribe(TEST_TOPIC.to_string());
 
         // Publish a message
@@ -375,7 +379,7 @@ mod system_bus_tests {
 
         // Setup pubsub mesh and send the first message before a reader is subscribed
         // we expect this to be a no-op
-        let pubsub = SystemBus::<u64>::new();
+        let pubsub = MessageBus::<u64>::new();
         pubsub.publish(TEST_TOPIC.to_string(), message1);
 
         // Now subscribe a reader, send a second message and read from the bus
@@ -398,7 +402,7 @@ mod system_bus_tests {
 
         // Setup the pubsub mesh and register the first reader before the first message
         // is sent. This reader should receive both message1 and message2
-        let pubsub = SystemBus::<u64>::new();
+        let pubsub = MessageBus::<u64>::new();
         let mut reader1 = pubsub.subscribe(TEST_TOPIC.to_string());
         pubsub.publish(TEST_TOPIC.to_string(), message1);
 
@@ -419,7 +423,7 @@ mod system_bus_tests {
     #[tokio::test]
     async fn test_num_listeners() {
         // Start out with no listeners
-        let pubsub = SystemBus::<()>::new();
+        let pubsub = MessageBus::<()>::new();
         assert_eq!(0, pubsub.num_listeners(&TEST_TOPIC.to_string()));
 
         let _reader1 = pubsub.subscribe(TEST_TOPIC.to_string());
@@ -435,7 +439,7 @@ mod system_bus_tests {
     async fn test_dealloc_topic() {
         // Setup the pubsub mesh; there are no listeners to any topic to begin, so
         // `has_listeners` should return false
-        let pubsub = SystemBus::<u64>::new();
+        let pubsub = MessageBus::<u64>::new();
         assert!(!pubsub.has_listeners(&TEST_TOPIC.to_string()));
 
         // Add one reader, `has_listeners` should now be true

@@ -6,13 +6,13 @@
 
 use std::str::FromStr;
 
-use circuit_types::{order::OrderSide, r#match::MatchResult};
+use darkpool_types::{intent::Intent, settlement_obligation::SettlementObligation};
 use serde::{Deserialize, Serialize};
 use serde_json::Number;
 use types_tasks::{
     HistoricalTask, HistoricalTaskDescription, QueuedTask, TaskIdentifier, TaskQueueKey,
 };
-use util::hex::biguint_to_hex_addr;
+use util::hex::address_to_hex_string;
 
 // -----------
 // | Helpers |
@@ -68,21 +68,8 @@ impl ApiHistoricalTask {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "task_type")]
 pub enum ApiHistoricalTaskDescription {
-    /// A new wallet was created
-    NewWallet,
-    /// An update to a wallet
-    UpdateWallet(ApiWalletUpdateType),
-    /// A match was settled
-    SettleMatch(ApiHistoricalMatch),
-    /// A fee was paid
-    PayOfflineFee {
-        /// The mint of the fee
-        mint: String,
-        /// The amount of the fee
-        amount: Number,
-        /// Whether the fee was paid for a protocol fee
-        is_protocol: bool,
-    },
+    /// A new account was created
+    NewAccount,
     /// A wallet was looked up
     LookupWallet,
     /// A wallet was refreshed
@@ -92,22 +79,7 @@ pub enum ApiHistoricalTaskDescription {
 impl From<HistoricalTaskDescription> for ApiHistoricalTaskDescription {
     fn from(value: HistoricalTaskDescription) -> Self {
         match value {
-            HistoricalTaskDescription::NewWallet => Self::NewWallet,
-            HistoricalTaskDescription::UpdateWallet(update) => {
-                Self::UpdateWallet(ApiWalletUpdateType::from(update))
-            },
-            HistoricalTaskDescription::SettleMatch(match_result) => {
-                Self::SettleMatch(match_result.into())
-            },
-            HistoricalTaskDescription::PayOfflineFee { mint, amount, is_protocol } => {
-                Self::PayOfflineFee {
-                    mint: biguint_to_hex_addr(&mint),
-                    amount: u128_to_number(amount),
-                    is_protocol,
-                }
-            },
-            HistoricalTaskDescription::LookupWallet => Self::LookupWallet,
-            HistoricalTaskDescription::RefreshWallet => Self::RefreshWallet,
+            HistoricalTaskDescription::NewAccount => Self::NewAccount,
         }
     }
 }
@@ -116,21 +88,22 @@ impl From<HistoricalTaskDescription> for ApiHistoricalTaskDescription {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ApiHistoricalMatch {
     /// The base mint matched
-    pub base: String,
+    pub in_token: String,
     /// The quote mint matched
-    pub quote: String,
-    /// The volume matched
-    pub volume: Number,
-    /// The direction the local party
-    pub is_sell: bool,
+    pub out_token: String,
+    /// The amount input by the user to the trade
+    pub amount_in: Number,
+    /// The amount output to the user from the trade
+    pub amount_out: Number,
 }
 
-impl From<MatchResult> for ApiHistoricalMatch {
-    fn from(value: MatchResult) -> Self {
-        let base = biguint_to_hex_addr(&value.base_mint);
-        let quote = biguint_to_hex_addr(&value.quote_mint);
-        let volume = u128_to_number(value.base_amount);
-        Self { base, quote, volume, is_sell: value.direction }
+impl From<SettlementObligation> for ApiHistoricalMatch {
+    fn from(value: SettlementObligation) -> Self {
+        let in_token = address_to_hex_string(&value.input_token);
+        let out_token = address_to_hex_string(&value.output_token);
+        let amount_in = u128_to_number(value.amount_in);
+        let amount_out = u128_to_number(value.amount_out);
+        Self { in_token, out_token, amount_in, amount_out }
     }
 }
 
@@ -140,7 +113,7 @@ impl From<MatchResult> for ApiHistoricalMatch {
 /// display
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "update_type")]
-pub enum ApiWalletUpdateType {
+pub enum ApiAccountUpdateType {
     /// Deposit a balance
     Deposit {
         /// The deposited mint
@@ -159,57 +132,32 @@ pub enum ApiWalletUpdateType {
     PlaceOrder {
         /// The order that was placed
         #[serde(flatten)]
-        order: WalletUpdateOrder,
+        order: AccountUpdateIntent,
     },
     /// Cancel an order
     CancelOrder {
         /// The order that was cancelled
         #[serde(flatten)]
-        order: WalletUpdateOrder,
+        order: AccountUpdateIntent,
     },
 }
 
 /// Represents an order in a wallet update type
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub struct WalletUpdateOrder {
+pub struct AccountUpdateIntent {
     /// The mint of the base token
-    pub base: String,
+    pub in_token: String,
     /// The mint of the quote token
-    pub quote: String,
-    /// The side of the order
-    pub side: OrderSide,
+    pub out_token: String,
     /// The volume of the order
     pub amount: Number,
 }
 
-impl From<Order> for WalletUpdateOrder {
-    fn from(value: Order) -> Self {
-        let base = biguint_to_hex_addr(&value.base_mint);
-        let quote = biguint_to_hex_addr(&value.quote_mint);
-        let amount = u128_to_number(value.amount);
-        Self { base, quote, side: value.side, amount }
-    }
-}
-
-impl From<WalletUpdateType> for ApiWalletUpdateType {
-    fn from(value: WalletUpdateType) -> Self {
-        match value {
-            WalletUpdateType::Deposit { mint, amount } => {
-                let mint = biguint_to_hex_addr(&mint);
-                let amount = u128_to_number(amount);
-                Self::Deposit { mint, amount }
-            },
-            WalletUpdateType::Withdraw { mint, amount } => {
-                let mint = biguint_to_hex_addr(&mint);
-                let amount = u128_to_number(amount);
-                Self::Withdraw { mint, amount }
-            },
-            WalletUpdateType::PlaceOrder { order, .. } => {
-                Self::PlaceOrder { order: WalletUpdateOrder::from(order) }
-            },
-            WalletUpdateType::CancelOrder { order, .. } => {
-                Self::CancelOrder { order: WalletUpdateOrder::from(order) }
-            },
-        }
+impl From<Intent> for AccountUpdateIntent {
+    fn from(value: Intent) -> Self {
+        let in_token = address_to_hex_string(&value.in_token);
+        let out_token = address_to_hex_string(&value.out_token);
+        let amount = u128_to_number(value.amount_in);
+        Self { in_token, out_token, amount }
     }
 }

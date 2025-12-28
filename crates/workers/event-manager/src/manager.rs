@@ -10,7 +10,7 @@ use renegade_metrics::labels::NUM_EVENT_EXPORT_FAILURES_METRIC;
 use tokio::net::UnixStream;
 use tokio_util::codec::{FramedWrite, LengthDelimitedCodec};
 use tracing::{error, info, warn};
-use types_core::chain::Chain;
+use types_core::Chain;
 use types_runtime::CancelChannel;
 use url::Url;
 use util::{concurrency::runtime::sleep_forever_async, err_str};

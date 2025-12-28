@@ -13,6 +13,7 @@ num-bigint = { workspace = true }
 atomic_float = "1"
 
 # === Workspace Dependencies === #
+types-core = { workspace = true }
 util = { workspace = true }
 
 # === Misc === #

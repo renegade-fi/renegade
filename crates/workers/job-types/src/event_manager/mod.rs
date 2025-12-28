@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 mod event_types;
 
-use event_types::{
+pub use event_types::{
     AccountCreationEvent, DepositEvent, ExternalFillEvent, FillEvent, IntentCancellationEvent,
     IntentPlacementEvent, IntentUpdateEvent, TaskCompletionEvent, WithdrawalEvent,
 };

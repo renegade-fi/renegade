@@ -1,6 +1,7 @@
 //! Defines types broadcast onto the system bus and thereby websockets
 
 use darkpool_types::bounded_match_result::BoundedMatchResult;
+use external_api::{http::task::ApiTaskStatus, types::ApiHistoricalTask};
 use types_core::{AccountId, Token};
 use types_gossip::{PeerInfo, WrappedPeerId};
 use types_tasks::TaskIdentifier;
@@ -93,19 +94,18 @@ pub enum SystemBusMessage {
     },
 
     // -- Tasks -- //
-    // TODO: Uncomment when external-api build issues are resolved
-    // /// A message indicating that a task has
-    // TaskStatusUpdate {
-    //     /// The updated status of the task
-    //     status: ApiTaskStatus,
-    // },
-    //
-    // /// A message indicating an update to a task in the task history
-    // TaskHistoryUpdate {
-    //     /// The new state of the task
-    //     task: ApiHistoricalTask,
-    // },
-    //
+    /// A message indicating that a task has
+    TaskStatusUpdate {
+        /// The updated status of the task
+        status: ApiTaskStatus,
+    },
+
+    /// A message indicating an update to a task in the task history
+    TaskHistoryUpdate {
+        /// The new state of the task
+        task: ApiHistoricalTask,
+    },
+
     // // -- Wallet Updates -- //
     // /// A message indicating that a wallet has been updated
     // WalletUpdate {

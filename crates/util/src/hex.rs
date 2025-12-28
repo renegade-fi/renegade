@@ -5,6 +5,9 @@
 //!   deps)
 //! - `hex` feature: Full hex utilities including scalar/jubjub conversions
 
+use std::str::FromStr;
+
+use alloy::primitives::Address;
 #[cfg(feature = "hex")]
 use ark_ec::{CurveGroup, twisted_edwards::Projective};
 #[cfg(feature = "hex")]
@@ -42,6 +45,16 @@ pub fn bytes_from_hex_string(hex: &str) -> Result<Vec<u8>, String> {
 /// A helper to serialize a BigUint to a hex string
 pub fn biguint_to_hex_string(val: &BigUint) -> String {
     format!("0x{}", val.to_str_radix(16 /* radix */))
+}
+
+/// Convert an address to a hex string
+pub fn address_to_hex_string(addr: &Address) -> String {
+    format!("{addr:#x}")
+}
+
+/// Convert a hex string to an address
+pub fn address_from_hex_string(hex: &str) -> Result<Address, String> {
+    Address::from_str(hex).map_err(|e| format!("error deserializing address from hex string: {e}"))
 }
 
 /// From a BigUint, get a lowercase hex string with a 0x prefix, padded to the
@@ -161,17 +174,16 @@ mod tests {
     }
 
     #[test]
-    fn test_addr_serialize_deserialize() {
-        // Generate a random address as a BigUint
+    fn test_address_serialize_deserialize() {
+        // Build a random address
         let mut rng = thread_rng();
-        // Use the inlined constant for address byte length
-        let mut addr_bytes = [0_u8; Address::len_bytes()];
-        rng.fill_bytes(&mut addr_bytes);
-        let addr_biguint = BigUint::from_bytes_be(&addr_bytes);
+        let mut bytes = [0_u8; 20];
+        rng.fill_bytes(&mut bytes);
+        let addr = Address::from(bytes);
 
-        let addr_hex = biguint_to_hex_addr(&addr_biguint);
-        let addr_biguint_rec = biguint_from_hex_string(&addr_hex).unwrap();
-
-        assert_eq!(addr_biguint, addr_biguint_rec)
+        // Serialize and deserialize
+        let hex = address_to_hex_string(&addr);
+        let addr_rec = address_from_hex_string(&hex).unwrap();
+        assert_eq!(addr, addr_rec);
     }
 }
