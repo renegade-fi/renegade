@@ -3,9 +3,9 @@
 
 use std::sync::Arc;
 
-use types_gossip::ClusterId;
-use job_types::task_driver::TaskDriverQueue;
+use job_types::{event_manager::EventManagerQueue, task_driver::TaskDriverQueue};
 use system_bus::SystemBus;
+use types_gossip::ClusterId;
 
 use crate::state_transition::StateTransition;
 use crate::storage::db::DB;
@@ -43,14 +43,14 @@ pub struct StateApplicatorConfig {
     // TODO: Add back these fields when their implementations are added
     // /// The handshake manager's work queue
     // pub handshake_manager_queue: HandshakeManagerQueue,
-    // /// The event manager's work queue
-    // pub event_queue: EventManagerQueue,
+    /// The event manager's work queue
+    pub event_queue: EventManagerQueue,
     // /// The order book cache
     // pub order_cache: Arc<OrderBookCache>,
     /// A handle to the database underlying the storage layer
     pub db: Arc<DB>,
-    // /// A handle to the system bus used for internal pubsub
-    // pub system_bus: SystemBus<SystemBusMessage>,
+    /// A handle to the system bus used for internal pubsub
+    pub system_bus: SystemBus,
 }
 
 /// The applicator applies state updates to the global state and persists them
@@ -102,10 +102,10 @@ impl StateApplicator {
         &self.config.db
     }
 
-    // /// Get a reference to the system bus
-    // fn system_bus(&self) -> &SystemBus<SystemBusMessage> {
-    //     &self.config.system_bus
-    // }
+    /// Get a reference to the system bus
+    fn system_bus(&self) -> &SystemBus {
+        &self.config.system_bus
+    }
 
     // /// Get a reference to the order cache
     // pub(crate) fn order_cache(&self) -> &OrderBookCache {
@@ -118,13 +118,14 @@ impl StateApplicator {
 pub mod test_helpers {
     use std::{mem, str::FromStr, sync::Arc};
 
-    use common::types::gossip::ClusterId;
     use job_types::{
         // event_manager::new_event_manager_queue,
         // handshake_manager::new_handshake_manager_queue,
+        event_manager::new_event_manager_queue,
         task_driver::{TaskDriverQueue, new_task_driver_queue},
     };
     use system_bus::SystemBus;
+    use types_gossip::ClusterId;
 
     use crate::test_helpers::mock_db;
 
@@ -143,8 +144,8 @@ pub mod test_helpers {
         // let (handshake_manager_queue, _recv) = new_handshake_manager_queue();
         // mem::forget(_recv);
 
-        // let (event_queue, _recv) = new_event_manager_queue();
-        // mem::forget(_recv);
+        let (event_queue, _recv) = new_event_manager_queue();
+        mem::forget(_recv);
 
         let config = StateApplicatorConfig {
             allow_local: true,
@@ -152,8 +153,8 @@ pub mod test_helpers {
             // order_cache: Arc::new(OrderBookCache::new()),
             db: Arc::new(mock_db()),
             // handshake_manager_queue,
-            // event_queue,
-            // system_bus: SystemBus::new(),
+            event_queue,
+            system_bus: SystemBus::new(),
             cluster_id: ClusterId::from_str("test-cluster").unwrap(),
         };
 

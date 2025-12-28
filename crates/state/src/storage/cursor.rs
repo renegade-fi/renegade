@@ -25,7 +25,10 @@ pub struct DbCursor<'txn, Tx: TransactionKind, K: Key, V: Value> {
     /// Note however that the filter does not affect the position of the cursor,
     /// so while methods like `next` and `prev` will skip over keys that do not
     /// pass the filter, the cursor will still be positioned at those keys
-    key_filter: Option<fn(&K::Archived) -> bool>,
+    ///
+    /// This is a boxed closure to allow capturing borrowed data (e.g. a prefix)
+    #[allow(clippy::type_complexity)]
+    key_filter: Option<Box<dyn Fn(&K::Archived) -> bool + 'txn>>,
     /// A phantom data field to hold the deserialized type of
     /// the table
     _phantom: PhantomData<(K, V)>,
@@ -46,9 +49,10 @@ impl<'txn, Tx: TransactionKind, K: Key, V: Value> DbCursor<'txn, Tx, K, V> {
 
     /// Set a filter on the keys
     ///
-    /// Consumes the cursor to provide a builder-like pattern
-    pub fn with_key_filter(mut self, filter: fn(&K::Archived) -> bool) -> Self {
-        self.key_filter = Some(filter);
+    /// Consumes the cursor to provide a builder-like pattern.
+    /// Accepts any closure, including those that capture borrowed data.
+    pub fn with_key_filter(mut self, filter: impl Fn(&K::Archived) -> bool + 'txn) -> Self {
+        self.key_filter = Some(Box::new(filter));
         self
     }
 
@@ -141,7 +145,7 @@ impl<'txn, Tx: TransactionKind, K: Key, V: Value> DbCursor<'txn, Tx, K, V> {
         // Validate the key
         let k_bytes = k.rkyv_serialize()?;
         let k_archived = K::rkyv_access_validated(&k_bytes)?;
-        if let Some(filter) = self.key_filter
+        if let Some(ref filter) = self.key_filter
             && !filter(k_archived)
         {
             return Err(StorageError::InvalidKey(format!(
@@ -211,7 +215,7 @@ impl<'txn, Tx: TransactionKind, K: Key, V: Value> DbCursor<'txn, Tx, K, V> {
 
         // Deserialize and filter the key
         let key = unsafe { K::rkyv_access(&k_buf) };
-        if let Some(filter) = self.key_filter
+        if let Some(ref filter) = self.key_filter
             && !filter(key)
         {
             return Ok(None);
@@ -410,16 +414,18 @@ mod test {
 
         // Read the first key, it should be `Some`
         let tx = db.new_raw_write_tx().unwrap();
-        let mut cursor = tx.cursor::<String, String>(TEST_TABLE).unwrap();
-        cursor.seek_first().unwrap();
-        let first = cursor.get_current().unwrap();
-        assert_eq!(first.unwrap(), (k1, v1));
+        {
+            let mut cursor = tx.cursor::<String, String>(TEST_TABLE).unwrap();
+            cursor.seek_first().unwrap();
+            let first = cursor.get_current().unwrap();
+            assert_eq!(first.unwrap(), (k1, v1));
 
-        // Delete the key
-        cursor.delete().unwrap();
-        let (k, v) = cursor.get_current().unwrap().unwrap();
-        assert_eq!(k, k2);
-        assert_eq!(v, v2);
+            // Delete the key
+            cursor.delete().unwrap();
+            let (k, v) = cursor.get_current().unwrap().unwrap();
+            assert_eq!(k, k2);
+            assert_eq!(v, v2);
+        }
         tx.commit().unwrap();
 
         // Start a new transaction
@@ -582,14 +588,15 @@ mod test {
         let seek_key: ByteKey = (seek_ind as u64).to_be_bytes();
 
         let tx = db.new_raw_read_tx().unwrap();
-        let mut cursor = tx.cursor::<ByteKey, usize>(TEST_TABLE).unwrap();
-        cursor.seek_geq(&seek_key).unwrap();
-        let (k_bytes, v) = cursor.get_current().unwrap().unwrap();
-        let k = u64::from_be_bytes(k_bytes) as usize;
+        {
+            let mut cursor = tx.cursor::<ByteKey, usize>(TEST_TABLE).unwrap();
+            cursor.seek_geq(&seek_key).unwrap();
+            let (k_bytes, v) = cursor.get_current().unwrap().unwrap();
+            let k = u64::from_be_bytes(k_bytes) as usize;
 
-        assert_eq!(k, seek_ind);
-        assert_eq!(v, seek_ind);
-
+            assert_eq!(k, seek_ind);
+            assert_eq!(v, seek_ind);
+        }
         tx.commit().unwrap();
 
         // Now try seeking to a key that doesn't exist

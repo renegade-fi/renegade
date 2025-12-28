@@ -1,20 +1,16 @@
 //! Task queue state transition applicator methods
 
-use types_gossip::WrappedPeerId;
-use types_tasks::{HistoricalTask, QueuedTask, QueuedTaskState, TaskIdentifier, TaskQueueKey};
-use types_wallet::wallet::WalletIdentifier;
-use external_api::{
-    http::task::ApiTaskStatus,
-    types::ApiHistoricalTask,
-};
-use system_bus::{SystemBusMessage, task_history_topic, task_topic};
+use external_api::{http::task::ApiTaskStatus, types::ApiHistoricalTask};
 use job_types::{
-    event_manager::{RelayerEventType, TaskCompletionEvent, try_send_event},
+    event_manager::{RelayerEventType, TaskCompletionEvent},
     handshake_manager::HandshakeManagerJob,
     task_driver::TaskDriverJob,
 };
 use libmdbx::{RW, TransactionKind};
+use system_bus::{SystemBusMessage, task_history_topic, task_topic};
 use tracing::{error, info, instrument, warn};
+use types_gossip::WrappedPeerId;
+use types_tasks::{HistoricalTask, QueuedTask, QueuedTaskState, TaskIdentifier, TaskQueueKey};
 use util::err_str;
 
 use crate::storage::tx::StateTxn;
@@ -376,7 +372,7 @@ impl StateApplicator {
                 let my_peer_id = tx.get_peer_id()?;
                 if my_peer_id == executor {
                     let event = RelayerEventType::TaskCompletion(TaskCompletionEvent::new(*key, t));
-                    if let Err(e) = try_send_event(event, &self.config.event_queue) {
+                    if let Err(e) = self.config.event_queue.send(event) {
                         error!("error sending task completion event: {e}");
                     }
                 }
@@ -431,14 +427,10 @@ impl StateApplicator {
 
 #[cfg(test)]
 mod test {
-    use common::types::{
-        gossip::{WrappedPeerId, mocks::mock_peer},
-        tasks::{QueuedTaskState, TaskIdentifier, TaskQueueKey, mocks::mock_queued_task},
-        wallet::WalletIdentifier,
-        wallet_mocks::mock_empty_wallet,
-    };
     use eyre::Result;
     use job_types::task_driver::{TaskDriverJob, TaskDriverReceiver, new_task_driver_queue};
+    use types_gossip::{WrappedPeerId, mocks::mock_peer};
+    use types_tasks::{QueuedTaskState, TaskIdentifier, TaskQueueKey, mocks::mock_queued_task};
     use util::channels::TracedMessage;
 
     use crate::{
@@ -527,7 +519,8 @@ mod test {
 
         // Check the task was added to the queue
         let tx = applicator.db().new_read_tx()?;
-        let queue = tx.get_task_queue(&task_queue_key)?
+        let queue = tx
+            .get_task_queue(&task_queue_key)?
             .ok_or_else(|| StateApplicatorError::reject("queue not found"))?
             .deserialize()?;
         let task_retrieved = tx.get_task(&task_id)?.unwrap();
@@ -558,7 +551,8 @@ mod test {
 
         // Check the task was not started
         let tx = applicator.db().new_read_tx()?;
-        let queue = tx.get_task_queue(&task_queue_key)?
+        let queue = tx
+            .get_task_queue(&task_queue_key)?
             .ok_or_else(|| StateApplicatorError::reject("queue not found"))?
             .deserialize()?;
         let expected_queue = TaskQueue { serial_tasks: vec![task.id], ..Default::default() };
@@ -583,7 +577,8 @@ mod test {
 
         // Ensure that the second task is in the db's queue, not marked as running
         let tx = applicator.db().new_read_tx()?;
-        let queue = tx.get_task_queue(&task_queue_key)?
+        let queue = tx
+            .get_task_queue(&task_queue_key)?
             .ok_or_else(|| StateApplicatorError::reject("queue not found"))?
             .deserialize()?;
         let task2_retrieved = tx.get_task(&task2.id)?.unwrap();
@@ -614,7 +609,8 @@ mod test {
 
         // Ensure the task was removed from the queue
         let tx = applicator.db().new_read_tx()?;
-        let queue = tx.get_task_queue(&wallet_id)?
+        let queue = tx
+            .get_task_queue(&wallet_id)?
             .map(|q| q.deserialize())
             .transpose()?
             .unwrap_or_default();
@@ -869,7 +865,8 @@ mod test {
 
         // Check the task queue
         let tx = applicator.db().new_read_tx()?;
-        let task_queue = tx.get_task_queue(&task_queue_key)?
+        let task_queue = tx
+            .get_task_queue(&task_queue_key)?
             .map(|q| q.deserialize())
             .transpose()?
             .unwrap_or_default();
@@ -904,7 +901,8 @@ mod test {
 
         // Ensure the task queue has updated
         let tx = applicator.db().new_read_tx()?;
-        let task_queue = tx.get_task_queue(&task_queue_key)?
+        let task_queue = tx
+            .get_task_queue(&task_queue_key)?
             .ok_or_else(|| StateApplicatorError::reject("queue not found"))?
             .deserialize()?;
         let expected_queue = TaskQueue {
@@ -949,7 +947,8 @@ mod test {
 
         // Check that the queue has been updated correctly
         let tx = applicator.db().new_read_tx()?;
-        let task_queue = tx.get_task_queue(&task_queue_key)?
+        let task_queue = tx
+            .get_task_queue(&task_queue_key)?
             .ok_or_else(|| StateApplicatorError::reject("queue not found"))?
             .deserialize()?;
         let expected_queue = TaskQueue {
@@ -1075,10 +1074,12 @@ mod test {
 
         // Check that the queues have been updated correctly
         let tx = applicator.db().new_read_tx()?;
-        let task_queue1 = tx.get_task_queue(&queue_key1)?
+        let task_queue1 = tx
+            .get_task_queue(&queue_key1)?
             .ok_or_else(|| StateApplicatorError::reject("queue not found"))?
             .deserialize()?;
-        let task_queue2 = tx.get_task_queue(&queue_key2)?
+        let task_queue2 = tx
+            .get_task_queue(&queue_key2)?
             .ok_or_else(|| StateApplicatorError::reject("queue not found"))?
             .deserialize()?;
         tx.commit()?;

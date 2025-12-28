@@ -7417,6 +7417,7 @@ dependencies = [
  "libp2p",
  "libp2p-identity",
  "rand_core 0.5.1",
+ "rkyv",
  "serde",
  "serde_json",
  "util",
