@@ -1,6 +1,6 @@
 //! Setup logic for the node
 
-use common::types::tasks::{NodeStartupTaskDescriptor, QueuedTask, TaskDescriptor};
+use types_tasks::{NodeStartupTaskDescriptor, QueuedTask, TaskDescriptor};
 use config::RelayerConfig;
 use job_types::task_driver::{TaskDriverJob, TaskDriverQueue};
 use util::err_str;

@@ -1,6 +1,6 @@
 //! Storage access methods for order metadata
 
-use common::types::wallet::{OrderIdentifier, WalletIdentifier, order_metadata::OrderMetadata};
+use types_wallet::wallet::{IntentIdentifier, WalletIdentifier, order_metadata::OrderMetadata};
 use libmdbx::{RW, TransactionKind};
 
 use crate::{ORDER_HISTORY_TABLE, storage::error::StorageError};
@@ -27,7 +27,7 @@ impl<T: TransactionKind> StateTxn<'_, T> {
     pub fn get_order_metadata(
         &self,
         wallet_id: WalletIdentifier,
-        order_id: OrderIdentifier,
+        order_id: IntentIdentifier,
     ) -> Result<Option<OrderMetadata>, StorageError> {
         let orders = self.get_order_history(&wallet_id)?;
         Ok(orders.iter().find(|o| o.id == order_id).cloned())
@@ -103,7 +103,7 @@ impl StateTxn<'_, RW> {
     pub fn remove_order_from_history(
         &self,
         wallet_id: &WalletIdentifier,
-        order_id: &OrderIdentifier,
+        order_id: &IntentIdentifier,
     ) -> Result<(), StorageError> {
         let mut orders = self.get_order_history(wallet_id)?;
         let index = orders.iter().position(|o| &o.id == order_id);

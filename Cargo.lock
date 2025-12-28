@@ -1237,6 +1237,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
+name = "atomic_float"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "628d228f918ac3b82fe590352cc719d30664a0c13ca3a60266fe02c7132d480a"
+
+[[package]]
 name = "auto_impl"
 version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1905,50 +1911,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "common"
-version = "0.1.0"
-dependencies = [
- "alloy",
- "ark-ec",
- "ark-mpc",
- "ark-poly",
- "async-trait",
- "base64 0.22.1",
- "bimap",
- "circuit-types",
- "circuits-core",
- "constants",
- "crossbeam",
- "crypto",
- "derivative",
- "ecdsa",
- "ed25519-dalek 1.0.1",
- "hmac",
- "indexmap 2.12.0",
- "itertools 0.10.5",
- "jf-primitives",
- "k256",
- "lazy_static",
- "libp2p",
- "libp2p-identity",
- "metrics",
- "mpc-plonk",
- "mpc-relation",
- "num-bigint",
- "num-traits",
- "rand 0.8.5",
- "rand_core 0.5.1",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "signature 2.2.0",
- "tokio",
- "tracing",
- "util",
- "uuid",
-]
-
-[[package]]
 name = "config"
 version = "0.1.0"
 dependencies = [
@@ -1958,7 +1920,6 @@ dependencies = [
  "circuit-types",
  "clap",
  "colored",
- "common",
  "constants",
  "darkpool-client",
  "ed25519-dalek 1.0.1",
@@ -1972,6 +1933,8 @@ dependencies = [
  "tempfile",
  "toml",
  "tracing",
+ "types-core",
+ "types-gossip",
  "url",
  "util",
 ]
@@ -2386,7 +2349,6 @@ dependencies = [
  "circuits-core",
  "clap",
  "colored",
- "common",
  "constants",
  "crypto",
  "eyre",
@@ -2404,6 +2366,8 @@ dependencies = [
  "test-helpers",
  "tokio",
  "tracing",
+ "types-core",
+ "types-wallet",
  "util",
 ]
 
@@ -2820,6 +2784,28 @@ version = "0.4.0"
 source = "git+https://github.com/espressosystems/espresso-systems-common?tag=0.4.0#5abd890f79014a86db31286e1f3a529f161e69de"
 
 [[package]]
+name = "event-manager"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "circuit-types",
+ "constants",
+ "futures",
+ "job-types",
+ "metrics",
+ "renegade-metrics",
+ "serde_json",
+ "thiserror 2.0.17",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "types-core",
+ "types-runtime",
+ "url",
+ "util",
+]
+
+[[package]]
 name = "eyre"
 version = "0.6.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3139,7 +3125,6 @@ version = "0.1.0"
 dependencies = [
  "bincode",
  "circuit-types",
- "common",
  "hmac",
  "libp2p",
  "openraft",
@@ -3147,6 +3132,9 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "tracing",
+ "types-core",
+ "types-gossip",
+ "types-wallet",
  "util",
  "uuid",
 ]
@@ -3894,6 +3882,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "job-types"
+version = "0.1.0"
+dependencies = [
+ "ark-mpc",
+ "circuit-types",
+ "circuits-core",
+ "constants",
+ "crossbeam",
+ "darkpool-types",
+ "gossip-api",
+ "lazy_static",
+ "libp2p",
+ "libp2p-core",
+ "metrics",
+ "serde",
+ "system-bus",
+ "tokio",
+ "types-core",
+ "types-gossip",
+ "types-tasks",
+ "types-wallet",
+ "util",
+ "uuid",
+]
+
+[[package]]
 name = "js-sys"
 version = "0.3.82"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4035,6 +4049,7 @@ dependencies = [
  "libp2p-connection-limits",
  "libp2p-core",
  "libp2p-identity",
+ "libp2p-request-response",
  "libp2p-swarm",
  "multiaddr",
  "pin-project",
@@ -4108,6 +4123,22 @@ dependencies = [
  "sha2 0.10.9",
  "thiserror 1.0.69",
  "zeroize",
+]
+
+[[package]]
+name = "libp2p-request-response"
+version = "0.24.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7ffdb374267d42dc5ed5bc53f6e601d4a64ac5964779c6e40bb9e4f14c1e30d5"
+dependencies = [
+ "async-trait",
+ "futures",
+ "instant",
+ "libp2p-core",
+ "libp2p-identity",
+ "libp2p-swarm",
+ "rand 0.8.5",
+ "smallvec",
 ]
 
 [[package]]
@@ -5677,6 +5708,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "renegade-metrics"
+version = "0.1.0"
+dependencies = [
+ "atomic_float",
+ "lazy_static",
+ "metrics",
+ "num-bigint",
+ "tracing",
+ "util",
+]
+
+[[package]]
 name = "reqwest"
 version = "0.12.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6502,7 +6545,6 @@ dependencies = [
  "async-trait",
  "bincode",
  "ciborium",
- "common",
  "config",
  "constants",
  "criterion",
@@ -6514,6 +6556,7 @@ dependencies = [
  "fxhash",
  "gossip-api",
  "itertools 0.10.5",
+ "job-types",
  "lazy_static",
  "libmdbx",
  "libp2p",
@@ -6539,7 +6582,11 @@ dependencies = [
  "tracing-slog",
  "tui",
  "tui-logger",
+ "types-core",
+ "types-gossip",
+ "types-runtime",
  "types-tasks",
+ "types-wallet",
  "util",
  "uuid",
 ]
@@ -6660,11 +6707,18 @@ name = "system-bus"
 version = "0.1.0"
 dependencies = [
  "bus",
- "common",
+ "circuit-types",
+ "darkpool-types",
  "futures",
  "rand 0.8.5",
  "serde",
  "tokio",
+ "types-core",
+ "types-gossip",
+ "types-runtime",
+ "types-tasks",
+ "types-wallet",
+ "uuid",
 ]
 
 [[package]]
@@ -6753,7 +6807,6 @@ dependencies = [
  "ark-mpc",
  "async-trait",
  "circuit-types",
- "common",
  "constants",
  "crypto",
  "darkpool-client",
@@ -6768,6 +6821,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "tracing",
+ "types-runtime",
  "util",
 ]
 
@@ -7352,6 +7406,29 @@ version = "0.1.0"
 dependencies = [
  "rkyv",
  "serde",
+ "types-core",
+ "util",
+ "uuid",
+]
+
+[[package]]
+name = "types-wallet"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "circuit-types",
+ "circuits-core",
+ "constants",
+ "crypto",
+ "derivative",
+ "itertools 0.10.5",
+ "k256",
+ "lazy_static",
+ "num-bigint",
+ "num-traits",
+ "rand 0.8.5",
+ "serde",
+ "signature 2.2.0",
  "types-core",
  "util",
  "uuid",

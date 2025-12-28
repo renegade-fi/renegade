@@ -2,10 +2,8 @@
 
 use std::time::Duration;
 
-use common::types::{
-    tasks::{HistoricalTaskDescription, WalletUpdateType},
-    wallet::{Wallet, WalletIdentifier},
-};
+use types_tasks::{HistoricalTaskDescription, WalletUpdateType};
+use types_wallet::wallet::{Wallet, WalletIdentifier};
 use state::State;
 
 use crate::sampler::AsyncMetricSampler;

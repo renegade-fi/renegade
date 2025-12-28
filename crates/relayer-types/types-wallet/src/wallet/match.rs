@@ -3,14 +3,14 @@
 use circuit_types::{r#match::MatchResult, native_helpers::create_wallet_shares_from_private};
 use util::matching_engine::compute_fee_obligation;
 
-use super::{OrderIdentifier, Wallet};
+use super::{IntentIdentifier, Wallet};
 
 impl Wallet {
     /// Settle a match on the given order into the wallet
     pub fn apply_match(
         &mut self,
         match_res: &MatchResult,
-        order_id: &OrderIdentifier,
+        order_id: &IntentIdentifier,
     ) -> Result<(), String> {
         // Subtract the matched volume from the order
         let match_fee = self.max_match_fee;

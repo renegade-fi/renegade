@@ -1,6 +1,7 @@
 //! Integration tests for the `LookupWalletTask`
 
-use common::types::{tasks::LookupWalletTaskDescriptor, wallet_mocks::mock_empty_wallet};
+use types_tasks::LookupWalletTaskDescriptor;
+use types_wallet::wallet::mocks::mock_empty_wallet;
 use constants::Scalar;
 use eyre::Result;
 use rand::{distributions::uniform::SampleRange, thread_rng};

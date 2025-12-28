@@ -4,9 +4,8 @@ use std::thread::{Builder, JoinHandle};
 
 use async_trait::async_trait;
 use circuit_types::Amount;
-use common::types::CancelChannel;
-use common::worker::Worker;
-use external_api::bus_message::SystemBusMessage;
+use types_runtime::{CancelChannel, worker::Worker};
+use system_bus::SystemBusMessage;
 use job_types::{
     handshake_manager::{HandshakeManagerQueue, HandshakeManagerReceiver},
     network_manager::NetworkManagerQueue,

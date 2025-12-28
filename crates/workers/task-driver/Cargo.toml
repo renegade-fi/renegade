@@ -5,7 +5,8 @@ edition = "2024"
 
 [features]
 integration = [
-    "common/mocks",
+    "types-wallet/mocks",
+    "types-tasks/mocks",
     "darkpool-client/integration",
     "state/mocks",
     "test-helpers/arbitrum",
@@ -36,7 +37,11 @@ alloy = { workspace = true }
 darkpool-client = { workspace = true }
 circuits-core = { workspace = true }
 circuit-types = { workspace = true }
-common = { workspace = true }
+types-core = { workspace = true }
+types-gossip = { workspace = true }
+types-tasks = { workspace = true }
+types-wallet = { workspace = true }
+types-runtime = { workspace = true }
 constants = { workspace = true }
 external-api = { workspace = true }
 gossip-api = { workspace = true }

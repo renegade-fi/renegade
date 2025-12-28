@@ -1,15 +1,13 @@
 //! Types for request response about order book info
 
-use common::types::{
-    network_order::NetworkOrder, proof_bundles::OrderValidityProofBundle, wallet::OrderIdentifier,
-};
 use serde::{Deserialize, Serialize};
+use types_wallet::wallet::IntentIdentifier;
 
 /// The message type used to request order information from a peer
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct OrderInfoRequest {
     /// The IDs of the orders
-    pub order_ids: Vec<OrderIdentifier>,
+    pub order_ids: Vec<IntentIdentifier>,
 }
 
 /// The message type used to response with order information to a peer

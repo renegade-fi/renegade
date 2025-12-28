@@ -2,7 +2,7 @@
 
 use std::time::{Duration, Instant};
 
-use common::types::gossip::WrappedPeerId;
+use types_gossip::WrappedPeerId;
 use gossip_api::{
     GossipDestination,
     request_response::{

@@ -10,7 +10,7 @@ mod state;
 pub mod util;
 pub use state::*;
 
-use common::types::{exchange::Exchange, token::Token};
+use types_core::{exchange::Exchange, token::Token};
 
 /// A type alias for a stream tuple
 pub type StreamTuple = (Exchange, Token, Token);

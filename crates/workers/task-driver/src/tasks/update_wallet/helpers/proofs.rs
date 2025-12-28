@@ -5,9 +5,9 @@ use circuit_types::transfers::{ExternalTransfer, ExternalTransferDirection};
 use circuits_core::zk_circuits::valid_wallet_update::{
     SizedValidWalletUpdateStatement, SizedValidWalletUpdateWitness,
 };
-use common::types::{
-    proof_bundles::ValidWalletUpdateBundle, tasks::WalletUpdateType, wallet::Wallet,
-};
+use common::types::proof_bundles::ValidWalletUpdateBundle;
+use types_tasks::WalletUpdateType;
+use types_wallet::wallet::Wallet;
 
 /// The wallet does not have a known Merkle proof attached
 const ERR_NO_MERKLE_PROOF: &str = "merkle proof for wallet not found";

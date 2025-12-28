@@ -7,15 +7,12 @@
 
 use std::{str::FromStr, time::Duration};
 
-use common::{
-    default_wrapper::DefaultOption,
-    types::{CancelChannel, exchange::Exchange, price::Price, token::Token},
-};
+use util::default_wrapper::DefaultOption;
+use types_runtime::CancelChannel;
+use types_core::{exchange::Exchange, price::Price, token::Token};
 use constants::in_bootstrap_mode;
-use external_api::{
-    bus_message::{SystemBusMessage, price_report_topic},
-    websocket::WebsocketMessage,
-};
+use external_api::websocket::WebsocketMessage;
+use system_bus::{SystemBusMessage, price_report_topic};
 use futures::{
     SinkExt, StreamExt,
     stream::{SplitSink, SplitStream},

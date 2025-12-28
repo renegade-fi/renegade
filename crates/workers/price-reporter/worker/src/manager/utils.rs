@@ -2,7 +2,7 @@
 
 use std::collections::HashSet;
 
-use common::types::{
+use types_core::{
     exchange::Exchange,
     token::{Token, default_exchange_stable, get_all_base_tokens},
 };

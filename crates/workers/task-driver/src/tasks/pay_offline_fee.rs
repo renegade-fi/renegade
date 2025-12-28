@@ -13,9 +13,9 @@ use circuit_types::{native_helpers::encrypt_note, note::Note};
 use circuits_core::zk_circuits::valid_offline_fee_settlement::{
     SizedValidOfflineFeeSettlementStatement, SizedValidOfflineFeeSettlementWitness,
 };
-use common::types::{
-    proof_bundles::OfflineFeeSettlementBundle, tasks::PayOfflineFeeTaskDescriptor, wallet::Wallet,
-};
+use common::types::proof_bundles::OfflineFeeSettlementBundle;
+use types_tasks::PayOfflineFeeTaskDescriptor;
+use types_wallet::wallet::Wallet;
 use darkpool_client::errors::DarkpoolClientError;
 use job_types::proof_manager::ProofJob;
 use num_bigint::BigUint;

@@ -1,12 +1,10 @@
 //! Groups API type definitions for wallet API operations
 
 use circuit_types::{balance::Balance, elgamal::DecryptionKey, note::Note};
-use common::types::{
-    tasks::TaskIdentifier,
-    wallet::{WalletIdentifier, order_metadata::OrderMetadata},
-};
 use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
+use types_tasks::TaskIdentifier;
+use types_wallet::wallet::{order_metadata::OrderMetadata, WalletIdentifier};
 use uuid::Uuid;
 
 use crate::types::{ApiOrder, ApiPrivateKeychain, ApiWallet};

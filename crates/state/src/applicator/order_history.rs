@@ -3,9 +3,9 @@
 use crate::storage::tx::StateTxn;
 
 use super::{StateApplicator, error::StateApplicatorError, return_type::ApplicatorReturnType};
-use common::types::wallet::order_metadata::OrderMetadata;
-use external_api::bus_message::{SystemBusMessage, wallet_order_history_topic};
+use types_wallet::wallet::order_metadata::OrderMetadata;
 use libmdbx::RW;
+use system_bus::{SystemBusMessage, wallet_order_history_topic};
 
 /// Error emitted when a wallet cannot be found for an order
 const ERR_MISSING_WALLET: &str = "wallet not found";

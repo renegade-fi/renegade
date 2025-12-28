@@ -1,7 +1,7 @@
 //! Groups API types for order book API operations
 
-use common::types::price::Price;
 use serde::{Deserialize, Serialize};
+use types_core::price::Price;
 
 use crate::{
     f64_string_serde,

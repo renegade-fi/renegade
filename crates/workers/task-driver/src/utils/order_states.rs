@@ -1,10 +1,8 @@
 //! Helpers for transitioning order states and recording them in order history
 
 use circuit_types::r#match::MatchResult;
-use common::types::{
-    price::TimestampedPrice,
-    wallet::{OrderIdentifier, order_metadata::OrderState},
-};
+use types_core::price::TimestampedPrice;
+use types_wallet::wallet::{IntentIdentifier, order_metadata::OrderState};
 use state::State;
 
 /// The error message emitted when metadata for an order cannot be found
@@ -12,7 +10,7 @@ const ERR_NO_ORDER_METADATA: &str = "order metadata not found";
 
 /// Update an order's state to `SettlingMatch`
 pub async fn transition_order_settling(
-    order_id: OrderIdentifier,
+    order_id: IntentIdentifier,
     state: &State,
 ) -> Result<(), String> {
     let mut metadata =
@@ -25,7 +23,7 @@ pub async fn transition_order_settling(
 
 /// Record the result of a match in the order's metadata
 pub async fn record_order_fill(
-    order_id: OrderIdentifier,
+    order_id: IntentIdentifier,
     match_res: &MatchResult,
     price: TimestampedPrice,
     state: &State,

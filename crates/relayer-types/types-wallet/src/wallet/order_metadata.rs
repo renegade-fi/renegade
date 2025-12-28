@@ -8,7 +8,7 @@ use util::get_current_time_millis;
 
 use types_core::TimestampedPrice;
 
-use super::{Order, OrderIdentifier};
+use super::{Order, IntentIdentifier};
 
 /// The maximum number of recent fills to retain for an order
 const MAX_RECENT_FILLS: usize = 2; // 1 aggregate + 1 most-recent fill kept
@@ -40,7 +40,7 @@ impl OrderState {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct OrderMetadata {
     /// The order ID
-    pub id: OrderIdentifier,
+    pub id: IntentIdentifier,
     /// The data of the order
     pub data: Order,
     /// The order state
@@ -53,7 +53,7 @@ pub struct OrderMetadata {
 
 impl OrderMetadata {
     /// Create a new order metadata instance, defaults to `Created` state
-    pub fn new(id: OrderIdentifier, order: Order) -> Self {
+    pub fn new(id: IntentIdentifier, order: Order) -> Self {
         let created = get_current_time_millis();
         Self { id, data: order, state: OrderState::Created, fills: vec![], created }
     }

@@ -1,8 +1,8 @@
 //! The request/response API types for the gossip protocol
 
-use common::types::hmac::HmacKey;
 use serde::{Deserialize, Serialize};
 use tracing::instrument;
+use types_core::HmacKey;
 use util::telemetry::propagation::{TraceContext, trace_context};
 
 use crate::{GossipDestination, check_hmac, create_hmac};
@@ -10,12 +10,12 @@ use crate::{GossipDestination, check_hmac, create_hmac};
 use self::{
     handshake::HandshakeMessage,
     heartbeat::{BootstrapRequest, HeartbeatMessage, PeerInfoRequest, PeerInfoResponse},
-    orderbook::{OrderInfoRequest, OrderInfoResponse},
+    // orderbook::{OrderInfoRequest, OrderInfoResponse},
 };
 
 pub mod handshake;
 pub mod heartbeat;
-pub mod orderbook;
+// pub mod orderbook;
 
 // -----------------
 // | Request Types |
@@ -108,10 +108,9 @@ pub enum GossipRequestType {
     /// buffer here to avoid pulling in `state` dependencies to the `gossip-api`
     /// package
     Raft(Vec<u8>),
-
-    // --- Order Book --- //
-    /// A request for order information from a peer
-    OrderInfo(OrderInfoRequest),
+    // // --- Order Book --- //
+    // /// A request for order information from a peer
+    // OrderInfo(OrderInfoRequest),
 }
 
 impl GossipRequest {
@@ -128,7 +127,7 @@ impl GossipRequest {
             GossipRequestType::Heartbeat(..) => false,
             GossipRequestType::PeerInfo(..) => false,
             GossipRequestType::Handshake { .. } => false,
-            GossipRequestType::OrderInfo(..) => false,
+            // GossipRequestType::OrderInfo(..) => false,
         }
     }
 
@@ -141,7 +140,7 @@ impl GossipRequest {
             GossipRequestType::Bootstrap(..) => GossipDestination::GossipServer,
             GossipRequestType::Heartbeat(..) => GossipDestination::GossipServer,
             GossipRequestType::PeerInfo(..) => GossipDestination::GossipServer,
-            GossipRequestType::OrderInfo(..) => GossipDestination::GossipServer,
+            // GossipRequestType::OrderInfo(..) => GossipDestination::GossipServer,
             GossipRequestType::Handshake { .. } => GossipDestination::HandshakeManager,
         }
     }
@@ -235,8 +234,8 @@ pub enum GossipResponseType {
     Handshake(HandshakeMessage),
     /// A response from a peer to a sender's request for peer info
     PeerInfo(PeerInfoResponse),
-    /// A response to a request for order information
-    OrderInfo(OrderInfoResponse),
+    // /// A response to a request for order information
+    // OrderInfo(OrderInfoResponse),
     /// A response to a raft message
     ///
     /// We (de)serialize at the raft networking layer and pass an opaque byte
@@ -255,7 +254,7 @@ impl GossipResponse {
             GossipResponseType::Ack => false,
             GossipResponseType::Heartbeat(..) => false,
             GossipResponseType::Handshake { .. } => false,
-            GossipResponseType::OrderInfo(..) => false,
+            // GossipResponseType::OrderInfo(..) => false,
             GossipResponseType::PeerInfo(..) => false,
             GossipResponseType::Raft(..) => true,
         }
@@ -267,7 +266,7 @@ impl GossipResponse {
             GossipResponseType::Ack => GossipDestination::NetworkManager,
             GossipResponseType::Heartbeat(..) => GossipDestination::GossipServer,
             GossipResponseType::PeerInfo(..) => GossipDestination::GossipServer,
-            GossipResponseType::OrderInfo(..) => GossipDestination::GossipServer,
+            // GossipResponseType::OrderInfo(..) => GossipDestination::GossipServer,
             GossipResponseType::Handshake { .. } => GossipDestination::HandshakeManager,
             GossipResponseType::Raft(..) => GossipDestination::NetworkManager,
         }

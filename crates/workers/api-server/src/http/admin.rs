@@ -8,13 +8,9 @@ use std::iter;
 
 use async_trait::async_trait;
 use circuit_types::{Amount, fixed_point::FixedPoint};
-use common::types::{
-    chain::Chain,
-    price::Price,
-    tasks::UpdateWalletTaskDescriptor,
-    token::{Token, get_all_tokens},
-    wallet::{Order, WalletIdentifier, order_metadata::OrderMetadata},
-};
+use types_core::{chain::Chain, price::Price, token::{Token, get_all_tokens}};
+use types_tasks::UpdateWalletTaskDescriptor;
+use types_wallet::wallet::{Order, WalletIdentifier, order_metadata::OrderMetadata};
 use config::setup_token_remaps;
 use constants::NATIVE_ASSET_ADDRESS;
 use darkpool_client::DarkpoolClient;

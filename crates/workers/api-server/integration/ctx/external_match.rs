@@ -1,6 +1,6 @@
 //! Helpers for interacting with the external match API
 
-use common::types::MatchingPoolName;
+use types_runtime::MatchingPoolName;
 use external_api::http::external_match::{
     ASSEMBLE_EXTERNAL_MATCH_ROUTE, AssembleExternalMatchRequest, ExternalMatchResponse,
     ExternalOrder, ExternalQuoteRequest, ExternalQuoteResponse, REQUEST_EXTERNAL_QUOTE_ROUTE,

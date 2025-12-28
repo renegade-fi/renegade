@@ -1,6 +1,7 @@
 //! API types for network info requests
-use common::types::{chain::Chain, gossip::PeerInfo as IndexedPeerInfo};
 use std::collections::HashMap;
+use types_core::chain::Chain;
+use types_gossip::PeerInfo as IndexedPeerInfo;
 
 use serde::{Deserialize, Serialize};
 

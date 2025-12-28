@@ -8,10 +8,10 @@ use circuit_types::{balance::Balance, elgamal::DecryptionKey, note::Note};
 use circuits_core::zk_circuits::valid_fee_redemption::{
     SizedValidFeeRedemptionStatement, SizedValidFeeRedemptionWitness,
 };
-use common::types::{
-    merkle::MerkleAuthenticationPath, proof_bundles::FeeRedemptionBundle,
-    tasks::RedeemFeeTaskDescriptor, wallet::Wallet,
-};
+use types_wallet::MerkleAuthenticationPath;
+use common::types::proof_bundles::FeeRedemptionBundle;
+use types_tasks::RedeemFeeTaskDescriptor;
+use types_wallet::wallet::Wallet;
 use darkpool_client::errors::DarkpoolClientError;
 use job_types::proof_manager::ProofJob;
 use serde::Serialize;

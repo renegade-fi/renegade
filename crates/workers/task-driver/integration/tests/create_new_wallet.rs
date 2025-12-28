@@ -1,6 +1,7 @@
 //! Integration tests for the `NewWalletTask`
 
-use common::types::{tasks::NewWalletTaskDescriptor, wallet_mocks::mock_empty_wallet};
+use types_tasks::NewWalletTaskDescriptor;
+use types_wallet::wallet::mocks::mock_empty_wallet;
 use eyre::Result;
 use test_helpers::integration_test_async;
 

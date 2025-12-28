@@ -1,10 +1,10 @@
 //! Implements the `Worker` trait for the GossipServer
 
 use async_trait::async_trait;
-use common::default_wrapper::DefaultWrapper;
-use common::types::CancelChannel;
-use common::types::gossip::{ClusterId, WrappedPeerId};
-use common::worker::Worker;
+use util::default_wrapper::DefaultWrapper;
+use types_runtime::CancelChannel;
+use types_gossip::{ClusterId, WrappedPeerId};
+use types_runtime::worker::Worker;
 use darkpool_client::DarkpoolClient;
 use futures::executor::block_on;
 use job_types::gossip_server::{GossipServerQueue, GossipServerReceiver};

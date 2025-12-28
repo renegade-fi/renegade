@@ -1,9 +1,6 @@
 //! Helpers for calculating and recording metrics
 
-use circuit_types::{r#match::MatchResult, transfers::ExternalTransferDirection};
-use common::types::{
-    token::Token, transfer_auth::ExternalTransferWithAuth, wallet::WalletIdentifier,
-};
+use types_core::{AccountId, token::Token};
 use num_bigint::BigUint;
 use util::hex::biguint_to_hex_addr;
 
@@ -51,30 +48,28 @@ fn record_volume_with_tags(
 
 /// If an external transfer is present, record the count and volume metrics for
 /// it
-pub fn maybe_record_transfer_metrics(transfer: &Option<ExternalTransferWithAuth>) {
-    if let Some(transfer) = transfer.as_ref() {
-        let (count_metric, volume_metric) = match transfer.external_transfer.direction {
-            ExternalTransferDirection::Deposit => (NUM_DEPOSITS_METRICS, DEPOSIT_VOLUME_METRIC),
-            ExternalTransferDirection::Withdrawal => {
-                (NUM_WITHDRAWALS_METRICS, WITHDRAWAL_VOLUME_METRIC)
-            },
-        };
-        metrics::counter!(count_metric).increment(1);
+pub fn maybe_record_transfer_metrics(transfer: &()) {
+    todo!("re-implement maybe_record_transfer_metrics")
+    // if let Some(transfer) = transfer.as_ref() {
+    //     let (count_metric, volume_metric) = match
+    // transfer.external_transfer.direction {
+    //         ExternalTransferDirection::Deposit => (NUM_DEPOSITS_METRICS,
+    // DEPOSIT_VOLUME_METRIC),         ExternalTransferDirection::Withdrawal
+    // => {             (NUM_WITHDRAWALS_METRICS, WITHDRAWAL_VOLUME_METRIC)
+    //         },
+    //     };
+    //     metrics::counter!(count_metric).increment(1);
 
-        record_volume(
-            &transfer.external_transfer.mint,
-            transfer.external_transfer.amount,
-            volume_metric,
-        );
-    }
+    //     record_volume(
+    //         &transfer.external_transfer.mint,
+    //         transfer.external_transfer.amount,
+    //         volume_metric,
+    //     );
+    // }
 }
 
 /// Record the volume of base/quote assets moved in a match
-pub fn record_match_volume(
-    res: &MatchResult,
-    is_external_match: bool,
-    wallet_ids: &[WalletIdentifier],
-) {
+pub fn record_match_volume(res: &(), is_external_match: bool, wallet_ids: &[AccountId]) {
     // Tag with wallet IDs if provided
     let mut labels: Vec<_> = wallet_ids
         .iter()

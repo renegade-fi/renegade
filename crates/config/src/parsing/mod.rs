@@ -5,9 +5,9 @@ use std::{env, str::FromStr};
 use alloy::signers::local::PrivateKeySigner;
 use circuit_types::fixed_point::FixedPoint;
 use clap::Parser;
-use common::types::gossip::{ClusterId, WrappedPeerId};
 use constants::set_bootstrap_mode;
 use libp2p::{Multiaddr, PeerId, identity::Keypair};
+use types_gossip::{ClusterId, WrappedPeerId};
 use util::hex::biguint_from_hex_string;
 
 use crate::{

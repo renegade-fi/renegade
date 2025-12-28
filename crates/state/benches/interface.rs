@@ -2,9 +2,8 @@
 #![allow(missing_docs, clippy::missing_docs_in_private_items)]
 use std::mem;
 
-use common::types::{
-    tasks::mocks::mock_task_descriptor, wallet::WalletIdentifier, wallet_mocks::mock_empty_wallet,
-};
+use types_tasks::mocks::mock_task_descriptor;
+use types_wallet::wallet::{WalletIdentifier, mocks::mock_empty_wallet};
 use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
 use job_types::task_driver::new_task_driver_queue;
 use state::{

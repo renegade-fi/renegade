@@ -14,14 +14,14 @@ use circuit_types::r#match::MatchResult;
 use circuits_core::zk_circuits::valid_match_settle_atomic::{
     SizedValidMatchSettleAtomicStatement, SizedValidMatchSettleAtomicWitness,
 };
-use common::types::price::TimestampedPriceFp;
+use types_core::price::TimestampedPriceFp;
 use common::types::proof_bundles::{
     OrderValidityProofBundle, OrderValidityWitnessBundle, ValidMatchSettleAtomicBundle,
 };
-use common::types::tasks::SettleExternalMatchTaskDescriptor;
-use common::types::wallet::{OrderIdentifier, WalletIdentifier};
+use types_tasks::SettleExternalMatchTaskDescriptor;
+use types_wallet::wallet::{IntentIdentifier, WalletIdentifier};
 use darkpool_client::errors::DarkpoolClientError;
-use external_api::bus_message::SystemBusMessage;
+use system_bus::SystemBusMessage;
 use job_types::proof_manager::ProofJob;
 use serde::Serialize;
 use state::State;
@@ -360,7 +360,7 @@ impl SettleMatchExternalTask {
 
     /// Fetch the internal order validity proof bundle
     async fn fetch_internal_order_validity_bundle(
-        order_id: OrderIdentifier,
+        order_id: IntentIdentifier,
         state: &State,
     ) -> Result<(OrderValidityProofBundle, OrderValidityWitnessBundle), SettleMatchExternalTaskError>
     {

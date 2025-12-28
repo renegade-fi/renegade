@@ -2,12 +2,12 @@
 #![allow(missing_docs, clippy::missing_docs_in_private_items)]
 
 use circuit_types::{Amount, order::OrderSide};
-use common::types::wallet::{Pair, pair_from_mints};
 use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use num_bigint::BigUint;
 use rand::{Rng, thread_rng};
 use state::caching::matchable_amount::MatchableAmountMap;
 use tokio::runtime::Runtime;
+use types_wallet::wallet::{Pair, pair_from_mints};
 
 // -----------
 // | Helpers |

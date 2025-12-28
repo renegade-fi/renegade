@@ -10,10 +10,10 @@
 #![deny(clippy::missing_docs_in_private_items)]
 #![allow(incomplete_features)]
 
-mod keyed_list;
+// mod keyed_list;
 mod merkle;
 pub mod wallet;
 
-pub use keyed_list::*;
+// pub use keyed_list::*;
 pub use merkle::*;
 pub use wallet::*;

@@ -11,8 +11,8 @@ use circuits_core::zk_circuits::valid_relayer_fee_settlement::{
     SizedValidRelayerFeeSettlementStatement, SizedValidRelayerFeeSettlementWitness,
 };
 use common::types::proof_bundles::RelayerFeeSettlementBundle;
-use common::types::tasks::PayRelayerFeeTaskDescriptor;
-use common::types::wallet::Wallet;
+use types_tasks::PayRelayerFeeTaskDescriptor;
+use types_wallet::wallet::Wallet;
 use darkpool_client::errors::DarkpoolClientError;
 use job_types::proof_manager::ProofJob;
 use num_bigint::BigUint;

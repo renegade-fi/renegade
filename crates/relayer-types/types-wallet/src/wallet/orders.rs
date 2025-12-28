@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::keyed_list::KeyedList;
 
-use super::{OrderIdentifier, Wallet};
+use super::{IntentIdentifier, Wallet};
 
 /// Error message emitted when the orders of a wallet are full
 const ERR_ORDERS_FULL: &str = "orders full";
@@ -330,17 +330,17 @@ impl Wallet {
     // -----------
 
     /// Whether or not the wallet contains an order with the given identifier
-    pub fn contains_order(&self, order_id: &OrderIdentifier) -> bool {
+    pub fn contains_order(&self, order_id: &IntentIdentifier) -> bool {
         self.orders.contains_key(order_id)
     }
 
     /// Get the given order
-    pub fn get_order(&self, order_id: &OrderIdentifier) -> Option<&Order> {
+    pub fn get_order(&self, order_id: &IntentIdentifier) -> Option<&Order> {
         self.orders.get(order_id)
     }
 
     /// Get a mutable reference to the given order
-    pub fn get_order_mut(&mut self, order_id: &OrderIdentifier) -> Option<&mut Order> {
+    pub fn get_order_mut(&mut self, order_id: &IntentIdentifier) -> Option<&mut Order> {
         self.orders.get_mut(order_id)
     }
 
@@ -357,7 +357,7 @@ impl Wallet {
     }
 
     /// Get the non-zero orders in the wallet
-    pub fn get_nonzero_orders(&self) -> KeyedList<OrderIdentifier, Order> {
+    pub fn get_nonzero_orders(&self) -> KeyedList<IntentIdentifier, Order> {
         self.orders.iter().filter(|(_id, order)| !order.is_zero()).cloned().collect()
     }
 
@@ -365,7 +365,7 @@ impl Wallet {
     ///
     /// An order is ready to match if it is non-zero and has a non-zero sell
     /// balance backing it
-    pub fn get_matchable_orders(&self) -> Vec<(OrderIdentifier, Order)> {
+    pub fn get_matchable_orders(&self) -> Vec<(IntentIdentifier, Order)> {
         self.orders
             .iter()
             .filter(|(_id, order)| {
@@ -391,7 +391,7 @@ impl Wallet {
 
     /// Add an order to the wallet, replacing the first default order if the
     /// wallet is full
-    pub fn add_order(&mut self, id: OrderIdentifier, order: Order) -> Result<(), String> {
+    pub fn add_order(&mut self, id: IntentIdentifier, order: Order) -> Result<(), String> {
         // Validate the order
         order.validate()?;
 
@@ -413,7 +413,7 @@ impl Wallet {
     }
 
     /// Remove an order from the wallet, replacing it with a default order
-    pub fn remove_order(&mut self, id: &OrderIdentifier) -> Option<Order> {
+    pub fn remove_order(&mut self, id: &IntentIdentifier) -> Option<Order> {
         self.orders.remove(id)
     }
 }

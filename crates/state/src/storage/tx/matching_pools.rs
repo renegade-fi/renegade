@@ -1,6 +1,7 @@
 //! Helpers for accessing information about matching pools in the database
 
-use common::types::{MatchingPoolName, wallet::OrderIdentifier};
+use types_runtime::MatchingPoolName;
+use types_wallet::wallet::IntentIdentifier;
 use libmdbx::{RW, TransactionKind};
 
 use crate::{POOL_TABLE, storage::error::StorageError};
@@ -30,7 +31,7 @@ pub fn all_matching_pools_key() -> String {
 }
 
 /// The key for the given order's matching pool
-pub fn matching_pool_key(order_id: &OrderIdentifier) -> String {
+pub fn matching_pool_key(order_id: &IntentIdentifier) -> String {
     format!("{}{}", POOL_KEY_PREFIX, order_id)
 }
 
@@ -44,7 +45,7 @@ impl<T: TransactionKind> StateTxn<'_, T> {
     /// be in the global matching pool.
     pub fn get_matching_pool_for_order(
         &self,
-        order_id: &OrderIdentifier,
+        order_id: &IntentIdentifier,
     ) -> Result<MatchingPoolName, StorageError> {
         let pool_key = matching_pool_key(order_id);
         self.inner()
@@ -106,7 +107,7 @@ impl StateTxn<'_, RW> {
     /// the order from one pool to another.
     pub fn assign_order_to_matching_pool(
         &self,
-        order_id: &OrderIdentifier,
+        order_id: &IntentIdentifier,
         pool_name: &str,
     ) -> Result<(), StorageError> {
         // Check that the pool exists
@@ -128,7 +129,7 @@ impl StateTxn<'_, RW> {
     /// order back to the global pool
     pub fn remove_order_from_matching_pool(
         &self,
-        order_id: &OrderIdentifier,
+        order_id: &IntentIdentifier,
     ) -> Result<(), StorageError> {
         let pool_key = matching_pool_key(order_id);
         self.inner().delete(POOL_TABLE, &pool_key).map(|_| ())
@@ -137,7 +138,7 @@ impl StateTxn<'_, RW> {
 
 #[cfg(test)]
 mod test {
-    use common::types::wallet::OrderIdentifier;
+    use common::types::wallet::IntentIdentifier;
 
     use crate::test_helpers::mock_db;
 
@@ -215,7 +216,7 @@ mod test {
         let db = mock_db();
 
         let pool_name = TEST_POOL_NAME.to_string();
-        let order_id = OrderIdentifier::new_v4();
+        let order_id = IntentIdentifier::new_v4();
 
         // Create a matching pool
         let tx = db.new_write_tx().unwrap();
@@ -249,7 +250,7 @@ mod test {
         tx.create_matching_pool(&pool_2_name).unwrap();
         tx.commit().unwrap();
 
-        let order_id = OrderIdentifier::new_v4();
+        let order_id = IntentIdentifier::new_v4();
 
         // Assign the order to the first matching pool
         let tx = db.new_write_tx().unwrap();
@@ -274,7 +275,7 @@ mod test {
         let db = mock_db();
 
         let pool_name = TEST_POOL_NAME.to_string();
-        let order_id = OrderIdentifier::new_v4();
+        let order_id = IntentIdentifier::new_v4();
 
         // Try assigning the order to the matching pool (before creating it)
         let tx = db.new_write_tx().unwrap();

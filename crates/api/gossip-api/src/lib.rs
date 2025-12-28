@@ -5,14 +5,14 @@
 #![deny(clippy::missing_docs_in_private_items)]
 #![allow(incomplete_features)]
 
-use common::types::hmac::HmacKey;
 use serde::Serialize;
 use sha2::Sha256;
 use tracing::instrument;
+use types_core::HmacKey;
 use util::telemetry::helpers::backfill_trace_field;
 
 // pub mod pubsub;
-// pub mod request_response;
+pub mod request_response;
 
 /// Type alias for the hmac core implementation
 pub type HmacSha256 = hmac::Hmac<Sha256>;

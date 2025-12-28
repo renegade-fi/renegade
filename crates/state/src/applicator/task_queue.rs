@@ -1,15 +1,13 @@
 //! Task queue state transition applicator methods
 
-use common::types::{
-    gossip::WrappedPeerId,
-    tasks::{HistoricalTask, QueuedTask, QueuedTaskState, TaskIdentifier, TaskQueueKey},
-    wallet::WalletIdentifier,
-};
+use types_gossip::WrappedPeerId;
+use types_tasks::{HistoricalTask, QueuedTask, QueuedTaskState, TaskIdentifier, TaskQueueKey};
+use types_wallet::wallet::WalletIdentifier;
 use external_api::{
-    bus_message::{SystemBusMessage, task_history_topic, task_topic},
     http::task::ApiTaskStatus,
     types::ApiHistoricalTask,
 };
+use system_bus::{SystemBusMessage, task_history_topic, task_topic};
 use job_types::{
     event_manager::{RelayerEventType, TaskCompletionEvent, try_send_event},
     handshake_manager::HandshakeManagerJob,

@@ -1,7 +1,8 @@
 //! Encapsulates the running task's bookkeeping structure to simplify the driver
 //! logic
 
-use common::types::{tasks::TaskIdentifier, wallet::WalletIdentifier};
+use types_tasks::TaskIdentifier;
+use types_wallet::wallet::WalletIdentifier;
 use state::{State, error::StateError};
 use tracing::{error, info};
 

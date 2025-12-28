@@ -2,7 +2,7 @@
 
 use std::cmp::Reverse;
 
-use common::types::tasks::{HistoricalTask, TaskQueueKey};
+use types_tasks::{HistoricalTask, TaskQueueKey};
 use libmdbx::{RW, TransactionKind};
 
 use crate::{TASK_HISTORY_TABLE, storage::error::StorageError};

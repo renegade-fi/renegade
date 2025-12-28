@@ -1,8 +1,8 @@
 //! Groups API definitions for handshake request response
-use common::types::{
-    gossip::WrappedPeerId, price::TimestampedPrice, token::Token, wallet::OrderIdentifier,
-};
 use std::collections::HashMap;
+use types_core::{TimestampedPrice, Token};
+use types_gossip::WrappedPeerId;
+use types_wallet::wallet::IntentIdentifier;
 use uuid::Uuid;
 
 use serde::{Deserialize, Serialize};
@@ -65,9 +65,9 @@ pub struct ProposeMatchCandidate {
     /// The ID of the peer proposing a match candidate
     pub peer_id: WrappedPeerId,
     /// The recipient's order that the sender is proposing a match with
-    pub peer_order: OrderIdentifier,
+    pub peer_order: IntentIdentifier,
     /// The sender's order that it wishes to match against the receiver's
-    pub sender_order: OrderIdentifier,
+    pub sender_order: IntentIdentifier,
     /// The vector of prices that the sender is proposing to the receiver
     pub price_vector: PriceVector,
 }
@@ -84,10 +84,10 @@ pub struct RejectMatchCandidate {
     pub peer_id: WrappedPeerId,
     /// The recipient's order, i.e. the order that the proposer used from
     /// their own managed book
-    pub peer_order: OrderIdentifier,
+    pub peer_order: IntentIdentifier,
     /// The order of the sender, i.e. the peer that rejects the match
     /// proposal
-    pub sender_order: OrderIdentifier,
+    pub sender_order: IntentIdentifier,
     /// The reason that the rejecting peer is rejecting the proposal
     pub reason: MatchRejectionReason,
 }
@@ -113,7 +113,7 @@ pub struct AcceptMatchCandidate {
     /// The port that the sender can be dialed on to begin the request
     pub port: u16,
     /// The first order to attempt to match
-    pub order1: OrderIdentifier,
+    pub order1: IntentIdentifier,
     /// The second order to attempt to match
-    pub order2: OrderIdentifier,
+    pub order2: IntentIdentifier,
 }

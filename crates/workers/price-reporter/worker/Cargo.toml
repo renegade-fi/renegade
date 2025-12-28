@@ -23,7 +23,8 @@ tungstenite = "0.18"
 reqwest = { workspace = true }
 
 # === Workspace Dependencies === #
-common = { workspace = true }
+types-core = { workspace = true }
+types-runtime = { workspace = true }
 constants = { workspace = true }
 external-api = { workspace = true }
 job-types = { workspace = true }

@@ -1,9 +1,7 @@
 //! Utils for precomputing cancellation proofs for orders
 
-use common::types::{
-    proof_bundles::ValidWalletUpdateBundle,
-    wallet::{OrderIdentifier, Wallet},
-};
+use common::types::proof_bundles::ValidWalletUpdateBundle;
+use types_wallet::wallet::{IntentIdentifier, Wallet};
 use job_types::proof_manager::ProofJob;
 use tracing::{error, info};
 use util::raw_err_str;
@@ -53,10 +51,10 @@ pub(crate) async fn precompute_cancellation_proofs(
 
 /// Precompute a cancellation proof for a given order
 async fn precompute_cancellation_proof_for_order(
-    order_id: OrderIdentifier,
+    order_id: IntentIdentifier,
     old_wallet: Wallet,
     ctx: &TaskContext,
-) -> Result<(OrderIdentifier, ValidWalletUpdateBundle), String> {
+) -> Result<(IntentIdentifier, ValidWalletUpdateBundle), String> {
     info!("Precomputing cancellation proof for order: {order_id}");
     let mut new_wallet = old_wallet.clone();
     new_wallet.remove_order(&order_id);

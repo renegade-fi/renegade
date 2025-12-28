@@ -6,16 +6,12 @@
 
 use std::str::FromStr;
 
-use circuit_types::{r#match::MatchResult, order::OrderSide};
-use common::types::{
-    tasks::{
-        HistoricalTask, HistoricalTaskDescription, QueuedTask, TaskIdentifier, TaskQueueKey,
-        WalletUpdateType,
-    },
-    wallet::Order,
-};
+use circuit_types::{order::OrderSide, r#match::MatchResult};
 use serde::{Deserialize, Serialize};
 use serde_json::Number;
+use types_tasks::{
+    HistoricalTask, HistoricalTaskDescription, QueuedTask, TaskIdentifier, TaskQueueKey,
+};
 use util::hex::biguint_to_hex_addr;
 
 // -----------

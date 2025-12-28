@@ -1,14 +1,12 @@
 //! Applicator methods for the network order book, separated out for
 //! discoverability
 
-use common::types::{
-    proof_bundles::{
-        OrderValidityProofBundle, OrderValidityWitnessBundle, ValidWalletUpdateBundle,
-    },
-    wallet::{OrderIdentifier, order_metadata::OrderState},
+use common::types::proof_bundles::{
+    OrderValidityProofBundle, OrderValidityWitnessBundle, ValidWalletUpdateBundle,
 };
+use types_wallet::wallet::{IntentIdentifier, order_metadata::OrderState};
 use constants::ORDER_STATE_CHANGE_TOPIC;
-use external_api::bus_message::SystemBusMessage;
+use system_bus::SystemBusMessage;
 use libmdbx::RW;
 use serde::{Deserialize, Serialize};
 use tracing::warn;
@@ -71,7 +69,7 @@ impl StateApplicator {
     /// Add a validity proof for an order
     pub fn add_order_validity_proof(
         &self,
-        order_id: OrderIdentifier,
+        order_id: IntentIdentifier,
         proof: &OrderValidityProofBundle,
         witness: &OrderValidityWitnessBundle,
     ) -> Result<ApplicatorReturnType> {
@@ -121,7 +119,7 @@ impl StateApplicator {
     /// Add cancellation proofs for a batch of orders
     pub fn add_order_cancellation_proofs(
         &self,
-        proofs: &[(OrderIdentifier, ValidWalletUpdateBundle)],
+        proofs: &[(IntentIdentifier, ValidWalletUpdateBundle)],
     ) -> Result<ApplicatorReturnType> {
         let tx = self.db().new_write_tx()?;
         for (order_id, proof) in proofs {
@@ -139,7 +137,7 @@ impl StateApplicator {
     /// Update the order metadata into the `Matching` state
     fn transition_order_matching(
         &self,
-        order_id: OrderIdentifier,
+        order_id: IntentIdentifier,
         tx: &StateTxn<RW>,
     ) -> Result<()> {
         let wallet = tx
@@ -173,7 +171,7 @@ mod test {
             dummy_valid_wallet_update_bundle, dummy_validity_proof_bundle,
             dummy_validity_witness_bundle,
         },
-        wallet::OrderIdentifier,
+        wallet::IntentIdentifier,
         wallet_mocks::{mock_empty_wallet, mock_order},
     };
 
@@ -189,7 +187,7 @@ mod test {
 
         // Add an order via a wallet
         let mut wallet = mock_empty_wallet();
-        let order_id = OrderIdentifier::new_v4();
+        let order_id = IntentIdentifier::new_v4();
         wallet.add_order(order_id, mock_order()).unwrap();
         let applicator = base_applicator.clone();
         tokio::task::spawn_blocking(move || applicator.update_wallet(&wallet).unwrap())
@@ -223,7 +221,7 @@ mod test {
 
         // Add an order via a wallet
         let mut wallet = mock_empty_wallet();
-        let order_id = OrderIdentifier::new_v4();
+        let order_id = IntentIdentifier::new_v4();
         wallet.add_order(order_id, mock_order()).unwrap();
         let applicator = base_applicator.clone();
         tokio::task::spawn_blocking(move || applicator.update_wallet(&wallet).unwrap())

@@ -10,11 +10,10 @@ use std::str::FromStr;
 
 use alloy::rpc::types::TransactionReceipt;
 use async_trait::async_trait;
-use common::types::tasks::WalletUpdateType;
-use common::types::{
-    proof_bundles::ValidWalletUpdateBundle, tasks::UpdateWalletTaskDescriptor,
-    transfer_auth::ExternalTransferWithAuth, wallet::Wallet,
-};
+use types_tasks::{WalletUpdateType, UpdateWalletTaskDescriptor};
+use common::types::proof_bundles::ValidWalletUpdateBundle;
+use common::types::transfer_auth::ExternalTransferWithAuth;
+use types_wallet::wallet::Wallet;
 use darkpool_client::errors::DarkpoolClientError;
 use job_types::event_manager::RelayerEventType;
 use job_types::proof_manager::ProofJob;

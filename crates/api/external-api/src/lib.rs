@@ -4,19 +4,17 @@
 
 use std::fmt;
 
-use base64::{Engine, engine::general_purpose::STANDARD_NO_PAD};
-use common::types::token::Token;
+use base64::{engine::general_purpose::STANDARD_NO_PAD, Engine};
 use num_bigint::BigUint;
 use serde::{
-    Deserialize, Deserializer, Serialize, Serializer,
     de::{self, Error as DeserializeError, SeqAccess, Visitor},
+    Deserialize, Deserializer, Serialize, Serializer,
 };
+use types_core::token::Token;
 use util::hex::{biguint_from_hex_string, biguint_to_hex_addr};
 
 #[cfg(feature = "auth")]
 pub mod auth;
-#[cfg(feature = "full-api")]
-pub mod bus_message;
 pub mod http;
 pub mod types;
 pub mod websocket;
@@ -239,7 +237,7 @@ pub(crate) mod f64_string_serde {
 
 #[cfg(test)]
 mod test {
-    use rand::{RngCore, thread_rng};
+    use rand::{thread_rng, RngCore};
     use serde::{Deserialize, Serialize};
     use serde_json::json;
 

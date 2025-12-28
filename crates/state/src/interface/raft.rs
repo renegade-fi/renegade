@@ -2,8 +2,8 @@
 
 use std::collections::BTreeMap;
 
-use common::types::gossip::WrappedPeerId;
 use tracing::instrument;
+use types_gossip::WrappedPeerId;
 use util::err_str;
 
 use crate::{

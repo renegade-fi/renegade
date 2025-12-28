@@ -4,7 +4,8 @@
 use std::thread::{Builder, JoinHandle};
 
 use async_trait::async_trait;
-use common::{default_wrapper::DefaultOption, types::CancelChannel, worker::Worker};
+use util::default_wrapper::DefaultOption;
+use types_runtime::{CancelChannel, worker::Worker};
 use job_types::proof_manager::ProofManagerReceiver;
 use reqwest::Url;
 

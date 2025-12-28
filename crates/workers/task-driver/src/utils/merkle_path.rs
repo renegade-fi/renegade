@@ -1,7 +1,7 @@
 //! Helpers for finding Merkle authentication paths
 
 use alloy::rpc::types::TransactionReceipt;
-use common::types::wallet::{Wallet, WalletAuthenticationPath};
+use types_wallet::wallet::{Wallet, WalletAuthenticationPath};
 use darkpool_client::errors::DarkpoolClientError;
 
 use crate::traits::TaskContext;

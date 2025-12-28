@@ -2,9 +2,8 @@
 
 use circuit_types::balance::Balance;
 use circuits_core::test_helpers::random_wallet_amount;
-use common::types::{
-    tasks::PayRelayerFeeTaskDescriptor, wallet::Wallet, wallet_mocks::mock_empty_wallet,
-};
+use types_tasks::PayRelayerFeeTaskDescriptor;
+use types_wallet::wallet::{Wallet, mocks::mock_empty_wallet};
 use constants::Scalar;
 use eyre::{Result, eyre};
 use num_bigint::BigUint;

@@ -326,11 +326,8 @@ impl StateMachine {
 mod tests {
     use std::sync::Arc;
 
-    use common::types::{
-        proof_bundles::mocks::{dummy_validity_proof_bundle, dummy_validity_witness_bundle},
-        wallet::{OrderIdentifier, Wallet},
-        wallet_mocks::{mock_empty_wallet, mock_order},
-    };
+    use common::types::proof_bundles::mocks::{dummy_validity_proof_bundle, dummy_validity_witness_bundle};
+    use types_wallet::wallet::{IntentIdentifier, Wallet, mocks::{mock_empty_wallet, mock_order}};
     use libmdbx::Error as MdbxError;
 
     use crate::{
@@ -358,7 +355,7 @@ mod tests {
     }
 
     /// Add a dummy validity proof to an order in the state machine
-    async fn add_dummy_validity_proof_to_sm(sm: &StateMachine, order_id: OrderIdentifier) {
+    async fn add_dummy_validity_proof_to_sm(sm: &StateMachine, order_id: IntentIdentifier) {
         let bundle = dummy_validity_proof_bundle();
         let witness = dummy_validity_witness_bundle();
         let transition =
@@ -542,9 +539,9 @@ mod tests {
         // Create three orders, the first allows external matches and is ready for match
         // The second does not allow external matches, but is read for matching
         // The third is neither ready for matching nor allows external matches
-        let oid1 = OrderIdentifier::new_v4();
-        let oid2 = OrderIdentifier::new_v4();
-        let oid3 = OrderIdentifier::new_v4();
+        let oid1 = IntentIdentifier::new_v4();
+        let oid2 = IntentIdentifier::new_v4();
+        let oid3 = IntentIdentifier::new_v4();
         let mut order1 = mock_order();
         let mut order2 = mock_order();
         let mut order3 = mock_order();

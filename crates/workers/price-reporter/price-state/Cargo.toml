@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 # === Renegade Dependencies === #
-common = { workspace = true }
+types-core = { workspace = true }
 util = { workspace = true }
 
 # === Misc Dependencies === #

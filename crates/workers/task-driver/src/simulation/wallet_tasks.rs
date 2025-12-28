@@ -3,14 +3,12 @@
 use std::str::FromStr;
 
 use ark_mpc::PARTY0;
-use common::types::{
-    tasks::{
-        NewWalletTaskDescriptor, PayOfflineFeeTaskDescriptor, QueuedTask, QueuedTaskState,
-        SettleMatchInternalTaskDescriptor, SettleMatchTaskDescriptor, TaskDescriptor,
-        UpdateWalletTaskDescriptor,
-    },
-    wallet::Wallet,
+use types_tasks::{
+    NewWalletTaskDescriptor, PayOfflineFeeTaskDescriptor, QueuedTask, QueuedTaskState,
+    SettleMatchInternalTaskDescriptor, SettleMatchTaskDescriptor, TaskDescriptor,
+    UpdateWalletTaskDescriptor,
 };
+use types_wallet::wallet::Wallet;
 use tracing::warn;
 use util::matching_engine::{apply_match_to_shares, compute_fee_obligation};
 

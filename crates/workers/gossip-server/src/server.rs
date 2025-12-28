@@ -4,10 +4,9 @@
 //! This file groups logic for creating the server as well as the central
 //! dispatch/execution loop of the workers
 
-use common::{
-    default_wrapper::DefaultWrapper,
-    types::{CancelChannel, gossip::WrappedPeerId},
-};
+use util::default_wrapper::DefaultWrapper;
+use types_runtime::CancelChannel;
+use types_gossip::WrappedPeerId;
 use constants::in_bootstrap_mode;
 use darkpool_client::DarkpoolClient;
 use gossip_api::{

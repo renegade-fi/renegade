@@ -16,11 +16,11 @@ use common::{
         proof_bundles::{OrderValidityProofBundle, ValidMatchSettleBundle},
         tasks::{SettleMatchTaskDescriptor, TaskDescriptor},
         token::Token,
-        wallet::OrderIdentifier,
+        wallet::IntentIdentifier,
     },
 };
 use constants::{HANDSHAKE_STATUS_TOPIC, in_bootstrap_mode};
-use external_api::bus_message::SystemBusMessage;
+use system_bus::SystemBusMessage;
 use futures::executor::block_on;
 use gossip_api::{
     pubsub::{
@@ -99,7 +99,7 @@ pub struct HandshakeExecutor {
     /// matches on
     pub(crate) min_fill_size: Amount,
     /// The cache used to mark order pairs as already matched
-    pub(crate) handshake_cache: SharedHandshakeCache<OrderIdentifier>,
+    pub(crate) handshake_cache: SharedHandshakeCache<IntentIdentifier>,
     /// Stores the state of existing handshake executions
     pub(crate) handshake_state_index: HandshakeStateIndex,
     /// The channel on which other workers enqueue jobs for the protocol
@@ -327,7 +327,7 @@ impl HandshakeExecutor {
     /// and casting this to a `Token`
     async fn token_pair_for_order(
         &self,
-        order_id: &OrderIdentifier,
+        order_id: &IntentIdentifier,
     ) -> Result<(Token, Token), HandshakeManagerError> {
         let order = self
             .state
@@ -379,7 +379,7 @@ impl HandshakeExecutor {
     }
 
     /// Chooses an order to match against a remote order
-    async fn choose_match_proposal(&self, peer_order: OrderIdentifier) -> Option<OrderIdentifier> {
+    async fn choose_match_proposal(&self, peer_order: IntentIdentifier) -> Option<IntentIdentifier> {
         let locked_handshake_cache = self.handshake_cache.read().await;
 
         // Shuffle the locally managed orders to avoid always matching the same order
@@ -431,8 +431,8 @@ impl HandshakeExecutor {
     /// that a handshake has completed
     fn publish_completion_messages(
         &self,
-        local_order_id: OrderIdentifier,
-        peer_order_id: OrderIdentifier,
+        local_order_id: IntentIdentifier,
+        peer_order_id: IntentIdentifier,
     ) -> Result<(), HandshakeManagerError> {
         // Send a message to cluster peers indicating that the local peer has completed
         // a match. Cluster peers should cache the matched order pair as

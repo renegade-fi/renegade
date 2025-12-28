@@ -1,6 +1,6 @@
 //! Error types emitted by the state applicator
 
-use common::types::tasks::TaskQueueKey;
+use types_tasks::TaskQueueKey;
 
 use crate::storage::error::StorageError;
 

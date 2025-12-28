@@ -14,7 +14,7 @@ use alloy::{
 use alloy_contract::{CallBuilder, Event};
 use alloy_primitives::{Address, BlockNumber, ChainId};
 use alloy_sol_types::SolEvent;
-use common::types::chain::Chain;
+use types_core::chain::Chain;
 use constants::{
     ARBITRUM_ONE_DEPLOY_BLOCK, ARBITRUM_SEPOLIA_DEPLOY_BLOCK, BASE_MAINNET_DEPLOY_BLOCK,
     BASE_SEPOLIA_DEPLOY_BLOCK, DEVNET_DEPLOY_BLOCK,

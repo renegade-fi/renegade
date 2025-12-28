@@ -1,6 +1,7 @@
 //! Defines authentication primitives for the API server
 
-use common::types::{hmac::HmacKey, wallet::WalletIdentifier};
+use types_core::hmac::HmacKey;
+use types_wallet::wallet::WalletIdentifier;
 use external_api::auth::validate_expiring_auth;
 use hyper::HeaderMap;
 use state::State;

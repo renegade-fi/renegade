@@ -23,10 +23,10 @@ use circuits_core::zk_circuits::valid_malleable_match_settle_atomic::{
 use common::types::proof_bundles::{
     OrderValidityProofBundle, OrderValidityWitnessBundle, ValidMalleableMatchSettleAtomicBundle,
 };
-use common::types::tasks::SettleMalleableExternalMatchTaskDescriptor;
-use common::types::wallet::{OrderIdentifier, WalletIdentifier};
+use types_tasks::SettleMalleableExternalMatchTaskDescriptor;
+use types_wallet::wallet::{IntentIdentifier, WalletIdentifier};
 use darkpool_client::errors::DarkpoolClientError;
-use external_api::bus_message::SystemBusMessage;
+use system_bus::SystemBusMessage;
 use job_types::proof_manager::ProofJob;
 use serde::Serialize;
 use state::State;
@@ -365,7 +365,7 @@ impl SettleMalleableExternalMatchTask {
 
     /// Fetch the internal order validity proof bundle
     async fn fetch_internal_order_validity_bundle(
-        order_id: OrderIdentifier,
+        order_id: IntentIdentifier,
         state: &State,
     ) -> Result<(OrderValidityProofBundle, OrderValidityWitnessBundle)> {
         let validity_proofs = state

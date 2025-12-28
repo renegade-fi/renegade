@@ -3,7 +3,7 @@
 use std::{collections::HashMap, iter};
 
 use async_trait::async_trait;
-use common::types::hmac::HmacKey;
+use types_core::hmac::HmacKey;
 use http_body_util::{BodyExt, Full};
 use hyper::{
     HeaderMap, Method, Request, Response, StatusCode, Uri,

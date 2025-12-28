@@ -12,10 +12,8 @@ use std::{
 
 use async_trait::async_trait;
 use circuit_types::SizedWalletShare;
-use common::types::{
-    tasks::RefreshWalletTaskDescriptor,
-    wallet::{Wallet, WalletIdentifier},
-};
+use types_tasks::RefreshWalletTaskDescriptor;
+use types_wallet::wallet::{Wallet, WalletIdentifier};
 use constants::Scalar;
 use darkpool_client::errors::DarkpoolClientError;
 use serde::Serialize;
@@ -367,7 +365,7 @@ fn matchup_order_ids(
 #[cfg(test)]
 mod tests {
     use common::types::{
-        wallet::OrderIdentifier,
+        wallet::IntentIdentifier,
         wallet_mocks::{mock_empty_wallet, mock_order},
     };
 
@@ -380,8 +378,8 @@ mod tests {
         let mut existing = mock_empty_wallet();
         let mut refreshed = mock_empty_wallet();
 
-        let id1 = OrderIdentifier::new_v4();
-        let id2 = OrderIdentifier::new_v4();
+        let id1 = IntentIdentifier::new_v4();
+        let id2 = IntentIdentifier::new_v4();
         let order = mock_order();
         existing.orders.insert(id1, order.clone());
         refreshed.orders.insert(id2, order.clone());
@@ -400,10 +398,10 @@ mod tests {
         let mut existing = mock_empty_wallet();
         let mut refreshed = mock_empty_wallet();
 
-        let id1 = OrderIdentifier::new_v4();
-        let id2 = OrderIdentifier::new_v4();
-        let id3 = OrderIdentifier::new_v4();
-        let id4 = OrderIdentifier::new_v4();
+        let id1 = IntentIdentifier::new_v4();
+        let id2 = IntentIdentifier::new_v4();
+        let id3 = IntentIdentifier::new_v4();
+        let id4 = IntentIdentifier::new_v4();
 
         let order = mock_order();
 
@@ -431,9 +429,9 @@ mod tests {
         let mut existing = mock_empty_wallet();
         let mut refreshed = mock_empty_wallet();
 
-        let id1 = OrderIdentifier::new_v4();
-        let id2 = OrderIdentifier::new_v4();
-        let id3 = OrderIdentifier::new_v4();
+        let id1 = IntentIdentifier::new_v4();
+        let id2 = IntentIdentifier::new_v4();
+        let id3 = IntentIdentifier::new_v4();
 
         let order = mock_order();
 
@@ -459,10 +457,10 @@ mod tests {
         let mut existing = mock_empty_wallet();
         let mut refreshed = mock_empty_wallet();
 
-        let id1 = OrderIdentifier::new_v4();
-        let id2 = OrderIdentifier::new_v4();
-        let id3 = OrderIdentifier::new_v4();
-        let id4 = OrderIdentifier::new_v4();
+        let id1 = IntentIdentifier::new_v4();
+        let id2 = IntentIdentifier::new_v4();
+        let id3 = IntentIdentifier::new_v4();
+        let id4 = IntentIdentifier::new_v4();
 
         let order = mock_order();
         let order2 = mock_order();

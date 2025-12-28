@@ -8,10 +8,8 @@ use std::{
 
 use async_trait::async_trait;
 use circuit_types::SizedWalletShare;
-use common::types::{
-    tasks::LookupWalletTaskDescriptor,
-    wallet::{Wallet, WalletIdentifier, keychain::PrivateKeyChain},
-};
+use types_tasks::LookupWalletTaskDescriptor;
+use types_wallet::wallet::{Wallet, WalletIdentifier, keychain::PrivateKeyChain};
 use constants::Scalar;
 use darkpool_client::errors::DarkpoolClientError;
 use serde::Serialize;

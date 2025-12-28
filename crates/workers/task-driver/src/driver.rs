@@ -3,10 +3,8 @@
 
 use std::{collections::HashMap, fmt::Debug, time::Duration};
 
-use common::types::{
-    tasks::{QueuedTask, TaskDescriptor, TaskIdentifier},
-    wallet::WalletIdentifier,
-};
+use types_tasks::{QueuedTask, TaskDescriptor, TaskIdentifier};
+use types_wallet::wallet::WalletIdentifier;
 use job_types::task_driver::{TaskDriverJob, TaskDriverReceiver, TaskNotificationSender};
 use state::State;
 use tokio::runtime::Builder as TokioRuntimeBuilder;

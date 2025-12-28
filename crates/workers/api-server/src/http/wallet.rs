@@ -5,15 +5,13 @@ use circuit_types::{
     Amount, SizedWallet as SizedCircuitWallet, balance::Balance,
     native_helpers::create_wallet_shares_from_private,
 };
-use common::types::{
-    tasks::{
-        LookupWalletTaskDescriptor, NewWalletTaskDescriptor, PayOfflineFeeTaskDescriptor,
-        RedeemFeeTaskDescriptor, TaskDescriptor, TaskIdentifier, UpdateWalletTaskDescriptor,
-    },
-    token::Token,
-    transfer_auth::{DepositAuth, ExternalTransferWithAuth, WithdrawalAuth},
-    wallet::{Order, Wallet, WalletIdentifier, keychain::PrivateKeyChain},
+use types_tasks::{
+    LookupWalletTaskDescriptor, NewWalletTaskDescriptor, PayOfflineFeeTaskDescriptor,
+    RedeemFeeTaskDescriptor, TaskDescriptor, TaskIdentifier, UpdateWalletTaskDescriptor,
 };
+use types_core::token::Token;
+use common::types::transfer_auth::{DepositAuth, ExternalTransferWithAuth, WithdrawalAuth};
+use types_wallet::wallet::{Order, Wallet, WalletIdentifier, keychain::PrivateKeyChain};
 use external_api::{
     EmptyRequestResponse,
     http::wallet::{

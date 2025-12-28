@@ -10,6 +10,10 @@
 #![deny(missing_docs)]
 #![deny(clippy::missing_docs_in_private_items)]
 
+pub mod message;
+
+pub use message::*;
+
 use bus::{Bus, BusReader};
 use futures::Stream;
 use std::{

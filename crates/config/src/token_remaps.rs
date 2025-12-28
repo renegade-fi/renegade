@@ -4,7 +4,8 @@
 
 use std::collections::HashMap;
 
-use common::types::{
+use serde::{Deserialize, Serialize};
+use types_core::{
     chain::Chain,
     exchange::Exchange,
     token::{
@@ -12,7 +13,6 @@ use common::types::{
         write_token_remaps,
     },
 };
-use serde::{Deserialize, Serialize};
 use util::raw_err_str;
 
 /// The base URL for raw token remap files
@@ -168,8 +168,8 @@ pub fn fetch_remap_from_repo(chain: Chain) -> Result<TokenRemap, String> {
 mod test {
     use std::{collections::HashMap, fs::File};
 
-    use common::types::{chain::Chain, exchange::Exchange, token::read_token_remaps};
     use tempfile::{TempDir, tempdir};
+    use types_core::{chain::Chain, exchange::Exchange, token::read_token_remaps};
 
     use crate::token_remaps::parse_remap_from_file;
 

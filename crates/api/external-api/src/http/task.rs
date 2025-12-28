@@ -1,7 +1,7 @@
 //! Defines API types for task status introspection
 
-use common::types::tasks::{QueuedTask, TaskIdentifier};
 use serde::{Deserialize, Serialize};
+use types_tasks::{QueuedTask, TaskIdentifier};
 
 // ---------------
 // | HTTP Routes |

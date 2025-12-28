@@ -7,7 +7,7 @@
 //! Plus, this more closely follows the practice taken in the HTTP router
 
 use async_trait::async_trait;
-use external_api::bus_message::SystemBusMessage;
+use system_bus::SystemBusMessage;
 use system_bus::{SystemBus, TopicReader};
 
 use crate::{auth::AuthType, error::ApiServerError, router::UrlParams};

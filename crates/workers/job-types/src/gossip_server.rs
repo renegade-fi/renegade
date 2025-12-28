@@ -1,7 +1,7 @@
 //! Groups job definitions for the gossip server
 //! These jobs are enqueued for execution by other workers within the relayer
 
-use common::types::gossip::WrappedPeerId;
+use types_gossip::WrappedPeerId;
 use gossip_api::{
     pubsub::PubsubMessage,
     request_response::{AuthenticatedGossipResponse, GossipRequest, GossipResponse},

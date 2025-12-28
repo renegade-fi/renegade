@@ -1,11 +1,9 @@
 //! API types for admin requests
 
 use circuit_types::Amount;
-use common::types::{
-    price::Price,
-    wallet::{WalletIdentifier, order_metadata::OrderMetadata},
-};
 use serde::{Deserialize, Serialize};
+use types_core::price::Price;
+use types_wallet::wallet::{order_metadata::OrderMetadata, WalletIdentifier};
 
 /// An order's metadata, augmented with the containing
 /// wallet's ID, and optionally the fillable amount

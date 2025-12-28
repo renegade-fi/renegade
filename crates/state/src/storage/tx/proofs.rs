@@ -1,11 +1,9 @@
 //! Transaction helpers for storing and retrieving proofs
 
-use common::types::{
-    proof_bundles::{
-        OrderValidityProofBundle, OrderValidityWitnessBundle, ValidWalletUpdateBundle,
-    },
-    wallet::OrderIdentifier,
+use common::types::proof_bundles::{
+    OrderValidityProofBundle, OrderValidityWitnessBundle, ValidWalletUpdateBundle,
 };
+use types_wallet::wallet::IntentIdentifier;
 use libmdbx::{RO, RW};
 
 use crate::{PROOFS_TABLE, storage::error::StorageError};
@@ -18,19 +16,19 @@ use super::StateTxn;
 
 /// Build the key for an orders validity proof bundle
 #[inline]
-fn validity_proof_bundle_key(order_id: &OrderIdentifier) -> String {
+fn validity_proof_bundle_key(order_id: &IntentIdentifier) -> String {
     format!("validity-proof-bundle:{order_id}")
 }
 
 /// Build the key for an orders validity proof witness
 #[inline]
-fn validity_proof_witness_key(order_id: &OrderIdentifier) -> String {
+fn validity_proof_witness_key(order_id: &IntentIdentifier) -> String {
     format!("validity-proof-witness:{order_id}")
 }
 
 /// Build the key for an orders cancellation proof
 #[inline]
-fn cancellation_proof_key(order_id: &OrderIdentifier) -> String {
+fn cancellation_proof_key(order_id: &IntentIdentifier) -> String {
     format!("cancellation-proof:{order_id}")
 }
 
@@ -44,7 +42,7 @@ impl StateTxn<'_, RO> {
     /// Get the validity proof bundle for an order
     pub fn get_validity_proof_bundle(
         &self,
-        order_id: &OrderIdentifier,
+        order_id: &IntentIdentifier,
     ) -> Result<Option<OrderValidityProofBundle>, StorageError> {
         let key = validity_proof_bundle_key(order_id);
         self.inner().read(PROOFS_TABLE, &key)
@@ -53,7 +51,7 @@ impl StateTxn<'_, RO> {
     /// Get the validity proof witness for an order
     pub fn get_validity_proof_witness(
         &self,
-        order_id: &OrderIdentifier,
+        order_id: &IntentIdentifier,
     ) -> Result<Option<OrderValidityWitnessBundle>, StorageError> {
         let key = validity_proof_witness_key(order_id);
         self.inner().read(PROOFS_TABLE, &key)
@@ -62,7 +60,7 @@ impl StateTxn<'_, RO> {
     /// Get the cancellation proof for an order
     pub fn get_cancellation_proof(
         &self,
-        order_id: &OrderIdentifier,
+        order_id: &IntentIdentifier,
     ) -> Result<Option<ValidWalletUpdateBundle>, StorageError> {
         let key = cancellation_proof_key(order_id);
         self.inner().read(PROOFS_TABLE, &key)
@@ -77,7 +75,7 @@ impl StateTxn<'_, RW> {
     /// Write a validity proof bundle for an order
     pub fn write_validity_proof_bundle(
         &self,
-        order_id: &OrderIdentifier,
+        order_id: &IntentIdentifier,
         proof: &OrderValidityProofBundle,
     ) -> Result<(), StorageError> {
         let key = validity_proof_bundle_key(order_id);
@@ -87,7 +85,7 @@ impl StateTxn<'_, RW> {
     /// Write a validity proof witness for an order
     pub fn write_validity_proof_witness(
         &self,
-        order_id: &OrderIdentifier,
+        order_id: &IntentIdentifier,
         witness: &OrderValidityWitnessBundle,
     ) -> Result<(), StorageError> {
         let key = validity_proof_witness_key(order_id);
@@ -97,7 +95,7 @@ impl StateTxn<'_, RW> {
     /// Write a cancellation proof for an order
     pub fn write_cancellation_proof(
         &self,
-        order_id: &OrderIdentifier,
+        order_id: &IntentIdentifier,
         proof: &ValidWalletUpdateBundle,
     ) -> Result<(), StorageError> {
         let key = cancellation_proof_key(order_id);
@@ -105,7 +103,7 @@ impl StateTxn<'_, RW> {
     }
 
     /// Delete all proofs for an order
-    pub fn delete_proofs_for_order(&self, order_id: &OrderIdentifier) -> Result<(), StorageError> {
+    pub fn delete_proofs_for_order(&self, order_id: &IntentIdentifier) -> Result<(), StorageError> {
         let validity_bundle_key = validity_proof_bundle_key(order_id);
         let validity_witness_key = validity_proof_witness_key(order_id);
         let cancellation_key = cancellation_proof_key(order_id);
@@ -138,7 +136,7 @@ mod test {
         db.create_table(PROOFS_TABLE).unwrap();
 
         // Read the bundle when none exists
-        let order_id = OrderIdentifier::new_v4();
+        let order_id = IntentIdentifier::new_v4();
         let tx = db.new_read_tx().unwrap();
         let stored_proof = tx.get_validity_proof_bundle(&order_id).unwrap();
         assert!(stored_proof.is_none());
@@ -164,7 +162,7 @@ mod test {
         db.create_table(PROOFS_TABLE).unwrap();
 
         // Read the witness when none exists
-        let order_id = OrderIdentifier::new_v4();
+        let order_id = IntentIdentifier::new_v4();
         let tx = db.new_read_tx().unwrap();
         let stored_witness = tx.get_validity_proof_witness(&order_id).unwrap();
         assert!(stored_witness.is_none());
@@ -190,7 +188,7 @@ mod test {
         db.create_table(PROOFS_TABLE).unwrap();
 
         // Read the proof when none exists
-        let order_id = OrderIdentifier::new_v4();
+        let order_id = IntentIdentifier::new_v4();
         let tx = db.new_read_tx().unwrap();
         let stored_proof = tx.get_cancellation_proof(&order_id).unwrap();
         assert!(stored_proof.is_none());
@@ -215,7 +213,7 @@ mod test {
         let db = mock_db();
         db.create_table(PROOFS_TABLE).unwrap();
 
-        let order_id = OrderIdentifier::new_v4();
+        let order_id = IntentIdentifier::new_v4();
 
         // Write all proof types
         let validity_bundle = dummy_validity_proof_bundle();
@@ -247,7 +245,7 @@ mod test {
         let db = mock_db();
         db.create_table(PROOFS_TABLE).unwrap();
 
-        let order_id = OrderIdentifier::new_v4();
+        let order_id = IntentIdentifier::new_v4();
 
         // Write only validity proof bundle
         let validity_bundle = dummy_validity_proof_bundle();

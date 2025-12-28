@@ -1,6 +1,6 @@
 //! Utility functions for the price state module
 
-use common::types::{
+use types_core::{
     exchange::{Exchange, PriceReport, PriceReporterState},
     price::Price,
     token::{Token, USD_TICKER, default_exchange_stable},

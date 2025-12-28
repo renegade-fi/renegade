@@ -3,17 +3,15 @@
 use std::time::Duration;
 
 use ark_mpc::network::QuicTwoPartyNet;
-use circuit_types::{Amount, fixed_point::FixedPoint, wallet::Nullifier};
-use common::types::{
-    MatchingPoolName,
-    gossip::WrappedPeerId,
-    price::TimestampedPrice,
-    wallet::{Order, OrderIdentifier},
-};
+use circuit_types::{Amount, Nullifier, fixed_point::FixedPoint};
 use constants::SystemCurveGroup;
-use external_api::bus_message::gen_atomic_match_response_topic;
+use darkpool_types::intent::Intent;
 use gossip_api::request_response::{AuthenticatedGossipResponse, handshake::HandshakeMessage};
 use libp2p::request_response::ResponseChannel;
+use system_bus::gen_atomic_match_response_topic;
+use types_core::TimestampedPrice;
+use types_gossip::WrappedPeerId;
+use types_wallet::{MatchingPoolName, wallet::IntentIdentifier};
 use util::channels::{TracedTokioReceiver, TracedTokioSender, new_traced_tokio_channel};
 use uuid::Uuid;
 
@@ -39,12 +37,12 @@ pub enum HandshakeManagerJob {
     /// the local peer
     InternalMatchingEngine {
         /// The order to match
-        order: OrderIdentifier,
+        order: IntentIdentifier,
     },
     /// Run the external matching engine on the given order
     ExternalMatchingEngine {
-        /// The external order to match
-        order: Order,
+        /// The external intent to match
+        intent: Intent,
         /// The system bus topic on which to send the resulting external match
         ///
         /// We send on the bus rather than directly through a oneshot for two
@@ -71,7 +69,7 @@ pub enum HandshakeManagerJob {
     /// A request to initiate a handshake with a scheduled peer
     PerformHandshake {
         /// The order to attempt a handshake on
-        order: OrderIdentifier,
+        order: IntentIdentifier,
     },
 
     // --- Caching --- //
@@ -79,9 +77,9 @@ pub enum HandshakeManagerJob {
     /// cluster peer has executed
     CacheEntry {
         /// The first of the orders matched
-        order1: OrderIdentifier,
+        order1: IntentIdentifier,
         /// The second of the orders matched
-        order2: OrderIdentifier,
+        order2: IntentIdentifier,
     },
     /// Indicates that the local peer should halt any MPCs active on the given
     /// nullifier
@@ -99,9 +97,9 @@ pub enum HandshakeManagerJob {
     /// match for some duration
     PeerMatchInProgress {
         /// The first of the orders in the pair
-        order1: OrderIdentifier,
+        order1: IntentIdentifier,
         /// The second of the orders in the pair
-        order2: OrderIdentifier,
+        order2: IntentIdentifier,
     },
 
     // --- Networking --- //
@@ -120,36 +118,36 @@ pub enum HandshakeManagerJob {
 
 impl HandshakeManagerJob {
     /// Get a quote for an external order
-    pub fn get_external_quote(order: Order) -> (Self, String) {
+    pub fn get_external_quote(intent: Intent) -> (Self, String) {
         let opt = ExternalMatchingEngineOptions::only_quote();
-        Self::new_external_match_job(order, opt)
+        Self::new_external_match_job(intent, opt)
     }
 
     /// Get an external match bundle with a previously committed-to price
     pub fn get_external_match_bundle_with_price(
-        order: Order,
+        intent: Intent,
         price: TimestampedPrice,
         bundle_duration: Duration,
     ) -> (Self, String) {
         let opt = ExternalMatchingEngineOptions::new()
             .with_bundle_duration(bundle_duration)
             .with_price(price);
-        Self::new_external_match_job(order, opt)
+        Self::new_external_match_job(intent, opt)
     }
 
     /// Run the external matching engine and create a bundle
-    pub fn get_external_match_bundle(order: Order) -> (Self, String) {
+    pub fn get_external_match_bundle(intent: Intent) -> (Self, String) {
         let opt = ExternalMatchingEngineOptions::default();
-        Self::new_external_match_job(order, opt)
+        Self::new_external_match_job(intent, opt)
     }
 
     /// Create a new external matching job
     pub fn new_external_match_job(
-        order: Order,
+        intent: Intent,
         options: ExternalMatchingEngineOptions,
     ) -> (Self, String) {
         let topic = gen_atomic_match_response_topic();
-        (Self::ExternalMatchingEngine { order, response_topic: topic.clone(), options }, topic)
+        (Self::ExternalMatchingEngine { intent, response_topic: topic.clone(), options }, topic)
     }
 }
 

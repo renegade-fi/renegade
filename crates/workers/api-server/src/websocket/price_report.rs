@@ -1,8 +1,8 @@
 //! Handlers for price reporting websocket topics
 
 use async_trait::async_trait;
-use common::types::token::Token;
-use external_api::bus_message::{SystemBusMessage, price_report_topic};
+use types_core::token::Token;
+use system_bus::{SystemBusMessage, price_report_topic};
 use system_bus::{SystemBus, TopicReader};
 
 use crate::{

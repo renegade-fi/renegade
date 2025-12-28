@@ -1,6 +1,7 @@
 //! Job types for the network manager
 
-use common::types::{gossip::WrappedPeerId, handshake::ConnectionRole};
+use types_gossip::WrappedPeerId;
+use common::types::handshake::ConnectionRole;
 use gossip_api::{
     pubsub::PubsubMessage,
     request_response::{

@@ -2,12 +2,12 @@
 
 use std::collections::HashMap;
 
-use common::types::{
+use types_core::{
     exchange::PriceReporterState,
     price::TimestampedPrice,
     token::{Token, get_all_base_tokens},
-    wallet::OrderIdentifier,
 };
+use types_wallet::wallet::IntentIdentifier;
 use gossip_api::request_response::handshake::PriceVector;
 use tracing::warn;
 use util::err_str;
@@ -61,7 +61,7 @@ impl HandshakeExecutor {
     pub(super) async fn validate_price_vector(
         &self,
         proposed_prices: &PriceVector,
-        my_order_id: &OrderIdentifier,
+        my_order_id: &IntentIdentifier,
     ) -> Result<bool, HandshakeManagerError> {
         // Find the price of the asset pair that the local party's order is on in the
         // peer's proposed prices list

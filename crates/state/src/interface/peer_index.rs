@@ -7,10 +7,10 @@
 
 use std::collections::HashMap;
 
-use common::types::gossip::{ClusterId, PeerInfo, WrappedPeerId};
-use external_api::bus_message::{NETWORK_TOPOLOGY_TOPIC, SystemBusMessage};
+use types_gossip::{ClusterId, PeerInfo, WrappedPeerId};
 use gossip_api::request_response::heartbeat::HeartbeatMessage;
 use itertools::Itertools;
+use system_bus::{NETWORK_TOPOLOGY_TOPIC, SystemBusMessage};
 use tracing::info;
 
 use crate::{

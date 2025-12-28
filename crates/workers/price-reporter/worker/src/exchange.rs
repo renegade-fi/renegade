@@ -9,7 +9,7 @@ use std::{
 };
 
 use atomic_float::AtomicF64;
-use common::types::{exchange::Exchange, price::Price, token::Token};
+use types_core::{exchange::Exchange, price::Price, token::Token};
 
 use futures_util::Stream;
 

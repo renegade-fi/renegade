@@ -1,7 +1,8 @@
 //! Helpers for the task driver
 
 use circuit_types::note::Note;
-use common::types::{proof_bundles::ProofBundle, tasks::RedeemFeeTaskDescriptor};
+use common::types::proof_bundles::ProofBundle;
+use types_tasks::RedeemFeeTaskDescriptor;
 use job_types::proof_manager::{ProofJob, ProofManagerJob};
 use state::State;
 use tokio::sync::oneshot::{self, Receiver as TokioReceiver};

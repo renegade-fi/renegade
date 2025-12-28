@@ -20,7 +20,7 @@
 // mod interface;
 // pub mod notifications;
 // pub mod replication;
-// pub mod state_transition;
+pub mod state_transition;
 pub mod storage;
 
 // Re-export the state interface
