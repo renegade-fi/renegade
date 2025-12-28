@@ -10,14 +10,14 @@
 
 use alloy::rpc::types::TransactionRequest;
 use circuit_types::{
+    Amount,
     fees::{FeeTake, FeeTakeRate},
     fixed_point::FixedPoint,
+    r#match::{BoundedMatchResult, ExternalMatchResult},
     max_price,
     order::OrderSide,
-    r#match::{BoundedMatchResult, ExternalMatchResult},
-    Amount,
 };
-use constants::{Scalar, NATIVE_ASSET_ADDRESS};
+use constants::{NATIVE_ASSET_ADDRESS, Scalar};
 use num_bigint::BigUint;
 use num_traits::Zero;
 use renegade_crypto::fields::scalar_to_u128;
@@ -33,7 +33,9 @@ use util::{
 use crate::{deserialize_biguint_from_hex_string, serialize_biguint_to_hex_addr};
 
 #[cfg(feature = "full-api")]
-use common::types::proof_bundles::{ValidMalleableMatchSettleAtomicBundle, ValidMatchSettleAtomicBundle};
+use common::types::proof_bundles::{
+    ValidMalleableMatchSettleAtomicBundle, ValidMatchSettleAtomicBundle,
+};
 use types_wallet::wallet::Order;
 
 // ------------------
@@ -674,7 +676,7 @@ mod test {
     use super::*;
     use circuit_types::fixed_point::FixedPoint;
     use constants::Scalar;
-    use rand::{thread_rng, Rng};
+    use rand::{Rng, thread_rng};
 
     /// Test the method that computes match amounts for exact receive orders
     #[test]
