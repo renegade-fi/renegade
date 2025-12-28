@@ -1,9 +1,9 @@
 //! State transition types for the state machine
 
-use types_runtime::MatchingPoolName;
-use types_gossip::WrappedPeerId;
-use types_tasks::{QueuedTask, QueuedTaskState, TaskIdentifier, TaskQueueKey};
 use serde::{Deserialize, Serialize};
+use types_gossip::WrappedPeerId;
+use types_runtime::MatchingPoolName;
+use types_tasks::{QueuedTask, QueuedTaskState, TaskIdentifier, TaskQueueKey};
 use uuid::Uuid;
 
 // ---------------------

@@ -1,7 +1,7 @@
 //! Helpers for calculating and recording metrics
 
-use types_core::{AccountId, token::Token};
 use num_bigint::BigUint;
+use types_core::{AccountId, token::Token};
 use util::hex::biguint_to_hex_addr;
 
 use crate::labels::{
