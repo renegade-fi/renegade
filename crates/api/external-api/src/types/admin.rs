@@ -3,7 +3,7 @@
 use circuit_types::Amount;
 use serde::{Deserialize, Serialize};
 use types_core::price::Price;
-use types_wallet::wallet::{order_metadata::OrderMetadata, WalletIdentifier};
+use types_wallet::wallet::{WalletIdentifier, order_metadata::OrderMetadata};
 
 /// An order's metadata, augmented with the containing
 /// wallet's ID, and optionally the fillable amount

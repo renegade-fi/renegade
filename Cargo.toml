@@ -13,7 +13,7 @@ members = [
 	# "crates/config",
 	# "crates/core",
 	# "crates/darkpool-client",
-	# "crates/api/external-api",
+	"crates/api/external-api",
 	# "crates/api/gossip-api",
 	# "crates/testing/mock-node",
 	# "crates/node-support/snapshot-sidecar",

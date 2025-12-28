@@ -1,12 +1,12 @@
 //! API types for wallet information
 
 use circuit_types::{
+    Amount, SizedWalletShare,
     balance::Balance,
     fixed_point::FixedPoint,
     keychain::{PublicIdentificationKey, PublicKeyChain, SecretIdentificationKey},
     order::OrderSide,
     traits::BaseType,
-    Amount, SizedWalletShare,
 };
 use itertools::Itertools;
 use num_bigint::BigUint;
@@ -16,8 +16,8 @@ use types_core::hmac::HmacKey;
 use types_wallet::{
     keyed_list::KeyedList,
     wallet::{
+        IntentIdentifier, Order, Wallet, WalletIdentifier,
         keychain::{KeyChain, PrivateKeyChain},
-        Order, IntentIdentifier, Wallet, WalletIdentifier,
     },
 };
 use util::hex::{

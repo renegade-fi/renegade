@@ -18,8 +18,7 @@ types-gossip = { workspace = true }
 types-tasks = { workspace = true }
 types-wallet = { workspace = true }
 types-runtime = { workspace = true }
-# TODO: Uncomment when external-api build issues are resolved
-# external-api = { workspace = true }
+external-api = { workspace = true, features = ["task-api"] }
 
 # === Misc Dependencies === #
 uuid = { version = "1.1.2", features = ["v4", "serde"] }

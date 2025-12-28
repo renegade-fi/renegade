@@ -32,6 +32,7 @@ thiserror = { workspace = true, optional = true }
 
 # === Workspace Dependencies === #
 circuit-types = { workspace = true }
+darkpool-types = { workspace = true }
 types-core = { workspace = true }
 types-gossip = { workspace = true }
 types-tasks = { workspace = true }

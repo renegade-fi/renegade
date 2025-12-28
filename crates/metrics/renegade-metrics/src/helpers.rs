@@ -1,7 +1,7 @@
 //! Helpers for calculating and recording metrics
 
 use num_bigint::BigUint;
-use types_core::{AccountId, token::Token};
+use types_core::{AccountId, Token};
 use util::hex::biguint_to_hex_addr;
 
 use crate::labels::{
@@ -70,24 +70,27 @@ pub fn maybe_record_transfer_metrics(transfer: &()) {
 
 /// Record the volume of base/quote assets moved in a match
 pub fn record_match_volume(res: &(), is_external_match: bool, wallet_ids: &[AccountId]) {
-    // Tag with wallet IDs if provided
-    let mut labels: Vec<_> = wallet_ids
-        .iter()
-        .enumerate()
-        .map(|(i, wallet_id)| (wallet_id_tag(i + 1), wallet_id.to_string()))
-        .collect();
+    todo!("re-implement record_match_volume")
+    // // Tag with wallet IDs if provided
+    // let mut labels: Vec<_> = wallet_ids
+    //     .iter()
+    //     .enumerate()
+    //     .map(|(i, wallet_id)| (wallet_id_tag(i + 1), wallet_id.to_string()))
+    //     .collect();
 
-    // Label the match as external in the metric
-    if is_external_match {
-        labels.push((EXTERNAL_MATCH_METRIC_TAG.to_string(), "true".to_string()));
-    }
+    // // Label the match as external in the metric
+    // if is_external_match {
+    //     labels.push((EXTERNAL_MATCH_METRIC_TAG.to_string(),
+    // "true".to_string())); }
 
-    record_volume_with_tags(&res.base_mint, res.base_amount, MATCH_BASE_VOLUME_METRIC, &labels);
+    // record_volume_with_tags(&res.base_mint, res.base_amount,
+    // MATCH_BASE_VOLUME_METRIC, &labels);
 
-    // Tag the base asset of the match
-    let (base_asset, _) = get_asset_and_volume(&res.base_mint, res.base_amount);
-    labels.push((BASE_ASSET_METRIC_TAG.to_string(), base_asset));
-    record_volume_with_tags(&res.quote_mint, res.quote_amount, MATCH_QUOTE_VOLUME_METRIC, &labels);
+    // // Tag the base asset of the match
+    // let (base_asset, _) = get_asset_and_volume(&res.base_mint,
+    // res.base_amount); labels.push((BASE_ASSET_METRIC_TAG.to_string(),
+    // base_asset)); record_volume_with_tags(&res.quote_mint,
+    // res.quote_amount, MATCH_QUOTE_VOLUME_METRIC, &labels);
 }
 
 /// Record the volume of a fee settlement into the relayer's wallet
