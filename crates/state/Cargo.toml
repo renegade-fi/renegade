@@ -46,12 +46,13 @@ tokio = { workspace = true }
 
 # === Workspace Dependencies === #
 types-core = { workspace = true }
-types-gossip = { workspace = true }
+types-gossip = { workspace = true, features = ["rkyv"] }
 types-tasks = { workspace = true, features = ["rkyv"] }
 types-wallet = { workspace = true }
 types-runtime = { workspace = true }
 config = { workspace = true }
 constants = { workspace = true }
+external-api = { workspace = true, features = ["task-api"] }
 gossip-api = { workspace = true }
 job-types = { workspace = true }
 system-bus = { workspace = true }
@@ -93,6 +94,7 @@ tempfile = "3.8"
 rand = { workspace = true }
 uuid = "1.4"
 test-helpers = { workspace = true, features = ["mocks"] }
+types-gossip = { workspace = true, features = ["mocks", "rkyv"] }
 types-tasks = { workspace = true, features = ["mocks", "rkyv"] }
 tokio-stream = "0.1"
 

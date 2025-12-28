@@ -16,7 +16,7 @@
 // pub mod proofs;
 // pub mod raft_log;
 // pub mod relayer_fees;
-// pub mod task_assignments;
+pub mod task_assignments;
 // pub mod task_history;
 pub mod task_queue;
 // pub mod wallet_index;

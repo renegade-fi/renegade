@@ -6,6 +6,7 @@ edition = "2024"
 [features]
 default = []
 mocks = []
+rkyv = ["dep:rkyv"]
 
 [dependencies]
 # === Cryptography === #
@@ -19,6 +20,7 @@ libp2p-identity = { workspace = true }
 
 # === Serialization === #
 derivative = "2.2"
+rkyv = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 
