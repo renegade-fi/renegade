@@ -1,10 +1,7 @@
 //! Helpers for the task driver
 
-use circuit_types::note::Note;
 use common::types::proof_bundles::ProofBundle;
-use types_tasks::RedeemFeeTaskDescriptor;
 use job_types::proof_manager::{ProofJob, ProofManagerJob};
-use state::State;
 use tokio::sync::oneshot::{self, Receiver as TokioReceiver};
 
 use crate::traits::TaskContext;
@@ -28,10 +25,6 @@ const ERR_PROVE_COMMITMENTS_FAILED: &str = "failed to prove valid commitments";
 const ERR_PROVE_REBLIND_FAILED: &str = "failed to prove valid reblind";
 /// The error thrown when the wallet cannot be found in tx history
 pub const ERR_WALLET_NOT_FOUND: &str = "wallet not found in wallet_last_updated map";
-/// The error message emitted by the task when the fee decryption key is missing
-const ERR_FEE_KEY_MISSING: &str = "fee decryption key is missing";
-/// The error message emitted by the task when the relayer wallet is missing
-const ERR_RELAYER_WALLET_MISSING: &str = "relayer wallet is missing";
 
 /// Enqueue a job with the proof manager
 ///
@@ -46,15 +39,4 @@ pub(crate) fn enqueue_proof_job(
         .map_err(|_| ERR_ENQUEUING_JOB.to_string())?;
 
     Ok(response_receiver)
-}
-
-/// Enqueue a job to redeem a relayer fee into the relayer's wallet
-pub(crate) async fn enqueue_relayer_redeem_job(note: Note, state: &State) -> Result<(), String> {
-    let relayer_wallet_id =
-        state.get_relayer_wallet_id()?.ok_or_else(|| ERR_RELAYER_WALLET_MISSING.to_string())?;
-    let decryption_key =
-        state.get_fee_key()?.secret_key().ok_or_else(|| ERR_FEE_KEY_MISSING.to_string())?;
-    let descriptor = RedeemFeeTaskDescriptor::new(relayer_wallet_id, note, decryption_key);
-
-    state.append_task(descriptor.into()).await.map_err(|e| e.to_string()).map(|_| ())
 }

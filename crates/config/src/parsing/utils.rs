@@ -2,13 +2,13 @@
 
 use std::{collections::HashMap, str::FromStr};
 
-use circuit_types::elgamal::DecryptionKey;
+use circuit_types::elgamal::{DecryptionKey, EncryptionKey};
 use rand::thread_rng;
-use types_core::hmac::HmacKey;
+use types_core::HmacKey;
 use types_gossip::ClusterAsymmetricKeypair;
 use util::hex::jubjub_from_hex_string;
 
-use crate::{Cli, RelayerFeeKey};
+use crate::Cli;
 
 /// Parse the cluster's symmetric and asymmetric keys from the CLI
 pub(crate) fn parse_cluster_keys(cli: &Cli) -> Result<(HmacKey, ClusterAsymmetricKeypair), String> {
@@ -40,28 +40,21 @@ pub(crate) fn parse_symmetric_key(key_str: String) -> Result<HmacKey, String> {
         .map_err(|_| "Invalid symmetric key".to_string())
 }
 
-/// Parse the relayer's decryption key from a string
-pub(crate) fn parse_fee_key(
-    encryption_key: Option<String>,
-    decryption_key: Option<String>,
-) -> Result<RelayerFeeKey, String> {
+/// Parse the relayer's fee encryption key from a string
+pub(crate) fn parse_fee_key(encryption_key: Option<String>) -> Result<EncryptionKey, String> {
     if let Some(k) = encryption_key {
-        let key = jubjub_from_hex_string(&k)?;
-        Ok(RelayerFeeKey::new_public(key))
-    } else if let Some(k) = decryption_key {
-        let key = DecryptionKey::from_hex_str(&k)?;
-        Ok(RelayerFeeKey::new_secret(key))
+        jubjub_from_hex_string(&k)
     } else {
         #[cfg(not(feature = "silent"))]
         {
             // Must print here as logger is not yet setup
             use colored::*;
-            println!("{}\n", "WARN: No fee decryption key provided, generating one".yellow());
+            println!("{}\n", "WARN: No fee encryption key provided, generating one".yellow());
         }
 
         let mut rng = thread_rng();
         let key = DecryptionKey::random(&mut rng);
-        Ok(RelayerFeeKey::new_secret(key))
+        Ok(key.public_key())
     }
 }
 
