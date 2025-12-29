@@ -6,12 +6,8 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 use types_core::{
-    chain::Chain,
-    exchange::Exchange,
-    token::{
-        USD_TICKER, set_default_chain, write_exchange_support, write_token_decimals_map,
-        write_token_remaps,
-    },
+    Chain, Exchange, USD_TICKER, set_default_chain, write_exchange_support,
+    write_token_decimals_map, write_token_remaps,
 };
 use util::raw_err_str;
 
@@ -169,7 +165,7 @@ mod test {
     use std::{collections::HashMap, fs::File};
 
     use tempfile::{TempDir, tempdir};
-    use types_core::{chain::Chain, exchange::Exchange, token::read_token_remaps};
+    use types_core::{Chain, Exchange, read_token_remaps};
 
     use crate::token_remaps::parse_remap_from_file;
 

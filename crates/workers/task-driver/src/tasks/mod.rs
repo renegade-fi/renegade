@@ -4,7 +4,6 @@ pub mod create_new_wallet;
 pub mod lookup_wallet;
 pub mod node_startup;
 pub mod pay_offline_fee;
-pub mod pay_relayer_fee;
 pub mod redeem_fee;
 pub mod refresh_wallet;
 pub mod settle_malleable_external_match;

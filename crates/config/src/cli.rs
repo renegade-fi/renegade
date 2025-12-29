@@ -1,11 +1,8 @@
 //! The relayer CLI and config definitions
 
+use alloy::primitives::Address;
 use alloy::signers::local::PrivateKeySigner;
-use circuit_types::{
-    Address, Amount,
-    elgamal::{DecryptionKey, EncryptionKey},
-    fixed_point::FixedPoint,
-};
+use circuit_types::{Amount, elgamal::EncryptionKey, fixed_point::FixedPoint};
 use clap::Parser;
 use libp2p::{Multiaddr, identity::Keypair};
 use serde::{Deserialize, Serialize};
@@ -14,7 +11,7 @@ use std::{
     net::{IpAddr, SocketAddr},
     path::Path,
 };
-use types_core::{chain::Chain, exchange::Exchange, hmac::HmacKey, token::Token};
+use types_core::{Chain, Exchange, HmacKey, Token};
 use types_gossip::{ClusterAsymmetricKeypair, ClusterId, WrappedPeerId};
 use url::Url;
 use util::telemetry::configure_telemetry;
@@ -96,9 +93,6 @@ pub struct Cli {
     /// If not set, atomic matches are not supported
     #[clap(long, value_parser, env = "EXTERNAL_FEE_ADDR")]
     pub external_fee_addr: Option<String>,
-    /// When set, the relayer will automatically redeem new fees into its wallet
-    #[clap(long, value_parser, default_value = "false")]
-    pub auto_redeem_fees: bool,
 
     // -----------------------
     // | Environment Configs |
@@ -241,14 +235,8 @@ pub struct Cli {
     )]
     pub private_key: String,
     /// The key used to encrypt fee payments
-    /// 
-    /// May be specified _instead of_ `fee_decryption_key` in the case that separate infrastructure is used for 
-    /// fee collection and settlement
-    #[clap(long = "fee-encryption-key", value_parser, conflicts_with = "fee_decryption_key", env = "FEE_ENCRYPTION_KEY")]
+    #[clap(long = "fee-encryption-key", value_parser, env = "FEE_ENCRYPTION_KEY")]
     pub fee_encryption_key: Option<String>,
-    /// The key used to decrypt fee payments
-    #[clap(long = "fee-decryption-key", value_parser, conflicts_with = "fee_encryption_key", env = "FEE_DECRYPTION_KEY")]
-    pub fee_decryption_key: Option<String>,
 
     // -------------
     // | Telemetry |
@@ -299,8 +287,6 @@ pub struct RelayerConfig {
     pub per_asset_fees: HashMap<String, FixedPoint>,
     /// The address at which to collect externally paid fees
     pub external_fee_addr: Option<Address>,
-    /// When set, the relayer will automatically redeem new fees into its wallet
-    pub auto_redeem_fees: bool,
 
     // ---------------------
     // | External Services |
@@ -415,8 +401,8 @@ pub struct RelayerConfig {
     pub private_key: PrivateKeySigner,
     /// The Ethereum RPC node websocket address to dial for on-chain data
     pub eth_websocket_addr: Option<String>,
-    /// The key used to encrypt (and possibly decrypt) fee payments
-    pub fee_key: RelayerFeeKey,
+    /// The key used to encrypt fee payments
+    pub fee_key: EncryptionKey,
 
     // -------------
     // | Telemetry |
@@ -451,13 +437,6 @@ impl RelayerConfig {
         Path::new(&self.raft_snapshot_path)
     }
 
-    /// Whether the relayer needs a wallet to support its configuration or not
-    ///
-    /// If it does not, the relayer may skip the wallet creation/lookup step
-    pub fn needs_relayer_wallet(&self) -> bool {
-        self.auto_redeem_fees
-    }
-
     /// Get the minimum fill size as a decimal adjusted USDC value
     pub fn min_fill_size_decimal_adjusted(&self) -> f64 {
         let token = Token::from_ticker("USDC");
@@ -483,47 +462,6 @@ impl Default for RelayerConfig {
         // Parse a dummy set of command line args and convert this to a config
         let cli = Cli::parse_from(Vec::<String>::new());
         parse_config_from_args(cli).expect("default config does not parse")
-    }
-}
-
-/// Wraps an encryption key (public or private) to allow for the relayer to be
-/// configured with either of the encryption key or the decryption key
-///
-/// Configuring the relayer with the decryption key allows the relayer to
-/// automate tasks like fee redemption
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
-pub enum RelayerFeeKey {
-    /// A public-only configuration
-    Public(EncryptionKey),
-    /// A private-key configuration
-    Secret(DecryptionKey),
-}
-
-impl RelayerFeeKey {
-    /// Construct a new public-only key configuration
-    pub fn new_public(key: EncryptionKey) -> Self {
-        RelayerFeeKey::Public(key)
-    }
-
-    /// Construct a new private-key configuration
-    pub fn new_secret(key: DecryptionKey) -> Self {
-        RelayerFeeKey::Secret(key)
-    }
-
-    /// Get the public key
-    pub fn public_key(&self) -> EncryptionKey {
-        match self {
-            RelayerFeeKey::Public(key) => *key,
-            RelayerFeeKey::Secret(key) => key.public_key(),
-        }
-    }
-
-    /// Get the secret key
-    pub fn secret_key(&self) -> Option<DecryptionKey> {
-        match self {
-            RelayerFeeKey::Public(_) => None,
-            RelayerFeeKey::Secret(key) => Some(*key),
-        }
     }
 }
 

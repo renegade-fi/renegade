@@ -27,10 +27,7 @@ use util::{err_str, on_chain::get_protocol_pubkey};
 use crate::{
     task_state::StateWrapper,
     traits::{Descriptor, Task, TaskContext, TaskError, TaskState},
-    utils::{
-        enqueue_proof_job, enqueue_relayer_redeem_job, merkle_path::find_merkle_path_with_tx,
-        proofs::update_wallet_proofs,
-    },
+    utils::{enqueue_proof_job, merkle_path::find_merkle_path_with_tx, proofs::update_wallet_proofs},
 };
 
 use super::{ERR_BALANCE_MISSING, ERR_NO_MERKLE_PROOF, ERR_WALLET_MISSING};
@@ -303,16 +300,6 @@ impl PayOfflineFeeTask {
         // Update the global state to include the new wallet
         let waiter = state.update_wallet(self.new_wallet.clone()).await?;
         waiter.await?;
-
-        // If this was a relayer fee payment and auto-redeem is enabled, enqueue a job
-        // for the relayer to redeem the fee
-        let auto_redeem = state.get_auto_redeem_fees()?;
-        let decryption_key = state.get_fee_key()?.secret_key();
-        if !self.is_protocol_fee && auto_redeem && decryption_key.is_some() {
-            enqueue_relayer_redeem_job(self.note.clone(), state)
-                .await
-                .map_err(PayOfflineFeeTaskError::State)?;
-        }
 
         Ok(())
     }
