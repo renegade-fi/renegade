@@ -20,6 +20,8 @@ pub const CLUSTER_MANAGEMENT_TOPIC_PREFIX: &str = "cluster-management";
 
 /// A type alias for the cluster identifier
 #[derive(Clone, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "rkyv", derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize))]
+#[cfg_attr(feature = "rkyv", rkyv(derive(Debug)))]
 pub struct ClusterId(String);
 
 impl ClusterId {

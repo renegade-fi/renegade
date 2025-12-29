@@ -55,3 +55,21 @@ impl HistoricalTaskDescription {
         }
     }
 }
+
+// --- Mocks --- //
+
+#[cfg(feature = "mocks")]
+impl HistoricalTask {
+    /// Create a mock historical task for testing
+    pub fn mock() -> Self {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+
+        Self {
+            id: TaskIdentifier::new_v4(),
+            state: QueuedTaskState::Queued,
+            created_at: COUNTER.fetch_add(1, Ordering::Relaxed),
+            task_info: HistoricalTaskDescription::NewAccount,
+        }
+    }
+}
