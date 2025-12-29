@@ -34,7 +34,6 @@ required-features = ["mocks"]
 openraft = { version = "=0.9.13", features = ["serde", "storage-v2"] }
 
 # === Storage === #
-bincode = "1.3"
 ciborium = "0.2"
 flate2 = "1.0"
 libmdbx = "0.3"
@@ -45,6 +44,9 @@ futures = { workspace = true }
 tokio = { workspace = true }
 
 # === Workspace Dependencies === #
+alloy-primitives = { workspace = true }
+circuit-types = { workspace = true }
+darkpool-types = { workspace = true, features = ["rkyv"] }
 types-core = { workspace = true }
 types-gossip = { workspace = true, features = ["rkyv"] }
 types-tasks = { workspace = true, features = ["rkyv"] }
@@ -63,24 +65,17 @@ util = { workspace = true }
 # === Serialization === #
 rkyv = { workspace = true, features = ["unaligned"] }
 serde = { workspace = true }
-serde_json = { workspace = true }
 
 # === Misc === #
 async-trait = { workspace = true }
-crossterm = "0.27"
 itertools = "0.10"
 fxhash = "0.2"
-lazy_static = { workspace = true }
 libp2p = { workspace = true }
 rand = "0.8"
-slog = { version = "2.2", features = ["max_level_trace"] }
 tempfile = { version = "3.8", optional = true }
 thiserror = { workspace = true }
 tracing = { workspace = true, features = ["log"] }
 tracing-opentelemetry = { workspace = true }
-tracing-slog = "0.2"
-tui = "0.19"
-tui-logger = "0.8"
 uuid = "1.1.2"
 metrics = { workspace = true }
 

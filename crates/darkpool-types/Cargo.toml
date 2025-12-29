@@ -14,7 +14,7 @@ proof-system-types = [
     "dep:mpc-plonk",
     "dep:mpc-relation",
 ]
-zero-copy = ["dep:rkyv", "dep:ark-ff", "dep:ark-bn254"]
+rkyv = ["dep:rkyv", "dep:ark-ff", "dep:ark-bn254"]
 
 [dependencies]
 # === Blockchain === #

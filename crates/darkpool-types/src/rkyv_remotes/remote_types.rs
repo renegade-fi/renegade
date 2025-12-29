@@ -1,4 +1,7 @@
 //! Remote type shims for rkyv serialization
+//!
+//! These types are used with `#[rkyv(with = ...)]` to serialize types
+//! that don't natively support rkyv.
 
 use std::marker::PhantomData;
 
@@ -41,8 +44,9 @@ impl PartialEq<Address> for ArchivedAddress {
 
 // BigIntDef matches BigInt<4> structure
 #[derive(Archive, Deserialize, Serialize)]
+#[rkyv(derive(Debug))]
 #[rkyv(remote = BigInt<SCALAR_LIMBS>)]
-struct BigIntDef(pub [u64; SCALAR_LIMBS]);
+pub(crate) struct BigIntDef(pub [u64; SCALAR_LIMBS]);
 
 impl From<BigIntDef> for BigInt<SCALAR_LIMBS> {
     fn from(value: BigIntDef) -> Self {
@@ -53,8 +57,9 @@ impl From<BigIntDef> for BigInt<SCALAR_LIMBS> {
 // ScalarFieldDef matches ScalarField (Fp<MontBackend<FrConfig, 4>, 4>)
 // structure
 #[derive(Archive, Deserialize, Serialize)]
+#[rkyv(derive(Debug))]
 #[rkyv(remote = Fp<MontBackend<FrConfig, SCALAR_LIMBS>, SCALAR_LIMBS>)]
-struct ScalarFieldDef(
+pub(crate) struct ScalarFieldDef(
     #[rkyv(with = BigIntDef)] pub BigInt<SCALAR_LIMBS>,
     pub PhantomData<MontBackend<FrConfig, SCALAR_LIMBS>>,
 );
@@ -67,6 +72,7 @@ impl From<ScalarFieldDef> for Fp<MontBackend<FrConfig, SCALAR_LIMBS>, SCALAR_LIM
 
 /// Remote type shim for `constants::Scalar`
 #[derive(Archive, Deserialize, Serialize)]
+#[rkyv(derive(Debug))]
 #[rkyv(remote = constants::Scalar)]
 #[rkyv(archived = ArchivedScalar)]
 pub struct ScalarDef(
@@ -95,7 +101,8 @@ impl PartialEq<Scalar> for ArchivedScalar {
 
 /// Remote type shim for
 /// `circuit_types::primitives::baby_jubjub::BabyJubJubPoint`
-#[derive(Archive, Deserialize, Serialize)]
+#[derive(Archive, Clone, Deserialize, Serialize)]
+#[rkyv(derive(Debug))]
 #[rkyv(remote = BabyJubJubPoint)]
 #[rkyv(archived = ArchivedBabyJubJubPoint)]
 pub struct BabyJubJubPointDef {
@@ -110,6 +117,12 @@ pub struct BabyJubJubPointDef {
 impl From<BabyJubJubPointDef> for BabyJubJubPoint {
     fn from(value: BabyJubJubPointDef) -> Self {
         BabyJubJubPoint { x: value.x, y: value.y }
+    }
+}
+
+impl From<BabyJubJubPoint> for BabyJubJubPointDef {
+    fn from(value: BabyJubJubPoint) -> Self {
+        BabyJubJubPointDef { x: value.x, y: value.y }
     }
 }
 
@@ -147,6 +160,7 @@ impl PartialEq<SchnorrPublicKey> for ArchivedSchnorrPublicKey {
 
 /// Remote type shim for `circuit_types::fixed_point::FixedPoint`
 #[derive(Archive, Deserialize, Serialize)]
+#[rkyv(derive(Debug))]
 #[rkyv(remote = FixedPoint)]
 #[rkyv(archived = ArchivedFixedPoint)]
 pub struct FixedPointDef {
@@ -171,8 +185,12 @@ impl PartialEq<FixedPoint> for ArchivedFixedPoint {
 mod tests {
     #![allow(unsafe_code)]
 
-    use super::*;
+    use alloy_primitives::Address;
+    use constants::Scalar;
     use rand::{RngCore, thread_rng};
+    use rkyv::{Archive, Deserialize, Serialize};
+
+    use super::{AddressDef, ScalarDef};
 
     /// Test wrapper for Address to test rkyv serialization
     #[derive(Archive, Deserialize, Serialize, Debug, PartialEq)]
