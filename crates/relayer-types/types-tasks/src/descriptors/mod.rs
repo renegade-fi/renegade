@@ -108,6 +108,14 @@ impl QueuedTaskState {
     }
 }
 
+impl ArchivedQueuedTaskState {
+    /// Whether the task is running
+    pub fn is_running(&self) -> bool {
+        matches!(self, ArchivedQueuedTaskState::Running { .. })
+            || matches!(self, ArchivedQueuedTaskState::Preemptive)
+    }
+}
+
 /// A wrapper around the task descriptors
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "rkyv", derive(Archive, RkyvSerialize, RkyvDeserialize))]
