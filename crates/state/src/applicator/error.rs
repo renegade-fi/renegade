@@ -1,5 +1,6 @@
 //! Error types emitted by the state applicator
 
+use job_types::task_driver::TaskDriverJob;
 use types_tasks::TaskQueueKey;
 
 use crate::storage::error::StorageError;
@@ -32,6 +33,12 @@ impl StateApplicatorError {
     #[allow(clippy::needless_pass_by_value)]
     pub fn reject<T: ToString>(msg: T) -> Self {
         Self::Rejected(msg.to_string())
+    }
+
+    /// Build an enqueue task error
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn enqueue_task<T: ToString>(msg: T) -> Self {
+        Self::EnqueueTask(msg.to_string())
     }
 }
 

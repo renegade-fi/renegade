@@ -15,7 +15,7 @@
 #![feature(let_chains)]
 #![feature(io_error_more)]
 
-// pub mod applicator;
+pub mod applicator;
 // pub mod caching;
 // mod interface;
 // pub mod notifications;

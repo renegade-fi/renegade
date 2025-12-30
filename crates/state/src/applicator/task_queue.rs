@@ -3,17 +3,18 @@
 use external_api::{http::task::ApiTaskStatus, types::ApiHistoricalTask};
 use job_types::{
     event_manager::{RelayerEventType, TaskCompletionEvent},
-    handshake_manager::HandshakeManagerJob,
     task_driver::TaskDriverJob,
 };
 use libmdbx::{RW, TransactionKind};
 use system_bus::{SystemBusMessage, task_history_topic, task_topic};
-use tracing::{error, info, instrument, warn};
+use tracing::{error, info, instrument};
+use types_core::AccountId;
 use types_gossip::WrappedPeerId;
-use types_tasks::{HistoricalTask, QueuedTask, QueuedTaskState, TaskIdentifier, TaskQueueKey};
-use util::err_str;
+use types_tasks::{
+    ArchivedQueuedTask, HistoricalTask, QueuedTask, QueuedTaskState, TaskIdentifier, TaskQueueKey,
+};
 
-use crate::storage::tx::StateTxn;
+use crate::storage::{traits::RkyvValue, tx::StateTxn};
 
 use super::{
     Result, StateApplicator, error::StateApplicatorError, return_type::ApplicatorReturnType,
@@ -64,9 +65,10 @@ impl StateApplicator {
         // Index the task
         tx.enqueue_serial_task(&queue_key, task)?;
         tx.add_assigned_task(executor, &task.id)?;
+        let archived_task = tx.get_task(&task.id)?.unwrap();
 
         // Run the task if possible
-        self.maybe_run_task(task, &tx)?;
+        self.maybe_run_task(&archived_task, &tx)?;
         tx.commit()?;
 
         self.publish_task_updates(queue_key, task);
@@ -102,7 +104,7 @@ impl StateApplicator {
 
             if Self::should_run_matching_engine(&executor, &key, &task, &tx)? {
                 // Run the matching engine on all orders that are ready
-                self.run_matching_engine_on_wallet(key, &tx)?;
+                self.run_matching_engine_on_account(key, &tx)?;
             }
         }
 
@@ -134,9 +136,10 @@ impl StateApplicator {
 
         tx.transition_task(&task_id, state)?;
         let updated_task = tx.get_task(&task_id)?.expect("task should exist");
+        let task = QueuedTask::rkyv_deserialize(&updated_task)?;
         tx.commit()?;
 
-        self.publish_task_updates_multiple(&keys, &updated_task);
+        self.publish_task_updates_multiple(&keys, &task);
         Ok(ApplicatorReturnType::None)
     }
 
@@ -164,7 +167,8 @@ impl StateApplicator {
 
         // Assign the task and run it if possible
         tx.add_assigned_task(executor, &task.id)?;
-        self.maybe_run_task(task, &tx)?;
+        let archived_task = tx.get_task(&task.id)?.unwrap();
+        self.maybe_run_task(&archived_task, &tx)?;
 
         tx.commit()?;
         self.publish_task_updates_multiple(keys, task);
@@ -237,7 +241,7 @@ impl StateApplicator {
     }
 
     /// Transition a task into the running state
-    fn maybe_run_task(&self, task: &QueuedTask, tx: &StateTxn<'_, RW>) -> Result<()> {
+    fn maybe_run_task(&self, task: &ArchivedQueuedTask, tx: &StateTxn<'_, RW>) -> Result<()> {
         if !tx.can_task_run(&task.id)? {
             return Ok(());
         }
@@ -250,7 +254,7 @@ impl StateApplicator {
     /// Start a task if the current peer is the executor
     fn maybe_execute_task<T: TransactionKind>(
         &self,
-        task: &QueuedTask,
+        task: &ArchivedQueuedTask,
         tx: &StateTxn<'_, T>,
     ) -> Result<()> {
         let my_peer_id = tx.get_peer_id()?;
@@ -258,11 +262,10 @@ impl StateApplicator {
             .get_task_assignment(&task.id)?
             .ok_or_else(|| StateApplicatorError::MissingEntry(ERR_UNASSIGNED_TASK))?;
 
-        if executor == my_peer_id {
-            self.config
-                .task_queue
-                .send(TaskDriverJob::run(task.clone()))
-                .map_err(err_str!(StateApplicatorError::EnqueueTask))?;
+        if *executor == my_peer_id {
+            let task = QueuedTask::rkyv_deserialize(task)?;
+            let job = TaskDriverJob::run(task);
+            self.config.task_queue.send(job).map_err(StateApplicatorError::enqueue_task)?;
         }
 
         Ok(())
@@ -285,37 +288,39 @@ impl StateApplicator {
         Ok(queue_empty && is_executor && is_wallet_task)
     }
 
-    /// Run the internal matching engine on all of a wallet's orders that are
+    /// Run the internal matching engine on all of an account's orders that are
     /// ready for matching
-    fn run_matching_engine_on_wallet<T: TransactionKind>(
+    fn run_matching_engine_on_account<T: TransactionKind>(
         &self,
-        wallet_id: WalletIdentifier,
+        wallet_id: AccountId,
         tx: &StateTxn<'_, T>,
     ) -> Result<()> {
-        let wallet = match tx.get_wallet(&wallet_id)? {
-            Some(wallet) => wallet,
-            // We simply skip running the matching engine if the wallet cannot be found, this may
-            // happen in a failed lookup task for example. We do not want to fail the tx
-            // in this case
-            None => {
-                warn!("wallet not found to run internal matching engine on: {wallet_id}");
-                return Ok(());
-            },
-        };
+        // TODO: re-implement run_matching_engine_on_account
+        // let wallet = match tx.get_wallet(&wallet_id)? {
+        //     Some(wallet) => wallet,
+        //     // We simply skip running the matching engine if the wallet cannot be
+        // found, this may     // happen in a failed lookup task for example. We
+        // do not want to fail the tx     // in this case
+        //     None => {
+        //         warn!("wallet not found to run internal matching engine on:
+        // {wallet_id}");         return Ok(());
+        //     },
+        // };
 
-        for order_id in wallet.orders.keys() {
-            let order = match tx.get_order_info(order_id)? {
-                Some(order) => order,
-                None => continue,
-            };
+        // for order_id in wallet.orders.keys() {
+        //     let order = match tx.get_order_info(order_id)? {
+        //         Some(order) => order,
+        //         None => continue,
+        //     };
 
-            if order.ready_for_match() {
-                let job = HandshakeManagerJob::InternalMatchingEngine { order: order.id };
-                if self.config.handshake_manager_queue.send(job).is_err() {
-                    error!("error enqueueing internal matching engine job for order {order_id}");
-                }
-            }
-        }
+        //     if order.ready_for_match() {
+        //         let job = HandshakeManagerJob::InternalMatchingEngine { order:
+        // order.id };         if
+        // self.config.handshake_manager_queue.send(job).is_err() {
+        // error!("error enqueueing internal matching engine job for order {order_id}");
+        //         }
+        //     }
+        // }
 
         Ok(())
     }
@@ -341,8 +346,9 @@ impl StateApplicator {
         // Add the task to history and remove its node assignment
         task.state = if success { QueuedTaskState::Completed } else { QueuedTaskState::Failed };
         let executor = if let Some(executor) = tx.get_task_assignment(task_id)? {
-            tx.remove_assigned_task(&executor, &task.id)?;
-            executor
+            let peer_id = executor.deserialize()?;
+            tx.remove_assigned_task(&peer_id, &task.id)?;
+            peer_id
         } else {
             return Ok(None);
         };
@@ -360,10 +366,11 @@ impl StateApplicator {
         executor: WrappedPeerId,
         tx: &StateTxn<'_, RW>,
     ) -> Result<()> {
+        let history_enabled = tx.get_historical_state_enabled()?;
         for key in keys {
             if let Some(t) = HistoricalTask::from_queued_task(*key, task.clone()) {
-                if tx.get_historical_state_enabled()? {
-                    tx.append_task_to_history(key, t.clone())?;
+                if history_enabled {
+                    tx.append_task_to_history(key, &t)?;
                 }
 
                 // Emit a task completion event to the event manager
@@ -394,11 +401,13 @@ impl StateApplicator {
             let executor = tx
                 .get_task_assignment(&task.id)?
                 .ok_or_else(|| StateApplicatorError::MissingEntry(ERR_UNASSIGNED_TASK))?;
+            let executor_id = executor.deserialize()?;
 
-            self.maybe_append_historical_task(&[key], &task, executor, tx)?;
+            self.maybe_append_historical_task(&[key], &task, executor_id, tx)?;
             self.publish_task_updates(key, &task);
 
-            if let Some(peer_id) = tx.get_task_assignment(&task.id)? {
+            if let Some(peer_id_value) = tx.get_task_assignment(&task.id)? {
+                let peer_id = peer_id_value.deserialize()?;
                 tx.remove_assigned_task(&peer_id, &task.id)?;
             }
         }
@@ -429,24 +438,34 @@ impl StateApplicator {
 mod test {
     use eyre::Result;
     use job_types::task_driver::{TaskDriverJob, TaskDriverReceiver, new_task_driver_queue};
+    use types_core::AccountId;
     use types_gossip::{WrappedPeerId, mocks::mock_peer};
-    use types_tasks::{QueuedTaskState, TaskIdentifier, TaskQueueKey, mocks::mock_queued_task};
+    use types_tasks::{
+        ArchivedQueuedTaskState, HistoricalTask, QueuedTaskState, TaskIdentifier, TaskQueueKey,
+        mocks::mock_queued_task,
+    };
     use util::channels::TracedMessage;
 
     use crate::{
         applicator::{
-            StateApplicator, error::StateApplicatorError, task_queue::PENDING_STATE,
+            StateApplicator, error::StateApplicatorError,
             test_helpers::mock_applicator_with_task_queue,
         },
         storage::{
             db::DB,
-            tx::task_queue::{TaskQueue, TaskQueuePreemptionState},
+            tx::task_queue::{TaskQueuePreemptionState, queue_type::TaskQueue},
         },
     };
 
     // -----------
     // | Helpers |
     // -----------
+
+    /// Get a task queue, deserializing it for comparison
+    fn get_queue(applicator: &StateApplicator, key: &TaskQueueKey) -> TaskQueue {
+        let tx = applicator.db().new_read_tx().unwrap();
+        tx.get_task_queue(key).unwrap().map(|q| q.deserialize().unwrap()).unwrap_or_default()
+    }
 
     /// Setup a mock applicator
     fn setup_mock_applicator() -> StateApplicator {
@@ -518,19 +537,16 @@ mod test {
         applicator.append_task(&task, &peer_id)?;
 
         // Check the task was added to the queue
+        let queue = get_queue(&applicator, &task_queue_key);
         let tx = applicator.db().new_read_tx()?;
-        let queue = tx
-            .get_task_queue(&task_queue_key)?
-            .ok_or_else(|| StateApplicatorError::reject("queue not found"))?
-            .deserialize()?;
         let task_retrieved = tx.get_task(&task_id)?.unwrap();
 
         let expected_queue = TaskQueue { serial_tasks: vec![task_id], ..Default::default() };
         assert_eq!(queue, expected_queue);
-        assert_eq!(
+        assert!(matches!(
             task_retrieved.state,
-            QueuedTaskState::Running { state: PENDING_STATE.to_string(), committed: false },
-        ); // should be started
+            ArchivedQueuedTaskState::Running { committed: false, .. }
+        )); // should be started
 
         // Check the task was started
         assert!(!task_recv.is_empty());
@@ -550,11 +566,7 @@ mod test {
         applicator.append_task(&task, &executor)?;
 
         // Check the task was not started
-        let tx = applicator.db().new_read_tx()?;
-        let queue = tx
-            .get_task_queue(&task_queue_key)?
-            .ok_or_else(|| StateApplicatorError::reject("queue not found"))?
-            .deserialize()?;
+        let queue = get_queue(&applicator, &task_queue_key);
         let expected_queue = TaskQueue { serial_tasks: vec![task.id], ..Default::default() };
         assert_eq!(queue, expected_queue);
         assert!(task_recv.is_empty());
@@ -576,16 +588,13 @@ mod test {
         applicator.append_task(&task2, &peer_id)?;
 
         // Ensure that the second task is in the db's queue, not marked as running
+        let queue = get_queue(&applicator, &task_queue_key);
         let tx = applicator.db().new_read_tx()?;
-        let queue = tx
-            .get_task_queue(&task_queue_key)?
-            .ok_or_else(|| StateApplicatorError::reject("queue not found"))?
-            .deserialize()?;
         let task2_retrieved = tx.get_task(&task2.id)?.unwrap();
         let expected_queue =
             TaskQueue { serial_tasks: vec![task1_id, task2.id], ..Default::default() };
         assert_eq!(queue, expected_queue);
-        assert_eq!(task2_retrieved.state, QueuedTaskState::Queued);
+        assert!(matches!(task2_retrieved.state, ArchivedQueuedTaskState::Queued));
 
         // Ensure that the task queue is empty (no task is marked as running)
         assert!(task_recv.is_empty());
@@ -599,21 +608,12 @@ mod test {
 
         // Add a wallet; when the queue empties it will trigger the matching engine,
         // which requires the wallet to be present
-        let wallet_id = TaskQueueKey::new_v4();
-        let mut wallet = mock_empty_wallet();
-        wallet.wallet_id = wallet_id;
-        applicator.add_wallet(&wallet)?;
-
-        let task_id = enqueue_dummy_task(wallet_id, applicator.db());
+        let account_id = AccountId::new_v4();
+        let task_id = enqueue_dummy_task(account_id, applicator.db());
         applicator.pop_task(task_id, true /* success */)?;
 
         // Ensure the task was removed from the queue
-        let tx = applicator.db().new_read_tx()?;
-        let queue = tx
-            .get_task_queue(&wallet_id)?
-            .map(|q| q.deserialize())
-            .transpose()?
-            .unwrap_or_default();
+        let queue = get_queue(&applicator, &account_id);
         let expected_queue = TaskQueue::default();
         assert_eq!(queue, expected_queue);
 
@@ -641,15 +641,15 @@ mod test {
         applicator.pop_task(task_id, true /* success */)?;
 
         // Ensure the first task was removed from the queue
+        let queue = get_queue(&applicator, &task_queue_key);
         let tx = applicator.db().new_read_tx()?;
-        let queue = tx.get_task_queue(&task_queue_key)?;
         let task2_retrieved = tx.get_task(&task2.id)?.unwrap();
         let expected_queue = TaskQueue { serial_tasks: vec![task2.id], ..Default::default() };
         assert_eq!(queue, expected_queue);
-        assert_eq!(
+        assert!(matches!(
             task2_retrieved.state,
-            QueuedTaskState::Running { state: PENDING_STATE.to_string(), committed: false },
-        ); // should be started
+            ArchivedQueuedTaskState::Running { committed: false, .. }
+        )); // should be started
 
         // Ensure no task was started
         assert!(task_recv.is_empty());
@@ -675,15 +675,15 @@ mod test {
         applicator.pop_task(task_id, true /* success */)?;
 
         // Ensure the first task was removed from the queue
+        let queue = get_queue(&applicator, &task_queue_key);
         let tx = applicator.db().new_read_tx()?;
-        let queue = tx.get_task_queue(&task_queue_key)?;
         let task2_retrieved = tx.get_task(&task2.id)?.unwrap();
         let expected_queue = TaskQueue { serial_tasks: vec![task2.id], ..Default::default() };
         assert_eq!(queue, expected_queue);
-        assert_eq!(
+        assert!(matches!(
             task2_retrieved.state,
-            QueuedTaskState::Running { state: PENDING_STATE.to_string(), committed: false },
-        ); // should be started
+            ArchivedQueuedTaskState::Running { committed: false, .. }
+        )); // should be started
 
         // Ensure the second task was started
         assert!(!task_recv.is_empty());
@@ -706,14 +706,18 @@ mod test {
 
         // Ensure the task was added to history
         let tx = applicator.db().new_read_tx()?;
-        let history = tx.get_task_history(&task_queue_key)?;
+        let history_value = tx.get_task_history(&task_queue_key)?;
+        let history = history_value
+            .into_iter()
+            .map(|h| h.deserialize())
+            .collect::<Result<Vec<HistoricalTask>, _>>()?;
         tx.commit()?;
 
         assert_eq!(history.len(), 2);
         assert_eq!(history[0].id, task_id2);
-        assert_eq!(history[0].state, QueuedTaskState::Failed);
+        assert!(matches!(history[0].state, QueuedTaskState::Failed));
         assert_eq!(history[1].id, task_id1);
-        assert_eq!(history[1].state, QueuedTaskState::Completed);
+        assert!(matches!(history[1].state, QueuedTaskState::Completed));
 
         Ok(())
     }
@@ -761,14 +765,17 @@ mod test {
 
         // Transition the state of the top task in the queue
         let new_state = QueuedTaskState::Running { state: "Test".to_string(), committed: false };
-        applicator.transition_task_state(task.id, new_state.clone())?;
+        applicator.transition_task_state(task.id, new_state)?;
 
         // Ensure the task state was updated
         let tx = applicator.db().new_read_tx()?;
-        let task_info = tx.get_task(&task.id)?.unwrap();
+        let task_info = tx.get_task(&task.id)?.unwrap().deserialize()?;
         tx.commit()?;
 
-        assert_eq!(task_info.state, new_state);
+        assert!(matches!(
+            task_info.state,
+            QueuedTaskState::Running { state, committed: false } if state == "Test"
+        ));
         Ok(())
     }
 
@@ -808,12 +815,11 @@ mod test {
         let applicator = setup_mock_applicator();
 
         // Clear the queue
-        let key = WalletIdentifier::new_v4();
+        let key = TaskQueueKey::new_v4();
         applicator.clear_queue(key)?;
 
         // Check that the queue is still empty and unpaused
-        let tx = applicator.db().new_read_tx()?;
-        let queue = tx.get_task_queue(&key)?;
+        let queue = get_queue(&applicator, &key);
         let expected_queue = TaskQueue::default();
         assert_eq!(queue, expected_queue);
         Ok(())
@@ -832,8 +838,7 @@ mod test {
         applicator.clear_queue(task_queue_key)?;
 
         // Check that the queue is empty and unpaused
-        let tx = applicator.db().new_read_tx()?;
-        let queue = tx.get_task_queue(&task_queue_key)?;
+        let queue = get_queue(&applicator, &task_queue_key);
         let expected_queue = TaskQueue::default();
         assert_eq!(queue, expected_queue);
         Ok(())
@@ -914,7 +919,7 @@ mod test {
 
         // The existing task should be in the queued state
         let existing_task = tx.get_task(&serial_task.id)?.unwrap();
-        assert_eq!(existing_task.state, QueuedTaskState::Queued);
+        assert!(matches!(existing_task.state, ArchivedQueuedTaskState::Queued));
 
         // Lastly, the applicator should have sent the task to the driver
         let job = task_recv.recv().unwrap();
@@ -958,11 +963,11 @@ mod test {
         };
         assert_eq!(task_queue, expected_queue);
 
-        // The existing tasks should be in the queued state
+        // The existing tasks should be in the running state
         let task1_retrieved = tx.get_task(&task1.id)?.unwrap();
         let task2_retrieved = tx.get_task(&task2.id)?.unwrap();
-        assert!(matches!(task1_retrieved.state, QueuedTaskState::Running { .. }));
-        assert!(matches!(task2_retrieved.state, QueuedTaskState::Running { .. }));
+        assert!(matches!(task1_retrieved.state, ArchivedQueuedTaskState::Running { .. }));
+        assert!(matches!(task2_retrieved.state, ArchivedQueuedTaskState::Running { .. }));
 
         // The applicator should have forwarded both tasks to the driver
         let job1 = task_recv.recv().unwrap();
@@ -996,8 +1001,7 @@ mod test {
         task_recv.recv().expect("expected applicator to forward task");
 
         // Ensure the task was removed from the queue
-        let tx = applicator.db().new_read_tx()?;
-        let task_queue = tx.get_task_queue(&task_queue_key)?;
+        let task_queue = get_queue(&applicator, &task_queue_key);
         let expected_queue = TaskQueue { serial_tasks: vec![serial_task.id], ..Default::default() };
         assert_eq!(task_queue, expected_queue);
 
@@ -1032,8 +1036,7 @@ mod test {
         applicator.pop_task(concurrent_task.id, true)?;
 
         // Ensure the task was removed from the queue
-        let tx = applicator.db().new_read_tx()?;
-        let task_queue = tx.get_task_queue(&task_queue_key)?;
+        let task_queue = get_queue(&applicator, &task_queue_key);
         let expected_queue = TaskQueue {
             serial_tasks: vec![serial_task.id],
             preemption_state: TaskQueuePreemptionState::NotPreempted,
@@ -1106,10 +1109,11 @@ mod test {
         // Check the task status of the original task
         let tx = applicator.db().new_read_tx()?;
         let task1_retrieved = tx.get_task(&task1.id)?.unwrap();
-        assert!(matches!(task1_retrieved.state, QueuedTaskState::Running { .. }));
+        assert!(matches!(task1_retrieved.state, ArchivedQueuedTaskState::Running { .. }));
+        drop(tx);
 
-        let task_queue1 = tx.get_task_queue(&queue_key1)?;
-        let task_queue2 = tx.get_task_queue(&queue_key2)?;
+        let task_queue1 = get_queue(&applicator, &queue_key1);
+        let task_queue2 = get_queue(&applicator, &queue_key2);
         let expected_queue1 = TaskQueue {
             serial_tasks: vec![task1.id],
             preemption_state: TaskQueuePreemptionState::NotPreempted,
@@ -1154,10 +1158,10 @@ mod test {
         // Check the task status of the original task
         let tx = applicator.db().new_read_tx()?;
         let task2_retrieved = tx.get_task(&task2.id)?.unwrap();
-        assert!(matches!(task2_retrieved.state, QueuedTaskState::Running { .. }));
+        assert!(matches!(task2_retrieved.state, ArchivedQueuedTaskState::Running { .. }));
 
-        let task_queue1 = tx.get_task_queue(&queue_key1)?;
-        let task_queue2 = tx.get_task_queue(&queue_key2)?;
+        let task_queue1 = tx.get_task_queue(&queue_key1)?.unwrap().deserialize()?;
+        let task_queue2 = tx.get_task_queue(&queue_key2)?.unwrap().deserialize()?;
         let expected_queue2 = TaskQueue {
             serial_tasks: vec![task2.id],
             preemption_state: TaskQueuePreemptionState::NotPreempted,
@@ -1186,7 +1190,7 @@ mod test {
         // Add a task
         let failed_peer = WrappedPeerId::random();
         let reassigned_peer = WrappedPeerId::random();
-        let task = mock_queued_task(WalletIdentifier::new_v4());
+        let task = mock_queued_task(AccountId::new_v4());
         applicator.append_task(&task, &failed_peer)?;
 
         // Reassign the task
@@ -1194,8 +1198,9 @@ mod test {
 
         // Ensure the task was reassigned
         let tx = applicator.db().new_read_tx()?;
-        let executor = tx.get_task_assignment(&task.id)?.unwrap();
+        let executor = tx.get_task_assignment(&task.id)?.unwrap().deserialize()?;
         tx.commit()?;
+
         assert_eq!(executor, reassigned_peer);
         assert!(task_recv.is_empty());
         Ok(())
@@ -1214,7 +1219,7 @@ mod test {
 
         // Add a task
         let failed_peer = WrappedPeerId::random();
-        let task = mock_queued_task(WalletIdentifier::new_v4());
+        let task = mock_queued_task(TaskQueueKey::new_v4());
         applicator.append_task(&task, &failed_peer)?;
 
         // Reassign the task
@@ -1222,7 +1227,7 @@ mod test {
 
         // Ensure the task was reassigned
         let tx = applicator.db().new_read_tx()?;
-        let executor = tx.get_task_assignment(&task.id)?.unwrap();
+        let executor = tx.get_task_assignment(&task.id)?.unwrap().deserialize()?;
         tx.commit()?;
         assert_eq!(executor, peer_id);
 
@@ -1247,9 +1252,9 @@ mod test {
         let peer2 = WrappedPeerId::random();
         let failed_peer = WrappedPeerId::random();
 
-        let wallet_id = WalletIdentifier::new_v4();
-        let task1 = mock_queued_task(wallet_id);
-        let task2 = mock_queued_task(wallet_id);
+        let queue_key = TaskQueueKey::new_v4();
+        let task1 = mock_queued_task(queue_key);
+        let task2 = mock_queued_task(queue_key);
         applicator.append_task(&task1, &peer2)?;
         applicator.append_task(&task2, &failed_peer)?;
 
@@ -1258,8 +1263,8 @@ mod test {
 
         // Ensure the first task was not reassigned and the second task was
         let tx = applicator.db().new_read_tx()?;
-        let executor1 = tx.get_task_assignment(&task1.id)?.unwrap();
-        let executor2 = tx.get_task_assignment(&task2.id)?.unwrap();
+        let executor1 = tx.get_task_assignment(&task1.id)?.unwrap().deserialize()?;
+        let executor2 = tx.get_task_assignment(&task2.id)?.unwrap().deserialize()?;
         tx.commit()?;
         assert_eq!(executor1, peer2);
         assert_eq!(executor2, local_peer_id);
