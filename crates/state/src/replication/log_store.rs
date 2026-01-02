@@ -12,11 +12,16 @@ use libmdbx::{RO, RW};
 use openraft::storage::LogFlushed;
 use openraft::{LogId, LogState, StorageError as RaftStorageError, Vote};
 use openraft::{RaftLogReader, storage::RaftLogStorage};
-use util::err_str;
+use rkyv::rancor;
+use rkyv::with::With;
+use util::{err_str, res_some};
 
 use crate::replication::error::new_log_read_error;
+use crate::replication::rkyv_types::{ArchivedLogId, LogIdDef};
+use crate::replication::{WrappedEntry, WrappedLogId, WrappedVote};
 use crate::storage::db::DB;
 use crate::storage::error::StorageError;
+use crate::storage::traits::RkyvValue;
 use crate::storage::tx::StateTxn;
 use crate::storage::tx::raft_log::{lsn_to_key, parse_lsn};
 
@@ -114,12 +119,13 @@ impl RaftLogReader<TypeConfig> for LogStore {
             log_cursor.seek(&lsn_to_key(low))?;
             for record in log_cursor.into_iter() {
                 let (key, entry) = record?;
-                let index = parse_lsn(&key).expect("invalid LSN");
+                let index = parse_lsn(&key);
                 if index > high {
                     break;
                 }
 
-                res.push(entry);
+                let entry = entry.deserialize()?;
+                res.push(entry.into());
             }
 
             Ok(res)
@@ -134,10 +140,22 @@ impl RaftLogStorage<TypeConfig> for LogStore {
 
     async fn get_log_state(&mut self) -> Result<LogState<TypeConfig>, RaftStorageError<NodeId>> {
         self.with_read_tx(move |tx| {
-            let last_purged_log_id = tx.get_last_purged_log_id()?;
-            let last_log = tx.last_raft_log()?.map(|(_, entry)| entry.log_id);
+            let last_purged_log_id = tx
+                .get_last_purged_log_id()?
+                .map(|v| WrappedLogId::rkyv_deserialize(&v))
+                .transpose()?
+                .map(|v| v.into());
+
+            let last_log = tx.last_raft_log()?.map(|(_, entry)| entry);
             let last_log_id = match last_log {
-                Some(x) => Some(x),
+                Some(x) => {
+                    let archived_id = &x.inner.log_id;
+                    let with = With::<ArchivedLogId, LogIdDef>::cast(archived_id);
+                    let log_id = rkyv::deserialize::<_, rancor::Error>(with)
+                        .map_err(StorageError::serialization)?;
+
+                    Some(log_id)
+                },
                 None => last_purged_log_id,
             };
 
@@ -148,12 +166,19 @@ impl RaftLogStorage<TypeConfig> for LogStore {
     }
 
     async fn save_vote(&mut self, vote: &Vote<NodeId>) -> Result<(), RaftStorageError<NodeId>> {
-        let vote = *vote;
+        let vote = WrappedVote::new(*vote);
         self.with_write_tx(move |tx| tx.set_last_vote(&vote)).await.map_err(new_log_write_error)
     }
 
     async fn read_vote(&mut self) -> Result<Option<Vote<NodeId>>, RaftStorageError<NodeId>> {
-        self.with_read_tx(move |tx| tx.get_last_vote()).await.map_err(new_log_read_error)
+        self.with_read_tx(move |tx| {
+            let archived_vote = res_some!(tx.get_last_vote()?);
+            let vote = WrappedVote::rkyv_deserialize(&archived_vote)?.into();
+
+            Ok(Some(vote))
+        })
+        .await
+        .map_err(new_log_read_error)
     }
 
     async fn append<I>(
@@ -164,7 +189,7 @@ impl RaftLogStorage<TypeConfig> for LogStore {
     where
         I: IntoIterator<Item = Entry>,
     {
-        let entries = entries.into_iter().collect_vec();
+        let entries = entries.into_iter().map(WrappedEntry::new).collect_vec();
         self.with_write_tx(|tx| tx.append_log_entries(entries))
             .await
             .map_err(new_log_write_error)?;
@@ -185,7 +210,7 @@ impl RaftLogStorage<TypeConfig> for LogStore {
     async fn purge(&mut self, log_id: LogId<NodeId>) -> Result<(), RaftStorageError<NodeId>> {
         self.with_write_tx(move |tx| {
             tx.purge_logs(log_id.index)?;
-            tx.set_last_purged_log_id(&log_id)
+            tx.set_last_purged_log_id(&log_id.into())
         })
         .await
         .map_err(new_log_write_error)

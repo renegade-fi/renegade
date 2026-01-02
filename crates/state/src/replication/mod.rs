@@ -6,8 +6,8 @@
 #![allow(unexpected_cfgs)]
 
 pub mod error;
+mod log_store;
 pub mod rkyv_types;
-// mod log_store;
 // pub(crate) mod network;
 // pub mod raft;
 // pub(crate) mod state_machine;
