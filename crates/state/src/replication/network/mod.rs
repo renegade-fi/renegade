@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 use tracing::instrument;
 use util::{err_str, telemetry::helpers::backfill_trace_field};
 
-use crate::{Proposal, ciborium_serialize, error::StateError};
+use crate::{ciborium_serialize, error::StateError, state_transition::Proposal};
 
 use super::{Node, NodeId, TypeConfig};
 

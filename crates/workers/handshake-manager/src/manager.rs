@@ -12,13 +12,14 @@ use common::{
     types::{
         CancelChannel,
         gossip::WrappedPeerId,
-        handshake::{ConnectionRole, HandshakeState},
+        handshake::HandshakeState,
         proof_bundles::{OrderValidityProofBundle, ValidMatchSettleBundle},
         tasks::{SettleMatchTaskDescriptor, TaskDescriptor},
         token::Token,
         wallet::IntentIdentifier,
     },
 };
+use types_gossip::handshake::ConnectionRole;
 use constants::{HANDSHAKE_STATUS_TOPIC, in_bootstrap_mode};
 use system_bus::SystemBusMessage;
 use futures::executor::block_on;

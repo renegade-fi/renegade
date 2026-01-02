@@ -4,7 +4,8 @@
 //!     2. Order selection
 //!     3. State management
 
-use common::types::{handshake::ConnectionRole, wallet::IntentIdentifier};
+use common::types::wallet::IntentIdentifier;
+use types_gossip::handshake::ConnectionRole;
 use gossip_api::{
     pubsub::{
         PubsubMessage,

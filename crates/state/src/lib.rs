@@ -15,6 +15,8 @@
 #![feature(let_chains)]
 #![feature(io_error_more)]
 
+use crate::error::StateError;
+
 pub mod applicator;
 // pub mod caching;
 pub mod error;
@@ -26,6 +28,23 @@ pub mod storage;
 
 // Re-export the state interface
 // pub use interface::*;
+
+// -----------------
+// | Serialization |
+// -----------------
+
+/// Serialize a value using CBOR
+pub fn ciborium_serialize<T: serde::Serialize>(value: &T) -> Result<Vec<u8>, StateError> {
+    let mut buf = Vec::new();
+    ciborium::ser::into_writer(value, &mut buf).map_err(StateError::serde)?;
+    Ok(buf)
+}
+
+/// Deserialize a value using CBOR
+pub fn ciborium_deserialize<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> Result<T, StateError> {
+    let res = ciborium::de::from_reader(bytes).map_err(StateError::serde)?;
+    Ok(res)
+}
 
 // -------------
 // | Constants |

@@ -32,11 +32,19 @@ pub enum StateError {
     #[error("error awaiting runtime task: {0}")]
     Runtime(String),
     /// An error deserializing a message
-    #[error("error deserializing message: {0}")]
+    #[error("error serializing/deserializing: {0}")]
     Serde(String),
     /// A state transition was rejected
     #[error("state transition rejected: {0}")]
     TransitionRejected(String),
+}
+
+impl StateError {
+    /// Create a new `Serde` error
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn serde<T: ToString>(msg: T) -> Self {
+        Self::Serde(msg.to_string())
+    }
 }
 
 impl From<StorageError> for StateError {

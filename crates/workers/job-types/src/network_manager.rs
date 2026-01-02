@@ -1,7 +1,5 @@
 //! Job types for the network manager
 
-use types_gossip::WrappedPeerId;
-use common::types::handshake::ConnectionRole;
 use gossip_api::{
     pubsub::PubsubMessage,
     request_response::{
@@ -12,6 +10,7 @@ use gossip_api::{
 use libp2p::request_response::ResponseChannel;
 use libp2p_core::Multiaddr;
 use tokio::sync::oneshot::{Receiver as OneshotReceiver, Sender as OneshotSender};
+use types_gossip::{ConnectionRole, WrappedPeerId};
 use util::channels::{TracedTokioReceiver, TracedTokioSender, new_traced_tokio_channel};
 use uuid::Uuid;
 
