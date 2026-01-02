@@ -76,9 +76,7 @@ pub fn get_raft_id(peer_id: &WrappedPeerId) -> u64 {
 }
 
 // Re-export wrapper types
-pub use rkyv_types::{
-    WrappedEntry, WrappedLogId, WrappedSnapshotMeta, WrappedVote,
-};
+pub use rkyv_types::{WrappedEntry, WrappedLogId, WrappedSnapshotMeta, WrappedVote};
 
 // -------------
 // | Mock Raft |
@@ -254,7 +252,7 @@ pub use rkyv_types::{
 //             // Spawn a thread to manage the network switch
 //             let rafts = new_async_shared(nodes);
 //             tokio::spawn(Self::run(recv, rafts.clone()));
-//             
+//
 // tokio::time::sleep(Duration::from_millis(WAIT_FOR_ELECTION)).await;
 
 //             Self { delay: network_delay_ms, rafts, sender: send }
@@ -285,11 +283,11 @@ pub use rkyv_types::{
 // -> RaftResponse {             match req {
 //                 RaftRequest::AppendEntries(req) => {
 //                     let resp =
-// client.raft().append_entries(req).await.unwrap();                     
+// client.raft().append_entries(req).await.unwrap();
 // RaftResponse::AppendEntries(resp)                 },
 //                 RaftRequest::InstallSnapshot(req) => {
 //                     let resp =
-// client.raft().install_snapshot(req).await.unwrap();                     
+// client.raft().install_snapshot(req).await.unwrap();
 // RaftResponse::InstallSnapshot(Ok(resp))                 },
 //                 RaftRequest::Vote(req) => {
 //                     let resp = client.raft().vote(req).await.unwrap();

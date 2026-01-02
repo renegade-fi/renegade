@@ -17,7 +17,9 @@ use uuid::Uuid;
 /// A type alias for the proposal ID
 pub type ProposalId = Uuid;
 /// The proposal submitted to the state machine
-#[derive(Clone, Debug, Serialize, Deserialize, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+#[derive(
+    Clone, Debug, Serialize, Deserialize, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize,
+)]
 #[rkyv(derive(Debug))]
 pub struct Proposal {
     /// The ID of the proposal
