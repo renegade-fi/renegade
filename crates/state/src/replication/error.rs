@@ -79,6 +79,14 @@ pub enum ReplicationError {
     Storage(StorageError),
 }
 
+impl ReplicationError {
+    /// Create a new `Deserialize` error
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn deserialize<T: ToString>(msg: T) -> Self {
+        Self::Deserialize(msg.to_string())
+    }
+}
+
 impl From<StorageError> for ReplicationError {
     fn from(value: StorageError) -> Self {
         ReplicationError::Storage(value)

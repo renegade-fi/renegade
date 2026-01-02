@@ -6,10 +6,9 @@ use gossip_api::request_response::{GossipRequestType, GossipResponse, GossipResp
 use job_types::network_manager::{NetworkManagerJob, NetworkManagerQueue};
 use openraft::error::{NetworkError, RPCError, RaftError};
 use tracing::instrument;
-use util::err_str;
 
 use crate::{
-    ciborium_serialize,
+    ciborium_deserialize, ciborium_serialize,
     replication::{
         Node, NodeId,
         error::{ReplicationError, new_network_error},
@@ -48,7 +47,7 @@ impl GossipNetwork {
         let resp_bytes = match resp.body {
             GossipResponseType::Raft(x) => x,
             _ => {
-                return Err(ReplicationError::Deserialize(ERR_INVALID_RESPONSE.to_string()));
+                return Err(ReplicationError::deserialize(ERR_INVALID_RESPONSE));
             },
         };
 
@@ -58,7 +57,7 @@ impl GossipNetwork {
 
     /// Deserialize a raft response from bytes
     fn deserialize_raft_response(msg_bytes: &[u8]) -> Result<RaftResponse, ReplicationError> {
-        ciborium::de::from_reader(msg_bytes).map_err(err_str!(ReplicationError::Deserialize))
+        ciborium_deserialize(msg_bytes).map_err(ReplicationError::deserialize)
     }
 }
 

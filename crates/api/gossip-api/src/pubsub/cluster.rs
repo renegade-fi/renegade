@@ -1,8 +1,8 @@
 //! Cluster communications broadcast via Pubsub
 
+use serde::{Deserialize, Serialize};
 use types_gossip::{ClusterId, WrappedPeerId};
 use types_wallet::wallet::IntentIdentifier;
-use serde::{Deserialize, Serialize};
 
 /// A message from one cluster peer to the rest indicating cluster management
 /// hints

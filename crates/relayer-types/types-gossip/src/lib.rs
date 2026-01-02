@@ -9,6 +9,7 @@
 #![deny(clippy::missing_docs_in_private_items)]
 
 mod cluster;
+mod handshake;
 mod peer_id;
 mod peer_info;
 
@@ -17,6 +18,7 @@ pub mod mocks;
 
 // Re-exports
 pub use cluster::{CLUSTER_MANAGEMENT_TOPIC_PREFIX, ClusterAsymmetricKeypair, ClusterId};
+pub use handshake::ConnectionRole;
 pub use peer_id::WrappedPeerId;
 pub use peer_info::PeerInfo;
 

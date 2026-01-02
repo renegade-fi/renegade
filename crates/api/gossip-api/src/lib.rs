@@ -11,7 +11,7 @@ use tracing::instrument;
 use types_core::HmacKey;
 use util::telemetry::helpers::backfill_trace_field;
 
-// pub mod pubsub;
+pub mod pubsub;
 pub mod request_response;
 
 /// Type alias for the hmac core implementation

@@ -4,7 +4,7 @@
 use std::{net::SocketAddr, sync::atomic::Ordering};
 
 use ark_mpc::network::QuicTwoPartyNet;
-use common::types::handshake::ConnectionRole;
+use types_gossip::handshake::ConnectionRole;
 use itertools::Itertools;
 use job_types::{
     handshake_manager::{HandshakeManagerJob, HandshakeManagerQueue},

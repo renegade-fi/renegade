@@ -18,11 +18,11 @@ use tracing::error;
 use util::{err_str, res_some};
 
 use crate::{
-    Proposal,
     applicator::{StateApplicator, error::StateApplicatorError},
     error::StateError,
     notifications::OpenNotifications,
     replication::error::new_apply_error,
+    state_transition::Proposal,
     storage::db::DB,
 };
 
@@ -317,10 +317,10 @@ impl RaftStateMachine<TypeConfig> for StateMachine {
 
 #[cfg(test)]
 mod test {
-    use types_wallet::wallet::mocks::mock_empty_wallet;
     use openraft::{Entry, EntryPayload, LeaderId, LogId, storage::RaftStateMachine};
+    use types_wallet::wallet::mocks::mock_empty_wallet;
 
-    use crate::{Proposal, StateTransition, replication::test_helpers::mock_state_machine};
+    use crate::replication::test_helpers::mock_state_machine;
 
     /// Tests applying a log with a waiter on the state
     #[tokio::test]

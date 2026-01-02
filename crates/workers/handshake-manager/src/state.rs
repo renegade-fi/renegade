@@ -3,7 +3,8 @@
 use std::collections::{HashMap, HashSet};
 
 use super::error::HandshakeManagerError;
-use common::types::handshake::{ConnectionRole, HandshakeState};
+use common::types::handshake::HandshakeState;
+use types_gossip::handshake::ConnectionRole;
 use types_core::price::TimestampedPrice;
 use types_wallet::wallet::IntentIdentifier;
 use constants::Scalar;

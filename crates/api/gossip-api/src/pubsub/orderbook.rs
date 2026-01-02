@@ -1,10 +1,9 @@
 //! Pubsub message types for broadcasting order information to peers
 
-use circuit_types::wallet::Nullifier;
-use types_gossip::ClusterId;
-use common::types::proof_bundles::OrderValidityProofBundle;
-use types_wallet::wallet::IntentIdentifier;
+use circuit_types::Nullifier;
 use serde::{Deserialize, Serialize};
+use types_gossip::ClusterId;
+use types_wallet::wallet::IntentIdentifier;
 
 /// The network pubsub topic to use for listening to orderbook changes
 pub const ORDER_BOOK_TOPIC: &str = "orderbook";
@@ -32,6 +31,6 @@ pub enum OrderBookManagementMessage {
         /// The new validity proof bundle for the order, containing a proof of
         /// `VALID COMMITMENTS` for the order, and one of `VALID
         /// REBLIND` for the wallet
-        proof_bundle: OrderValidityProofBundle,
+        proof_bundle: (), // TODO: Add the proof bundle type
     },
 }
