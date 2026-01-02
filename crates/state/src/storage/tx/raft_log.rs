@@ -95,7 +95,7 @@ impl<T: TransactionKind> StateTxn<'_, T> {
     /// Get the first log stored in the DB
     ///
     /// Returns the owned entry since cursors deserialize values
-    pub fn first_raft_log(&self) -> Result<Option<(u64, WrappedEntry)>, StorageError> {
+    pub fn first_raft_log(&self) -> Result<Option<(u64, EntryValue<'_>)>, StorageError> {
         let mut cursor = self.logs_cursor()?;
         let (k, v) = res_some!(cursor.get_current()?);
         let parsed_key = parse_lsn(&k);
@@ -111,7 +111,7 @@ impl<T: TransactionKind> StateTxn<'_, T> {
     /// Get the last log stored in the DB
     ///
     /// Returns the owned entry since cursors deserialize values
-    pub fn last_raft_log(&self) -> Result<Option<(u64, WrappedEntry)>, StorageError> {
+    pub fn last_raft_log(&self) -> Result<Option<(u64, EntryValue<'_>)>, StorageError> {
         let mut cursor = self.logs_cursor()?;
         cursor.seek_last()?;
 

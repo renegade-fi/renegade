@@ -9,7 +9,7 @@ use std::marker::PhantomData;
 
 use libmdbx::{Cursor, RW, TransactionKind, WriteFlags};
 
-use crate::storage::error::StorageError;
+use crate::storage::{ArchivedValue, error::StorageError};
 
 use super::traits::{Key, Value};
 
@@ -41,6 +41,12 @@ pub struct DbCursor<'txn, Tx: TransactionKind, K: Key, V: Value> {
 impl<'txn, Tx: TransactionKind, K: Key, V: Value> DbCursor<'txn, Tx, K, V> {
     /// A type alias for a Cow buffer with the transaction lifetime
     pub type TxBytes = Cow<'txn, [u8]>;
+    /// A type alias for an archived key type
+    pub type ArchivedKey = ArchivedValue<'txn, K>;
+    /// A type alias for an archived value type
+    pub type ArchivedValue = ArchivedValue<'txn, V>;
+    /// A type alias for an archived key value pair
+    pub type ArchivedKV = (Self::ArchivedKey, Self::ArchivedValue);
 
     /// Constructor
     pub fn new(cursor: Cursor<'txn, Tx>) -> Self {
@@ -67,7 +73,7 @@ impl<'txn, Tx: TransactionKind, K: Key, V: Value> DbCursor<'txn, Tx, K, V> {
     ///
     /// Assumes that the cursor is positioned at a valid key/value pair for the
     /// filter, this invariant should be maintained by other cursor methods
-    pub fn get_current(&mut self) -> Result<Option<(K, V)>, StorageError> {
+    pub fn get_current(&mut self) -> Result<Option<Self::ArchivedKV>, StorageError> {
         let res =
             self.inner.get_current::<Self::TxBytes, Self::TxBytes>().map_err(StorageError::TxOp)?;
 
@@ -179,7 +185,10 @@ impl<'txn, Tx: TransactionKind, K: Key, V: Value> DbCursor<'txn, Tx, K, V> {
     /// returns the value
     ///
     /// The `forward` parameter determines the direction of the search
-    fn seek_next_filtered(&mut self, forward: bool) -> Result<Option<(K, V)>, StorageError> {
+    fn seek_next_filtered(
+        &mut self,
+        forward: bool,
+    ) -> Result<Option<Self::ArchivedKV>, StorageError> {
         // Try the current position
         let curr =
             self.inner.get_current::<Self::TxBytes, Self::TxBytes>().map_err(StorageError::TxOp)?;
@@ -206,25 +215,22 @@ impl<'txn, Tx: TransactionKind, K: Key, V: Value> DbCursor<'txn, Tx, K, V> {
     }
 
     /// Deserialize a key-value pair and filter the key
-    #[allow(unsafe_code)]
+    #[allow(unsafe_code, clippy::type_complexity)]
     fn deserialize_and_filter(
         &self,
         kv: (Self::TxBytes, Self::TxBytes),
-    ) -> Result<Option<(K, V)>, StorageError> {
+    ) -> Result<Option<(ArchivedValue<'txn, K>, ArchivedValue<'txn, V>)>, StorageError> {
         let (k_buf, v_buf) = kv;
-
-        // Deserialize and filter the key
-        let key = unsafe { K::rkyv_access(&k_buf) };
+        let k_val = ArchivedValue::<K>::new(k_buf);
         if let Some(ref filter) = self.key_filter
-            && !filter(key)
+            && !filter(&*k_val)
         {
             return Ok(None);
         }
 
         // Deserialize the value
-        let key = K::rkyv_deserialize(key)?;
-        let value = V::rkyv_deserialize_from_bytes(&v_buf)?;
-        Ok(Some((key, value)))
+        let v_val = ArchivedValue::new(v_buf);
+        Ok(Some((k_val, v_val)))
     }
 }
 
@@ -253,7 +259,7 @@ impl<K: Key, V: Value> DbCursor<'_, RW, K, V> {
 // ---------------------------
 
 impl<'txn, T: TransactionKind, K: Key, V: Value> IntoIterator for DbCursor<'txn, T, K, V> {
-    type Item = Result<(K, V), StorageError>;
+    type Item = Result<Self::ArchivedKV, StorageError>;
     type IntoIter = DbCursorIter<'txn, T, K, V>;
 
     fn into_iter(mut self) -> Self::IntoIter {
@@ -266,25 +272,34 @@ impl<'txn, T: TransactionKind, K: Key, V: Value> IntoIterator for DbCursor<'txn,
 /// The iterator type for the cursor
 pub struct DbCursorIter<'txn, T: TransactionKind, K: Key, V: Value> {
     /// The initial value of the iterator
-    initial: Option<(K, V)>,
+    initial: Option<(ArchivedValue<'txn, K>, ArchivedValue<'txn, V>)>,
     /// The underlying cursor
     cursor: DbCursor<'txn, T, K, V>,
 }
 
+impl<'txn, T: TransactionKind, K: Key, V: Value> DbCursorIter<'txn, T, K, V> {
+    /// A type alias for the cursor's key type
+    pub type KeyElement = ArchivedValue<'txn, K>;
+    /// A type alias for the cursor's value type
+    pub type ValueElement = ArchivedValue<'txn, V>;
+    /// A type alias for the cursor's element type
+    pub type Element = (Self::KeyElement, Self::ValueElement);
+}
+
 impl<T: TransactionKind, K: Key, V: Value> DbCursorIter<'_, T, K, V> {
     /// Return an iterator over only the keys in the table
-    pub fn keys(self) -> impl Iterator<Item = Result<K, StorageError>> {
+    pub fn keys(self) -> impl Iterator<Item = Result<Self::KeyElement, StorageError>> {
         <Self as Iterator>::map(self, |res| res.map(|(k, _v)| k))
     }
 
     /// Return an iterator over only the values in the table
-    pub fn values(self) -> impl Iterator<Item = Result<V, StorageError>> {
+    pub fn values(self) -> impl Iterator<Item = Result<Self::ValueElement, StorageError>> {
         <Self as Iterator>::map(self, |res| res.map(|(_k, v)| v))
     }
 }
 
 impl<T: TransactionKind, K: Key, V: Value> Iterator for DbCursorIter<'_, T, K, V> {
-    type Item = Result<(K, V), StorageError>;
+    type Item = Result<Self::Element, StorageError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some((k, v)) = self.initial.take() {
@@ -373,9 +388,10 @@ mod test {
         let tx = db.new_raw_read_tx().unwrap();
         let mut cursor = tx.cursor::<String, String>(TEST_TABLE).unwrap();
         cursor.seek_first().unwrap();
-        let first = cursor.get_current().unwrap();
+        let (k, v) = cursor.get_current().unwrap().unwrap();
 
-        assert_eq!(first.unwrap(), (key, value));
+        assert_eq!(*k, key);
+        assert_eq!(*v, value);
     }
 
     /// Test the `last` method of a cursor
@@ -394,9 +410,9 @@ mod test {
         let last = cursor.get_current().unwrap();
 
         let (key_bytes, value) = last.unwrap();
-        let key = u64::from_be_bytes(key_bytes) as usize;
+        let key = u64::from_be_bytes(*key_bytes) as usize;
         assert_eq!(key, N - 1);
-        assert_eq!(value, N - 1);
+        assert_eq!(*value, (N - 1) as u32);
     }
 
     /// Tests deleting the item under the cursor
@@ -417,14 +433,15 @@ mod test {
         {
             let mut cursor = tx.cursor::<String, String>(TEST_TABLE).unwrap();
             cursor.seek_first().unwrap();
-            let first = cursor.get_current().unwrap();
-            assert_eq!(first.unwrap(), (k1, v1));
+            let (k, v) = cursor.get_current().unwrap().unwrap();
+            assert_eq!(*k, k1);
+            assert_eq!(*v, v1);
 
             // Delete the key
             cursor.delete().unwrap();
             let (k, v) = cursor.get_current().unwrap().unwrap();
-            assert_eq!(k, k2);
-            assert_eq!(v, v2);
+            assert_eq!(*k, k2);
+            assert_eq!(*v, v2);
         }
         tx.commit().unwrap();
 
@@ -434,9 +451,9 @@ mod test {
 
         // Read the first key, it should be (k2, v2)
         cursor.seek_first().unwrap();
-        let first = cursor.get_current().unwrap().unwrap();
-
-        assert_eq!(first, (k2, v2));
+        let (k, v) = cursor.get_current().unwrap().unwrap();
+        assert_eq!(*k, k2);
+        assert_eq!(*v, v2);
     }
 
     /// Test the sorting of a cursor
@@ -456,9 +473,10 @@ mod test {
         let tx = db.new_raw_read_tx().unwrap();
         let mut cursor = tx.cursor::<String, String>(TEST_TABLE).unwrap();
         cursor.seek_first().unwrap();
-        let first = cursor.get_current().unwrap().unwrap();
+        let (k, v) = cursor.get_current().unwrap().unwrap();
 
-        assert_eq!(first, (k2, v2));
+        assert_eq!(*k, k2);
+        assert_eq!(*v, v2);
     }
 
     /// Tests the sorting of a cursor with a numeric key
@@ -477,9 +495,9 @@ mod test {
         let cursor = tx.cursor::<ByteKey, usize>(TEST_TABLE).unwrap();
         for (i, pair) in cursor.into_iter().enumerate() {
             let (k_bytes, v) = pair.unwrap();
-            let k = u64::from_be_bytes(k_bytes) as usize;
+            let k = u64::from_be_bytes(*k_bytes) as usize;
             assert_eq!(k, i);
-            assert_eq!(v, i);
+            assert_eq!(*v, i as u32);
         }
     }
 
@@ -503,21 +521,21 @@ mod test {
         let mut cursor = tx.cursor::<ByteKey, usize>(TEST_TABLE).unwrap();
         cursor.seek(&seek_key).unwrap();
         let (k_bytes, v) = cursor.get_current().unwrap().unwrap();
-        let k = u64::from_be_bytes(k_bytes) as usize;
+        let k = u64::from_be_bytes(*k_bytes) as usize;
 
         assert_eq!(k, seek_index);
-        assert_eq!(v, seek_index);
+        assert_eq!(*v, seek_index as u32);
 
         let (k_bytes, v) = cursor.get_current().unwrap().unwrap();
-        let k = u64::from_be_bytes(k_bytes) as usize;
+        let k = u64::from_be_bytes(*k_bytes) as usize;
         assert_eq!(k, seek_index);
-        assert_eq!(v, seek_index);
+        assert_eq!(*v, seek_index as u32);
 
         cursor.seek_next().unwrap();
         let (k_bytes, v) = cursor.get_current().unwrap().unwrap();
-        let k = u64::from_be_bytes(k_bytes) as usize;
+        let k = u64::from_be_bytes(*k_bytes) as usize;
         assert_eq!(k, seek_index + 1);
-        assert_eq!(v, seek_index + 1);
+        assert_eq!(*v, (seek_index + 1) as u32);
     }
 
     /// Tests seeking and then peeking the current value then previous value
@@ -540,21 +558,21 @@ mod test {
         let mut cursor = tx.cursor::<ByteKey, usize>(TEST_TABLE).unwrap();
         cursor.seek(&seek_key).unwrap();
         let (k_bytes, v) = cursor.get_current().unwrap().unwrap();
-        let k = u64::from_be_bytes(k_bytes) as usize;
+        let k = u64::from_be_bytes(*k_bytes) as usize;
 
         assert_eq!(k, seek_index);
-        assert_eq!(v, seek_index);
+        assert_eq!(*v, seek_index as u32);
 
         let (k_bytes, v) = cursor.get_current().unwrap().unwrap();
-        let k = u64::from_be_bytes(k_bytes) as usize;
+        let k = u64::from_be_bytes(*k_bytes) as usize;
         assert_eq!(k, seek_index);
-        assert_eq!(v, seek_index);
+        assert_eq!(*v, seek_index as u32);
 
         cursor.seek_prev().unwrap();
         let (k_bytes, v) = cursor.get_current().unwrap().unwrap();
-        let k = u64::from_be_bytes(k_bytes) as usize;
+        let k = u64::from_be_bytes(*k_bytes) as usize;
         assert_eq!(k, seek_index - 1);
-        assert_eq!(v, seek_index - 1);
+        assert_eq!(*v, (seek_index - 1) as u32);
     }
 
     /// Tests seeking to the to the first key greater than or equal to the given
@@ -592,10 +610,10 @@ mod test {
             let mut cursor = tx.cursor::<ByteKey, usize>(TEST_TABLE).unwrap();
             cursor.seek_geq(&seek_key).unwrap();
             let (k_bytes, v) = cursor.get_current().unwrap().unwrap();
-            let k = u64::from_be_bytes(k_bytes) as usize;
+            let k = u64::from_be_bytes(*k_bytes) as usize;
 
             assert_eq!(k, seek_ind);
-            assert_eq!(v, seek_ind);
+            assert_eq!(*v, seek_ind as u32);
         }
         tx.commit().unwrap();
 
@@ -607,11 +625,11 @@ mod test {
         let mut cursor = tx.cursor::<ByteKey, usize>(TEST_TABLE).unwrap();
         cursor.seek_geq(&seek_key).unwrap();
         let (k_bytes, v) = cursor.get_current().unwrap().unwrap();
-        let k = u64::from_be_bytes(k_bytes) as usize;
+        let k = u64::from_be_bytes(*k_bytes) as usize;
 
         let expected = seek_ind + 1;
         assert_eq!(k, expected);
-        assert_eq!(v, expected);
+        assert_eq!(*v, expected as u32);
     }
 
     /// Tests a filtered cursor
@@ -634,37 +652,37 @@ mod test {
 
         // Cursor is positioned at one, should return `Some`
         let (k_bytes, v) = cursor.get_current().unwrap().unwrap();
-        let k = u64::from_be_bytes(k_bytes) as usize;
+        let k = u64::from_be_bytes(*k_bytes) as usize;
         assert_eq!(k, 1);
-        assert_eq!(v, 1);
+        assert_eq!(*v, 1);
 
         // Move the cursor to the next key, should be the next odd key
         cursor.seek_next().unwrap();
         let (k_bytes, v) = cursor.get_current().unwrap().unwrap();
-        let k = u64::from_be_bytes(k_bytes) as usize;
+        let k = u64::from_be_bytes(*k_bytes) as usize;
         assert_eq!(k, 3);
-        assert_eq!(v, 3);
+        assert_eq!(*v, 3);
 
         // Get the current key, should still be the second odd key
         let (k_bytes, v) = cursor.get_current().unwrap().unwrap();
-        let k = u64::from_be_bytes(k_bytes) as usize;
+        let k = u64::from_be_bytes(*k_bytes) as usize;
         assert_eq!(k, 3);
-        assert_eq!(v, 3);
+        assert_eq!(*v, 3);
 
         // Get the previous key, should return `Some`
         cursor.seek_prev().unwrap();
         let (k_bytes, v) = cursor.get_current().unwrap().unwrap();
-        let k = u64::from_be_bytes(k_bytes) as usize;
+        let k = u64::from_be_bytes(*k_bytes) as usize;
         assert_eq!(k, 1);
-        assert_eq!(v, 1);
+        assert_eq!(*v, 1);
 
         // Seek to the last key, should be N - 1
         cursor.seek_last().unwrap();
         let (k_bytes, v) = cursor.get_current().unwrap().unwrap();
-        let k = u64::from_be_bytes(k_bytes) as usize;
+        let k = u64::from_be_bytes(*k_bytes) as usize;
         let idx = N - 1;
         assert_eq!(k, idx);
-        assert_eq!(v, idx);
+        assert_eq!(*v, idx as u32);
 
         // Iterate over the cursor, should only return odd keys
         cursor.seek_first().unwrap();
@@ -675,9 +693,9 @@ mod test {
             let idx = i * 2 + 1;
 
             let (k_bytes, v) = pair;
-            let k = u64::from_be_bytes(k_bytes) as usize;
+            let k = u64::from_be_bytes(*k_bytes) as usize;
             assert_eq!(k, idx);
-            assert_eq!(v, idx);
+            assert_eq!(*v, idx as u32);
         }
     }
 }

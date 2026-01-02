@@ -14,10 +14,11 @@ rustc-ice-*
 # DB
 **/*.db
 
-# vscode + vim
+# cursor + vim
 .idea
 .vscode
 *.sw[a-p]
+.cursor/commands
 secrets.env
 /.gitattributes
 
