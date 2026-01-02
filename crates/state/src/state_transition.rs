@@ -1,4 +1,8 @@
 //! State transition types for the state machine
+//!
+//! Note: missing_docs is allowed in this module because the rkyv derive macro
+//! generates archived types with undocumented fields.
+#![allow(missing_docs)]
 
 use serde::{Deserialize, Serialize};
 use types_gossip::WrappedPeerId;
@@ -13,18 +17,21 @@ use uuid::Uuid;
 /// A type alias for the proposal ID
 pub type ProposalId = Uuid;
 /// The proposal submitted to the state machine
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(
+    Clone, Debug, Serialize, Deserialize, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize,
+)]
+#[rkyv(derive(Debug))]
 pub struct Proposal {
     /// The ID of the proposal
-    id: ProposalId,
+    pub id: ProposalId,
     /// The state transition to apply
-    transition: Box<StateTransition>,
+    pub transition: Box<StateTransition>,
 }
 
 /// The `StateTransitionType` encapsulates all possible state transitions,
 /// allowing transitions to be handled generically before they are applied
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[allow(missing_docs)]
+#[derive(Clone, Debug, Serialize, Deserialize, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+#[rkyv(derive(Debug))]
 #[rustfmt::skip]
 pub enum StateTransition {
     // --- Matching Pools --- //

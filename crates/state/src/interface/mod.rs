@@ -1,7 +1,6 @@
 //! The `interface` module defines the interface to the state, methods for
 //! proposing state transitions and reading from state
 
-pub mod error;
 pub mod matching_pools;
 pub mod node_metadata;
 pub mod order_book;

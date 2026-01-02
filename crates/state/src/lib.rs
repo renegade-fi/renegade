@@ -17,9 +17,10 @@
 
 pub mod applicator;
 // pub mod caching;
+pub mod error;
 // mod interface;
-// pub mod notifications;
-// pub mod replication;
+pub mod notifications;
+pub mod replication;
 pub mod state_transition;
 pub mod storage;
 

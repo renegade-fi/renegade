@@ -50,10 +50,10 @@ pub enum StorageError {
 }
 
 impl StorageError {
-    /// Create a new `Rejected` error
+    /// Create a new `InvalidKey` error
     #[allow(clippy::needless_pass_by_value)]
-    pub fn reject<T: ToString>(msg: T) -> Self {
-        Self::Rejected(msg.to_string())
+    pub fn invalid_key<T: ToString>(msg: T) -> Self {
+        Self::InvalidKey(msg.to_string())
     }
 
     /// Create a new `NotFound` error
@@ -66,6 +66,12 @@ impl StorageError {
     #[allow(clippy::needless_pass_by_value)]
     pub fn other<T: ToString>(msg: T) -> Self {
         Self::Other(msg.to_string())
+    }
+
+    /// Create a new `Rejected` error
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn reject<T: ToString>(msg: T) -> Self {
+        Self::Rejected(msg.to_string())
     }
 
     /// Create a new `Serialization` error
