@@ -1,6 +1,5 @@
 //! Error types emitted by the state applicator
 
-use job_types::task_driver::TaskDriverJob;
 use types_tasks::TaskQueueKey;
 
 use crate::storage::error::StorageError;

@@ -131,6 +131,7 @@ pub const ALL_TABLES: [&str; NUM_TABLES] = [
 pub mod test_helpers {
     use std::time::Duration;
 
+    use config::RelayerConfig;
     use tempfile::tempdir;
 
     use crate::storage::db::{DB, DbConfig};
@@ -146,15 +147,15 @@ pub mod test_helpers {
         tempdir.path().to_str().unwrap().to_string()
     }
 
-    // /// Create a mock relayer config for testing
-    // pub fn mock_relayer_config() -> RelayerConfig {
-    //     RelayerConfig {
-    //         db_path: tmp_db_path(),
-    //         allow_local: true,
-    //         record_historical_state: true,
-    //         ..Default::default()
-    //     }
-    // }
+    /// Create a mock relayer config for testing
+    pub fn mock_relayer_config() -> RelayerConfig {
+        RelayerConfig {
+            db_path: tmp_db_path(),
+            allow_local: true,
+            record_historical_state: true,
+            ..Default::default()
+        }
+    }
 
     /// Create a mock database in a temporary location
     pub fn mock_db() -> DB {

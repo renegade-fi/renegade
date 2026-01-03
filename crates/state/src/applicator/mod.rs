@@ -94,6 +94,7 @@ impl StateApplicator {
                 self.enqueue_preemptive_task(&keys, &task, &executor, serial)
             },
             StateTransition::ReassignTasks { from, to } => self.reassign_tasks(&from, &to),
+            _ => unimplemented!("Unsupported state transition forwarded to applicator"),
         }
     }
 
