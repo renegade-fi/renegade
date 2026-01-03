@@ -13,9 +13,9 @@ use types_gossip::WrappedPeerId;
 use util::{err_str, telemetry::helpers::backfill_trace_field};
 
 use crate::{
-    Proposal, StateTransition,
     notifications::ProposalId,
     replication::{error::ReplicationError, get_raft_id},
+    state_transition::{Proposal, StateTransition},
     storage::db::DB,
 };
 

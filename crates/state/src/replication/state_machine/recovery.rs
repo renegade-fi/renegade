@@ -44,15 +44,16 @@ impl StateMachine {
     /// We do this when recovering to prevent wallets from being blocked on a
     /// task queue that failed
     fn clear_wallet_task_queues(&self) -> Result<(), ReplicationError> {
-        let tx = self.db().new_write_tx().unwrap();
-        let wallets = tx.get_all_wallets()?;
-        for wallet in wallets.into_iter() {
-            let queue_key = wallet.wallet_id;
-            tx.clear_task_queue(&queue_key)?;
-        }
+        todo!("implement wallet task queue clear logic")
+        // let tx = self.db().new_write_tx().unwrap();
+        // let wallets = tx.get_all_wallets()?;
+        // for wallet in wallets.into_iter() {
+        //     let queue_key = wallet.wallet_id;
+        //     tx.clear_task_queue(&queue_key)?;
+        // }
 
-        tx.commit()?;
+        // tx.commit()?;
 
-        Ok(())
+        // Ok(())
     }
 }
