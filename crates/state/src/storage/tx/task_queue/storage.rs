@@ -178,7 +178,7 @@ impl<T: TransactionKind> StateTxn<'_, T> {
         let mut can_preempt = queue.can_preempt_serial();
         if let Some(t) = queue.serial_tasks.first() {
             let task = self.get_task(t)?.ok_or(StorageError::reject(ERR_TASK_NOT_FOUND))?;
-            let state = QueuedTaskState::rkyv_deserialize(&task.state)?;
+            let state = QueuedTaskState::from_archived(&task.state)?;
             can_preempt = can_preempt && !state.is_committed();
         }
 

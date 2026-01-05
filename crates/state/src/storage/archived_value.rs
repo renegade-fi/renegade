@@ -34,7 +34,7 @@ impl<'a, V: Value> ArchivedValue<'a, V> {
 
     /// Deserialize to an owned value
     pub fn deserialize(&self) -> Result<V, StorageError> {
-        V::rkyv_deserialize(&**self)
+        V::rkyv_deserialize_from_bytes(&self.backing)
     }
 
     /// Get the raw bytes
@@ -44,7 +44,7 @@ impl<'a, V: Value> ArchivedValue<'a, V> {
 }
 
 impl<V: Value> Deref for ArchivedValue<'_, V> {
-    type Target = V::Archived;
+    type Target = V::ArchivedType;
 
     #[allow(unsafe_code)]
     fn deref(&self) -> &Self::Target {
