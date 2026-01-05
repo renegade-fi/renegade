@@ -24,7 +24,7 @@ use common::types::proof_bundles::{
     mocks::dummy_link_proof,
 };
 use types_tasks::{SettleMatchInternalTaskDescriptor, SettleMatchTaskDescriptor};
-use types_wallet::wallet::{Order, OrderBuilder, Wallet, mocks::mock_empty_wallet};
+use types_account::account::{Order, OrderBuilder, Wallet, mocks::mock_empty_wallet};
 use constants::Scalar;
 use eyre::{Result, eyre};
 use job_types::proof_manager::{ProofJob, ProofManagerJob};

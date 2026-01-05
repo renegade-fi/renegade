@@ -1,8 +1,8 @@
 use circuit_types::Amount;
 use darkpool_types::intent::Intent;
 use serde::{Deserialize, Serialize};
+use types_account::account::IntentIdentifier;
 use types_core::AccountId;
-use types_wallet::wallet::IntentIdentifier;
 
 /// An intent cancellation event
 #[derive(Debug, Clone, Serialize, Deserialize)]

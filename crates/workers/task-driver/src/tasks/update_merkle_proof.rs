@@ -9,7 +9,7 @@ use std::{
 
 use async_trait::async_trait;
 use types_tasks::UpdateMerkleProofTaskDescriptor;
-use types_wallet::wallet::Wallet;
+use types_account::account::Wallet;
 use darkpool_client::errors::DarkpoolClientError;
 use serde::Serialize;
 use state::error::StateError;

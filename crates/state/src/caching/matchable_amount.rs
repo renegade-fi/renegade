@@ -12,7 +12,7 @@ use std::collections::HashMap;
 
 use circuit_types::{Amount, order::OrderSide};
 use tokio::sync::RwLock;
-use types_wallet::wallet::Pair;
+use types_account::account::Pair;
 
 use super::RwLockHashMap;
 

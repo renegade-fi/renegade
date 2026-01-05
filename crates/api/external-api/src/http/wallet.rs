@@ -3,8 +3,8 @@
 use circuit_types::{balance::Balance, elgamal::DecryptionKey, note::Note};
 use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
+use types_account::account::{WalletIdentifier, order_metadata::OrderMetadata};
 use types_tasks::TaskIdentifier;
-use types_wallet::wallet::{WalletIdentifier, order_metadata::OrderMetadata};
 use uuid::Uuid;
 
 use crate::types::{ApiOrder, ApiPrivateKeychain, ApiWallet};

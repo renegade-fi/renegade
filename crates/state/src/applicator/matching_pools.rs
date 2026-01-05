@@ -1,6 +1,6 @@
 //! Applicator methods for matching pools
 
-use types_wallet::wallet::IntentIdentifier;
+use types_account::account::IntentIdentifier;
 
 use crate::storage::tx::matching_pools::MATCHING_POOL_DOES_NOT_EXIST_ERR;
 

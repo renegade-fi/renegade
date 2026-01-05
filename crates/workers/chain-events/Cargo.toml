@@ -20,7 +20,7 @@ darkpool-client = { workspace = true }
 circuit-types = { workspace = true }
 types-core = { workspace = true }
 types-tasks = { workspace = true }
-types-wallet = { workspace = true }
+types-account = { workspace = true }
 constants = { workspace = true }
 crypto = { workspace = true }
 renegade-metrics = { workspace = true }

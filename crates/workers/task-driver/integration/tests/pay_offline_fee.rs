@@ -2,7 +2,7 @@
 use circuit_types::balance::Balance;
 use circuits_core::test_helpers::random_wallet_amount;
 use types_tasks::PayOfflineFeeTaskDescriptor;
-use types_wallet::wallet::mocks::mock_empty_wallet;
+use types_account::account::mocks::mock_empty_wallet;
 use constants::Scalar;
 use eyre::{Result, eyre};
 use rand::thread_rng;

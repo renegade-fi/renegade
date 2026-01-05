@@ -22,7 +22,7 @@ use common::types::proof_bundles::{
     OrderValidityProofBundle, OrderValidityWitnessBundle, ProofBundle,
 };
 use types_core::token::Token;
-use types_wallet::wallet::{IntentIdentifier, Wallet};
+use types_account::account::{IntentIdentifier, Wallet};
 use gossip_api::pubsub::PubsubMessage;
 use gossip_api::pubsub::orderbook::{ORDER_BOOK_TOPIC, OrderBookManagementMessage};
 use job_types::network_manager::NetworkManagerJob;

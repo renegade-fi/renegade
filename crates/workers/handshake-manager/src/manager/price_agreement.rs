@@ -7,7 +7,7 @@ use types_core::{
     price::TimestampedPrice,
     token::{Token, get_all_base_tokens},
 };
-use types_wallet::wallet::IntentIdentifier;
+use types_account::account::IntentIdentifier;
 use gossip_api::request_response::handshake::PriceVector;
 use tracing::warn;
 use util::err_str;

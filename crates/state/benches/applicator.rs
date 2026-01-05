@@ -4,12 +4,12 @@ use std::time::{Duration, Instant};
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use state::{
-    StateTransition,
     applicator::{StateApplicator, test_helpers::mock_applicator},
+    state_transition::StateTransition,
 };
+use types_account::account::mocks::mock_empty_account;
 use types_gossip::WrappedPeerId;
 use types_tasks::{QueuedTaskState, mocks::mock_queued_task};
-use types_wallet::wallet::mocks::mock_empty_wallet;
 use uuid::Uuid;
 
 /// Create a mock applicator with necessary DB entries filled in

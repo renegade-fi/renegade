@@ -1,7 +1,7 @@
 //! Helpers for the update wallet task
 
 use circuit_types::SizedWallet as CircuitWallet;
-use types_wallet::wallet::Wallet;
+use types_account::account::Wallet;
 
 use crate::tasks::update_wallet::UpdateWalletTask;
 

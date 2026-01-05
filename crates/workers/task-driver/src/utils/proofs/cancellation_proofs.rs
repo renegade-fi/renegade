@@ -1,7 +1,7 @@
 //! Utils for precomputing cancellation proofs for orders
 
 use common::types::proof_bundles::ValidWalletUpdateBundle;
-use types_wallet::wallet::{IntentIdentifier, Wallet};
+use types_account::account::{IntentIdentifier, Wallet};
 use job_types::proof_manager::ProofJob;
 use tracing::{error, info};
 use util::raw_err_str;

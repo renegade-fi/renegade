@@ -1,7 +1,7 @@
 use darkpool_types::{bounded_match_result::BoundedMatchResult, fee::FeeTake};
 use serde::{Deserialize, Serialize};
+use types_account::IntentIdentifier;
 use types_core::{AccountId, TimestampedPrice};
-use types_wallet::IntentIdentifier;
 
 /// A fill event on an order, resulting from an external match
 #[derive(Debug, Clone, Serialize, Deserialize)]

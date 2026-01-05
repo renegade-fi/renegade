@@ -5,8 +5,8 @@
 // ---------------
 
 use serde::{Deserialize, Serialize};
+use types_account::account::IntentIdentifier;
 use types_runtime::MatchingPoolName;
-use types_wallet::wallet::IntentIdentifier;
 
 use crate::{
     http::wallet::CreateOrderOptions,

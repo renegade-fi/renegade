@@ -12,14 +12,14 @@ use itertools::Itertools;
 use num_bigint::BigUint;
 use renegade_crypto::fields::{biguint_to_scalar, scalar_to_biguint, scalar_to_u64};
 use serde::{Deserialize, Serialize};
-use types_core::hmac::HmacKey;
-use types_wallet::{
+use types_account::{
     keyed_list::KeyedList,
     wallet::{
         IntentIdentifier, Order, Wallet, WalletIdentifier,
         keychain::{KeyChain, PrivateKeyChain},
     },
 };
+use types_core::hmac::HmacKey;
 use util::hex::{
     jubjub_from_hex_string, jubjub_to_hex_string, nonnative_scalar_from_hex_string,
     nonnative_scalar_to_hex_string, public_sign_key_from_hex_string, public_sign_key_to_hex_string,

@@ -1,7 +1,7 @@
 //! Applicator methods for the wallet index, separated out for discoverability
 
 use common::types::network_order::NetworkOrder;
-use types_wallet::wallet::{
+use types_account::account::{
     Order, IntentIdentifier, Wallet,
     order_metadata::{OrderMetadata, OrderState},
 };

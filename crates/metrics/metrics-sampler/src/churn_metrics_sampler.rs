@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use common::types::network_order::NetworkOrderState;
 use types_core::{price::Price, token::Token};
-use types_wallet::wallet::order_metadata::OrderMetadata;
+use types_account::account::order_metadata::OrderMetadata;
 use futures::future::join_all;
 use num_bigint::BigUint;
 use price_state::PriceStreamStates;

@@ -1,6 +1,6 @@
 //! Matching engine implementations for the handshake manager
 
-use types_wallet::wallet::Order;
+use types_account::account::Order;
 use state::caching::order_cache::OrderBookFilter;
 
 pub mod external_engine;

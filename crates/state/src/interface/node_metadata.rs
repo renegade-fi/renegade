@@ -5,7 +5,7 @@ use config::RelayerConfig;
 use libp2p::{core::Multiaddr, identity::Keypair};
 use tracing::warn;
 use types_gossip::{ClusterId, PeerInfo, WrappedPeerId};
-use types_wallet::wallet::{Wallet, WalletIdentifier};
+use types_account::account::{Wallet, WalletIdentifier};
 use util::res_some;
 
 use crate::{NODE_METADATA_TABLE, StateInner, error::StateError};

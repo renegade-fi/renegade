@@ -8,7 +8,7 @@ use crate::error::OnChainEventListenerError;
 use crate::listener::OnChainEventListenerExecutor;
 use circuit_types::{fees::FeeTake, fixed_point::FixedPoint, r#match::ExternalMatchResult};
 use types_core::price::TimestampedPrice;
-use types_wallet::wallet::{IntentIdentifier, WalletIdentifier, order_metadata::OrderState};
+use types_account::account::{IntentIdentifier, WalletIdentifier, order_metadata::OrderState};
 use constants::DEFAULT_EXTERNAL_MATCH_RELAYER_FEE;
 use job_types::event_manager::{ExternalFillEvent, RelayerEventType, try_send_event};
 use renegade_metrics;

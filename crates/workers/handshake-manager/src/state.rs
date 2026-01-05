@@ -6,7 +6,7 @@ use super::error::HandshakeManagerError;
 use common::types::handshake::HandshakeState;
 use types_gossip::handshake::ConnectionRole;
 use types_core::price::TimestampedPrice;
-use types_wallet::wallet::IntentIdentifier;
+use types_account::account::IntentIdentifier;
 use constants::Scalar;
 use crossbeam::channel::Sender;
 use state::State;

@@ -3,7 +3,7 @@ pub(crate) mod cancellation_proofs;
 pub(crate) mod validity_proofs;
 
 use cancellation_proofs::precompute_cancellation_proofs;
-use types_wallet::wallet::Wallet;
+use types_account::account::Wallet;
 use tokio::task::JoinError;
 use validity_proofs::update_wallet_validity_proofs;
 

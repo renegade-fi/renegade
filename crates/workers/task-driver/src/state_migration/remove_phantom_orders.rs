@@ -2,7 +2,7 @@
 //!
 //! This checks both the order book table and the local orders list
 
-use types_wallet::wallet::IntentIdentifier;
+use types_account::account::IntentIdentifier;
 use state::State;
 use tracing::{error, info};
 

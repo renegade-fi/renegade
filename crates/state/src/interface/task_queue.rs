@@ -5,7 +5,7 @@ use types_tasks::{
     HistoricalTask, QueuedTask, QueuedTaskState, RefreshWalletTaskDescriptor, TaskDescriptor,
     TaskIdentifier, TaskQueueKey,
 };
-use types_wallet::wallet::WalletIdentifier;
+use types_account::account::WalletIdentifier;
 use tracing::instrument;
 use util::telemetry::helpers::backfill_trace_field;
 

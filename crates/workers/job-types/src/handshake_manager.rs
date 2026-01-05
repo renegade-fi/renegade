@@ -9,9 +9,9 @@ use darkpool_types::intent::Intent;
 use gossip_api::request_response::{AuthenticatedGossipResponse, handshake::HandshakeMessage};
 use libp2p::request_response::ResponseChannel;
 use system_bus::gen_atomic_match_response_topic;
+use types_account::{IntentIdentifier, MatchingPoolName};
 use types_core::TimestampedPrice;
 use types_gossip::WrappedPeerId;
-use types_wallet::{MatchingPoolName, wallet::IntentIdentifier};
 use util::channels::{TracedTokioReceiver, TracedTokioSender, new_traced_tokio_channel};
 use uuid::Uuid;
 

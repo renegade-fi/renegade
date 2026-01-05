@@ -9,8 +9,8 @@ use state::{
     test_helpers::{mock_relayer_config, mock_state_with_task_queue},
 };
 use tokio::runtime::Builder as RuntimeBuilder;
+use types_account::account::{WalletIdentifier, mocks::mock_empty_wallet};
 use types_tasks::mocks::mock_task_descriptor;
-use types_wallet::wallet::{WalletIdentifier, mocks::mock_empty_wallet};
 
 /// The network delays to benchmark
 const BENCHMARK_DELAYS_MS: [u64; 3] = [0, 10, 100];

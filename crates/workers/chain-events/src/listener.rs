@@ -13,7 +13,7 @@ use alloy::{
 use circuit_types::r#match::ExternalMatchResult;
 use circuit_types::wallet::Nullifier;
 use types_runtime::CancelChannel;
-use types_wallet::wallet::{IntentIdentifier, WalletIdentifier};
+use types_account::account::{IntentIdentifier, WalletIdentifier};
 use constants::in_bootstrap_mode;
 use darkpool_client::{
     DarkpoolClient, DarkpoolImplementation, conversion::u256_to_scalar, traits::DarkpoolImpl,

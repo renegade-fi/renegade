@@ -11,7 +11,7 @@ use types_tasks::{
 };
 use types_core::token::Token;
 use common::types::transfer_auth::{DepositAuth, ExternalTransferWithAuth, WithdrawalAuth};
-use types_wallet::wallet::{Order, Wallet, WalletIdentifier, keychain::PrivateKeyChain};
+use types_account::account::{Order, Wallet, WalletIdentifier, keychain::PrivateKeyChain};
 use external_api::{
     EmptyRequestResponse,
     http::wallet::{

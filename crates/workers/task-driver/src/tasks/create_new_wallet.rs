@@ -21,7 +21,7 @@ use circuits_core::zk_circuits::valid_wallet_create::{
 };
 use types_tasks::NewWalletTaskDescriptor;
 use common::types::proof_bundles::ValidWalletCreateBundle;
-use types_wallet::wallet::Wallet;
+use types_account::account::Wallet;
 use constants::Scalar;
 use darkpool_client::errors::DarkpoolClientError;
 use job_types::event_manager::{RelayerEventType, WalletCreationEvent, try_send_event};

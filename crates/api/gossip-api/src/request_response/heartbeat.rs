@@ -1,7 +1,7 @@
 //! Groups API definitions for heartbeat requests and responses
 
+use types_account::account::IntentIdentifier;
 use types_gossip::{PeerInfo, WrappedPeerId};
-use types_wallet::wallet::IntentIdentifier;
 
 use serde::{Deserialize, Serialize};
 

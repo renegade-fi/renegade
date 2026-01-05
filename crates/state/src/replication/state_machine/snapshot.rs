@@ -331,7 +331,7 @@ impl StateMachine {
 //         dummy_validity_proof_bundle, dummy_validity_witness_bundle,
 //     };
 //     use libmdbx::Error as MdbxError;
-//     use types_wallet::wallet::{
+//     use types_account::account::{
 //         IntentIdentifier, Wallet,
 //         mocks::{mock_empty_wallet, mock_order},
 //     };

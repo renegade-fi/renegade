@@ -10,7 +10,7 @@ config = { workspace = true }
 types-core = { workspace = true }
 types-gossip = { workspace = true }
 types-tasks = { workspace = true }
-types-wallet = { workspace = true }
+types-account = { workspace = true }
 types-runtime = { workspace = true }
 darkpool-client = { workspace = true }
 external-api = { workspace = true }

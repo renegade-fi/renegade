@@ -11,7 +11,7 @@ use alloy::signers::{k256::ecdsa::SigningKey, local::PrivateKeySigner};
 use async_trait::async_trait;
 use types_tasks::{LookupWalletTaskDescriptor, NewWalletTaskDescriptor, NodeStartupTaskDescriptor};
 use types_core::token::{Token, get_all_tokens};
-use types_wallet::wallet::{
+use types_account::account::{
     Wallet, WalletIdentifier,
     derivation::{
         derive_blinder_seed, derive_share_seed, derive_wallet_id, derive_wallet_keychain,

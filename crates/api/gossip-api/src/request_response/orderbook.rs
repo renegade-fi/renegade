@@ -1,7 +1,7 @@
 //! Types for request response about order book info
 
 use serde::{Deserialize, Serialize};
-use types_wallet::wallet::IntentIdentifier;
+use types_account::account::IntentIdentifier;
 
 /// The message type used to request order information from a peer
 #[derive(Clone, Debug, Serialize, Deserialize)]

@@ -21,7 +21,7 @@ use types_tasks::{
     SettleExternalMatchTaskDescriptor, SettleMalleableExternalMatchTaskDescriptor,
     TaskDescriptor,
 };
-use types_wallet::wallet::{Order, IntentIdentifier};
+use types_account::account::{Order, IntentIdentifier};
 use constants::Scalar;
 use system_bus::SystemBusMessage;
 use job_types::handshake_manager::ExternalMatchingEngineOptions;

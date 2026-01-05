@@ -19,7 +19,7 @@ use common::types::proof_bundles::{
     OrderValidityProofBundle, OrderValidityWitnessBundle, ValidMatchSettleAtomicBundle,
 };
 use types_tasks::SettleExternalMatchTaskDescriptor;
-use types_wallet::wallet::{IntentIdentifier, WalletIdentifier};
+use types_account::account::{IntentIdentifier, WalletIdentifier};
 use darkpool_client::errors::DarkpoolClientError;
 use system_bus::SystemBusMessage;
 use job_types::proof_manager::ProofJob;

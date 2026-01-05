@@ -1,6 +1,6 @@
 //! Storage access methods for order metadata
 
-use types_wallet::wallet::{IntentIdentifier, WalletIdentifier, order_metadata::OrderMetadata};
+use types_account::account::{IntentIdentifier, WalletIdentifier, order_metadata::OrderMetadata};
 use libmdbx::{RW, TransactionKind};
 
 use crate::{ORDER_HISTORY_TABLE, storage::error::StorageError};

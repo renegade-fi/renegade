@@ -3,7 +3,7 @@
 use crate::storage::tx::StateTxn;
 
 use super::{StateApplicator, error::StateApplicatorError, return_type::ApplicatorReturnType};
-use types_wallet::wallet::order_metadata::OrderMetadata;
+use types_account::account::order_metadata::OrderMetadata;
 use libmdbx::RW;
 use system_bus::{SystemBusMessage, wallet_order_history_topic};
 

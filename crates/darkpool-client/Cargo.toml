@@ -12,7 +12,7 @@ integration = [
     "dep:rand",
     "circuit-types/test-helpers",
     "circuits-core/test_helpers",
-    "types-wallet/mocks",
+    "types-account/mocks",
     "test-helpers/arbitrum",
 ]
 transfer-auth = ["dep:rand"]
@@ -43,7 +43,7 @@ constants = { workspace = true }
 circuit-types = { workspace = true }
 circuits-core = { workspace = true }
 types-core = { workspace = true }
-types-wallet = { workspace = true }
+types-account = { workspace = true }
 crypto = { workspace = true }
 renegade-solidity-abi = { package = "abi", git = "https://github.com/renegade-fi/renegade-solidity-contracts", optional = true }
 util = { workspace = true, features = ["telemetry"] }

@@ -9,7 +9,7 @@ members = [
 	"crates/relayer-types/types-runtime",
 	"crates/relayer-types/types-gossip",
 	"crates/relayer-types/types-tasks",
-	"crates/relayer-types/types-wallet",
+	"crates/relayer-types/types-account",
 	# "crates/config",
 	# "crates/core",
 	# "crates/darkpool-client",
@@ -118,7 +118,7 @@ types-core = { path = "crates/relayer-types/types-core", default-features = fals
 types-gossip = { path = "crates/relayer-types/types-gossip", default-features = false }
 types-runtime = { path = "crates/relayer-types/types-runtime", default-features = false }
 types-tasks = { path = "crates/relayer-types/types-tasks", default-features = false }
-types-wallet = { path = "crates/relayer-types/types-wallet", default-features = false }
+types-account = { path = "crates/relayer-types/types-account", default-features = false }
 util = { path = "crates/util", default-features = false }
 
 # === Misc === #

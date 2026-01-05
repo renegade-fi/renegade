@@ -13,7 +13,7 @@ use common::types::proof_bundles::{
     OrderValidityProofBundle, ValidMalleableMatchSettleAtomicBundle,
     ValidMatchSettleAtomicBundle,
 };
-use types_wallet::wallet::Order;
+use types_account::account::Order;
 use constants::{NATIVE_ASSET_ADDRESS, NATIVE_ASSET_WRAPPER_TICKER};
 use darkpool_client::DarkpoolClient;
 use external_api::http::external_match::{
