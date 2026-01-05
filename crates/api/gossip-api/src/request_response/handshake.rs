@@ -1,8 +1,8 @@
 //! Groups API definitions for handshake request response
 use std::collections::HashMap;
+use types_account::account::IntentIdentifier;
 use types_core::{TimestampedPrice, Token};
 use types_gossip::WrappedPeerId;
-use types_account::account::IntentIdentifier;
 use uuid::Uuid;
 
 use serde::{Deserialize, Serialize};

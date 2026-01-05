@@ -2,10 +2,10 @@
 
 use darkpool_types::bounded_match_result::BoundedMatchResult;
 use external_api::{http::task::ApiTaskStatus, types::ApiHistoricalTask};
+use types_account::account::IntentIdentifier;
 use types_core::{AccountId, Token};
 use types_gossip::{PeerInfo, WrappedPeerId};
 use types_tasks::TaskIdentifier;
-use types_account::account::IntentIdentifier;
 // TODO: Uncomment when external-api build issues are resolved
 // use external_api::{
 //     http::task::ApiTaskStatus,
