@@ -121,114 +121,38 @@ impl PeerInfo {
 mod rkyv_impl {
     //! rkyv serialization types for peer info
     //!
-    //! Contains wrapper types for types that don't natively support rkyv.
-
-    use std::ops::Deref;
+    //! Contains remote type shims for types that don't natively support rkyv.
 
     use libp2p::Multiaddr;
-    use rkyv::{
-        Archive, Deserialize as RkyvDeserialize, Place, Serialize as RkyvSerialize,
-        rancor::{Fallible, Source},
-        vec::{ArchivedVec, VecResolver},
-    };
-    use serde::{Deserialize, Serialize};
+    use rkyv::{Archive, Deserialize, Serialize};
 
-    // ----------------------
-    // | WrappedMultiaddr   |
-    // ----------------------
+    // ----------------
+    // | MultiaddrDef |
+    // ----------------
 
-    /// Wraps Multiaddr so that we can implement rkyv traits on the type
-    #[derive(Clone, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
-    pub struct WrappedMultiaddr(pub Multiaddr);
+    /// Remote type shim for `libp2p::Multiaddr`
+    #[derive(Archive, Deserialize, Serialize, Debug, PartialEq)]
+    #[rkyv(derive(Debug), compare(PartialEq))]
+    #[rkyv(remote = libp2p::Multiaddr)]
+    #[rkyv(archived = ArchivedMultiaddr)]
+    pub struct MultiaddrDef {
+        /// The underlying bytes of the multiaddr.
+        #[rkyv(getter = Multiaddr::to_vec)]
+        pub bytes: Vec<u8>,
+    }
 
-    impl WrappedMultiaddr {
-        /// Create a new WrappedMultiaddr
-        pub fn new(addr: Multiaddr) -> Self {
-            Self(addr)
-        }
-
-        /// Get the underlying Multiaddr
-        pub fn inner(&self) -> &Multiaddr {
-            &self.0
-        }
-
-        /// Convert to bytes
-        pub fn to_bytes(&self) -> Vec<u8> {
-            self.0.to_vec()
+    impl From<MultiaddrDef> for Multiaddr {
+        fn from(value: MultiaddrDef) -> Self {
+            Multiaddr::try_from(value.bytes).expect("Invalid Multiaddr bytes")
         }
     }
 
-    impl Default for WrappedMultiaddr {
-        fn default() -> Self {
-            Self(Multiaddr::empty())
-        }
-    }
-
-    impl Deref for WrappedMultiaddr {
-        type Target = Multiaddr;
-
-        fn deref(&self) -> &Self::Target {
-            &self.0
-        }
-    }
-
-    impl From<Multiaddr> for WrappedMultiaddr {
-        fn from(addr: Multiaddr) -> Self {
-            Self(addr)
-        }
-    }
-
-    impl From<WrappedMultiaddr> for Multiaddr {
-        fn from(wrapped: WrappedMultiaddr) -> Self {
-            wrapped.0
-        }
-    }
-
-    /// The archived form of WrappedMultiaddr - stored as bytes
-    pub type ArchivedWrappedMultiaddr = ArchivedVec<u8>;
-
-    impl Archive for WrappedMultiaddr {
-        type Archived = ArchivedWrappedMultiaddr;
-        type Resolver = VecResolver;
-
-        fn resolve(&self, resolver: Self::Resolver, out: Place<Self::Archived>) {
-            let bytes = self.to_bytes();
-            ArchivedVec::resolve_from_slice(&bytes, resolver, out);
-        }
-    }
-
-    impl<S: Fallible + rkyv::ser::Allocator + rkyv::ser::Writer + ?Sized> RkyvSerialize<S>
-        for WrappedMultiaddr
-    {
-        fn serialize(&self, serializer: &mut S) -> Result<Self::Resolver, S::Error> {
-            let bytes = self.to_bytes();
-            ArchivedVec::serialize_from_slice(&bytes, serializer)
-        }
-    }
-
-    impl<D: Fallible + ?Sized> RkyvDeserialize<WrappedMultiaddr, D> for ArchivedWrappedMultiaddr
-    where
-        D::Error: Source,
-    {
-        fn deserialize(&self, _deserializer: &mut D) -> Result<WrappedMultiaddr, D::Error> {
-            let bytes: &[u8] = self.as_slice();
-            let multiaddr = Multiaddr::try_from(bytes.to_vec()).map_err(D::Error::new)?;
-            Ok(WrappedMultiaddr(multiaddr))
-        }
-    }
-
-    impl PartialEq<WrappedMultiaddr> for ArchivedWrappedMultiaddr {
-        fn eq(&self, other: &WrappedMultiaddr) -> bool {
-            self.as_slice() == other.to_bytes().as_slice()
-        }
-    }
-
-    impl PartialEq<ArchivedWrappedMultiaddr> for WrappedMultiaddr {
-        fn eq(&self, other: &ArchivedWrappedMultiaddr) -> bool {
-            self.to_bytes().as_slice() == other.as_slice()
+    impl PartialEq<Multiaddr> for ArchivedMultiaddr {
+        fn eq(&self, other: &Multiaddr) -> bool {
+            self.bytes.as_slice() == other.to_vec().as_slice()
         }
     }
 }
 
 #[cfg(feature = "rkyv")]
-pub use rkyv_impl::{ArchivedWrappedMultiaddr, WrappedMultiaddr};
+pub use rkyv_impl::MultiaddrDef;

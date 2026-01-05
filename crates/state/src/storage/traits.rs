@@ -113,6 +113,7 @@ where
 ///
 /// `T` is the wrapped type and `W` is the remote type shim that implements the
 /// `rkyv::with` traits for `T`
+#[repr(transparent)]
 pub struct RkyvWith<T: Sized, W> {
     /// The wrapped value
     inner: T,
@@ -126,9 +127,22 @@ impl<T: Sized, W> RkyvWith<T, W> {
         Self { inner, _phantom: PhantomData }
     }
 
+    /// Casts a `With` reference from a reference to the underlying field.
+    #[allow(unsafe_code)]
+    pub fn cast(field: &T) -> &Self {
+        // SAFETY: `With` is `repr(transparent)` and so a reference to `F` can
+        // always be transmuted into a reference to `With<F, W>`.
+        unsafe { ::core::mem::transmute::<&T, &Self>(field) }
+    }
+
     /// Get the wrapped value
     pub fn inner(&self) -> &T {
         &self.inner
+    }
+
+    /// Consume this value and return the inner value
+    pub fn into_inner(self) -> T {
+        self.inner
     }
 }
 

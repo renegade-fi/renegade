@@ -1,11 +1,15 @@
 //! High level transaction interface for accessing the raft log
 
 use libmdbx::{RW, TransactionKind};
+use openraft::{LogId, SnapshotMeta, Vote};
 use util::res_some;
 
 use crate::{
     RAFT_LOGS_TABLE, RAFT_METADATA_TABLE,
-    replication::{WrappedEntry, WrappedLogId, WrappedSnapshotMeta, WrappedVote},
+    replication::{
+        Entry, Node, NodeId,
+        rkyv_types::{WithEntry, WithLogId, WithSnapshotMeta, WithVote},
+    },
     storage::{ArchivedValue, cursor::DbCursor, error::StorageError},
 };
 
@@ -51,16 +55,16 @@ pub fn lsn_to_key(lsn: u64) -> LsnKey {
 /// The key type for the raft logs
 pub type LogKeyType = LsnKey;
 /// The value type for the raft logs
-pub type LogValueType = WrappedEntry;
+pub type LogValueType = WithEntry;
 
 /// A type alias for an archived entry value
-pub(crate) type EntryValue<'a> = ArchivedValue<'a, WrappedEntry>;
+pub(crate) type EntryValue<'a> = ArchivedValue<'a, WithEntry>;
 /// A type alias for an archived log ID value
-pub(crate) type LogIdValue<'a> = ArchivedValue<'a, WrappedLogId>;
+pub(crate) type LogIdValue<'a> = ArchivedValue<'a, WithLogId>;
 /// A type alias for an archived vote value
-pub(crate) type VoteValue<'a> = ArchivedValue<'a, WrappedVote>;
+pub(crate) type VoteValue<'a> = ArchivedValue<'a, WithVote>;
 /// A type alias for an archived snapshot metadata value
-pub(crate) type SnapshotMetaValue<'a> = ArchivedValue<'a, WrappedSnapshotMeta>;
+pub(crate) type SnapshotMetaValue<'a> = ArchivedValue<'a, WithSnapshotMeta>;
 
 // -----------
 // | Getters |
@@ -141,34 +145,38 @@ impl StateTxn<'_, RW> {
     // --- Log Metadata --- //
 
     /// Set the ID of the last purged log
-    pub fn set_last_purged_log_id(&self, id: &WrappedLogId) -> Result<(), StorageError> {
-        self.inner().write(RAFT_METADATA_TABLE, &LAST_PURGED_LOG_KEY.to_string(), id)
+    pub fn set_last_purged_log_id(&self, id: &LogId<NodeId>) -> Result<(), StorageError> {
+        let with = WithLogId::cast(id);
+        self.inner().write(RAFT_METADATA_TABLE, &LAST_PURGED_LOG_KEY.to_string(), with)
     }
 
     /// Set the local node's vote in the current term
-    pub fn set_last_vote(&self, vote: &WrappedVote) -> Result<(), StorageError> {
-        self.inner().write(RAFT_METADATA_TABLE, &LAST_VOTE_KEY.to_string(), vote)
+    pub fn set_last_vote(&self, vote: &Vote<NodeId>) -> Result<(), StorageError> {
+        let with = WithVote::cast(vote);
+        self.inner().write(RAFT_METADATA_TABLE, &LAST_VOTE_KEY.to_string(), with)
     }
 
     /// Set the metadata of the latest snapshot
     pub fn set_snapshot_metadata(
         &self,
-        metadata: &WrappedSnapshotMeta,
+        metadata: &SnapshotMeta<NodeId, Node>,
     ) -> Result<(), StorageError> {
-        self.inner().write(RAFT_METADATA_TABLE, &SNAPSHOT_METADATA_KEY.to_string(), metadata)
+        let with = WithSnapshotMeta::cast(metadata);
+        self.inner().write(RAFT_METADATA_TABLE, &SNAPSHOT_METADATA_KEY.to_string(), with)
     }
 
     // --- Log Access --- //
 
     /// Append entries to the raft log
-    pub fn append_log_entries<I: IntoIterator<Item = WrappedEntry>>(
+    pub fn append_log_entries<I: IntoIterator<Item = Entry>>(
         &self,
         entries: I,
     ) -> Result<(), StorageError> {
         let tx = self.inner();
         for entry in entries.into_iter() {
-            let key = lsn_to_key(entry.inner.log_id.index);
-            tx.write(RAFT_LOGS_TABLE, &key, &entry)?;
+            let key = lsn_to_key(entry.log_id.index);
+            let with = WithEntry::cast(&entry);
+            tx.write(RAFT_LOGS_TABLE, &key, with)?;
         }
 
         Ok(())
@@ -221,18 +229,13 @@ mod test {
 
     use openraft::{EntryPayload, LeaderId, LogId};
 
-    use crate::{
-        replication::{Entry, WrappedEntry},
-        storage::tx::raft_log::parse_lsn,
-        test_helpers::mock_db,
-    };
+    use crate::{replication::Entry, storage::tx::raft_log::parse_lsn, test_helpers::mock_db};
 
     /// Get an empty log entry with the given index
-    fn empty_entry(idx: u64, term: u64, node_id: u64) -> WrappedEntry {
+    fn empty_entry(idx: u64, term: u64, node_id: u64) -> Entry {
         let leader_id = LeaderId::new(term, node_id);
         let id = LogId::new(leader_id, idx);
-        let entry = Entry { log_id: id, payload: EntryPayload::Blank };
-        WrappedEntry::from(entry)
+        Entry { log_id: id, payload: EntryPayload::Blank }
     }
 
     /// Test the logs cursor
@@ -255,7 +258,7 @@ mod test {
             let (k, v) = res.unwrap();
             let expected_idx = (i + 1) as u64;
             assert_eq!(parse_lsn(&k), expected_idx);
-            assert_eq!(v.inner.log_id.index, expected_idx);
+            assert_eq!(v.log_id.index, expected_idx);
         }
     }
 
@@ -275,7 +278,7 @@ mod test {
         let tx = db.new_write_tx().unwrap();
         for i in 1..=N {
             let entry = tx.read_log_entry(i).unwrap();
-            assert!(entry.inner.log_id.index == i);
+            assert!(entry.log_id.index == i);
         }
 
         // Purge the logs
@@ -291,7 +294,7 @@ mod test {
 
         for i in N / 2 + 1..=N {
             let entry = tx.read_log_entry(i).unwrap();
-            assert!(entry.inner.log_id.index == i);
+            assert!(entry.log_id.index == i);
         }
     }
 
@@ -311,7 +314,7 @@ mod test {
         let tx = db.new_write_tx().unwrap();
         for i in 1..=N {
             let entry = tx.read_log_entry(i).unwrap();
-            assert!(entry.inner.log_id.index == i);
+            assert!(entry.log_id.index == i);
         }
 
         // Truncate the logs
@@ -322,7 +325,7 @@ mod test {
         let tx = db.new_read_tx().unwrap();
         for i in 1..N / 2 {
             let entry = tx.read_log_entry(i).unwrap();
-            assert_eq!(entry.inner.log_id.index, i);
+            assert_eq!(entry.log_id.index, i);
         }
 
         for i in N / 2..=N {

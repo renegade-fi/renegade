@@ -18,10 +18,8 @@ use util::{err_str, res_some};
 
 use crate::replication::error::new_log_read_error;
 use crate::replication::rkyv_types::{ArchivedLogId, LogIdDef};
-use crate::replication::{WrappedEntry, WrappedLogId, WrappedVote};
 use crate::storage::db::DB;
 use crate::storage::error::StorageError;
-use crate::storage::traits::RkyvValue;
 use crate::storage::tx::StateTxn;
 use crate::storage::tx::raft_log::{lsn_to_key, parse_lsn};
 
@@ -124,8 +122,8 @@ impl RaftLogReader<TypeConfig> for LogStore {
                     break;
                 }
 
-                let entry = entry.deserialize()?;
-                res.push(entry.into());
+                let entry = entry.deserialize_with()?;
+                res.push(entry);
             }
 
             Ok(res)
@@ -140,16 +138,13 @@ impl RaftLogStorage<TypeConfig> for LogStore {
 
     async fn get_log_state(&mut self) -> Result<LogState<TypeConfig>, RaftStorageError<NodeId>> {
         self.with_read_tx(move |tx| {
-            let last_purged_log_id = tx
-                .get_last_purged_log_id()?
-                .map(|v| WrappedLogId::from_archived(&v))
-                .transpose()?
-                .map(|v| v.into());
+            let last_purged_log_id =
+                tx.get_last_purged_log_id()?.map(|v| v.deserialize_with()).transpose()?;
 
             let last_log = tx.last_raft_log()?.map(|(_, entry)| entry);
             let last_log_id = match last_log {
                 Some(x) => {
-                    let archived_id = &x.inner.log_id;
+                    let archived_id = &x.log_id;
                     let with = With::<ArchivedLogId, LogIdDef>::cast(archived_id);
                     let log_id = rkyv::deserialize::<_, rancor::Error>(with)
                         .map_err(StorageError::serialization)?;
@@ -166,14 +161,14 @@ impl RaftLogStorage<TypeConfig> for LogStore {
     }
 
     async fn save_vote(&mut self, vote: &Vote<NodeId>) -> Result<(), RaftStorageError<NodeId>> {
-        let vote = WrappedVote::new(*vote);
+        let vote = *vote;
         self.with_write_tx(move |tx| tx.set_last_vote(&vote)).await.map_err(new_log_write_error)
     }
 
     async fn read_vote(&mut self) -> Result<Option<Vote<NodeId>>, RaftStorageError<NodeId>> {
         self.with_read_tx(move |tx| {
             let archived_vote = res_some!(tx.get_last_vote()?);
-            let vote = WrappedVote::from_archived(&archived_vote)?.into();
+            let vote = archived_vote.deserialize_with()?;
 
             Ok(Some(vote))
         })
@@ -189,8 +184,9 @@ impl RaftLogStorage<TypeConfig> for LogStore {
     where
         I: IntoIterator<Item = Entry>,
     {
-        let entries = entries.into_iter().map(WrappedEntry::new).collect_vec();
-        self.with_write_tx(|tx| tx.append_log_entries(entries))
+        // Materialize the entires to appease the borrow checker
+        let entries = entries.into_iter().collect_vec();
+        self.with_write_tx(move |tx| tx.append_log_entries(entries))
             .await
             .map_err(new_log_write_error)?;
 
@@ -210,7 +206,7 @@ impl RaftLogStorage<TypeConfig> for LogStore {
     async fn purge(&mut self, log_id: LogId<NodeId>) -> Result<(), RaftStorageError<NodeId>> {
         self.with_write_tx(move |tx| {
             tx.purge_logs(log_id.index)?;
-            tx.set_last_purged_log_id(&log_id.into())
+            tx.set_last_purged_log_id(&log_id)
         })
         .await
         .map_err(new_log_write_error)

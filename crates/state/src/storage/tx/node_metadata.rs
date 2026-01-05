@@ -1,15 +1,20 @@
 //! Storage access methods for the local node's metadata
 use alloy_primitives::Address;
-use circuit_types::{elgamal::EncryptionKey, fixed_point::FixedPoint};
-use darkpool_types::rkyv_remotes::{WrappedAddress, WrappedBabyJubJubPoint, WrappedFixedPoint};
+use circuit_types::{
+    baby_jubjub::BabyJubJubPoint, elgamal::EncryptionKey, fixed_point::FixedPoint,
+};
+use darkpool_types::rkyv_remotes::{AddressDef, BabyJubJubPointDef, FixedPointDef};
 use libmdbx::{RW, TransactionKind};
 use libp2p::core::Multiaddr;
 use libp2p::identity::Keypair;
 use types_core::AccountId;
-use types_gossip::{ClusterId, WrappedMultiaddr, WrappedPeerId};
+use types_gossip::{ClusterId, MultiaddrDef, WrappedPeerId};
 use util::err_str;
 
-use crate::{NODE_METADATA_TABLE, storage::error::StorageError};
+use crate::{
+    NODE_METADATA_TABLE,
+    storage::{error::StorageError, traits::RkyvWith},
+};
 
 use super::StateTxn;
 
@@ -40,6 +45,15 @@ const EXTERNAL_FEE_ADDR_KEY: &str = "external-fee-addr";
 /// The key for the local relayer's historical state enabled flag in the node
 /// metadata table
 const HISTORICAL_STATE_ENABLED_KEY: &str = "historical-state-enabled";
+
+/// A type alias for a with-wrapped baby jubjub point
+type WithBabyJubJubPoint = RkyvWith<BabyJubJubPoint, BabyJubJubPointDef>;
+/// A type alias for a with-wrapped fixed point
+type WithFixedPoint = RkyvWith<FixedPoint, FixedPointDef>;
+/// A type alias for a with-wrapped address
+type WithAddress = RkyvWith<Address, AddressDef>;
+/// A type alias for a with-wrapped multiaddr
+type WithMultiaddr = RkyvWith<Multiaddr, MultiaddrDef>;
 
 // -----------
 // | Helpers |
@@ -90,10 +104,9 @@ impl<T: TransactionKind> StateTxn<'_, T> {
     /// Get the local node's addr
     pub fn get_local_addr(&self) -> Result<Multiaddr, StorageError> {
         self.inner()
-            .read::<_, WrappedMultiaddr>(NODE_METADATA_TABLE, &LOCAL_ADDR_KEY.to_string())?
+            .read::<_, WithMultiaddr>(NODE_METADATA_TABLE, &LOCAL_ADDR_KEY.to_string())?
             .ok_or_else(|| err_not_found(LOCAL_ADDR_KEY))?
-            .deserialize()
-            .map(Multiaddr::from)
+            .deserialize_with()
     }
 
     /// Get the account ID of the local relayer's account
@@ -107,41 +120,35 @@ impl<T: TransactionKind> StateTxn<'_, T> {
     /// Get the local relayer's fee encryption key
     pub fn get_fee_key(&self) -> Result<EncryptionKey, StorageError> {
         self.inner()
-            .read::<_, WrappedBabyJubJubPoint>(
+            .read::<_, WithBabyJubJubPoint>(
                 NODE_METADATA_TABLE,
                 &LOCAL_RELAYER_FEE_KEY.to_string(),
             )?
             .ok_or_else(|| err_not_found(LOCAL_RELAYER_FEE_KEY))?
-            .deserialize()
-            .map(|wrapped: WrappedBabyJubJubPoint| wrapped.0)
+            .deserialize_with()
     }
 
     /// Get the local relayer's maximum match fee
     pub fn get_max_relayer_fee(&self) -> Result<FixedPoint, StorageError> {
         self.inner()
-            .read::<_, WrappedFixedPoint>(NODE_METADATA_TABLE, &MAX_RELAYER_FEE_KEY.to_string())?
+            .read::<_, WithFixedPoint>(NODE_METADATA_TABLE, &MAX_RELAYER_FEE_KEY.to_string())?
             .ok_or_else(|| err_not_found(MAX_RELAYER_FEE_KEY))?
-            .deserialize()
-            .map(FixedPoint::from)
+            .deserialize_with()
     }
 
     /// Get the local relayer's default match fee
     pub fn get_default_relayer_fee(&self) -> Result<FixedPoint, StorageError> {
         self.inner()
-            .read::<_, WrappedFixedPoint>(
-                NODE_METADATA_TABLE,
-                &DEFAULT_RELAYER_FEE_KEY.to_string(),
-            )?
+            .read::<_, WithFixedPoint>(NODE_METADATA_TABLE, &DEFAULT_RELAYER_FEE_KEY.to_string())?
             .ok_or_else(|| err_not_found(DEFAULT_RELAYER_FEE_KEY))?
-            .deserialize()
-            .map(FixedPoint::from)
+            .deserialize_with()
     }
 
     /// Get the local relayer's external fee address
     pub fn get_external_fee_addr(&self) -> Result<Option<Address>, StorageError> {
         self.inner()
-            .read::<_, WrappedAddress>(NODE_METADATA_TABLE, &EXTERNAL_FEE_ADDR_KEY.to_string())?
-            .map(|a| a.deserialize().map(Address::from))
+            .read::<_, WithAddress>(NODE_METADATA_TABLE, &EXTERNAL_FEE_ADDR_KEY.to_string())?
+            .map(|a| a.deserialize_with())
             .transpose()
     }
 
@@ -177,8 +184,8 @@ impl StateTxn<'_, RW> {
 
     /// Set the local addr of the node
     pub fn set_local_addr(&self, addr: &Multiaddr) -> Result<(), StorageError> {
-        let wrapped = WrappedMultiaddr::from(addr.clone());
-        self.inner().write(NODE_METADATA_TABLE, &LOCAL_ADDR_KEY.to_string(), &wrapped)
+        let wrapped = WithMultiaddr::cast(addr);
+        self.inner().write(NODE_METADATA_TABLE, &LOCAL_ADDR_KEY.to_string(), wrapped)
     }
 
     /// Set the account ID of the local relayer's account
@@ -188,14 +195,14 @@ impl StateTxn<'_, RW> {
 
     /// Set the local relayer's fee encryption key
     pub fn set_fee_key(&self, fee_key: &EncryptionKey) -> Result<(), StorageError> {
-        let wrapped = WrappedBabyJubJubPoint::from(*fee_key);
-        self.inner().write(NODE_METADATA_TABLE, &LOCAL_RELAYER_FEE_KEY.to_string(), &wrapped)
+        let wrapped = WithBabyJubJubPoint::cast(fee_key);
+        self.inner().write(NODE_METADATA_TABLE, &LOCAL_RELAYER_FEE_KEY.to_string(), wrapped)
     }
 
     /// Set the local relayer's maximum match fee
     pub fn set_max_relayer_fee(&self, max_relayer_fee: &FixedPoint) -> Result<(), StorageError> {
-        let wrapped = WrappedFixedPoint::from(*max_relayer_fee);
-        self.inner().write(NODE_METADATA_TABLE, &MAX_RELAYER_FEE_KEY.to_string(), &wrapped)
+        let wrapped = WithFixedPoint::cast(max_relayer_fee);
+        self.inner().write(NODE_METADATA_TABLE, &MAX_RELAYER_FEE_KEY.to_string(), wrapped)
     }
 
     /// Set the default relayer match fee
@@ -203,14 +210,14 @@ impl StateTxn<'_, RW> {
         &self,
         default_relayer_fee: &FixedPoint,
     ) -> Result<(), StorageError> {
-        let wrapped = WrappedFixedPoint::from(*default_relayer_fee);
-        self.inner().write(NODE_METADATA_TABLE, &DEFAULT_RELAYER_FEE_KEY.to_string(), &wrapped)
+        let wrapped = WithFixedPoint::cast(default_relayer_fee);
+        self.inner().write(NODE_METADATA_TABLE, &DEFAULT_RELAYER_FEE_KEY.to_string(), wrapped)
     }
 
     /// Set the local relayer's external fee address
     pub fn set_external_fee_addr(&self, addr: &Address) -> Result<(), StorageError> {
-        let wrapped = WrappedAddress::from(*addr);
-        self.inner().write(NODE_METADATA_TABLE, &EXTERNAL_FEE_ADDR_KEY.to_string(), &wrapped)
+        let wrapped = WithAddress::cast(addr);
+        self.inner().write(NODE_METADATA_TABLE, &EXTERNAL_FEE_ADDR_KEY.to_string(), wrapped)
     }
 
     /// Set the local relayer's historical state enabled flag

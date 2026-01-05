@@ -4,6 +4,8 @@ use std::borrow::Cow;
 use std::marker::PhantomData;
 use std::ops::Deref;
 
+use crate::storage::traits::{RkyvValue, RkyvWith};
+
 use super::error::StorageError;
 use super::traits::Value;
 
@@ -40,6 +42,17 @@ impl<'a, V: Value> ArchivedValue<'a, V> {
     /// Get the raw bytes
     pub fn as_bytes(&self) -> &[u8] {
         &self.backing
+    }
+}
+
+impl<T, W> ArchivedValue<'_, RkyvWith<T, W>>
+where
+    RkyvWith<T, W>: Value,
+{
+    /// Get the inner value
+    pub fn deserialize_with(&self) -> Result<T, StorageError> {
+        <RkyvWith<T, W> as RkyvValue>::rkyv_deserialize_from_bytes(&self.backing)
+            .map(|v| v.into_inner())
     }
 }
 

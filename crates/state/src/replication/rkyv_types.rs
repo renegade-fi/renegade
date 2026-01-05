@@ -11,6 +11,7 @@ use rkyv::{Archive, Deserialize, Serialize};
 use crate::{
     replication::{Entry, Node, NodeId, TypeConfig},
     state_transition::Proposal,
+    storage::traits::RkyvWith,
 };
 
 use openraft::{EntryPayload, LeaderId, LogId, Membership, SnapshotMeta, StoredMembership, Vote};
@@ -41,6 +42,9 @@ impl From<LeaderIdDef> for LeaderId<NodeId> {
 
 // --- LogId --- //
 
+/// A type alias for a with-wrapped LogId
+pub type WithLogId = RkyvWith<LogId<NodeId>, LogIdDef>;
+
 /// Remote type shim for `openraft::LogId<NodeId>`
 #[derive(Archive, Deserialize, Serialize, Debug, PartialEq, Eq, Clone, Copy)]
 #[rkyv(derive(Debug, PartialEq, Eq))]
@@ -61,6 +65,9 @@ impl From<LogIdDef> for LogId<NodeId> {
 }
 
 // --- Vote --- //
+
+/// A type alias for a with-wrapped vote value
+pub type WithVote = RkyvWith<Vote<NodeId>, VoteDef>;
 
 /// Remote type shim for `openraft::Vote<NodeId>`
 #[derive(Archive, Deserialize, Serialize, Debug, PartialEq, Eq, Clone, Copy)]
@@ -165,6 +172,9 @@ impl From<StoredMembershipDef> for StoredMembership<NodeId, Node> {
 
 // --- SnapshotMeta --- //
 
+/// A type alias for a with-wrapped snapshot meta value
+pub type WithSnapshotMeta = RkyvWith<SnapshotMeta<NodeId, Node>, SnapshotMetaDef>;
+
 /// Type for serializing `SnapshotMeta<NodeId, Node>`
 ///
 /// We serialize StoredMembership as bytes since it can't be properly
@@ -195,6 +205,9 @@ impl From<SnapshotMetaDef> for SnapshotMeta<NodeId, Node> {
 
 // --- Entry --- //
 
+/// A type alias for a with-wrapped entry value
+pub type WithEntry = RkyvWith<Entry, EntryDef>;
+
 /// Type for serializing `Entry` (which is `openraft::Entry<TypeConfig>`)
 #[derive(Archive, Deserialize, Serialize, Debug, Clone)]
 #[rkyv(remote = Entry)]
@@ -211,187 +224,5 @@ pub struct EntryDef {
 impl From<EntryDef> for Entry {
     fn from(value: EntryDef) -> Self {
         Entry { log_id: value.log_id, payload: value.payload }
-    }
-}
-
-// -----------------
-// | Wrapper Types |
-// -----------------
-
-// --- WrappedLeaderId --- //
-
-/// A wrapper around `LeaderId<NodeId>` that implements rkyv serialization
-#[derive(Archive, Deserialize, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
-#[rkyv(derive(Debug, PartialEq, Eq))]
-pub struct WrappedLeaderId(#[rkyv(with = LeaderIdDef)] pub LeaderId<NodeId>);
-
-impl WrappedLeaderId {
-    /// Create a new WrappedLeaderId
-    pub fn new(leader_id: LeaderId<NodeId>) -> Self {
-        Self(leader_id)
-    }
-
-    /// Get the underlying LeaderId
-    pub fn inner(&self) -> &LeaderId<NodeId> {
-        &self.0
-    }
-}
-
-impl std::ops::Deref for WrappedLeaderId {
-    type Target = LeaderId<NodeId>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl From<LeaderId<NodeId>> for WrappedLeaderId {
-    fn from(leader_id: LeaderId<NodeId>) -> Self {
-        Self(leader_id)
-    }
-}
-
-impl From<WrappedLeaderId> for LeaderId<NodeId> {
-    fn from(wrapped: WrappedLeaderId) -> Self {
-        wrapped.0
-    }
-}
-
-// --- WrappedLogId --- //
-
-/// A wrapper around `LogId<NodeId>` that implements rkyv serialization
-#[derive(Archive, Deserialize, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
-#[rkyv(derive(Debug, PartialEq, Eq))]
-pub struct WrappedLogId(#[rkyv(with = LogIdDef)] pub LogId<NodeId>);
-
-impl WrappedLogId {
-    /// Create a new WrappedLogId
-    pub fn new(log_id: LogId<NodeId>) -> Self {
-        Self(log_id)
-    }
-
-    /// Get the underlying LogId
-    pub fn inner(&self) -> &LogId<NodeId> {
-        &self.0
-    }
-}
-
-impl std::ops::Deref for WrappedLogId {
-    type Target = LogId<NodeId>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl From<LogId<NodeId>> for WrappedLogId {
-    fn from(log_id: LogId<NodeId>) -> Self {
-        Self(log_id)
-    }
-}
-
-impl From<WrappedLogId> for LogId<NodeId> {
-    fn from(wrapped: WrappedLogId) -> Self {
-        wrapped.0
-    }
-}
-
-// --- WrappedVote --- //
-
-/// A wrapper around `Vote<NodeId>` that implements rkyv serialization
-#[derive(Archive, Deserialize, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
-#[rkyv(derive(Debug, PartialEq, Eq))]
-pub struct WrappedVote(#[rkyv(with = VoteDef)] pub Vote<NodeId>);
-
-impl WrappedVote {
-    /// Create a new WrappedVote
-    pub fn new(vote: Vote<NodeId>) -> Self {
-        Self(vote)
-    }
-
-    /// Get the underlying Vote
-    pub fn inner(&self) -> &Vote<NodeId> {
-        &self.0
-    }
-}
-
-impl std::ops::Deref for WrappedVote {
-    type Target = Vote<NodeId>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl From<Vote<NodeId>> for WrappedVote {
-    fn from(vote: Vote<NodeId>) -> Self {
-        Self(vote)
-    }
-}
-
-impl From<WrappedVote> for Vote<NodeId> {
-    fn from(wrapped: WrappedVote) -> Self {
-        wrapped.0
-    }
-}
-
-// --- WrappedSnapshotMeta --- //
-
-/// A wrapper around `SnapshotMeta<NodeId, Node>` that implements rkyv
-/// serialization
-#[derive(Archive, Deserialize, Serialize, Clone, Debug)]
-#[rkyv(derive(Debug))]
-pub struct WrappedSnapshotMeta {
-    /// The serialized snapshot metadata
-    #[rkyv(with = SnapshotMetaDef)]
-    pub inner: SnapshotMeta<NodeId, Node>,
-}
-
-impl WrappedSnapshotMeta {
-    /// Create a new WrappedSnapshotMeta
-    pub fn new(meta: SnapshotMeta<NodeId, Node>) -> Self {
-        Self { inner: meta }
-    }
-}
-
-impl From<SnapshotMeta<NodeId, Node>> for WrappedSnapshotMeta {
-    fn from(meta: SnapshotMeta<NodeId, Node>) -> Self {
-        Self::new(meta)
-    }
-}
-
-impl From<WrappedSnapshotMeta> for SnapshotMeta<NodeId, Node> {
-    fn from(wrapped: WrappedSnapshotMeta) -> Self {
-        wrapped.inner
-    }
-}
-
-// --- WrappedEntry --- //
-
-/// A wrapper around `Entry` that implements rkyv serialization
-#[derive(Archive, Deserialize, Serialize, Clone, Debug)]
-#[rkyv(derive(Debug))]
-pub struct WrappedEntry {
-    /// The serialized entry
-    #[rkyv(with = EntryDef)]
-    pub inner: Entry,
-}
-
-impl WrappedEntry {
-    /// Create a new WrappedEntry
-    pub fn new(entry: Entry) -> Self {
-        Self { inner: entry }
-    }
-}
-
-impl From<Entry> for WrappedEntry {
-    fn from(entry: Entry) -> Self {
-        Self::new(entry)
-    }
-}
-
-impl From<WrappedEntry> for Entry {
-    fn from(wrapped: WrappedEntry) -> Self {
-        wrapped.inner
     }
 }

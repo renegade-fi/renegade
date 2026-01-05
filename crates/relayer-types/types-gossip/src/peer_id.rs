@@ -19,7 +19,9 @@ use serde::{
 
 /// Wraps PeerID so that we can implement various traits on the type
 #[derive(Clone, Copy, Debug, Hash, Eq, PartialEq, PartialOrd, Ord)]
-pub struct WrappedPeerId(pub PeerId);
+#[cfg_attr(feature = "rkyv", derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize))]
+#[cfg_attr(feature = "rkyv", rkyv(derive(Debug), compare(PartialEq)))]
+pub struct WrappedPeerId(#[cfg_attr(feature = "rkyv", rkyv(with = PeerIdDef))] pub PeerId);
 
 impl WrappedPeerId {
     /// Create a random PeerID and wrap it
@@ -129,62 +131,69 @@ impl<'de> Visitor<'de> for PeerIDVisitor {
 mod rkyv_impl {
     //! rkyv serialization for WrappedPeerId
     //!
-    //! PeerId is serialized as its byte representation (variable length).
-    //! We store it as a Vec<u8> and convert on (de)serialization.
+    //! Uses a remote type shim pattern for PeerId serialization.
 
     use libp2p::PeerId;
-    use rkyv::{
-        Archive, Deserialize as RkyvDeserialize, Place, Serialize as RkyvSerialize,
-        rancor::{Fallible, Source},
-        vec::{ArchivedVec, VecResolver},
-    };
+    use rkyv::{Archive, Deserialize, Serialize};
 
-    use super::WrappedPeerId;
+    // -------------
+    // | PeerIdDef |
+    // -------------
 
-    /// The archived form of WrappedPeerId - stored as bytes
-    pub type ArchivedWrappedPeerId = ArchivedVec<u8>;
-    impl Archive for WrappedPeerId {
-        type Archived = ArchivedWrappedPeerId;
-        type Resolver = VecResolver;
+    /// Remote type shim for `libp2p::PeerId`
+    #[derive(Archive, Deserialize, Serialize, Debug, PartialEq)]
+    #[rkyv(derive(Debug), compare(PartialEq))]
+    #[rkyv(remote = libp2p::PeerId)]
+    #[rkyv(archived = ArchivedPeerId)]
+    pub struct PeerIdDef {
+        /// The underlying multihash.
+        #[rkyv(getter = AsRef::as_ref, with = MultihashDef)]
+        pub multihash: libp2p::multihash::MultihashGeneric<64>,
+    }
 
-        fn resolve(&self, resolver: Self::Resolver, out: Place<Self::Archived>) {
-            let bytes = self.to_bytes();
-            ArchivedVec::resolve_from_slice(&bytes, resolver, out);
+    impl From<PeerIdDef> for PeerId {
+        fn from(value: PeerIdDef) -> Self {
+            PeerId::try_from(value.multihash).expect("Invalid PeerId multihash")
         }
     }
 
-    impl<S: Fallible + rkyv::ser::Allocator + rkyv::ser::Writer + ?Sized> RkyvSerialize<S>
-        for WrappedPeerId
-    {
-        fn serialize(&self, serializer: &mut S) -> Result<Self::Resolver, S::Error> {
-            let bytes = self.to_bytes();
-            ArchivedVec::serialize_from_slice(&bytes, serializer)
+    impl PartialEq<libp2p::PeerId> for ArchivedPeerId {
+        fn eq(&self, other: &libp2p::PeerId) -> bool {
+            self.multihash == *other.as_ref()
         }
     }
 
-    impl<D: Fallible + ?Sized> RkyvDeserialize<WrappedPeerId, D> for ArchivedWrappedPeerId
-    where
-        D::Error: Source,
-    {
-        fn deserialize(&self, _deserializer: &mut D) -> Result<WrappedPeerId, D::Error> {
-            let bytes: &[u8] = self.as_slice();
-            let peer_id = PeerId::from_bytes(bytes).map_err(D::Error::new)?;
-            Ok(WrappedPeerId(peer_id))
+    /// A multihash shim for `multihash::Multihash`
+    #[derive(Archive, Deserialize, Serialize, Debug, PartialEq)]
+    #[rkyv(derive(Debug), compare(PartialEq))]
+    #[rkyv(remote = libp2p::multihash::MultihashGeneric<64>)]
+    #[rkyv(archived = ArchivedMultihash)]
+    pub struct MultihashDef {
+        /// The code of the Multihash.
+        #[rkyv(getter = libp2p::multihash::Multihash::code)]
+        pub code: u64,
+        /// The digest.
+        #[rkyv(getter = get_digest)]
+        pub digest: Vec<u8>,
+    }
+
+    /// Get a multi-hash digest
+    fn get_digest(mh: &libp2p::multihash::MultihashGeneric<64>) -> Vec<u8> {
+        mh.digest().to_vec()
+    }
+
+    impl From<MultihashDef> for libp2p::multihash::MultihashGeneric<64> {
+        fn from(value: MultihashDef) -> Self {
+            libp2p::multihash::MultihashGeneric::<64>::wrap(value.code, &value.digest).unwrap()
         }
     }
 
-    impl PartialEq<WrappedPeerId> for ArchivedWrappedPeerId {
-        fn eq(&self, other: &WrappedPeerId) -> bool {
-            self.as_slice() == other.to_bytes().as_slice()
-        }
-    }
-
-    impl PartialEq<ArchivedWrappedPeerId> for WrappedPeerId {
-        fn eq(&self, other: &ArchivedWrappedPeerId) -> bool {
-            self.to_bytes().as_slice() == other.as_slice()
+    impl PartialEq<libp2p::multihash::MultihashGeneric<64>> for ArchivedMultihash {
+        fn eq(&self, other: &libp2p::multihash::MultihashGeneric<64>) -> bool {
+            self.code == other.code() && self.digest == other.digest().to_vec()
         }
     }
 }
 
 #[cfg(feature = "rkyv")]
-pub use rkyv_impl::ArchivedWrappedPeerId;
+pub use rkyv_impl::PeerIdDef;
