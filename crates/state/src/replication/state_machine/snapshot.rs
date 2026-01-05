@@ -14,7 +14,6 @@ use openraft::{
 use tracing::warn;
 use util::{err_str, get_current_time_millis};
 
-use crate::replication::WrappedSnapshotMeta;
 use crate::replication::error::{ReplicationError, new_snapshot_error};
 use crate::storage::db::{DB, DbConfig};
 use crate::{
@@ -89,7 +88,7 @@ impl RaftSnapshotBuilder<TypeConfig> for StateMachine {
 
         // Remove the lock file, store the metadata and return
         self.delete_snapshot_lock().await.map_err(new_snapshot_error)?;
-        self.write_snapshot_metadata(meta.clone()).map_err(new_snapshot_error)?;
+        self.write_snapshot_metadata(&meta).map_err(new_snapshot_error)?;
         Ok(Snapshot { meta, snapshot: Box::new(snapshot_file) })
     }
 }
@@ -102,10 +101,10 @@ impl StateMachine {
     /// Write the metadata for a snapshot
     fn write_snapshot_metadata(
         &self,
-        meta: SnapshotMeta<NodeId, Node>,
+        meta: &SnapshotMeta<NodeId, Node>,
     ) -> Result<(), ReplicationError> {
         let tx = self.db().new_write_tx().map_err(ReplicationError::Storage)?;
-        tx.set_snapshot_metadata(&WrappedSnapshotMeta::new(meta))?;
+        tx.set_snapshot_metadata(meta)?;
         tx.commit().map_err(ReplicationError::Storage)?;
 
         Ok(())
@@ -248,7 +247,7 @@ impl StateMachine {
     ) -> Result<(), ReplicationError> {
         self.last_applied_log = meta.last_log_id;
         self.last_membership = meta.last_membership.clone();
-        self.write_snapshot_metadata(meta.clone())?;
+        self.write_snapshot_metadata(meta)?;
 
         let db_clone = self.db_owned();
         warn!("order cache not hydrated from snapshot");

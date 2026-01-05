@@ -23,9 +23,7 @@ pub use peer_id::WrappedPeerId;
 pub use peer_info::PeerInfo;
 
 #[cfg(feature = "rkyv")]
-pub use peer_id::ArchivedWrappedPeerId;
-#[cfg(feature = "rkyv")]
-pub use peer_info::{ArchivedWrappedMultiaddr, WrappedMultiaddr};
+pub use peer_info::MultiaddrDef;
 
 #[cfg(test)]
 mod tests {

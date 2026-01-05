@@ -77,9 +77,6 @@ pub fn get_raft_id(peer_id: &WrappedPeerId) -> u64 {
     fxhash64(&peer_id)
 }
 
-// Re-export wrapper types
-pub use rkyv_types::{WrappedEntry, WrappedLogId, WrappedSnapshotMeta, WrappedVote};
-
 // --------------
 // | Raft Tests |
 // --------------

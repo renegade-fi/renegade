@@ -308,7 +308,7 @@ impl RaftStateMachine<TypeConfig> for StateMachine {
     ) -> Result<Option<Snapshot<TypeConfig>>, RaftStorageError<NodeId>> {
         let tx = self.db().new_read_tx().map_err(new_log_read_error)?;
         let archived_meta = res_some!(tx.get_snapshot_metadata().map_err(new_log_read_error)?);
-        let meta = archived_meta.deserialize().map_err(new_log_read_error)?.into();
+        let meta = archived_meta.deserialize_with().map_err(new_log_read_error)?;
 
         // Open the snapshot file
         let file = res_some!(self.open_snapshot_file().await.map_err(new_snapshot_error)?);
