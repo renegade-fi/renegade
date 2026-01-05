@@ -50,7 +50,7 @@ darkpool-types = { workspace = true, features = ["rkyv"] }
 types-core = { workspace = true }
 types-gossip = { workspace = true, features = ["rkyv"] }
 types-tasks = { workspace = true, features = ["rkyv"] }
-types-account = { workspace = true }
+types-account = { workspace = true, features = ["rkyv"] }
 types-runtime = { workspace = true }
 config = { workspace = true }
 constants = { workspace = true }

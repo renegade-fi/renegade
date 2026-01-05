@@ -31,7 +31,7 @@ pub type MatchingPoolName = String;
 pub type WalletAuthenticationPath = MerkleAuthenticationPath;
 
 /// Represents a wallet managed by the local relayer
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "rkyv", derive(Archive, RkyvDeserialize, RkyvSerialize))]
 #[cfg_attr(feature = "rkyv", rkyv(derive(Debug)))]
 pub struct Account {

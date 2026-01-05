@@ -16,10 +16,10 @@ pub mod node_metadata;
 // pub mod proofs;
 pub mod raft_log;
 // pub mod relayer_fees;
+pub mod account_index;
 pub mod task_assignments;
 pub mod task_history;
 pub mod task_queue;
-// pub mod wallet_index;
 
 use libmdbx::{
     Error as MdbxError, RW, Table, TableFlags, Transaction, TransactionKind, WriteFlags, WriteMap,
