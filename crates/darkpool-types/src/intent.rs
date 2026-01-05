@@ -36,6 +36,7 @@ pub type DarkpoolStateIntentVar = crate::state_wrapper::StateWrapperVar<Intent>;
 #[cfg_attr(not(feature = "proof-system-types"), circuit_type(serde))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "rkyv", derive(Archive, RkyvDeserialize, RkyvSerialize))]
+#[cfg_attr(feature = "rkyv", rkyv(derive(Debug)))]
 pub struct Intent {
     /// The token to buy
     #[cfg_attr(feature = "rkyv", rkyv(with = AddressDef))]

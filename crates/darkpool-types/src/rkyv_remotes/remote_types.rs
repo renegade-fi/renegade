@@ -137,6 +137,7 @@ impl PartialEq<BabyJubJubPoint> for ArchivedBabyJubJubPoint {
 /// Remote type shim for `circuit_types::primitives::schnorr::SchnorrPublicKey`
 #[derive(Archive, Deserialize, Serialize)]
 #[rkyv(remote = SchnorrPublicKey)]
+#[rkyv(derive(Debug))]
 #[rkyv(archived = ArchivedSchnorrPublicKey)]
 pub struct SchnorrPublicKeyDef {
     /// The curve point representing the public key

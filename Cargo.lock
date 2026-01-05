@@ -7253,6 +7253,7 @@ dependencies = [
  "num-bigint",
  "num-traits",
  "rand 0.8.5",
+ "rkyv",
  "serde",
  "signature 2.2.0",
  "types-core",

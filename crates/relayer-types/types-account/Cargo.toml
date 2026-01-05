@@ -7,6 +7,7 @@ edition = "2024"
 default = []
 mocks = ["rand", "circuits-core/test_helpers"]
 proof-system-types = []
+rkyv = ["dep:rkyv", "darkpool-types/rkyv"]
 
 [dependencies]
 # === Cryptography === #
@@ -27,6 +28,11 @@ uuid = { version = "1.1.2", features = ["v4", "serde"] }
 
 # === Optional === #
 rand = { workspace = true, optional = true }
+rkyv = { workspace = true, optional = true, features = [
+    "std",
+    "alloc",
+    "uuid-1",
+] }
 
 # === Workspace Dependencies === #
 circuit-types = { workspace = true, features = ["default"] }
