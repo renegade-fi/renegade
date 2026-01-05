@@ -40,6 +40,7 @@ pub type DarkpoolStateBalanceVar = StateWrapperVar<Balance>;
 #[cfg_attr(not(feature = "proof-system-types"), circuit_type(serde))]
 #[derive(Clone, Debug, Serialize, Deserialize, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "rkyv", derive(Archive, RkyvDeserialize, RkyvSerialize))]
+#[cfg_attr(feature = "rkyv", rkyv(derive(Debug)))]
 pub struct Balance {
     /// The mint of the token in the balance
     #[cfg_attr(feature = "rkyv", rkyv(with = AddressDef))]

@@ -76,8 +76,8 @@ pub(crate) const PROOFS_TABLE: &str = "proofs";
 /// The name of the db table mapping orders to their matching pool
 pub(crate) const POOL_TABLE: &str = "matching-pools";
 
-/// The name of the db table that maps order to their encapsulating wallet
-pub(crate) const ORDER_TO_WALLET_TABLE: &str = "order-to-wallet";
+/// The name of the db table that maps intent to their encapsulating wallet
+pub(crate) const INTENT_TO_WALLET_TABLE: &str = "intent-to-wallet";
 /// The name of the db table that maps nullifiers to wallets
 pub(crate) const NULLIFIER_TO_WALLET_TABLE: &str = "nullifier-to-wallet";
 /// The name of the db table that stores wallet information
@@ -106,7 +106,7 @@ pub const ALL_TABLES: [&str; NUM_TABLES] = [
     NODE_METADATA_TABLE,
     NULLIFIER_TO_WALLET_TABLE,
     ORDER_HISTORY_TABLE,
-    ORDER_TO_WALLET_TABLE,
+    INTENT_TO_WALLET_TABLE,
     ORDERS_TABLE,
     PEER_INFO_TABLE,
     POOL_TABLE,

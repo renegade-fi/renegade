@@ -3,7 +3,7 @@
 //! These types are used with `#[rkyv(with = ...)]` to serialize types
 //! that don't natively support rkyv.
 
-use std::marker::PhantomData;
+use std::{hash::Hash, marker::PhantomData};
 
 use alloy_primitives::Address;
 use ark_bn254::FrConfig;
@@ -37,6 +37,19 @@ impl From<AddressDef> for Address {
 impl PartialEq<Address> for ArchivedAddress {
     fn eq(&self, other: &Address) -> bool {
         self.0 == other.0.0
+    }
+}
+
+impl PartialEq for ArchivedAddress {
+    fn eq(&self, other: &ArchivedAddress) -> bool {
+        self.0 == other.0
+    }
+}
+impl Eq for ArchivedAddress {}
+
+impl Hash for ArchivedAddress {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.0.hash(state);
     }
 }
 
@@ -137,6 +150,7 @@ impl PartialEq<BabyJubJubPoint> for ArchivedBabyJubJubPoint {
 /// Remote type shim for `circuit_types::primitives::schnorr::SchnorrPublicKey`
 #[derive(Archive, Deserialize, Serialize)]
 #[rkyv(remote = SchnorrPublicKey)]
+#[rkyv(derive(Debug))]
 #[rkyv(archived = ArchivedSchnorrPublicKey)]
 pub struct SchnorrPublicKeyDef {
     /// The curve point representing the public key
