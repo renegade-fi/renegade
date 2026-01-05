@@ -142,7 +142,7 @@ impl RaftLogStorage<TypeConfig> for LogStore {
         self.with_read_tx(move |tx| {
             let last_purged_log_id = tx
                 .get_last_purged_log_id()?
-                .map(|v| WrappedLogId::rkyv_deserialize(&v))
+                .map(|v| WrappedLogId::from_archived(&v))
                 .transpose()?
                 .map(|v| v.into());
 
@@ -173,7 +173,7 @@ impl RaftLogStorage<TypeConfig> for LogStore {
     async fn read_vote(&mut self) -> Result<Option<Vote<NodeId>>, RaftStorageError<NodeId>> {
         self.with_read_tx(move |tx| {
             let archived_vote = res_some!(tx.get_last_vote()?);
-            let vote = WrappedVote::rkyv_deserialize(&archived_vote)?.into();
+            let vote = WrappedVote::from_archived(&archived_vote)?.into();
 
             Ok(Some(vote))
         })

@@ -136,7 +136,7 @@ impl StateApplicator {
 
         tx.transition_task(&task_id, state)?;
         let updated_task = tx.get_task(&task_id)?.expect("task should exist");
-        let task = QueuedTask::rkyv_deserialize(&updated_task)?;
+        let task = QueuedTask::from_archived(&updated_task)?;
         tx.commit()?;
 
         self.publish_task_updates_multiple(&keys, &task);
@@ -263,7 +263,7 @@ impl StateApplicator {
             .ok_or_else(|| StateApplicatorError::MissingEntry(ERR_UNASSIGNED_TASK))?;
 
         if *executor == my_peer_id {
-            let task = QueuedTask::rkyv_deserialize(task)?;
+            let task = QueuedTask::from_archived(task)?;
             let job = TaskDriverJob::run(task);
             self.config.task_queue.send(job).map_err(StateApplicatorError::enqueue_task)?;
         }

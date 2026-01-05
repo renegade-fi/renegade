@@ -28,7 +28,7 @@ pub struct DbCursor<'txn, Tx: TransactionKind, K: Key, V: Value> {
     ///
     /// This is a boxed closure to allow capturing borrowed data (e.g. a prefix)
     #[allow(clippy::type_complexity)]
-    key_filter: Option<Box<dyn Fn(&K::Archived) -> bool + 'txn>>,
+    key_filter: Option<Box<dyn Fn(&K::ArchivedType) -> bool + 'txn>>,
     /// A phantom data field to hold the deserialized type of
     /// the table
     _phantom: PhantomData<(K, V)>,
@@ -57,7 +57,7 @@ impl<'txn, Tx: TransactionKind, K: Key, V: Value> DbCursor<'txn, Tx, K, V> {
     ///
     /// Consumes the cursor to provide a builder-like pattern.
     /// Accepts any closure, including those that capture borrowed data.
-    pub fn with_key_filter(mut self, filter: impl Fn(&K::Archived) -> bool + 'txn) -> Self {
+    pub fn with_key_filter(mut self, filter: impl Fn(&K::ArchivedType) -> bool + 'txn) -> Self {
         self.key_filter = Some(Box::new(filter));
         self
     }
