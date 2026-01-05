@@ -2,7 +2,7 @@
 
 use async_trait::async_trait;
 use types_core::{price::TimestampedPrice, token::{Token, get_all_base_tokens}};
-use types_wallet::wallet::pair_from_mints;
+use types_account::account::pair_from_mints;
 use constants::DEFAULT_EXTERNAL_MATCH_RELAYER_FEE;
 use external_api::{
     EmptyRequestResponse,

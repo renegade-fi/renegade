@@ -1,6 +1,6 @@
 //! Removes old proofs from the state
 
-use types_wallet::wallet::IntentIdentifier;
+use types_account::account::IntentIdentifier;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use state::{State, storage::tx::RwTxn};
 use tracing::{info, warn};

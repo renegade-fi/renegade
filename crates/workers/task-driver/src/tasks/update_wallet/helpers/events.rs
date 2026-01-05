@@ -2,7 +2,7 @@
 
 use types_runtime::MatchingPoolName;
 use types_tasks::WalletUpdateType;
-use types_wallet::wallet::{Order, IntentIdentifier};
+use types_account::account::{Order, IntentIdentifier};
 use job_types::event_manager::{
     ExternalTransferEvent, OrderCancellationEvent, OrderPlacementEvent, OrderUpdateEvent,
     RelayerEventType, try_send_event,

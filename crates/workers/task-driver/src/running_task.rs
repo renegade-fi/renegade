@@ -2,7 +2,7 @@
 //! logic
 
 use types_tasks::TaskIdentifier;
-use types_wallet::wallet::WalletIdentifier;
+use types_account::account::WalletIdentifier;
 use state::{State, error::StateError};
 use tracing::{error, info};
 

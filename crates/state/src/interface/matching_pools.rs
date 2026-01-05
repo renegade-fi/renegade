@@ -5,7 +5,7 @@
 // -------------
 
 use types_runtime::MatchingPoolName;
-use types_wallet::wallet::IntentIdentifier;
+use types_account::account::IntentIdentifier;
 
 use crate::{StateInner, StateTransition, error::StateError, notifications::ProposalWaiter};
 

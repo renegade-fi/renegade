@@ -7,7 +7,7 @@ use circuit_types::{keychain::PublicSigningKey, transfers::ExternalTransfer};
 use common::types::proof_bundles::mocks::dummy_valid_wallet_update_bundle;
 use types_tasks::{LookupWalletTaskDescriptor, TaskDescriptor};
 use common::types::transfer_auth::ExternalTransferWithAuth;
-use types_wallet::wallet::{Wallet, WalletIdentifier};
+use types_account::account::{Wallet, WalletIdentifier};
 use types_runtime::worker::Worker;
 use constants::Scalar;
 use darkpool_client::DarkpoolClient;

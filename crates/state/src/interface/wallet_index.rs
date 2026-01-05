@@ -5,7 +5,7 @@
 
 use circuit_types::{balance::Balance, wallet::Nullifier};
 use types_tasks::QueuedTask;
-use types_wallet::wallet::{Order, IntentIdentifier, Wallet, WalletIdentifier};
+use types_account::account::{Order, IntentIdentifier, Wallet, WalletIdentifier};
 use util::res_some;
 
 use crate::{StateInner, StateTransition, error::StateError, notifications::ProposalWaiter};

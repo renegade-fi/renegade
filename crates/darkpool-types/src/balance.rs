@@ -8,9 +8,9 @@ use circuit_types::{Amount, primitives::schnorr::SchnorrPublicKey, traits::BaseT
 use constants::Scalar;
 use serde::{Deserialize, Serialize};
 
-#[cfg(feature = "zero-copy")]
+#[cfg(feature = "rkyv")]
 use crate::rkyv_remotes::{AddressDef, SchnorrPublicKeyDef};
-#[cfg(feature = "zero-copy")]
+#[cfg(feature = "rkyv")]
 use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
 
 #[cfg(feature = "proof-system-types")]
@@ -39,19 +39,19 @@ pub type DarkpoolStateBalanceVar = StateWrapperVar<Balance>;
 #[cfg_attr(feature = "proof-system-types", circuit_type(serde, singleprover_circuit, secret_share))]
 #[cfg_attr(not(feature = "proof-system-types"), circuit_type(serde))]
 #[derive(Clone, Debug, Serialize, Deserialize, Default, PartialEq, Eq)]
-#[cfg_attr(feature = "zero-copy", derive(Archive, RkyvDeserialize, RkyvSerialize))]
+#[cfg_attr(feature = "rkyv", derive(Archive, RkyvDeserialize, RkyvSerialize))]
 pub struct Balance {
     /// The mint of the token in the balance
-    #[cfg_attr(feature = "zero-copy", rkyv(with = AddressDef))]
+    #[cfg_attr(feature = "rkyv", rkyv(with = AddressDef))]
     pub mint: Address,
     /// The owner of the balance
-    #[cfg_attr(feature = "zero-copy", rkyv(with = AddressDef))]
+    #[cfg_attr(feature = "rkyv", rkyv(with = AddressDef))]
     pub owner: Address,
     /// The address to which the relayer fees are paid
-    #[cfg_attr(feature = "zero-copy", rkyv(with = AddressDef))]
+    #[cfg_attr(feature = "rkyv", rkyv(with = AddressDef))]
     pub relayer_fee_recipient: Address,
     /// The public key which authorizes the creation of new state elements
-    #[cfg_attr(feature = "zero-copy", rkyv(with = SchnorrPublicKeyDef))]
+    #[cfg_attr(feature = "rkyv", rkyv(with = SchnorrPublicKeyDef))]
     pub authority: SchnorrPublicKey,
     /// The relayer fee balance of the balance
     pub relayer_fee_balance: Amount,
@@ -322,7 +322,7 @@ impl StateWrapper<Balance> {
 // | Tests |
 // ---------
 
-#[cfg(all(test, feature = "zero-copy"))]
+#[cfg(all(test, feature = "rkyv"))]
 mod rkyv_tests {
     #![allow(unsafe_code)]
 

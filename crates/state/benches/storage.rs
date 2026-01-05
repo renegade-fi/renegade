@@ -2,7 +2,7 @@
 use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
 use rand::{Rng, thread_rng};
 use state::{storage::db::DB, test_helpers::mock_db};
-use types_wallet::wallet::{Wallet, mocks::mock_empty_wallet};
+use types_account::account::{Wallet, mocks::mock_empty_wallet};
 
 // -----------
 // | Helpers |

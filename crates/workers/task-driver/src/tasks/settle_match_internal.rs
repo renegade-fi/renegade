@@ -19,9 +19,9 @@ use circuits_core::zk_circuits::valid_match_settle::{
 use types_core::price::{TimestampedPrice, TimestampedPriceFp};
 use common::types::proof_bundles::ValidMatchSettleBundle;
 use types_tasks::SettleMatchInternalTaskDescriptor;
-use types_wallet::wallet::{IntentIdentifier, WalletIdentifier};
+use types_account::account::{IntentIdentifier, WalletIdentifier};
 use common::types::proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle};
-use types_wallet::wallet::Wallet;
+use types_account::account::Wallet;
 use constants::Scalar;
 use darkpool_client::errors::DarkpoolClientError;
 use job_types::event_manager::{FillEvent, RelayerEventType, try_send_event};

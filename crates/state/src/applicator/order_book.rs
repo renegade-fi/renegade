@@ -4,7 +4,7 @@
 use common::types::proof_bundles::{
     OrderValidityProofBundle, OrderValidityWitnessBundle, ValidWalletUpdateBundle,
 };
-use types_wallet::wallet::{IntentIdentifier, order_metadata::OrderState};
+use types_account::account::{IntentIdentifier, order_metadata::OrderState};
 use constants::ORDER_STATE_CHANGE_TOPIC;
 use system_bus::SystemBusMessage;
 use libmdbx::RW;

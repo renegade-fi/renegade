@@ -2,20 +2,17 @@
 //!
 //! Separated out to aid discoverability on implementations
 
-// mod balances;
 // pub mod derivation;
-// pub mod keychain;
-// #[cfg(feature = "proof-system-types")]
-// mod r#match;
-// #[cfg(feature = "mocks")]
-// pub mod mocks;
-// pub mod order_metadata;
-// mod orders;
-// mod shares;
-// mod types;
+pub mod keychain;
+#[cfg(feature = "mocks")]
+pub mod mocks;
 
-// pub use orders::{Order, OrderBuilder, Pair, pair_from_mints};
-// pub use types::*;
+use std::collections::HashMap;
+
+use alloy::primitives::Address;
+use darkpool_types::{balance::Balance, intent::Intent};
+use serde::{Deserialize, Serialize};
+use types_core::AccountId;
 use uuid::Uuid;
 
 use crate::MerkleAuthenticationPath;
@@ -27,6 +24,31 @@ pub type MatchingPoolName = String;
 
 /// The Merkle opening from the wallet shares' commitment to the global root
 pub type WalletAuthenticationPath = MerkleAuthenticationPath;
+
+/// Represents a wallet managed by the local relayer
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Account {
+    /// The identifier used to index the wallet
+    pub wallet_id: AccountId,
+    /// A list of intents in this account
+    pub intents: HashMap<IntentIdentifier, Intent>,
+    /// A list of balances in this account
+    pub balances: HashMap<Address, Balance>,
+}
+
+impl Account {
+    /// Create a new empty account from the given seed information
+    pub fn new_empty_account(wallet_id: AccountId) -> Self {
+        Self { wallet_id, intents: HashMap::new(), balances: HashMap::new() }
+    }
+
+    /// Remove default balances
+    pub fn remove_default_elements(&mut self) {
+        let default_balance = Balance::default();
+        self.balances.retain(|_mint, balance| *balance != default_balance);
+        self.intents.retain(|_id, intent| *intent != Intent::default());
+    }
+}
 
 // ----------------
 // | Wallet Tests |

@@ -13,7 +13,7 @@ use std::{
 use async_trait::async_trait;
 use circuit_types::SizedWalletShare;
 use types_tasks::RefreshWalletTaskDescriptor;
-use types_wallet::wallet::{Wallet, WalletIdentifier};
+use types_account::account::{Wallet, WalletIdentifier};
 use constants::Scalar;
 use darkpool_client::errors::DarkpoolClientError;
 use serde::Serialize;

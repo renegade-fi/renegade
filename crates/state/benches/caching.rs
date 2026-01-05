@@ -7,7 +7,7 @@ use num_bigint::BigUint;
 use rand::{Rng, thread_rng};
 use state::caching::matchable_amount::MatchableAmountMap;
 use tokio::runtime::Runtime;
-use types_wallet::wallet::{Pair, pair_from_mints};
+use types_account::account::{Pair, pair_from_mints};
 
 // -----------
 // | Helpers |

@@ -36,7 +36,7 @@ darkpool-types = { workspace = true }
 types-core = { workspace = true }
 types-gossip = { workspace = true }
 types-tasks = { workspace = true }
-types-wallet = { workspace = true }
+types-account = { workspace = true }
 types-runtime = { workspace = true }
 constants = { workspace = true }
 crypto = { workspace = true }

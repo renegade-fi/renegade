@@ -1,7 +1,7 @@
 //! Helpers for accessing wallet index information in the database
 
 use circuit_types::wallet::Nullifier;
-use types_wallet::wallet::{IntentIdentifier, Wallet, WalletAuthenticationPath, WalletIdentifier};
+use types_account::account::{IntentIdentifier, Wallet, WalletAuthenticationPath, WalletIdentifier};
 use libmdbx::{RW, TransactionKind};
 use util::res_some;
 

@@ -1,7 +1,7 @@
 //! Helpers for accessing information about matching pools in the database
 
 use types_runtime::MatchingPoolName;
-use types_wallet::wallet::IntentIdentifier;
+use types_account::account::IntentIdentifier;
 use libmdbx::{RW, TransactionKind};
 
 use crate::{POOL_TABLE, storage::error::StorageError};

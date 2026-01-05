@@ -2,7 +2,7 @@
 
 use circuit_types::{Amount, balance::Balance, fixed_point::FixedPoint, r#match::MatchResult};
 use types_core::{price::{TimestampedPrice, TimestampedPriceFp}, token::Token};
-use types_wallet::wallet::{Order, IntentIdentifier};
+use types_account::account::{Order, IntentIdentifier};
 use util::{err_str, matching_engine::match_orders_with_min_base_amount};
 
 use crate::{error::HandshakeManagerError, manager::HandshakeExecutor};

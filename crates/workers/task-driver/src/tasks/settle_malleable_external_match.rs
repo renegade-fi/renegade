@@ -24,7 +24,7 @@ use common::types::proof_bundles::{
     OrderValidityProofBundle, OrderValidityWitnessBundle, ValidMalleableMatchSettleAtomicBundle,
 };
 use types_tasks::SettleMalleableExternalMatchTaskDescriptor;
-use types_wallet::wallet::{IntentIdentifier, WalletIdentifier};
+use types_account::account::{IntentIdentifier, WalletIdentifier};
 use darkpool_client::errors::DarkpoolClientError;
 use system_bus::SystemBusMessage;
 use job_types::proof_manager::ProofJob;

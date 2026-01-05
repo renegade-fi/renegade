@@ -3,7 +3,7 @@
 use common::types::proof_bundles::{
     OrderValidityProofBundle, OrderValidityWitnessBundle, ValidWalletUpdateBundle,
 };
-use types_wallet::wallet::IntentIdentifier;
+use types_account::account::IntentIdentifier;
 use libmdbx::{RO, RW};
 
 use crate::{PROOFS_TABLE, storage::error::StorageError};

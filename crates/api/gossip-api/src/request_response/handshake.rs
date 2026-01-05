@@ -2,7 +2,7 @@
 use std::collections::HashMap;
 use types_core::{TimestampedPrice, Token};
 use types_gossip::WrappedPeerId;
-use types_wallet::wallet::IntentIdentifier;
+use types_account::account::IntentIdentifier;
 use uuid::Uuid;
 
 use serde::{Deserialize, Serialize};

@@ -8,7 +8,7 @@ use types_tasks::{
     SettleMatchInternalTaskDescriptor, SettleMatchTaskDescriptor, TaskDescriptor,
     UpdateWalletTaskDescriptor,
 };
-use types_wallet::wallet::Wallet;
+use types_account::account::Wallet;
 use tracing::warn;
 use util::matching_engine::{apply_match_to_shares, compute_fee_obligation};
 

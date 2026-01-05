@@ -1,7 +1,7 @@
 //! Helpers for working with the integration node's state
 
 use types_runtime::MatchingPoolName;
-use types_wallet::wallet::IntentIdentifier;
+use types_account::account::IntentIdentifier;
 use eyre::Result;
 use state::State;
 

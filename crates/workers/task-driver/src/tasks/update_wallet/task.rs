@@ -13,7 +13,7 @@ use async_trait::async_trait;
 use types_tasks::{WalletUpdateType, UpdateWalletTaskDescriptor};
 use common::types::proof_bundles::ValidWalletUpdateBundle;
 use common::types::transfer_auth::ExternalTransferWithAuth;
-use types_wallet::wallet::Wallet;
+use types_account::account::Wallet;
 use darkpool_client::errors::DarkpoolClientError;
 use job_types::event_manager::RelayerEventType;
 use job_types::proof_manager::ProofJob;

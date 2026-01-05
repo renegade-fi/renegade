@@ -9,7 +9,7 @@
 use std::collections::HashMap;
 
 use circuit_types::{Amount, order::OrderSide};
-use types_wallet::wallet::{Order, IntentIdentifier, Pair};
+use types_account::account::{Order, IntentIdentifier, Pair};
 use tokio::sync::RwLock;
 
 use super::RwLockHashMap;

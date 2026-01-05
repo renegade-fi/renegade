@@ -12,7 +12,7 @@ use common::types::network_order::NetworkOrder;
 use common::types::proof_bundles::{
     OrderValidityProofBundle, OrderValidityWitnessBundle, ValidWalletUpdateBundle,
 };
-use types_wallet::wallet::{IntentIdentifier, Pair};
+use types_account::account::{IntentIdentifier, Pair};
 use constants::ORDER_STATE_CHANGE_TOPIC;
 use system_bus::SystemBusMessage;
 use futures::future::join_all;

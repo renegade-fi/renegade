@@ -2,7 +2,7 @@
 
 use circuit_types::r#match::MatchResult;
 use types_core::price::TimestampedPrice;
-use types_wallet::wallet::{IntentIdentifier, order_metadata::OrderState};
+use types_account::account::{IntentIdentifier, order_metadata::OrderState};
 use state::State;
 
 /// The error message emitted when metadata for an order cannot be found

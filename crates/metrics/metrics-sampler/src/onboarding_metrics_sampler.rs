@@ -3,7 +3,7 @@
 use std::time::Duration;
 
 use types_tasks::{HistoricalTaskDescription, WalletUpdateType};
-use types_wallet::wallet::{Wallet, WalletIdentifier};
+use types_account::account::{Wallet, WalletIdentifier};
 use state::State;
 
 use crate::sampler::AsyncMetricSampler;

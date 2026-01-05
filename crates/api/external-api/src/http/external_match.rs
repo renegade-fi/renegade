@@ -36,7 +36,7 @@ use crate::{deserialize_biguint_from_hex_string, serialize_biguint_to_hex_addr};
 use common::types::proof_bundles::{
     ValidMalleableMatchSettleAtomicBundle, ValidMatchSettleAtomicBundle,
 };
-use types_wallet::wallet::Order;
+use types_account::account::Order;
 
 // ------------------
 // | Error Messages |

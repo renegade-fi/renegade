@@ -8,7 +8,7 @@ use std::collections::HashSet;
 use circuit_types::{Amount, order::OrderSide};
 use tokio::sync::RwLock;
 use tracing::instrument;
-use types_wallet::wallet::{Order, IntentIdentifier, Pair};
+use types_account::account::{Order, IntentIdentifier, Pair};
 
 use crate::storage::{db::DB, error::StorageError};
 

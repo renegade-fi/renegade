@@ -1,11 +1,11 @@
 [package]
-name = "types-wallet"
+name = "types-account"
 version = "0.1.0"
 edition = "2024"
 
 [features]
 default = []
-mocks = ["rand"]
+mocks = ["rand", "circuits-core/test_helpers"]
 proof-system-types = []
 
 [dependencies]
@@ -33,5 +33,6 @@ circuit-types = { workspace = true, features = ["default"] }
 circuits-core = { workspace = true }
 constants = { workspace = true, features = ["default"] }
 crypto = { workspace = true, features = ["default"] }
-types-core = { workspace = true }
+darkpool-types = { workspace = true }
+types-core = { workspace = true, features = ["hmac"] }
 util = { workspace = true, features = ["hex-core", "errors"] }

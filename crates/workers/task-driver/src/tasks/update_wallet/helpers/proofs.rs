@@ -7,7 +7,7 @@ use circuits_core::zk_circuits::valid_wallet_update::{
 };
 use common::types::proof_bundles::ValidWalletUpdateBundle;
 use types_tasks::WalletUpdateType;
-use types_wallet::wallet::Wallet;
+use types_account::account::Wallet;
 
 /// The wallet does not have a known Merkle proof attached
 const ERR_NO_MERKLE_PROOF: &str = "merkle proof for wallet not found";

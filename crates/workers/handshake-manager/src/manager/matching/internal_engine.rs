@@ -7,7 +7,7 @@ use common::types::network_order::NetworkOrder;
 use types_core::price::TimestampedPriceFp;
 use common::types::proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle};
 use types_tasks::{SettleMatchInternalTaskDescriptor, TaskDescriptor};
-use types_wallet::wallet::{Order, IntentIdentifier, Wallet, WalletIdentifier};
+use types_account::account::{Order, IntentIdentifier, Wallet, WalletIdentifier};
 use tracing::{error, info, instrument};
 
 use crate::{

@@ -6,7 +6,7 @@ use circuit_types::{
     Amount, balance::Balance, fixed_point::FixedPoint, max_amount, max_price, order::OrderSide,
 };
 use common::types::proof_bundles::mocks::{dummy_validity_proof_bundle, dummy_validity_witness_bundle};
-use types_wallet::wallet::{Order, IntentIdentifier, Wallet, mocks::mock_empty_wallet};
+use types_account::account::{Order, IntentIdentifier, Wallet, mocks::mock_empty_wallet};
 use external_api::http::external_match::ExternalOrder;
 use eyre::Result;
 

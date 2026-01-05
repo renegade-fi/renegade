@@ -8,9 +8,9 @@ use circuit_types::{Amount, fixed_point::FixedPoint, traits::BaseType};
 use constants::Scalar;
 use serde::{Deserialize, Serialize};
 
-#[cfg(feature = "zero-copy")]
+#[cfg(feature = "rkyv")]
 use crate::rkyv_remotes::{AddressDef, FixedPointDef};
-#[cfg(feature = "zero-copy")]
+#[cfg(feature = "rkyv")]
 use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
 
 #[cfg(feature = "proof-system-types")]
@@ -34,21 +34,21 @@ pub type DarkpoolStateIntentVar = crate::state_wrapper::StateWrapperVar<Intent>;
 /// Intent is a struct that represents an intent to buy or sell a token
 #[cfg_attr(feature = "proof-system-types", circuit_type(serde, singleprover_circuit, secret_share))]
 #[cfg_attr(not(feature = "proof-system-types"), circuit_type(serde))]
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[cfg_attr(feature = "zero-copy", derive(Archive, RkyvDeserialize, RkyvSerialize))]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "rkyv", derive(Archive, RkyvDeserialize, RkyvSerialize))]
 pub struct Intent {
     /// The token to buy
-    #[cfg_attr(feature = "zero-copy", rkyv(with = AddressDef))]
+    #[cfg_attr(feature = "rkyv", rkyv(with = AddressDef))]
     pub in_token: Address,
     /// The token to sell
-    #[cfg_attr(feature = "zero-copy", rkyv(with = AddressDef))]
+    #[cfg_attr(feature = "rkyv", rkyv(with = AddressDef))]
     pub out_token: Address,
     /// The owner of the intent, an EOA
-    #[cfg_attr(feature = "zero-copy", rkyv(with = AddressDef))]
+    #[cfg_attr(feature = "rkyv", rkyv(with = AddressDef))]
     pub owner: Address,
     /// The minimum price at which a party may settle a partial fill
     /// This is in units of `out_token/in_token`
-    #[cfg_attr(feature = "zero-copy", rkyv(with = FixedPointDef))]
+    #[cfg_attr(feature = "rkyv", rkyv(with = FixedPointDef))]
     pub min_price: FixedPoint,
     /// The amount of the input token to trade
     pub amount_in: Amount,

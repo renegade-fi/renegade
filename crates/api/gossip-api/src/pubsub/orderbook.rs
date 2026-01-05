@@ -3,7 +3,7 @@
 use circuit_types::Nullifier;
 use serde::{Deserialize, Serialize};
 use types_gossip::ClusterId;
-use types_wallet::wallet::IntentIdentifier;
+use types_account::account::IntentIdentifier;
 
 /// The network pubsub topic to use for listening to orderbook changes
 pub const ORDER_BOOK_TOPIC: &str = "orderbook";

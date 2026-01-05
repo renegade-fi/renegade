@@ -11,7 +11,7 @@ use circuits_core::{
 };
 use types_gossip::ClusterId;
 use common::types::{network_order::NetworkOrder, proof_bundles::OrderValidityProofBundle};
-use types_wallet::wallet::IntentIdentifier;
+use types_account::account::IntentIdentifier;
 use futures::executor::block_on;
 use gossip_api::{
     pubsub::orderbook::OrderBookManagementMessage,

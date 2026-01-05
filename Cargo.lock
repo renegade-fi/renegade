@@ -2319,8 +2319,8 @@ dependencies = [
  "test-helpers",
  "tokio",
  "tracing",
+ "types-account",
  "types-core",
- "types-wallet",
  "util",
 ]
 
@@ -2768,11 +2768,11 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.17",
+ "types-account",
  "types-core",
  "types-gossip",
  "types-runtime",
  "types-tasks",
- "types-wallet",
  "util",
  "uuid",
 ]
@@ -3104,9 +3104,9 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "tracing",
+ "types-account",
  "types-core",
  "types-gossip",
- "types-wallet",
  "util",
  "uuid",
 ]
@@ -3871,10 +3871,10 @@ dependencies = [
  "serde",
  "system-bus",
  "tokio",
+ "types-account",
  "types-core",
  "types-gossip",
  "types-tasks",
- "types-wallet",
  "util",
  "uuid",
 ]
@@ -6497,11 +6497,11 @@ dependencies = [
  "tokio-stream",
  "tracing",
  "tracing-opentelemetry",
+ "types-account",
  "types-core",
  "types-gossip",
  "types-runtime",
  "types-tasks",
- "types-wallet",
  "util",
  "uuid",
 ]
@@ -6629,11 +6629,11 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "tokio",
+ "types-account",
  "types-core",
  "types-gossip",
  "types-runtime",
  "types-tasks",
- "types-wallet",
  "uuid",
 ]
 
@@ -7237,6 +7237,30 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "562d481066bde0658276a35467c4af00bdc6ee726305698a55b86e61d7ad82bb"
 
 [[package]]
+name = "types-account"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "circuit-types",
+ "circuits-core",
+ "constants",
+ "crypto",
+ "darkpool-types",
+ "derivative",
+ "itertools 0.10.5",
+ "k256",
+ "lazy_static",
+ "num-bigint",
+ "num-traits",
+ "rand 0.8.5",
+ "serde",
+ "signature 2.2.0",
+ "types-core",
+ "util",
+ "uuid",
+]
+
+[[package]]
 name = "types-core"
 version = "0.1.0"
 dependencies = [
@@ -7284,29 +7308,6 @@ version = "0.1.0"
 dependencies = [
  "rkyv",
  "serde",
- "types-core",
- "util",
- "uuid",
-]
-
-[[package]]
-name = "types-wallet"
-version = "0.1.0"
-dependencies = [
- "alloy",
- "circuit-types",
- "circuits-core",
- "constants",
- "crypto",
- "derivative",
- "itertools 0.10.5",
- "k256",
- "lazy_static",
- "num-bigint",
- "num-traits",
- "rand 0.8.5",
- "serde",
- "signature 2.2.0",
  "types-core",
  "util",
  "uuid",

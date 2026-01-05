@@ -1,7 +1,7 @@
 use darkpool_types::intent::Intent;
 use serde::{Deserialize, Serialize};
+use types_account::{IntentIdentifier, MatchingPoolName};
 use types_core::AccountId;
-use types_wallet::{MatchingPoolName, wallet::IntentIdentifier};
 
 /// An intent placement event
 #[derive(Debug, Clone, Serialize, Deserialize)]

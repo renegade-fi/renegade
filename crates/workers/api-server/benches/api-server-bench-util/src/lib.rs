@@ -8,7 +8,7 @@ use circuit_types::{
 };
 use types_core::{chain::Chain, hmac::HmacKey, token::Token};
 use common::types::proof_bundles::mocks::{dummy_validity_proof_bundle, dummy_validity_witness_bundle};
-use types_wallet::wallet::{Order, IntentIdentifier, mocks::mock_empty_wallet};
+use types_account::account::{Order, IntentIdentifier, mocks::mock_empty_wallet};
 use config::{RelayerConfig, setup_token_remaps};
 use darkpool_client::conversion::address_to_biguint;
 use external_api::auth::add_expiring_auth_to_headers;

@@ -19,7 +19,7 @@ system-bus = { workspace = true }
 types-core = { workspace = true }
 types-gossip = { workspace = true }
 types-tasks = { workspace = true }
-types-wallet = { workspace = true }
+types-account = { workspace = true }
 constants = { workspace = true }
 gossip-api = { workspace = true }
 util = { workspace = true, features = ["channels"] }

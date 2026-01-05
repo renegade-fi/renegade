@@ -15,7 +15,7 @@ use circuits_core::zk_circuits::valid_offline_fee_settlement::{
 };
 use common::types::proof_bundles::OfflineFeeSettlementBundle;
 use types_tasks::PayOfflineFeeTaskDescriptor;
-use types_wallet::wallet::Wallet;
+use types_account::account::Wallet;
 use darkpool_client::errors::DarkpoolClientError;
 use job_types::proof_manager::ProofJob;
 use num_bigint::BigUint;
