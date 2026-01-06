@@ -7,11 +7,11 @@
 
 use std::collections::HashMap;
 
-use types_gossip::{ClusterId, PeerInfo, WrappedPeerId};
 use gossip_api::request_response::heartbeat::HeartbeatMessage;
 use itertools::Itertools;
 use system_bus::{NETWORK_TOPOLOGY_TOPIC, SystemBusMessage};
 use tracing::info;
+use types_gossip::{ClusterId, PeerInfo, WrappedPeerId};
 
 use crate::{
     StateInner,
@@ -71,7 +71,12 @@ impl StateInner {
         let cluster_id = cluster_id.clone();
         self.with_read_tx(move |tx| {
             let peers = tx.get_cluster_peers(&cluster_id)?;
-            Ok(peers)
+            Ok(peers
+                .map(|archived| archived.deserialize())
+                .transpose()?
+                .unwrap_or_default()
+                .into_iter()
+                .collect())
         })
         .await
     }

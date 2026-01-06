@@ -6,15 +6,21 @@ use libp2p::{Multiaddr, PeerId};
 use serde::{Deserialize, Serialize};
 use util::{get_current_time_millis, networking::is_dialable_multiaddr};
 
+#[cfg(feature = "rkyv")]
+use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
+
 use crate::{ClusterId, WrappedPeerId};
 
 /// Contains information about connected peers
 #[derive(Clone, Debug, Serialize, Deserialize, Derivative)]
+#[cfg_attr(feature = "rkyv", derive(Archive, RkyvDeserialize, RkyvSerialize))]
+#[cfg_attr(feature = "rkyv", rkyv(derive(Debug)))]
 #[derivative(PartialEq, Eq)]
 pub struct PeerInfo {
     /// The identifier used by libp2p for a peer
     pub peer_id: WrappedPeerId,
     /// The multiaddr of the peer
+    #[cfg_attr(feature = "rkyv", rkyv(with = crate::MultiaddrDef))]
     pub addr: Multiaddr,
     /// Last time a successful heartbeat was received from this peer
     pub last_heartbeat: u64,

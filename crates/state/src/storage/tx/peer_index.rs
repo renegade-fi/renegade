@@ -1,14 +1,21 @@
 //! Peer index access methods on a transaction
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
-use types_gossip::{ClusterId, PeerInfo, WrappedPeerId};
 use libmdbx::{RW, TransactionKind};
 use libp2p::core::Multiaddr;
+use types_gossip::{ClusterId, PeerInfo, WrappedPeerId};
 
-use crate::{CLUSTER_MEMBERSHIP_TABLE, PEER_INFO_TABLE, storage::error::StorageError};
+use crate::{
+    CLUSTER_MEMBERSHIP_TABLE, PEER_INFO_TABLE, storage::ArchivedValue, storage::error::StorageError,
+};
 
 use super::StateTxn;
+
+/// Type alias for an archived peer info value with transaction lifetime
+pub type PeerInfoValue<'a> = ArchivedValue<'a, PeerInfo>;
+/// Type alias for an archived cluster peers list with transaction lifetime
+pub type ClusterPeersValue<'a> = ArchivedValue<'a, HashSet<WrappedPeerId>>;
 
 /// The error thrown when a requested peer could not be found in the peer info
 /// table
@@ -25,7 +32,10 @@ impl<T: TransactionKind> StateTxn<'_, T> {
     }
 
     /// Get a peer from the index
-    pub fn get_peer_info(&self, peer_id: &WrappedPeerId) -> Result<Option<PeerInfo>, StorageError> {
+    pub fn get_peer_info(
+        &self,
+        peer_id: &WrappedPeerId,
+    ) -> Result<Option<PeerInfoValue<'_>>, StorageError> {
         self.inner().read(PEER_INFO_TABLE, peer_id)
     }
 
@@ -33,16 +43,19 @@ impl<T: TransactionKind> StateTxn<'_, T> {
     pub fn get_cluster_peers(
         &self,
         cluster_id: &ClusterId,
-    ) -> Result<Vec<WrappedPeerId>, StorageError> {
-        self.inner().read(CLUSTER_MEMBERSHIP_TABLE, cluster_id).map(|x| x.unwrap_or_default())
+    ) -> Result<Option<ClusterPeersValue<'_>>, StorageError> {
+        self.inner().read::<_, HashSet<WrappedPeerId>>(CLUSTER_MEMBERSHIP_TABLE, cluster_id)
     }
 
     /// Get all the peers known to the local node
     pub fn get_all_peer_ids(&self) -> Result<Vec<WrappedPeerId>, StorageError> {
-        // Create a cursor and take only the values
+        // Create a cursor and take only the keys
         let peer_cursor =
             self.inner().cursor::<WrappedPeerId, PeerInfo>(PEER_INFO_TABLE)?.into_iter();
-        let peers = peer_cursor.keys().collect::<Result<Vec<_>, _>>()?;
+        let peers = peer_cursor
+            .keys()
+            .map(|res| res.and_then(|archived| archived.deserialize()))
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(peers)
     }
@@ -54,11 +67,13 @@ impl<T: TransactionKind> StateTxn<'_, T> {
     /// TODO: This method will be expensive with scale, we may want to cache the
     /// heartbeat message
     pub fn get_info_map(&self) -> Result<HashMap<WrappedPeerId, PeerInfo>, StorageError> {
-        let peer_cursor = self.inner().cursor::<WrappedPeerId, PeerInfo>(PEER_INFO_TABLE).unwrap();
+        let peer_cursor = self.inner().cursor::<WrappedPeerId, PeerInfo>(PEER_INFO_TABLE)?;
 
         let mut res = HashMap::new();
-        for elem in peer_cursor {
-            let (id, peer) = elem?;
+        for elem in peer_cursor.into_iter() {
+            let (id_archived, peer_archived) = elem?;
+            let id = id_archived.deserialize()?;
+            let peer = peer_archived.deserialize()?;
             res.insert(id, peer);
         }
 
@@ -87,7 +102,14 @@ impl StateTxn<'_, RW> {
         peer_id: &WrappedPeerId,
         cluster_id: &ClusterId,
     ) -> Result<(), StorageError> {
-        self.add_to_set(CLUSTER_MEMBERSHIP_TABLE, cluster_id, peer_id)
+        let mut peers = self
+            .get_cluster_peers(cluster_id)?
+            .map(|archived| archived.deserialize())
+            .transpose()?
+            .unwrap_or_default();
+
+        peers.insert(*peer_id);
+        self.inner().write(CLUSTER_MEMBERSHIP_TABLE, cluster_id, &peers)
     }
 
     /// Remove a peer from the given cluster list
@@ -96,7 +118,13 @@ impl StateTxn<'_, RW> {
         peer_id: &WrappedPeerId,
         cluster_id: &ClusterId,
     ) -> Result<(), StorageError> {
-        self.remove_from_set(CLUSTER_MEMBERSHIP_TABLE, cluster_id, peer_id)
+        let mut peers = self
+            .get_cluster_peers(cluster_id)?
+            .map(|archived| archived.deserialize())
+            .transpose()?
+            .unwrap_or_default();
+        peers.remove(peer_id);
+        self.inner().write(CLUSTER_MEMBERSHIP_TABLE, cluster_id, &peers)
     }
 
     /// Update the peer's address
@@ -107,7 +135,8 @@ impl StateTxn<'_, RW> {
     ) -> Result<(), StorageError> {
         let mut peer_info = self
             .get_peer_info(peer_id)?
-            .ok_or(StorageError::NotFound(PEER_NOT_FOUND_ERR.into()))?;
+            .ok_or(StorageError::NotFound(PEER_NOT_FOUND_ERR.into()))?
+            .deserialize()?;
         peer_info.addr = addr;
         self.write_peer(&peer_info)
     }
@@ -115,10 +144,11 @@ impl StateTxn<'_, RW> {
 
 #[cfg(test)]
 mod test {
+    use std::collections::HashSet;
     use std::net::{IpAddr, Ipv4Addr};
 
-    use common::types::gossip::mocks::mock_peer;
     use libp2p::Multiaddr;
+    use types_gossip::mocks::mock_peer;
 
     use crate::{CLUSTER_MEMBERSHIP_TABLE, PEER_INFO_TABLE, test_helpers::mock_db};
 
@@ -139,7 +169,9 @@ mod test {
         assert!(tx.contains_peer(&peer.peer_id).unwrap());
 
         let res = tx.get_peer_info(&peer.peer_id).unwrap();
-        assert_eq!(res, Some(peer));
+        assert!(res.is_some());
+        let retrieved = res.unwrap().deserialize().unwrap();
+        assert_eq!(retrieved, peer);
     }
 
     /// Tests adding a peer to a cluster
@@ -162,7 +194,8 @@ mod test {
         let tx = db.new_read_tx().unwrap();
 
         let cluster_members = tx.get_cluster_peers(&cluster_id).unwrap();
-        assert_eq!(cluster_members, vec![peer.peer_id]);
+        let members = cluster_members.unwrap().deserialize().unwrap();
+        assert_eq!(members, HashSet::from([peer.peer_id]));
     }
 
     /// Tests removing a cluster peer
@@ -194,7 +227,8 @@ mod test {
         let tx = db.new_read_tx().unwrap();
 
         let cluster_members = tx.get_cluster_peers(&cluster_id).unwrap();
-        assert_eq!(cluster_members, vec![peer2.peer_id]);
+        let members = cluster_members.unwrap().deserialize().unwrap();
+        assert_eq!(members, HashSet::from([peer2.peer_id]));
     }
 
     /// Tests getting all peer ids
@@ -270,6 +304,7 @@ mod test {
         // Read the peer back
         let tx = db.new_read_tx().unwrap();
         let res = tx.get_peer_info(&peer.peer_id).unwrap().unwrap();
-        assert_eq!(res.addr, new_addr);
+        let retrieved = res.deserialize().unwrap();
+        assert_eq!(retrieved.addr, new_addr);
     }
 }

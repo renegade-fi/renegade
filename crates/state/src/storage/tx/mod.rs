@@ -8,15 +8,13 @@
 //! Each of the files in this module are named after the high level interface
 //! they expose
 
-// pub mod matching_pools;
-pub mod node_metadata;
-// pub mod order_book;
-// pub mod order_history;
-// pub mod peer_index;
-// pub mod proofs;
-pub mod raft_log;
-// pub mod relayer_fees;
 pub mod account_index;
+pub mod matching_pools;
+pub mod node_metadata;
+pub mod peer_index;
+pub mod proofs;
+pub mod raft_log;
+pub mod relayer_fees;
 pub mod task_assignments;
 pub mod task_history;
 pub mod task_queue;
