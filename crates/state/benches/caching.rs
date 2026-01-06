@@ -1,13 +1,12 @@
 //! Benchmarks the caching layer
 #![allow(missing_docs, clippy::missing_docs_in_private_items)]
 
-use circuit_types::{Amount, order::OrderSide};
+use circuit_types::Amount;
 use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
-use num_bigint::BigUint;
+use darkpool_types::fuzzing::random_address;
 use rand::{Rng, thread_rng};
 use state::caching::matchable_amount::MatchableAmountMap;
-use tokio::runtime::Runtime;
-use types_account::account::{Pair, pair_from_mints};
+use types_account::account::pair::Pair;
 
 // -----------
 // | Helpers |
@@ -16,10 +15,10 @@ use types_account::account::{Pair, pair_from_mints};
 /// Generate test pairs for benchmarking
 fn generate_test_pairs(count: usize) -> Vec<Pair> {
     (0..count)
-        .map(|i| {
-            let base = BigUint::from(i * 2);
-            let quote = BigUint::from(i * 2 + 1);
-            pair_from_mints(base, quote)
+        .map(|_| {
+            let base = random_address();
+            let quote = random_address();
+            Pair::new(base, quote)
         })
         .collect()
 }
@@ -31,76 +30,71 @@ fn generate_test_pairs(count: usize) -> Vec<Pair> {
 /// Benchmark reading from a populated cache
 fn bench_get_populated_cache(c: &mut Criterion) {
     let mut rng = thread_rng();
-    let rt = Runtime::new().unwrap();
     let pairs = generate_test_pairs(100);
 
     // Pre-populate the cache
     let cache = MatchableAmountMap::new();
-    rt.block_on(async {
-        for pair in pairs.iter() {
-            let amt = rng.gen_range(1..=10_000_000);
-            cache.add_amount(pair.clone(), OrderSide::Buy, amt).await;
-            cache.add_amount(pair.clone(), OrderSide::Sell, amt).await;
-        }
-    });
+    for pair in pairs.iter() {
+        let amt = rng.gen_range(1..=10_000_000);
+        cache.add_amount(*pair, amt);
+        cache.add_amount(*pair, amt);
+    }
 
     c.bench_function("get_populated_cache", |b| {
         b.iter(|| {
-            rt.block_on(async {
-                for pair in &pairs {
-                    let _ = black_box(cache.get(pair).await);
-                }
-            })
+            for pair in &pairs {
+                let _ = black_box(cache.get(pair));
+            }
         })
     });
 }
 
 /// Benchmark adding amounts to cache
 fn bench_add_amount(c: &mut Criterion) {
-    let rt = Runtime::new().unwrap();
     let pairs = generate_test_pairs(100);
 
-    c.bench_with_input(BenchmarkId::new("add_amount", "sequential"), &pairs, |b, pairs| {
-        b.iter(|| {
-            let cache = MatchableAmountMap::new();
-            rt.block_on(async {
+    c.bench_with_input(
+        BenchmarkId::new("add_amount", "sequential"),
+        &pairs,
+        |b, pairs: &Vec<Pair>| {
+            b.iter(|| {
+                let cache = MatchableAmountMap::new();
                 for (i, pair) in pairs.iter().enumerate() {
                     let amt = (i * 100) as Amount;
-                    cache.add_amount(pair.clone(), OrderSide::Buy, amt).await;
-                    cache.add_amount(pair.clone(), OrderSide::Sell, amt).await;
+                    cache.add_amount(pair.clone(), amt);
+                    cache.add_amount(pair.clone(), amt);
                 }
             })
-        })
-    });
+        },
+    );
 }
 
 /// Benchmark subtracting amounts from cache
 fn bench_sub_amount(c: &mut Criterion) {
-    let rt = Runtime::new().unwrap();
     let pairs = generate_test_pairs(100);
 
-    c.bench_with_input(BenchmarkId::new("sub_amount", "sequential"), &pairs, |b, pairs| {
-        let cache = MatchableAmountMap::new();
-        rt.block_on(async {
+    c.bench_with_input(
+        BenchmarkId::new("sub_amount", "sequential"),
+        &pairs,
+        |b, pairs: &Vec<Pair>| {
+            let cache = MatchableAmountMap::new();
             // Setup: Pre-populate cache
             for (i, pair) in pairs.iter().enumerate() {
                 let amt = (i * 100) as Amount;
-                cache.add_amount(pair.clone(), OrderSide::Buy, amt).await;
-                cache.add_amount(pair.clone(), OrderSide::Sell, amt).await;
+                cache.add_amount(pair.clone(), amt);
+                cache.add_amount(pair.clone(), amt);
             }
-        });
 
-        b.iter(|| {
-            rt.block_on(async {
+            b.iter(|| {
                 // Then subtract
                 for (i, pair) in pairs.iter().enumerate() {
                     let amt = i * 100;
-                    cache.sub_amount(pair.clone(), OrderSide::Buy, amt as Amount).await;
-                    cache.sub_amount(pair.clone(), OrderSide::Sell, amt as Amount).await;
+                    cache.sub_amount(pair.clone(), amt as Amount);
+                    cache.sub_amount(pair.clone(), amt as Amount);
                 }
             })
-        })
-    });
+        },
+    );
 }
 
 criterion_group!(benches, bench_get_populated_cache, bench_add_amount, bench_sub_amount,);
