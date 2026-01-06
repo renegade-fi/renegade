@@ -13,7 +13,7 @@ use crate::storage::db::DB;
 use self::{error::StateApplicatorError, return_type::ApplicatorReturnType};
 
 pub mod error;
-// pub mod matching_pools;
+pub mod matching_pools;
 // pub mod order_book;
 // pub mod order_history;
 pub mod account_index;
@@ -81,10 +81,13 @@ impl StateApplicator {
             StateTransition::CreateAccount { account } => self.create_account(&account),
             StateTransition::UpdateAccount { account } => self.update_account(&account),
             StateTransition::CreateMatchingPool { pool_name } => {
-                todo!()
+                self.create_matching_pool(&pool_name)
             },
             StateTransition::DestroyMatchingPool { pool_name } => {
-                todo!()
+                self.destroy_matching_pool(&pool_name)
+            },
+            StateTransition::AssignIntentToMatchingPool { intent_id, pool_name } => {
+                self.assign_intent_to_matching_pool(&intent_id, &pool_name)
             },
             StateTransition::AppendTask { task, executor } => self.append_task(&task, &executor),
             StateTransition::PopTask { task_id, success } => self.pop_task(task_id, success),
