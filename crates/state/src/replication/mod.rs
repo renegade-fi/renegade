@@ -8,7 +8,7 @@
 pub mod error;
 mod log_store;
 #[cfg(any(test, feature = "mocks"))]
-mod mock_raft;
+pub mod mock_raft;
 pub(crate) mod network;
 pub mod raft;
 pub mod rkyv_types;

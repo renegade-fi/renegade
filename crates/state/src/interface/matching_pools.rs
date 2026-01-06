@@ -7,7 +7,9 @@
 use types_account::account::OrderId;
 use types_runtime::MatchingPoolName;
 
-use crate::{StateInner, StateTransition, error::StateError, notifications::ProposalWaiter};
+use crate::{
+    StateInner, error::StateError, notifications::ProposalWaiter, state_transition::StateTransition,
+};
 
 impl StateInner {
     // -----------

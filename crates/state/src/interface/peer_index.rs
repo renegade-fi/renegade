@@ -12,11 +12,13 @@ use itertools::Itertools;
 use system_bus::{NETWORK_TOPOLOGY_TOPIC, SystemBusMessage};
 use tracing::info;
 use types_gossip::{ClusterId, PeerInfo, WrappedPeerId};
+use util::res_some;
 
 use crate::{
     StateInner,
     error::StateError,
     replication::{RaftNode, get_raft_id},
+    storage::traits::RkyvValue,
 };
 
 impl StateInner {
@@ -31,8 +33,9 @@ impl StateInner {
     ) -> Result<Option<PeerInfo>, StateError> {
         let peer_id = *peer_id;
         self.with_read_tx(move |tx| {
-            let peer_info = tx.get_peer_info(&peer_id)?;
-            Ok(peer_info)
+            let peer_info = res_some!(tx.get_peer_info(&peer_id)?);
+            let info = peer_info.deserialize()?;
+            Ok(Some(info))
         })
         .await
     }
@@ -219,8 +222,9 @@ impl StateInner {
                 let my_cluster = tx.get_cluster_id()?;
                 if let Some(peer_info) = tx.get_peer_info(&peer_id)? {
                     // If the peer is in the same cluster, it must be removed from the raft
-                    is_cluster_peer = peer_info.cluster_id == my_cluster;
-                    tx.remove_from_cluster(&peer_id, &peer_info.cluster_id)?;
+                    let peer_cluster = ClusterId::from_archived(&peer_info.cluster_id)?;
+                    is_cluster_peer = peer_cluster == my_cluster;
+                    tx.remove_from_cluster(&peer_id, &peer_cluster)?;
                     tx.remove_peer(&peer_id)?;
                 }
 
@@ -247,9 +251,10 @@ impl StateInner {
     pub async fn record_heartbeat(&self, peer_id: &WrappedPeerId) -> Result<(), StateError> {
         let peer_id = *peer_id;
         self.with_write_tx(move |tx| {
-            if let Some(mut peer) = tx.get_peer_info(&peer_id)? {
-                peer.successful_heartbeat();
-                tx.write_peer(&peer)?;
+            if let Some(peer) = tx.get_peer_info(&peer_id)? {
+                let mut info = peer.deserialize()?;
+                info.successful_heartbeat();
+                tx.write_peer(&info)?;
             }
             Ok(())
         })
@@ -261,7 +266,7 @@ impl StateInner {
 mod test {
     use std::str::FromStr;
 
-    use common::types::gossip::{ClusterId, mocks::mock_peer};
+    use types_gossip::{ClusterId, mocks::mock_peer};
 
     use crate::test_helpers::mock_state;
 
@@ -287,8 +292,11 @@ mod test {
         assert_eq!(peer_info, peer1);
 
         // Check the cluster peers method
-        let cluster_peers = state.get_cluster_peers(&peer1.cluster_id).await.unwrap();
-        assert_eq!(cluster_peers, vec![peer1.peer_id, peer3.peer_id]);
+        let mut cluster_peers = state.get_cluster_peers(&peer1.cluster_id).await.unwrap();
+        let mut expected = vec![peer1.peer_id, peer3.peer_id];
+        cluster_peers.sort();
+        expected.sort();
+        assert_eq!(cluster_peers, expected);
 
         // Check the non-cluster peers method
         let non_cluster_peers = state.get_non_cluster_peers(&peer1.cluster_id).await.unwrap();

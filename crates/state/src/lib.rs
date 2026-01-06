@@ -20,14 +20,14 @@ use crate::error::StateError;
 pub mod applicator;
 pub mod caching;
 pub mod error;
-// mod interface;
+mod interface;
 pub mod notifications;
 pub mod replication;
 pub mod state_transition;
 pub mod storage;
 
 // Re-export the state interface
-// pub use interface::*;
+pub use interface::*;
 
 // -----------------
 // | Serialization |
@@ -129,12 +129,32 @@ pub const ALL_TABLES: [&str; NUM_TABLES] = [
 /// Test helpers for the state crate
 #[cfg(any(test, feature = "mocks"))]
 pub mod test_helpers {
-    use std::time::Duration;
+    use std::{mem, sync::Arc, time::Duration};
 
     use config::RelayerConfig;
+    use job_types::{
+        event_manager::new_event_manager_queue,
+        handshake_manager::new_handshake_manager_queue,
+        task_driver::{TaskDriverQueue, new_task_driver_queue},
+    };
+    use libp2p::identity::Keypair;
+    use system_bus::SystemBus;
+    use system_clock::SystemClock;
     use tempfile::tempdir;
+    use types_runtime::new_worker_failure_channel;
 
-    use crate::storage::db::{DB, DbConfig};
+    use crate::{
+        State, StateConfig, StateInner,
+        caching::order_cache::OrderBookCache,
+        notifications::OpenNotifications,
+        replication::{
+            RaftNode, get_raft_id,
+            mock_raft::{MockRaft, MockRaftNode, mock_raft_config},
+            raft::RaftClientConfig,
+        },
+        state_transition::StateTransition,
+        storage::db::{DB, DbConfig},
+    };
 
     /// Sleep for the given number of ms
     pub fn sleep_ms(ms: u64) {
@@ -175,118 +195,117 @@ pub mod test_helpers {
         db
     }
 
-    // /// Create a mock raft config for testing
-    // ///
-    // /// We set the timeouts very low to speed up leader election
-    // pub fn raft_config_from_relayer_config(
-    //     relayer_config: &RelayerConfig,
-    //     delay: u64,
-    // ) -> RaftClientConfig {
-    //     let peer_id = relayer_config.peer_id();
-    //     let id = get_raft_id(&peer_id);
-    //     let initial_nodes = vec![(id, RaftNode::new(peer_id))];
-    //     RaftClientConfig {
-    //         id,
-    //         init: true,
-    //         initial_nodes,
-    //         snapshot_path: relayer_config.raft_snapshot_path.clone(),
-    //         ..mock_raft_config(vec![] /* initial nodes */, delay)
-    //     }
-    // }
+    /// Create a mock raft config for testing
+    ///
+    /// We set the timeouts very low to speed up leader election
+    pub fn raft_config_from_relayer_config(
+        relayer_config: &RelayerConfig,
+        delay: u64,
+    ) -> RaftClientConfig {
+        let peer_id = relayer_config.peer_id();
+        let id = get_raft_id(&peer_id);
+        let initial_nodes = vec![(id, RaftNode::new(peer_id))];
+        RaftClientConfig {
+            id,
+            init: true,
+            initial_nodes,
+            snapshot_path: relayer_config.raft_snapshot_path.clone(),
+            ..mock_raft_config(vec![] /* initial nodes */, delay)
+        }
+    }
 
-    // /// Create a mock state instance
-    // pub async fn mock_state() -> State {
-    //     let config = mock_relayer_config();
-    //     mock_state_with_config(&config).await
-    // }
+    /// Create a mock state instance
+    pub async fn mock_state() -> State {
+        let config = mock_relayer_config();
+        mock_state_with_config(&config).await
+    }
 
-    // /// Create a mock state instance with the given relayer config
-    // pub async fn mock_state_with_config(config: &RelayerConfig) -> State {
-    //     let (task_queue, recv) = new_task_driver_queue();
-    //     mem::forget(recv);
-    //     mock_state_with_task_queue(0 /* network_delay_ms */, task_queue,
-    // config).await }
+    /// Create a mock state instance with the given relayer config
+    pub async fn mock_state_with_config(config: &RelayerConfig) -> State {
+        let (task_queue, recv) = new_task_driver_queue();
+        mem::forget(recv);
+        mock_state_with_task_queue(0 /* network_delay_ms */, task_queue, config).await
+    }
 
-    // /// Create a mock state instance with the given task queue
-    // pub async fn mock_state_with_task_queue(
-    //     network_delay_ms: u64,
-    //     task_queue: TaskDriverQueue,
-    //     config: &RelayerConfig,
-    // ) -> State {
-    //     // Create the mock raft
-    //     let raft = MockRaft::create_raft(
-    //         2, // n_nodes
-    //         network_delay_ms,
-    //         false, // init
-    //     )
-    //     .await;
-    //     let net = raft.new_network_client();
-    //     let (handshake_manager_queue, _recv) = new_handshake_manager_queue();
-    //     let (event_queue, _recv) = new_event_manager_queue();
-    //     let (failure_send, _failure_recv) = new_worker_failure_channel();
+    /// Create a mock state instance with the given task queue
+    pub async fn mock_state_with_task_queue(
+        network_delay_ms: u64,
+        task_queue: TaskDriverQueue,
+        config: &RelayerConfig,
+    ) -> State {
+        // Create the mock raft
+        let raft = MockRaft::create_raft(
+            2, // n_nodes
+            network_delay_ms,
+            false, // init
+        )
+        .await;
+        let net = raft.new_network_client();
+        let (handshake_manager_queue, _recv) = new_handshake_manager_queue();
+        let (event_queue, _recv) = new_event_manager_queue();
+        let (failure_send, _failure_recv) = new_worker_failure_channel();
 
-    //     // Add a client to the mock raft as leader
-    //     let raft_config = raft_config_from_relayer_config(config,
-    // network_delay_ms);     let state = StateInner::new_with_network(
-    //         config,
-    //         raft_config,
-    //         net,
-    //         task_queue,
-    //         handshake_manager_queue,
-    //         event_queue,
-    //         SystemBus::new(),
-    //         &SystemClock::new().await,
-    //         failure_send,
-    //     )
-    //     .await
-    //     .unwrap();
+        // Add a client to the mock raft as leader
+        let raft_config = raft_config_from_relayer_config(config, network_delay_ms);
+        let state = StateInner::new_with_network(
+            config,
+            raft_config,
+            net,
+            task_queue,
+            handshake_manager_queue,
+            event_queue,
+            SystemBus::new(),
+            &SystemClock::new().await,
+            failure_send,
+        )
+        .await
+        .unwrap();
 
-    //     // Promote all nodes to voters
-    //     setup_voters(&state, &raft).await;
-    //     Arc::new(state)
-    // }
+        // Promote all nodes to voters
+        setup_voters(&state, &raft).await;
+        Arc::new(state)
+    }
 
-    // /// Setup all nodes as voters
-    // async fn setup_voters(state: &StateInner, mock_raft: &MockRaft) {
-    //     // Add all nodes as voters
-    //     for (id, node) in mock_raft.rafts.read().await.iter() {
-    //         // Configure the follower's DB
-    //         configure_follower(node).await;
+    /// Setup all nodes as voters
+    async fn setup_voters(state: &StateInner, mock_raft: &MockRaft) {
+        // Add all nodes as voters
+        for (id, node) in mock_raft.rafts.read().await.iter() {
+            // Configure the follower's DB
+            configure_follower(node).await;
 
-    //         // Add the node as a learner
-    //         let info = RaftNode::default();
-    //         let prop = StateTransition::AddRaftLearners { learners:
-    // vec![(*id, info)] };         state.send_proposal(prop).await.
-    // unwrap();         tokio::time::sleep(Duration::from_millis(20)).
-    // await;
+            // Add the node as a learner
+            let info = RaftNode::default();
+            let prop = StateTransition::AddRaftLearners { learners: vec![(*id, info)] };
+            state.send_proposal(prop).await.unwrap();
+            tokio::time::sleep(Duration::from_millis(20)).await;
 
-    //         // Add the node as a voter
-    //         let prop = StateTransition::AddRaftVoters { peer_ids: vec![*id]
-    // };         state.send_proposal(prop).await.unwrap();
-    //         tokio::time::sleep(Duration::from_millis(20)).await;
-    //     }
-    // }
+            // Add the node as a voter
+            let prop = StateTransition::AddRaftVoters { peer_ids: vec![*id] };
+            state.send_proposal(prop).await.unwrap();
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    }
 
-    // /// Configure the database of a mock raft follower to be properly setup
-    // for /// use as a state peer
-    // async fn configure_follower(node: &MockRaftNode) {
-    //     // Create a mock state handle and run node metadata setup on it to
-    // modify the     // underlying DB
-    //     let client = node.get_client().clone();
-    //     let db = node.clone_db();
-    //     let config = StateConfig { allow_local: true, ..Default::default() };
-    //     let order_cache = Arc::new(OrderBookCache::new());
-    //     let state = StateInner {
-    //         config,
-    //         order_cache,
-    //         db,
-    //         raft: client,
-    //         bus: SystemBus::new(),
-    //         notifications: OpenNotifications::new(),
-    //     };
+    /// Configure the database of a mock raft follower to be properly setup for
+    /// use as a state peer
+    async fn configure_follower(node: &MockRaftNode) {
+        // Create a mock state handle and run node metadata setup on it to modify the
+        // underlying DB
+        let client = node.get_client().clone();
+        let db = node.clone_db();
+        let config = StateConfig { allow_local: true, ..Default::default() };
+        let order_cache = Arc::new(OrderBookCache::new());
+        let state = StateInner {
+            config,
+            order_cache,
+            db,
+            raft: client,
+            bus: SystemBus::new(),
+            notifications: OpenNotifications::new(),
+        };
 
-    //     // Configure the node
-    //     let config = RelayerConfig { p2p_key: Keypair::generate_ed25519(),
-    // ..Default::default() };     state.setup_node_metadata(&config).await.
-    // unwrap(); }
+        // Configure the node
+        let config = RelayerConfig { p2p_key: Keypair::generate_ed25519(), ..Default::default() };
+        state.setup_node_metadata(&config).await.unwrap();
+    }
 }

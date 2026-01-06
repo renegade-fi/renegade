@@ -12,7 +12,7 @@ pub mod pair;
 use std::collections::HashMap;
 
 use alloy::primitives::Address;
-use darkpool_types::{balance::Balance, intent::Intent};
+use darkpool_types::balance::Balance;
 use serde::{Deserialize, Serialize};
 use types_core::AccountId;
 use uuid::Uuid;
@@ -22,7 +22,7 @@ use darkpool_types::rkyv_remotes::AddressDef;
 #[cfg(feature = "rkyv")]
 use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize, with};
 
-use crate::MerkleAuthenticationPath;
+use crate::{MerkleAuthenticationPath, order::Order};
 
 /// An identifier of an order used for caching
 pub type OrderId = Uuid;
@@ -39,8 +39,8 @@ pub type WalletAuthenticationPath = MerkleAuthenticationPath;
 pub struct Account {
     /// The identifier used to index the wallet
     pub wallet_id: AccountId,
-    /// A list of intents in this account
-    pub intents: HashMap<OrderId, Intent>,
+    /// A list of orders in this account
+    pub orders: HashMap<OrderId, Order>,
     /// A list of balances in this account
     #[cfg_attr(feature = "rkyv", rkyv(with = with::MapKV<AddressDef, with::Identity>))]
     pub balances: HashMap<Address, Balance>,
@@ -49,13 +49,13 @@ pub struct Account {
 impl Account {
     /// Create a new empty account from the given seed information
     pub fn new_empty_account(wallet_id: AccountId) -> Self {
-        Self { wallet_id, intents: HashMap::new(), balances: HashMap::new() }
+        Self { wallet_id, orders: HashMap::new(), balances: HashMap::new() }
     }
 
     /// Remove default balances
     pub fn remove_default_elements(&mut self) {
         let default_balance = Balance::default();
         self.balances.retain(|_mint, balance| *balance != default_balance);
-        self.intents.retain(|_id, intent| *intent != Intent::default());
+        self.orders.retain(|_id, order| *order != Order::default());
     }
 }

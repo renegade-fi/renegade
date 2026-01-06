@@ -3,12 +3,15 @@
 
 use std::sync::Arc;
 
-use job_types::{event_manager::EventManagerQueue, task_driver::TaskDriverQueue};
+use job_types::{
+    event_manager::EventManagerQueue, handshake_manager::HandshakeManagerQueue,
+    task_driver::TaskDriverQueue,
+};
 use system_bus::SystemBus;
 use types_gossip::ClusterId;
 
-use crate::state_transition::StateTransition;
 use crate::storage::db::DB;
+use crate::{caching::order_cache::OrderBookCache, state_transition::StateTransition};
 
 use self::{error::StateApplicatorError, return_type::ApplicatorReturnType};
 
@@ -38,13 +41,12 @@ pub struct StateApplicatorConfig {
     pub cluster_id: ClusterId,
     /// A sender to the task driver's work queue
     pub task_queue: TaskDriverQueue,
-    // TODO: Add back these fields when their implementations are added
-    // /// The handshake manager's work queue
-    // pub handshake_manager_queue: HandshakeManagerQueue,
+    /// The handshake manager's work queue
+    pub handshake_manager_queue: HandshakeManagerQueue,
     /// The event manager's work queue
     pub event_queue: EventManagerQueue,
-    // /// The order book cache
-    // pub order_cache: Arc<OrderBookCache>,
+    /// The order book cache
+    pub order_cache: Arc<OrderBookCache>,
     /// A handle to the database underlying the storage layer
     pub db: Arc<DB>,
     /// A handle to the system bus used for internal pubsub
@@ -126,12 +128,13 @@ pub mod test_helpers {
         // event_manager::new_event_manager_queue,
         // handshake_manager::new_handshake_manager_queue,
         event_manager::new_event_manager_queue,
+        handshake_manager::new_handshake_manager_queue,
         task_driver::{TaskDriverQueue, new_task_driver_queue},
     };
     use system_bus::SystemBus;
     use types_gossip::ClusterId;
 
-    use crate::test_helpers::mock_db;
+    use crate::{caching::order_cache::OrderBookCache, test_helpers::mock_db};
 
     use super::{StateApplicator, StateApplicatorConfig};
 
@@ -145,8 +148,8 @@ pub mod test_helpers {
 
     /// Create a mock `StateApplicator` with the given task queue
     pub(crate) fn mock_applicator_with_task_queue(task_queue: TaskDriverQueue) -> StateApplicator {
-        // let (handshake_manager_queue, _recv) = new_handshake_manager_queue();
-        // mem::forget(_recv);
+        let (handshake_manager_queue, _recv) = new_handshake_manager_queue();
+        mem::forget(_recv);
 
         let (event_queue, _recv) = new_event_manager_queue();
         mem::forget(_recv);
@@ -154,9 +157,9 @@ pub mod test_helpers {
         let config = StateApplicatorConfig {
             allow_local: true,
             task_queue,
-            // order_cache: Arc::new(OrderBookCache::new()),
+            order_cache: Arc::new(OrderBookCache::new()),
             db: Arc::new(mock_db()),
-            // handshake_manager_queue,
+            handshake_manager_queue,
             event_queue,
             system_bus: SystemBus::new(),
             cluster_id: ClusterId::from_str("test-cluster").unwrap(),

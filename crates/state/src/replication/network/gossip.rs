@@ -32,11 +32,6 @@ pub struct GossipNetwork {
 }
 
 impl GossipNetwork {
-    /// Constructor
-    pub fn new(target: NodeId, target_info: Node, network_sender: NetworkManagerQueue) -> Self {
-        Self { target, target_info, network_sender }
-    }
-
     /// Construct a new `GossipNetwork` instance without target specified
     pub fn empty(network_sender: NetworkManagerQueue) -> Self {
         Self { target: NodeId::default(), target_info: Node::default(), network_sender }

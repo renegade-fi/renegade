@@ -1,12 +1,11 @@
 //! Stores state information relating to the node's configuration
 
-use circuit_types::{Address, elgamal::EncryptionKey, fixed_point::FixedPoint};
+use alloy_primitives::Address;
+use circuit_types::{elgamal::EncryptionKey, fixed_point::FixedPoint};
 use config::RelayerConfig;
 use libp2p::{core::Multiaddr, identity::Keypair};
 use tracing::warn;
 use types_gossip::{ClusterId, PeerInfo, WrappedPeerId};
-use types_account::account::{Wallet, WalletIdentifier};
-use util::res_some;
 
 use crate::{NODE_METADATA_TABLE, StateInner, error::StateError};
 
@@ -28,20 +27,6 @@ impl StateInner {
     /// Get the libp2p keypair of the local node
     pub fn get_node_keypair(&self) -> Result<Keypair, StateError> {
         self.with_blocking_read_tx(|tx| tx.get_node_keypair().map_err(StateError::Db))
-    }
-
-    /// Get the wallet ID that the local relayer owns
-    pub fn get_relayer_wallet_id(&self) -> Result<Option<WalletIdentifier>, StateError> {
-        self.with_blocking_read_tx(|tx| tx.get_local_node_wallet().map_err(StateError::Db))
-    }
-
-    /// Get the wallet owned by the local relayer
-    pub fn get_local_relayer_wallet(&self) -> Result<Option<Wallet>, StateError> {
-        self.with_blocking_read_tx(|tx| {
-            let wallet_id = res_some!(tx.get_local_node_wallet()?);
-            let wallet = res_some!(tx.get_wallet(&wallet_id)?);
-            Ok(Some(wallet))
-        })
     }
 
     /// Get the encryption key used to encrypt fee payments
@@ -104,21 +89,6 @@ impl StateInner {
         .await
     }
 
-    /// Set the wallet ID of the local relayer's wallet
-    ///
-    /// This wallet is managed the same as any other wallet, but we index its ID
-    /// here for retrieval
-    pub async fn set_local_relayer_wallet_id(
-        &self,
-        wallet_id: WalletIdentifier,
-    ) -> Result<(), StateError> {
-        self.with_write_tx(move |tx| {
-            tx.set_local_node_wallet(wallet_id)?;
-            Ok(())
-        })
-        .await
-    }
-
     /// Setup the node metadata table from a relayer config
     pub async fn setup_node_metadata(&self, config: &RelayerConfig) -> Result<(), StateError> {
         let peer_id = config.peer_id();
@@ -128,7 +98,7 @@ impl StateInner {
         let max_match_fee = config.max_match_fee;
         let default_relayer_fee = config.default_match_fee;
         let per_asset_fees = config.per_asset_fees.clone();
-        let external_fee_addr = config.external_fee_addr.clone();
+        let external_fee_addr = config.external_fee_addr;
         let historical_state_enabled = config.record_historical_state;
 
         if !historical_state_enabled {

@@ -1,57 +1,74 @@
-//! Helpers for proposing wallet index changes and reading the index
+//! Helpers for proposing account index changes and reading the index
 //!
-//! Wallet index updates must go through raft consensus so that the leader may
+//! Account index updates must go through raft consensus so that the leader may
 //! order them
 
-use circuit_types::{balance::Balance, wallet::Nullifier};
-use types_account::account::{Order, OrderId, Wallet, WalletIdentifier};
+use darkpool_types::balance::Balance;
+use types_account::{
+    account::{Account, OrderId},
+    order::Order,
+};
+use types_core::AccountId;
 use types_tasks::QueuedTask;
 use util::res_some;
 
-use crate::{StateInner, StateTransition, error::StateError, notifications::ProposalWaiter};
+use crate::{
+    StateInner, error::StateError, notifications::ProposalWaiter,
+    state_transition::StateTransition, storage::traits::RkyvValue,
+};
 
 impl StateInner {
     // -----------
     // | Getters |
     // -----------
 
-    /// Whether the wallet exists
-    pub async fn contains_wallet(&self, id: &WalletIdentifier) -> Result<bool, StateError> {
-        Ok(self.get_wallet(id).await?.is_some())
-    }
-
-    /// Get the wallet with the given id
-    pub async fn get_wallet(&self, id: &WalletIdentifier) -> Result<Option<Wallet>, StateError> {
+    /// Whether the account exists
+    pub async fn contains_account(&self, id: &AccountId) -> Result<bool, StateError> {
         let id = *id;
         self.with_read_tx(move |tx| {
-            let wallet = tx.get_wallet(&id)?;
-            Ok(wallet)
+            let exists = tx.get_account(&id)?.is_some();
+            Ok(exists)
         })
         .await
     }
 
-    /// Get the wallet and the tasks in the queue for the wallet
-    ///
-    /// Defined here to manage these in a single tx
-    pub async fn get_wallet_and_tasks(
-        &self,
-        id: &WalletIdentifier,
-    ) -> Result<Option<(Wallet, Vec<QueuedTask>)>, StateError> {
+    /// Get the account with the given id
+    pub async fn get_account(&self, id: &AccountId) -> Result<Option<Account>, StateError> {
         let id = *id;
         self.with_read_tx(move |tx| {
-            // Read the wallet's task queue
-            let wallet = res_some!(tx.get_wallet(&id)?);
+            let account_value = res_some!(tx.get_account(&id)?);
+            let account = account_value.deserialize()?;
+            Ok(Some(account))
+        })
+        .await
+    }
+
+    /// Get the account and the tasks in the queue for the account
+    ///
+    /// Defined here to manage these in a single tx
+    pub async fn get_account_and_tasks(
+        &self,
+        id: &AccountId,
+    ) -> Result<Option<(Account, Vec<QueuedTask>)>, StateError> {
+        let id = *id;
+        self.with_read_tx(move |tx| {
+            // Read the account's task queue
+            let account_value = res_some!(tx.get_account(&id)?);
+            let account = account_value.deserialize()?;
             let queue = tx.get_task_queue(&id)?;
 
             // Fetch the tasks one by one
             let mut tasks = Vec::new();
-            for task_id in queue.all_tasks() {
-                if let Some(task) = tx.get_task(&task_id)? {
-                    tasks.push(task);
+            if let Some(queue) = queue {
+                for task_id in queue.all_tasks() {
+                    if let Some(task_value) = tx.get_task(&task_id)? {
+                        let task = task_value.deserialize()?;
+                        tasks.push(task);
+                    }
                 }
             }
 
-            Ok(Some((wallet, tasks)))
+            Ok(Some((account, tasks)))
         })
         .await
     }
@@ -60,8 +77,9 @@ impl StateInner {
     pub async fn get_managed_order(&self, id: &OrderId) -> Result<Option<Order>, StateError> {
         let id = *id;
         self.with_read_tx(move |tx| {
-            let wallet = res_some!(tx.get_wallet_for_order(&id)?);
-            Ok(wallet.orders.get(&id).cloned())
+            let account_value = res_some!(tx.get_account_for_intent(&id)?);
+            let account = account_value.deserialize()?;
+            Ok(account.orders.get(&id).cloned())
         })
         .await
     }
@@ -73,61 +91,58 @@ impl StateInner {
     ) -> Result<Option<(Order, Balance)>, StateError> {
         let id = *id;
         self.with_read_tx(move |tx| {
-            let wallet = res_some!(tx.get_wallet_for_order(&id)?);
-            let order = res_some!(wallet.orders.get(&id)).clone();
+            let account = res_some!(tx.get_account_for_intent(&id)?);
+            let archived_order = res_some!(account.orders.get(&id));
+            let order = Order::from_archived(archived_order)?;
 
             // Get the balance that capitalizes the order
-            let sell_mint = order.send_mint().clone();
-            let balance = wallet.get_balance_or_default(&sell_mint);
+            let sell_mint = &archived_order.intent.in_token;
+            let balance = match account.balances.get(sell_mint) {
+                Some(b) => Balance::from_archived(b)?,
+                None => Balance::default(),
+            };
+
             Ok(Some((order, balance)))
         })
         .await
     }
 
-    /// Get the wallet ID that contains the given order ID
-    pub async fn get_wallet_id_for_order(
+    /// Get the account ID that contains the given intent ID
+    pub async fn get_account_id_for_intent(
         &self,
-        order_id: &OrderId,
-    ) -> Result<Option<WalletIdentifier>, StateError> {
-        let oid = *order_id;
+        intent_id: &OrderId,
+    ) -> Result<Option<AccountId>, StateError> {
+        let id = *intent_id;
         self.with_read_tx(move |tx| {
-            let wallet_id = tx.get_wallet_id_for_order(&oid)?;
-            Ok(wallet_id)
+            let account_id = tx.get_account_id_for_intent(&id)?;
+            Ok(account_id)
         })
         .await
     }
 
-    /// Get the wallet that contains the given order ID
-    pub async fn get_wallet_for_order(
+    /// Get the account that contains the given intent ID
+    pub async fn get_account_for_intent(
         &self,
-        order_id: &OrderId,
-    ) -> Result<Option<Wallet>, StateError> {
-        let oid = *order_id;
+        intent_id: &OrderId,
+    ) -> Result<Option<Account>, StateError> {
+        let iid = *intent_id;
         self.with_read_tx(move |tx| {
-            let wallet = tx.get_wallet_for_order(&oid)?;
-            Ok(wallet)
+            let account_value = res_some!(tx.get_account_for_intent(&iid)?);
+            let account = account_value.deserialize()?;
+            Ok(Some(account))
         })
         .await
     }
 
-    /// Get the wallet for a given nullifier
-    pub async fn get_wallet_for_nullifier(
-        &self,
-        nullifier: &Nullifier,
-    ) -> Result<Option<WalletIdentifier>, StateError> {
-        let n = *nullifier;
+    /// Get all the accounts managed by the local relayer
+    pub async fn get_all_accounts(&self) -> Result<Vec<Account>, StateError> {
         self.with_read_tx(move |tx| {
-            let res = tx.get_wallet_for_nullifier(&n)?;
-            Ok(res)
-        })
-        .await
-    }
-
-    /// Get the ids of all wallets managed by the local relayer
-    pub async fn get_all_wallets(&self) -> Result<Vec<Wallet>, StateError> {
-        self.with_read_tx(move |tx| {
-            let wallets = tx.get_all_wallets()?;
-            Ok(wallets)
+            let accounts = tx.get_all_accounts()?;
+            let accounts = accounts
+                .into_iter()
+                .map(|account_value| account_value.deserialize())
+                .collect::<Result<Vec<Account>, _>>()?;
+            Ok(accounts)
         })
         .await
     }
@@ -136,153 +151,54 @@ impl StateInner {
     // | Setters |
     // -----------
 
-    /// Propose a new wallet to be added to the index
-    pub async fn new_wallet(&self, wallet: Wallet) -> Result<ProposalWaiter, StateError> {
-        assert!(wallet.orders.is_empty(), "use `update-wallet` for non-empty wallets");
-        self.send_proposal(StateTransition::AddWallet { wallet }).await
+    /// Propose a new account to be added to the index
+    pub async fn new_account(&self, account: Account) -> Result<ProposalWaiter, StateError> {
+        assert!(account.orders.is_empty(), "use `update_account` for non-empty accounts");
+        assert!(account.balances.is_empty(), "use `update_account` for non-empty balances");
+        self.send_proposal(StateTransition::CreateAccount { account }).await
     }
 
-    /// Update a wallet in the index
-    pub async fn update_wallet(&self, wallet: Wallet) -> Result<ProposalWaiter, StateError> {
-        self.send_proposal(StateTransition::UpdateWallet { wallet }).await
+    /// Update an account in the index
+    pub async fn update_account(&self, account: Account) -> Result<ProposalWaiter, StateError> {
+        self.send_proposal(StateTransition::UpdateAccount { account }).await
     }
 }
 
 #[cfg(test)]
 mod test {
-    // --- Order History Tests --- //
-    // We test order history updates here to give access to state interfaces
-    // Wallet update handlers in the applicator handle order history changes to
-    // hide the wallet index/order history denormalization
+    use types_account::{account::mocks::mock_empty_account, order::mocks::mock_order};
 
-    use circuit_types::balance::Balance;
-    use common::types::{
-        price::TimestampedPrice,
-        wallet::{
-            OrderId, WalletIdentifier,
-            order_metadata::{OrderMetadata, OrderState, PartialOrderFill},
-        },
-        wallet_mocks::{mock_empty_wallet, mock_order},
-    };
-    use itertools::Itertools;
-    use num_bigint::BigUint;
+    use crate::test_helpers::mock_state;
 
-    use crate::{State, order_history::test::setup_order_history, test_helpers::mock_state};
-
-    /// Create a set of mock historical orders
-    fn create_mock_historical_orders(n: usize, wallet_id: WalletIdentifier, state: &State) {
-        let fill = PartialOrderFill::new(1, TimestampedPrice::new(5.));
-        let history = (0..n)
-            .map(|_| OrderMetadata {
-                id: OrderId::new_v4(),
-                state: OrderState::Filled,
-                fills: vec![fill],
-                created: 0,
-                data: mock_order(),
-            })
-            .collect_vec();
-
-        setup_order_history(&wallet_id, &history, &state.db);
-    }
-
-    /// Test creating a wallet with an order
+    /// Test creating an account
     #[tokio::test]
-    #[allow(non_snake_case)]
-    async fn test_order_history__new_wallet() {
+    async fn test_new_account() {
         let state = mock_state().await;
 
-        let mut wallet = mock_empty_wallet();
-        let order = mock_order();
-        let order_id = OrderId::new_v4();
-        wallet.add_order(order_id, order.clone()).unwrap();
-
-        // Add the wallet to state
-        let waiter = state.update_wallet(wallet.clone()).await.unwrap();
+        let account = mock_empty_account();
+        let waiter = state.new_account(account.clone()).await.unwrap();
         waiter.await.unwrap();
 
-        // Check the order history for a wallet
-        let history = state.get_order_history(10, &wallet.wallet_id).await.unwrap();
-        assert_eq!(history.len(), 1);
-        assert_eq!(history[0].id, order_id);
-        assert_eq!(history[0].state, OrderState::Created);
+        // Check for the account in the state
+        let retrieved_account = state.get_account(&account.wallet_id).await.unwrap().unwrap();
+        assert_eq!(retrieved_account.wallet_id, account.wallet_id);
     }
 
-    /// Tests that updating a wallet marks all orders in the history as
-    /// `Created`
+    /// Test updating an account
     #[tokio::test]
-    #[allow(non_snake_case)]
-    async fn test_order_history__existing_order() {
+    async fn test_update_account() {
         let state = mock_state().await;
-        let mut wallet = mock_empty_wallet();
+
+        let account = mock_empty_account();
+        let waiter = state.new_account(account.clone()).await.unwrap();
+        waiter.await.unwrap();
+
+        // Update the account
+        let mut updated_account = account.clone();
         let order = mock_order();
-        let order_id = OrderId::new_v4();
-        wallet.add_order(order_id, order.clone()).unwrap();
-
-        // Update the wallet
-        let waiter = state.update_wallet(wallet.clone()).await.unwrap();
-        waiter.await.unwrap();
-
-        // Mark the order's state in the history as `Matching`, simulating an order that
-        // now has validity proofs ready for match
-        let mut meta = state.get_order_metadata(&order_id).await.unwrap().unwrap();
-        meta.state = OrderState::Matching;
-        let waiter = state.update_order_metadata(meta).await.unwrap();
-        waiter.await.unwrap();
-
-        // Update the wallet
-        wallet.add_balance(Balance::new_from_mint(BigUint::from(1u8))).unwrap();
-        let waiter = state.update_wallet(wallet.clone()).await.unwrap();
-        waiter.await.unwrap();
-
-        // Check the order history
-        let history = state.get_order_history(10, &wallet.wallet_id).await.unwrap();
-        assert_eq!(history.len(), 1);
-        assert_eq!(history[0].id, order_id);
-        // The order should now be back in the `Created` state, awaiting new proofs
-        assert_eq!(history[0].state, OrderState::Created);
-    }
-
-    /// Test updating a wallet in which we cancel one order and replace with
-    /// another
-    #[tokio::test]
-    #[allow(non_snake_case)]
-    async fn test_order_history__cancel_replace() {
-        const N: usize = 10;
-        let state = mock_state().await;
-        let mut wallet = mock_empty_wallet();
-
-        // Setup a longer mock order history of filled orders
-        create_mock_historical_orders(N, wallet.wallet_id, &state);
-
-        // Add an existing order
-        let order_id = OrderId::new_v4();
-        let order = mock_order();
-        wallet.add_order(order_id, order).unwrap();
-
-        // Update the wallet
-        let waiter = state.update_wallet(wallet.clone()).await.unwrap();
-        waiter.await.unwrap();
-
-        // Now remove this order and add another
-        wallet.remove_order(&order_id).unwrap();
-        let order_id2 = OrderId::new_v4();
-        let order = mock_order();
-        wallet.add_order(order_id2, order).unwrap();
-
-        // Update the wallet
-        let waiter = state.update_wallet(wallet.clone()).await.unwrap();
-        waiter.await.unwrap();
-
-        // Now fetch history, it should contain one order in the `Created` state
-        // and another in the `Cancelled` state
-        let history = state.get_order_history(10, &wallet.wallet_id).await.unwrap();
-        assert_eq!(history.len(), 10);
-        assert_eq!(history[0].id, order_id2);
-        assert_eq!(history[0].state, OrderState::Created);
-        assert_eq!(history[1].id, order_id);
-        assert_eq!(history[1].state, OrderState::Cancelled);
-
-        // The rest of the orders should be unaffected
-        assert!(history[2..].iter().all(|meta| meta.state == OrderState::Filled));
+        updated_account.orders.insert(order.id, order);
+        // Verify the account was updated
+        let retrieved_account = state.get_account(&account.wallet_id).await.unwrap().unwrap();
+        assert_eq!(retrieved_account.wallet_id, updated_account.wallet_id);
     }
 }

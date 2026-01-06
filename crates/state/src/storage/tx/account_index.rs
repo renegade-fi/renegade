@@ -27,7 +27,7 @@ impl<T: TransactionKind> StateTxn<'_, T> {
         self.inner().read(WALLETS_TABLE, account_id)
     }
 
-    /// Get the account ID managing a given intent
+    /// Get the account ID managing a given order
     pub fn get_account_id_for_intent(
         &self,
         intent_id: &OrderId,
@@ -37,7 +37,7 @@ impl<T: TransactionKind> StateTxn<'_, T> {
             .map(|opt| opt.map(|archived| archived.deserialize()).transpose())?
     }
 
-    /// Get the account for a given intent
+    /// Get the account for a given order
     pub fn get_account_for_intent(
         &self,
         intent_id: &OrderId,
@@ -66,7 +66,7 @@ impl StateTxn<'_, RW> {
         self.inner().write(WALLETS_TABLE, &account.wallet_id, account)
     }
 
-    /// Update the mapping from intent to account for each of the given intents
+    /// Update the mapping from order to account for each of the given orders
     pub fn index_intents(
         &self,
         account_id: &AccountId,
@@ -113,7 +113,7 @@ mod test {
         assert_eq!(retrieved.wallet_id, account.wallet_id);
     }
 
-    /// Tests adding an account for an intent then retrieving it
+    /// Tests adding an account for an order then retrieving it
     #[test]
     fn test_get_account_id_for_intent() {
         let db = mock_db();
@@ -131,7 +131,7 @@ mod test {
         tx.index_intents(&account_id2, &[intent_id3]).unwrap();
         tx.commit().unwrap();
 
-        // Check all intent mappings
+        // Check all order mappings
         let tx = db.new_read_tx().unwrap();
         let account_res1 = tx.get_account_id_for_intent(&intent_id1).unwrap();
         assert_eq!(account_res1, Some(account_id1));

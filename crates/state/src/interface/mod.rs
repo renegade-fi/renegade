@@ -3,8 +3,7 @@
 
 pub mod matching_pools;
 pub mod node_metadata;
-pub mod order_book;
-pub mod order_history;
+// pub mod order_book;
 pub mod peer_index;
 pub mod raft;
 pub mod task_queue;
@@ -20,15 +19,14 @@ use job_types::{
 };
 use libmdbx::{RO, RW};
 use system_bus::SystemBus;
-use system_bus::SystemBusMessage;
 use system_clock::SystemClock;
 use tracing::{Span, error, info_span, instrument};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
-use types_runtime::worker::WorkerFailureSender;
+use types_runtime::WorkerFailureSender;
 use util::{err_str, raw_err_str, telemetry::propagation::set_parent_span};
 
+use crate::state_transition::{Proposal, StateTransition};
 use crate::{
-    Proposal, StateTransition,
     applicator::{StateApplicator, StateApplicatorConfig},
     caching::order_cache::OrderBookCache,
     notifications::{OpenNotifications, ProposalWaiter},
@@ -44,7 +42,7 @@ use crate::{
     },
 };
 
-use self::error::StateError;
+use crate::error::StateError;
 
 /// The default number of ticks between Raft heartbeats
 const DEFAULT_HEARTBEAT_MS: u64 = 1_000; // 1 second
@@ -77,7 +75,7 @@ pub async fn create_global_state(
     task_queue: TaskDriverQueue,
     handshake_manager_queue: HandshakeManagerQueue,
     event_queue: EventManagerQueue,
-    system_bus: SystemBus<SystemBusMessage>,
+    system_bus: SystemBus,
     system_clock: &SystemClock,
     failure_send: WorkerFailureSender,
 ) -> Result<State, StateError> {
@@ -122,7 +120,7 @@ pub struct StateInner {
     /// A handle on the database
     pub(crate) db: Arc<DB>,
     /// The system bus for sending notifications to other workers
-    pub(crate) bus: SystemBus<SystemBusMessage>,
+    pub(crate) bus: SystemBus,
     /// The notifications map
     pub(crate) notifications: OpenNotifications,
     /// The raft client
@@ -143,7 +141,7 @@ pub struct StateInner {
     /// A handle on the database
     pub db: Arc<DB>,
     /// The system bus for sending notifications to other workers
-    pub bus: SystemBus<SystemBusMessage>,
+    pub bus: SystemBus,
     /// The notifications map
     pub notifications: OpenNotifications,
     /// The raft client
@@ -163,7 +161,7 @@ impl StateInner {
         task_queue: TaskDriverQueue,
         handshake_manager_queue: HandshakeManagerQueue,
         event_queue: EventManagerQueue,
-        system_bus: SystemBus<SystemBusMessage>,
+        system_bus: SystemBus,
         system_clock: &SystemClock,
         failure_send: WorkerFailureSender,
     ) -> Result<Self, StateError> {
@@ -192,7 +190,7 @@ impl StateInner {
         task_queue: TaskDriverQueue,
         handshake_manager_queue: HandshakeManagerQueue,
         event_queue: EventManagerQueue,
-        system_bus: SystemBus<SystemBusMessage>,
+        system_bus: SystemBus,
         system_clock: &SystemClock,
         failure_send: WorkerFailureSender,
     ) -> Result<Self, StateError> {
@@ -303,12 +301,22 @@ impl StateInner {
                 let cluster_id = my_cluster.clone();
 
                 async move {
+                    // Fetch known cluster peers from the DB
                     let tx = db.new_read_tx().map_err(raw_err_str!("{}"))?;
                     let known_cluster_peers =
                         tx.get_cluster_peers(&cluster_id).map_err(raw_err_str!("{}"))?;
+
+                    let peers = match known_cluster_peers {
+                        Some(peers) => {
+                            let known_peers = peers.deserialize().map_err(raw_err_str!("{}"))?;
+                            known_peers.into_iter().collect()
+                        },
+                        None => vec![],
+                    };
                     tx.commit().map_err(raw_err_str!("{}"))?;
 
-                    client.sync_membership(known_cluster_peers).await.map_err(|e| e.to_string())
+                    // Sync the membership
+                    client.sync_membership(peers).await.map_err(|e| e.to_string())
                 }
             })
             .await
@@ -439,22 +447,22 @@ impl StateInner {
 
 #[cfg(test)]
 mod test {
-    use common::types::wallet_mocks::mock_empty_wallet;
 
     use crate::test_helpers::mock_state;
+    use types_account::account::mocks::mock_empty_account;
 
-    /// Test adding a wallet to the state
+    /// Test building an account in the state
     #[tokio::test]
-    async fn test_add_wallet() {
+    async fn test_new_account() {
         let state = mock_state().await;
 
-        let wallet = mock_empty_wallet();
-        let res = state.new_wallet(wallet.clone()).await.unwrap().await;
+        let account = mock_empty_account();
+        let res = state.new_account(account.clone()).await.unwrap().await;
         assert!(res.is_ok());
 
-        // Check for the wallet in the state
-        let expected_wallet = wallet.clone();
-        let actual_wallet = state.get_wallet(&wallet.wallet_id).await.unwrap().unwrap();
-        assert_eq!(expected_wallet, actual_wallet);
+        // Check for the account in the state
+        let expected_account = account.clone();
+        let actual_account = state.get_account(&account.wallet_id).await.unwrap().unwrap();
+        assert_eq!(expected_account, actual_account);
     }
 }
