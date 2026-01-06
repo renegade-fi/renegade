@@ -1,0 +1,172 @@
+//! Applicator methods for the account index, separated out for discoverability
+
+use itertools::Itertools;
+use libmdbx::RW;
+use system_bus::{ADMIN_WALLET_UPDATES_TOPIC, SystemBusMessage, account_topic};
+use types_account::account::{Account, IntentIdentifier};
+
+use crate::storage::tx::StateTxn;
+
+use super::{Result, StateApplicator, return_type::ApplicatorReturnType};
+
+impl StateApplicator {
+    // -------------
+    // | Interface |
+    // -------------
+
+    /// Create a new account
+    pub fn create_account(&self, account: &Account) -> Result<ApplicatorReturnType> {
+        // Add the account to the account indices
+        let tx = self.db().new_write_tx()?;
+
+        // Write the account (new accounts are empty, so no intents to index)
+        tx.write_account(account)?;
+        tx.commit()?;
+
+        // Publish a message to the bus describing the account update
+        self.publish_account_update(account);
+        Ok(ApplicatorReturnType::None)
+    }
+
+    /// Update an account in the state
+    ///
+    /// This update may take many forms: placing/cancelling an intent,
+    /// depositing or withdrawing a balance, etc.
+    ///
+    /// It is assumed that the update to the account is proven valid and posted
+    /// on-chain before this method is called. That is, we maintain the
+    /// invariant that the state stored by this module is valid -- but
+    /// possibly stale -- contract state
+    pub fn update_account(&self, account: &Account) -> Result<ApplicatorReturnType> {
+        let tx = self.db().new_write_tx()?;
+
+        // Index the intents in the account
+        self.index_intents_with_tx(account, &tx)?;
+
+        // Write the account
+        tx.write_account(account)?;
+        tx.commit()?;
+
+        // Push updates to the bus
+        self.publish_account_update(account);
+        self.system_bus().publish(
+            ADMIN_WALLET_UPDATES_TOPIC.to_string(),
+            SystemBusMessage::AdminAccountUpdate { account_id: account.wallet_id },
+        );
+
+        Ok(ApplicatorReturnType::None)
+    }
+
+    // -----------
+    // | Helpers |
+    // -----------
+
+    /// Publish an account update message to the system bus
+    fn publish_account_update(&self, account: &Account) {
+        let account_topic = account_topic(&account.wallet_id);
+        self.system_bus().publish(
+            account_topic,
+            SystemBusMessage::AccountUpdate { account: Box::new(account.clone()) },
+        );
+    }
+
+    /// Index the intents of an account
+    fn index_intents_with_tx(&self, account: &Account, tx: &StateTxn<RW>) -> Result<()> {
+        // Update the intent -> account mapping
+        let nonzero_intents = account.intents.keys().copied().collect_vec();
+        tx.index_intents(&account.wallet_id, &nonzero_intents)?;
+
+        // Handle cancelled intents
+        self.handle_cancelled_intents(account, tx)
+    }
+
+    /// Handle cancelled intents
+    fn handle_cancelled_intents(&self, account: &Account, tx: &StateTxn<RW>) -> Result<()> {
+        let old_account = tx.get_account(&account.wallet_id)?;
+        let old_intents = old_account
+            .map(|a| a.deserialize().unwrap().intents.keys().copied().collect_vec())
+            .unwrap_or_default();
+
+        // Handle cancelled intents
+        for id in old_intents {
+            if !account.intents.contains_key(&id) {
+                self.handle_cancelled_intent(id, tx)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Handle a cancelled intent
+    fn handle_cancelled_intent(&self, id: IntentIdentifier, tx: &StateTxn<RW>) -> Result<()> {
+        // Remove the intent from its matching pool
+        tx.remove_intent_from_matching_pool(&id)?;
+
+        // TODO: Remove the intent from the order book table
+        // TODO: Delete proofs for the intent
+
+        Ok(())
+    }
+}
+
+// ---------
+// | Tests |
+// ---------
+
+#[cfg(test)]
+pub(crate) mod test {
+    use types_account::account::{
+        Account,
+        mocks::{mock_empty_account, mock_intent},
+    };
+    use types_core::AccountId;
+    use uuid::Uuid;
+
+    use crate::{INTENT_TO_WALLET_TABLE, WALLETS_TABLE, applicator::test_helpers::mock_applicator};
+
+    /// Tests adding a new account to the index
+    #[test]
+    fn test_create_account() {
+        let applicator = mock_applicator();
+
+        // Add an account
+        let account = mock_empty_account();
+        applicator.create_account(&account).unwrap();
+
+        // Check that the account is indexed correctly
+        let expected_account: Account = account;
+
+        let db = applicator.db();
+        let account: Account =
+            db.read(WALLETS_TABLE, &expected_account.wallet_id).unwrap().unwrap();
+
+        assert_eq!(account, expected_account);
+    }
+
+    /// Test updating the account
+    #[test]
+    fn test_update_account() {
+        let applicator = mock_applicator();
+
+        // Add an account
+        let mut account = mock_empty_account();
+        applicator.create_account(&account).unwrap();
+
+        // Update the account by adding an intent
+        account.intents.insert(Uuid::new_v4(), mock_intent());
+        applicator.update_account(&account).unwrap();
+
+        // Check that the indexed account is as expected
+        let expected_account: Account = account.clone();
+        let db = applicator.db();
+        let account: Account =
+            db.read(WALLETS_TABLE, &expected_account.wallet_id).unwrap().unwrap();
+
+        assert_eq!(account, expected_account);
+
+        // Check the intent -> account mapping
+        let intent_id = account.intents.keys().next().unwrap();
+        let account_id: AccountId = db.read(INTENT_TO_WALLET_TABLE, intent_id).unwrap().unwrap();
+        assert_eq!(account_id, expected_account.wallet_id);
+    }
+}
