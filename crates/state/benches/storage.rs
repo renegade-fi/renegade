@@ -2,7 +2,7 @@
 use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
 use rand::{Rng, thread_rng};
 use state::{storage::db::DB, test_helpers::mock_db};
-use types_account::account::{Wallet, mocks::mock_empty_wallet};
+use types_account::account::{Account, mocks::mock_empty_account};
 
 // -----------
 // | Helpers |
@@ -84,20 +84,20 @@ pub fn bench_write_throughput(c: &mut Criterion) {
     }
 }
 
-/// A basic throughput benchmark reading a wallet from storage
-pub fn bench_read_wallet(c: &mut Criterion) {
-    /// The number of wallets to store
-    const N_WALLETS: usize = 1000;
+/// A basic throughput benchmark reading an account from storage
+pub fn bench_read_account(c: &mut Criterion) {
+    /// The number of accounts to store
+    const N_ACCOUNTS: usize = 1000;
     let mut rng = thread_rng();
 
-    // Add a set of wallets to the database
+    // Add a set of accounts to the database
     let db = benchmark_db();
     let tx = db.new_write_tx().unwrap();
-    let mut wallet_ids = Vec::new();
-    for _ in 0..N_WALLETS {
-        let wallet = mock_empty_wallet();
-        wallet_ids.push(wallet.wallet_id);
-        tx.write_wallet(&wallet).unwrap();
+    let mut account_ids = Vec::new();
+    for _ in 0..N_ACCOUNTS {
+        let account = mock_empty_account();
+        account_ids.push(account.wallet_id);
+        tx.write_account(&account).unwrap();
     }
     tx.commit().unwrap();
 
@@ -105,31 +105,32 @@ pub fn bench_read_wallet(c: &mut Criterion) {
     let mut group = c.benchmark_group("storage");
 
     group.throughput(Throughput::Elements(1));
-    group.bench_function("read_wallet", |b| {
+    group.bench_function("read_account", |b| {
         b.iter(|| {
-            let random_idx = rng.gen_range(0..N_WALLETS);
-            let wallet_id = wallet_ids[random_idx];
+            let random_idx = rng.gen_range(0..N_ACCOUNTS);
+            let account_id = account_ids[random_idx];
 
             let tx = db.new_read_tx().unwrap();
-            let wallet: Wallet = tx.get_wallet(&wallet_id).unwrap().unwrap();
+            let account_value = tx.get_account(&account_id).unwrap().unwrap();
+            let account: Account = account_value.deserialize().unwrap();
             tx.commit().unwrap();
 
-            black_box(wallet);
+            black_box(account);
         })
     });
 }
 
-/// A basic throughput benchmark writing a wallet to storage
-pub fn bench_write_wallet(c: &mut Criterion) {
+/// A basic throughput benchmark writing an account to storage
+pub fn bench_write_account(c: &mut Criterion) {
     let mut group = c.benchmark_group("storage");
     let db = benchmark_db();
-    let wallet = mock_empty_wallet();
+    let account = mock_empty_account();
 
     group.throughput(Throughput::Elements(1));
-    group.bench_function("write_wallet", |b| {
+    group.bench_function("write_account", |b| {
         b.iter(|| {
             let tx = db.new_write_tx().unwrap();
-            tx.write_wallet(&wallet).unwrap();
+            tx.write_account(&account).unwrap();
             tx.commit().unwrap();
 
             black_box(());
@@ -140,6 +141,6 @@ pub fn bench_write_wallet(c: &mut Criterion) {
 criterion_group!(
     name = storage;
     config = Criterion::default();
-    targets = bench_read_throughput, bench_write_throughput, bench_read_wallet, bench_write_wallet
+    targets = bench_read_throughput, bench_write_throughput, bench_read_account, bench_write_account
 );
 criterion_main!(storage);

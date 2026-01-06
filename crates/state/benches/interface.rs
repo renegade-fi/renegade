@@ -9,7 +9,8 @@ use state::{
     test_helpers::{mock_relayer_config, mock_state_with_task_queue},
 };
 use tokio::runtime::Builder as RuntimeBuilder;
-use types_account::account::{WalletIdentifier, mocks::mock_empty_wallet};
+use types_account::account::mocks::mock_empty_account;
+use types_core::AccountId;
 use types_tasks::mocks::mock_task_descriptor;
 
 /// The network delays to benchmark
@@ -24,13 +25,13 @@ async fn mock_raft(network_delay_ms: u64) -> State {
     mock_state_with_task_queue(network_delay_ms, task_sender, &config).await
 }
 
-/// Benchmark updating a wallet through the raft
-fn bench_update_wallet(c: &mut Criterion) {
+/// Benchmark updating an account through the raft
+fn bench_update_account(c: &mut Criterion) {
     let mut group = c.benchmark_group("state_interface");
     group.throughput(Throughput::Elements(1));
 
     for delay in BENCHMARK_DELAYS_MS {
-        group.bench_function(BenchmarkId::new("update_wallet", delay), |b| {
+        group.bench_function(BenchmarkId::new("update_account", delay), |b| {
             // Build a Tokio runtime and spawn benchmarks in it
             let runtime = RuntimeBuilder::new_multi_thread().enable_all().build().unwrap();
             let mut async_bencher = b.to_async(runtime);
@@ -39,13 +40,13 @@ fn bench_update_wallet(c: &mut Criterion) {
                 async move {
                     // Setup the state
                     let state = mock_raft(delay).await;
-                    let wallet = mock_empty_wallet();
+                    let account = mock_empty_account();
 
-                    // Propose a series of wallet updates
+                    // Propose a series of account updates
                     let mut total_time = std::time::Duration::default();
                     for _ in 0..n_iters {
                         let start = std::time::Instant::now();
-                        let waiter = state.update_wallet(wallet.clone()).await.unwrap();
+                        let waiter = state.update_account(account.clone()).await.unwrap();
                         black_box(waiter.await.unwrap());
 
                         total_time += start.elapsed();
@@ -76,9 +77,9 @@ fn bench_append_task(c: &mut Criterion) {
 
                     let mut total_time = std::time::Duration::default();
                     for _ in 0..n_iters {
-                        // Create a task on a new wallet
-                        let wallet_id = WalletIdentifier::new_v4();
-                        let desc = mock_task_descriptor(wallet_id);
+                        // Create a task on a new account
+                        let account_id = AccountId::new_v4();
+                        let desc = mock_task_descriptor(account_id);
 
                         let start = std::time::Instant::now();
                         let (_, waiter) = state.append_task(desc).await.unwrap();
@@ -97,6 +98,6 @@ fn bench_append_task(c: &mut Criterion) {
 criterion_group!(
     name = storage;
     config = Criterion::default().sample_size(10);
-    targets = bench_update_wallet, bench_append_task
+    targets = bench_update_account, bench_append_task
 );
 criterion_main!(storage);

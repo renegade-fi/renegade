@@ -23,15 +23,15 @@ fn benchmark_applicator() -> StateApplicator {
     applicator
 }
 
-/// Benchmark updating a wallet
-fn bench_update_wallet(c: &mut Criterion) {
+/// Benchmark updating an account
+fn bench_update_account(c: &mut Criterion) {
     let applicator = benchmark_applicator();
-    let wallet = mock_empty_wallet();
-    let transition = StateTransition::UpdateWallet { wallet };
+    let account = mock_empty_account();
+    let transition = StateTransition::UpdateAccount { account };
 
     let mut group = c.benchmark_group("applicator");
     group.throughput(Throughput::Elements(1));
-    group.bench_function("update_wallet", |b| {
+    group.bench_function("update_account", |b| {
         b.iter_custom(|n_iters| {
             let mut total_time = Duration::default();
             for _ in 0..n_iters {
@@ -125,6 +125,6 @@ fn bench_pop_task(c: &mut Criterion) {
 criterion_group!(
     name = storage;
     config = Criterion::default();
-    targets = bench_update_wallet, bench_append_task, bench_transition_task, bench_pop_task
+    targets = bench_update_account, bench_append_task, bench_transition_task, bench_pop_task
 );
 criterion_main!(storage);
