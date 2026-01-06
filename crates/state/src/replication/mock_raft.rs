@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use itertools::Itertools;
-use types_gossip::mocks::{mock_peer, mock_peer_id};
+use types_gossip::mocks::mock_peer_id;
 use util::concurrency::{AsyncShared, new_async_shared};
 
 use crate::replication::raft::{RaftClient, RaftClientConfig};
