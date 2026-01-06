@@ -2,7 +2,7 @@
 
 use darkpool_types::bounded_match_result::BoundedMatchResult;
 use external_api::{http::task::ApiTaskStatus, types::ApiHistoricalTask};
-use types_account::account::IntentIdentifier;
+use types_account::account::{Account, IntentIdentifier};
 use types_core::{AccountId, Token};
 use types_gossip::{PeerInfo, WrappedPeerId};
 use types_tasks::TaskIdentifier;
@@ -106,12 +106,12 @@ pub enum SystemBusMessage {
         task: ApiHistoricalTask,
     },
 
-    // // -- Wallet Updates -- //
-    // /// A message indicating that a wallet has been updated
-    // WalletUpdate {
-    //     /// The new wallet after update
-    //     wallet: Box<ApiWallet>,
-    // },
+    // -- Account Updates -- //
+    /// A message indicating that an account has been updated
+    AccountUpdate {
+        /// The new account after update
+        account: Box<Account>,
+    },
     /// A message indicating an internal (gossip metadata) update has been
     /// made to a wallet
     // InternalWalletUpdate {

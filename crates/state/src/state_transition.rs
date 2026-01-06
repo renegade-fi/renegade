@@ -5,6 +5,7 @@
 #![allow(missing_docs)]
 
 use serde::{Deserialize, Serialize};
+use types_account::Account;
 use types_gossip::WrappedPeerId;
 use types_runtime::MatchingPoolName;
 use types_tasks::{QueuedTask, QueuedTaskState, TaskIdentifier, TaskQueueKey};
@@ -36,6 +37,12 @@ pub struct Proposal {
 #[rkyv(derive(Debug))]
 #[rustfmt::skip]
 pub enum StateTransition {
+    // --- Accounts --- //
+    /// Create a new account
+    CreateAccount { account: Account },
+    /// Update an account
+    UpdateAccount { account: Account },
+
     // --- Matching Pools --- //
     /// Create a matching pool
     CreateMatchingPool { pool_name: MatchingPoolName },

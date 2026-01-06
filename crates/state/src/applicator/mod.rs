@@ -16,9 +16,9 @@ pub mod error;
 // pub mod matching_pools;
 // pub mod order_book;
 // pub mod order_history;
+pub mod account_index;
 pub mod return_type;
 pub mod task_queue;
-// pub mod wallet_index;
 
 // -------------
 // | Constants |
@@ -78,6 +78,8 @@ impl StateApplicator {
         transition: Box<StateTransition>,
     ) -> Result<ApplicatorReturnType> {
         match *transition {
+            StateTransition::CreateAccount { account } => self.create_account(&account),
+            StateTransition::UpdateAccount { account } => self.update_account(&account),
             StateTransition::CreateMatchingPool { pool_name } => {
                 todo!()
             },
