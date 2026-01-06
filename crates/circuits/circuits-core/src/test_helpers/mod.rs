@@ -2,12 +2,11 @@
 //! the crate
 
 pub mod circuits;
-pub mod fuzzing;
 pub mod merkle;
 pub mod mpc;
 
 // Re-export items from submodules for convenience
 pub use circuits::*;
-pub use fuzzing::*;
+pub use darkpool_types::fuzzing::*;
 pub use merkle::*;
 pub use mpc::*;

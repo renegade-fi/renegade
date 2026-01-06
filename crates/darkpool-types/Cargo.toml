@@ -15,6 +15,7 @@ proof-system-types = [
     "dep:mpc-relation",
 ]
 rkyv = ["dep:rkyv", "dep:ark-ff", "dep:ark-bn254"]
+test_helpers = ["proof-system-types"]
 
 [dependencies]
 # === Blockchain === #

@@ -208,7 +208,7 @@ impl StateInner {
         &self,
         filter: OrderBookFilter,
     ) -> Result<Vec<IntentIdentifier>, StateError> {
-        let candidates = self.order_cache.get_orders(filter).await;
+        let candidates = self.order_cache.get_intents(filter);
         backfill_trace_field("num_candidates", candidates.len());
         let filtered = self.filter_matchable_orders(candidates, None /* matching_pool */)?;
         backfill_trace_field("num_available", filtered.len());
@@ -219,7 +219,7 @@ impl StateInner {
     /// Get a list of order IDs that are locally managed and ready for match
     #[instrument(name = "get_locally_matchable_orders", skip_all)]
     pub async fn get_all_matchable_orders(&self) -> Result<Vec<IntentIdentifier>, StateError> {
-        let candidates = self.order_cache.get_all_orders().await;
+        let candidates = self.order_cache.get_all_intents();
         self.filter_matchable_orders(candidates, None /* matching_pool */)
     }
 
@@ -231,7 +231,7 @@ impl StateInner {
         matching_pool: MatchingPoolName,
         filter: OrderBookFilter,
     ) -> Result<Vec<IntentIdentifier>, StateError> {
-        let candidates = self.order_cache.get_orders(filter).await;
+        let candidates = self.order_cache.get_intents(filter);
         backfill_trace_field("num_candidates", candidates.len());
         let filtered = self.filter_matchable_orders(candidates, Some(matching_pool))?;
         backfill_trace_field("num_available", filtered.len());
@@ -245,7 +245,7 @@ impl StateInner {
         &self,
         matching_pool: MatchingPoolName,
     ) -> Result<Vec<IntentIdentifier>, StateError> {
-        let candidates = self.order_cache.get_all_orders().await;
+        let candidates = self.order_cache.get_all_intents();
         self.filter_matchable_orders(candidates, Some(matching_pool))
     }
 
@@ -391,7 +391,9 @@ impl StateInner {
             .await?;
 
         // Remove the orders from the order cache
-        join_all(order_ids.into_iter().map(|id| self.order_cache.remove_order(id))).await;
+        for id in order_ids {
+            self.order_cache.remove_intent(id);
+        }
 
         Ok(())
     }

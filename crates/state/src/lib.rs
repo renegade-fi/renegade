@@ -18,7 +18,7 @@
 use crate::error::StateError;
 
 pub mod applicator;
-// pub mod caching;
+pub mod caching;
 pub mod error;
 // mod interface;
 pub mod notifications;

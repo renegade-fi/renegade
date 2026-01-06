@@ -40,6 +40,7 @@ libmdbx = "0.3"
 
 # === Messaging + Concurrency === #
 crossbeam = { workspace = true }
+dashmap = { workspace = true }
 futures = { workspace = true }
 tokio = { workspace = true }
 
@@ -81,6 +82,7 @@ metrics = { workspace = true }
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["async", "async_tokio"] }
+darkpool-types = { workspace = true, features = ["test_helpers"] }
 eyre = "0.6"
 multiaddr = "0.17"
 num-bigint = "0.4"
