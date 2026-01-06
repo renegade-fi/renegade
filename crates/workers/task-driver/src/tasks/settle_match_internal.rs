@@ -19,7 +19,7 @@ use circuits_core::zk_circuits::valid_match_settle::{
 use types_core::price::{TimestampedPrice, TimestampedPriceFp};
 use common::types::proof_bundles::ValidMatchSettleBundle;
 use types_tasks::SettleMatchInternalTaskDescriptor;
-use types_account::account::{IntentIdentifier, WalletIdentifier};
+use types_account::account::{OrderId, WalletIdentifier};
 use common::types::proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle};
 use types_account::account::Wallet;
 use constants::Scalar;
@@ -172,9 +172,9 @@ pub struct SettleMatchInternalTask {
     /// The price at which the match was executed
     execution_price: TimestampedPriceFp,
     /// The identifier of the first order
-    order_id1: IntentIdentifier,
+    order_id1: OrderId,
     /// The identifier of the second order
-    order_id2: IntentIdentifier,
+    order_id2: OrderId,
     /// The identifier of the first order's wallet
     wallet_id1: WalletIdentifier,
     /// The identifier of the second order's wallet

@@ -6,6 +6,7 @@
 pub mod keychain;
 #[cfg(feature = "mocks")]
 pub mod mocks;
+pub mod order;
 pub mod pair;
 
 use std::collections::HashMap;
@@ -24,7 +25,7 @@ use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize, 
 use crate::MerkleAuthenticationPath;
 
 /// An identifier of an order used for caching
-pub type IntentIdentifier = Uuid;
+pub type OrderId = Uuid;
 /// The name of a matching pool
 pub type MatchingPoolName = String;
 
@@ -39,7 +40,7 @@ pub struct Account {
     /// The identifier used to index the wallet
     pub wallet_id: AccountId,
     /// A list of intents in this account
-    pub intents: HashMap<IntentIdentifier, Intent>,
+    pub intents: HashMap<OrderId, Intent>,
     /// A list of balances in this account
     #[cfg_attr(feature = "rkyv", rkyv(with = with::MapKV<AddressDef, with::Identity>))]
     pub balances: HashMap<Address, Balance>,

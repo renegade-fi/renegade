@@ -4,7 +4,7 @@
 // | Constants |
 // -------------
 
-use types_account::account::IntentIdentifier;
+use types_account::account::OrderId;
 use types_runtime::MatchingPoolName;
 
 use crate::{StateInner, StateTransition, error::StateError, notifications::ProposalWaiter};
@@ -18,7 +18,7 @@ impl StateInner {
     /// assigned to one
     pub async fn get_matching_pool_for_intent(
         &self,
-        intent_id: &IntentIdentifier,
+        intent_id: &OrderId,
     ) -> Result<MatchingPoolName, StateError> {
         let intent_id = *intent_id;
         self.with_read_tx(move |tx| {
@@ -63,7 +63,7 @@ impl StateInner {
     /// Assign an intent to a matching pool
     pub async fn assign_intent_to_matching_pool(
         &self,
-        intent_id: IntentIdentifier,
+        intent_id: OrderId,
         pool_name: MatchingPoolName,
     ) -> Result<ProposalWaiter, StateError> {
         self.send_proposal(StateTransition::AssignIntentToMatchingPool { intent_id, pool_name })

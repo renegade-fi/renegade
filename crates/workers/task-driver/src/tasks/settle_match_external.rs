@@ -19,7 +19,7 @@ use common::types::proof_bundles::{
     OrderValidityProofBundle, OrderValidityWitnessBundle, ValidMatchSettleAtomicBundle,
 };
 use types_tasks::SettleExternalMatchTaskDescriptor;
-use types_account::account::{IntentIdentifier, WalletIdentifier};
+use types_account::account::{OrderId, WalletIdentifier};
 use darkpool_client::errors::DarkpoolClientError;
 use system_bus::SystemBusMessage;
 use job_types::proof_manager::ProofJob;
@@ -360,7 +360,7 @@ impl SettleMatchExternalTask {
 
     /// Fetch the internal order validity proof bundle
     async fn fetch_internal_order_validity_bundle(
-        order_id: IntentIdentifier,
+        order_id: OrderId,
         state: &State,
     ) -> Result<(OrderValidityProofBundle, OrderValidityWitnessBundle), SettleMatchExternalTaskError>
     {

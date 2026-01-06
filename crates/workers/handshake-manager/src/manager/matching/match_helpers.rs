@@ -2,13 +2,13 @@
 
 use circuit_types::{Amount, balance::Balance, fixed_point::FixedPoint, r#match::MatchResult};
 use types_core::{price::{TimestampedPrice, TimestampedPriceFp}, token::Token};
-use types_account::account::{Order, IntentIdentifier};
+use types_account::account::{Order, OrderId};
 use util::{err_str, matching_engine::match_orders_with_min_base_amount};
 
 use crate::{error::HandshakeManagerError, manager::HandshakeExecutor};
 
 /// A successful match between two orders
-pub type SuccessfulMatch = (IntentIdentifier, MatchResult);
+pub type SuccessfulMatch = (OrderId, MatchResult);
 
 impl HandshakeExecutor {
     /// Run a match between two orders
@@ -20,7 +20,7 @@ impl HandshakeExecutor {
         target_orders: I,
     ) -> Result<Option<SuccessfulMatch>, HandshakeManagerError>
     where
-        I: Iterator<Item = &'a IntentIdentifier>,
+        I: Iterator<Item = &'a OrderId>,
     {
         let min_quote = self.min_fill_size;
         self.find_match_with_min_quote_amount(order, balance, price, min_quote, target_orders).await
@@ -36,7 +36,7 @@ impl HandshakeExecutor {
         target_orders: I,
     ) -> Result<Option<SuccessfulMatch>, HandshakeManagerError>
     where
-        I: Iterator<Item = &'a IntentIdentifier>,
+        I: Iterator<Item = &'a OrderId>,
     {
         // Match against each other order in the local book
         for order_id in target_orders.into_iter() {
@@ -85,7 +85,7 @@ impl HandshakeExecutor {
     /// Get the execution price for an order
     pub(crate) async fn get_execution_price_for_order(
         &self,
-        order: &IntentIdentifier,
+        order: &OrderId,
     ) -> Result<TimestampedPriceFp, HandshakeManagerError> {
         let (base, quote) = self.token_pair_for_order(order).await?;
         self.get_execution_price(&base, &quote)

@@ -365,7 +365,7 @@ fn matchup_order_ids(
 #[cfg(test)]
 mod tests {
     use common::types::{
-        wallet::IntentIdentifier,
+        wallet::OrderId,
         wallet_mocks::{mock_empty_wallet, mock_order},
     };
 
@@ -378,8 +378,8 @@ mod tests {
         let mut existing = mock_empty_wallet();
         let mut refreshed = mock_empty_wallet();
 
-        let id1 = IntentIdentifier::new_v4();
-        let id2 = IntentIdentifier::new_v4();
+        let id1 = OrderId::new_v4();
+        let id2 = OrderId::new_v4();
         let order = mock_order();
         existing.orders.insert(id1, order.clone());
         refreshed.orders.insert(id2, order.clone());
@@ -398,10 +398,10 @@ mod tests {
         let mut existing = mock_empty_wallet();
         let mut refreshed = mock_empty_wallet();
 
-        let id1 = IntentIdentifier::new_v4();
-        let id2 = IntentIdentifier::new_v4();
-        let id3 = IntentIdentifier::new_v4();
-        let id4 = IntentIdentifier::new_v4();
+        let id1 = OrderId::new_v4();
+        let id2 = OrderId::new_v4();
+        let id3 = OrderId::new_v4();
+        let id4 = OrderId::new_v4();
 
         let order = mock_order();
 
@@ -429,9 +429,9 @@ mod tests {
         let mut existing = mock_empty_wallet();
         let mut refreshed = mock_empty_wallet();
 
-        let id1 = IntentIdentifier::new_v4();
-        let id2 = IntentIdentifier::new_v4();
-        let id3 = IntentIdentifier::new_v4();
+        let id1 = OrderId::new_v4();
+        let id2 = OrderId::new_v4();
+        let id3 = OrderId::new_v4();
 
         let order = mock_order();
 
@@ -457,10 +457,10 @@ mod tests {
         let mut existing = mock_empty_wallet();
         let mut refreshed = mock_empty_wallet();
 
-        let id1 = IntentIdentifier::new_v4();
-        let id2 = IntentIdentifier::new_v4();
-        let id3 = IntentIdentifier::new_v4();
-        let id4 = IntentIdentifier::new_v4();
+        let id1 = OrderId::new_v4();
+        let id2 = OrderId::new_v4();
+        let id3 = OrderId::new_v4();
+        let id4 = OrderId::new_v4();
 
         let order = mock_order();
         let order2 = mock_order();

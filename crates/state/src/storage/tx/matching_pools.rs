@@ -1,7 +1,7 @@
 //! Helpers for accessing information about matching pools in the database
 
 use libmdbx::{RW, TransactionKind};
-use types_account::account::IntentIdentifier;
+use types_account::account::OrderId;
 use types_runtime::MatchingPoolName;
 
 use crate::{POOL_TABLE, storage::error::StorageError};
@@ -33,7 +33,7 @@ pub fn pool_exists_key(pool_name: &str) -> String {
 }
 
 /// The key for the given intent's matching pool
-pub fn matching_pool_key(intent_id: &IntentIdentifier) -> String {
+pub fn matching_pool_key(intent_id: &OrderId) -> String {
     format!("{}{}", POOL_KEY_PREFIX, intent_id)
 }
 
@@ -47,7 +47,7 @@ impl<T: TransactionKind> StateTxn<'_, T> {
     /// be in the global matching pool.
     pub fn get_matching_pool_for_intent(
         &self,
-        intent_id: &IntentIdentifier,
+        intent_id: &OrderId,
     ) -> Result<MatchingPoolName, StorageError> {
         let pool_key = matching_pool_key(intent_id);
         self.inner()
@@ -113,7 +113,7 @@ impl StateTxn<'_, RW> {
     /// the intent from one pool to another.
     pub fn assign_intent_to_matching_pool(
         &self,
-        intent_id: &IntentIdentifier,
+        intent_id: &OrderId,
         pool_name: &str,
     ) -> Result<(), StorageError> {
         // Check that the pool exists
@@ -135,7 +135,7 @@ impl StateTxn<'_, RW> {
     /// intent back to the global pool
     pub fn remove_intent_from_matching_pool(
         &self,
-        intent_id: &IntentIdentifier,
+        intent_id: &OrderId,
     ) -> Result<(), StorageError> {
         let pool_key = matching_pool_key(intent_id);
         self.inner().delete(POOL_TABLE, &pool_key).map(|_| ())
@@ -144,7 +144,7 @@ impl StateTxn<'_, RW> {
 
 #[cfg(test)]
 mod test {
-    use types_account::account::IntentIdentifier;
+    use types_account::account::OrderId;
 
     use crate::test_helpers::mock_db;
 
@@ -222,7 +222,7 @@ mod test {
         let db = mock_db();
 
         let pool_name = TEST_POOL_NAME.to_string();
-        let intent_id = IntentIdentifier::new_v4();
+        let intent_id = OrderId::new_v4();
 
         // Create a matching pool
         let tx = db.new_write_tx().unwrap();
@@ -256,7 +256,7 @@ mod test {
         tx.create_matching_pool(&pool_2_name).unwrap();
         tx.commit().unwrap();
 
-        let intent_id = IntentIdentifier::new_v4();
+        let intent_id = OrderId::new_v4();
 
         // Assign the intent to the first matching pool
         let tx = db.new_write_tx().unwrap();
@@ -281,7 +281,7 @@ mod test {
         let db = mock_db();
 
         let pool_name = TEST_POOL_NAME.to_string();
-        let intent_id = IntentIdentifier::new_v4();
+        let intent_id = OrderId::new_v4();
 
         // Try assigning the intent to the matching pool (before creating it)
         let tx = db.new_write_tx().unwrap();

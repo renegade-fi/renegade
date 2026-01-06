@@ -1,7 +1,7 @@
 //! Helpers for accessing account index information in the database
 
 use libmdbx::{RW, TransactionKind};
-use types_account::account::{Account, IntentIdentifier};
+use types_account::account::{Account, OrderId};
 use types_core::AccountId;
 use util::res_some;
 
@@ -30,17 +30,17 @@ impl<T: TransactionKind> StateTxn<'_, T> {
     /// Get the account ID managing a given intent
     pub fn get_account_id_for_intent(
         &self,
-        intent_id: &IntentIdentifier,
+        intent_id: &OrderId,
     ) -> Result<Option<AccountId>, StorageError> {
         self.inner()
-            .read::<_, IntentIdentifier>(INTENT_TO_WALLET_TABLE, intent_id)
+            .read::<_, OrderId>(INTENT_TO_WALLET_TABLE, intent_id)
             .map(|opt| opt.map(|archived| archived.deserialize()).transpose())?
     }
 
     /// Get the account for a given intent
     pub fn get_account_for_intent(
         &self,
-        intent_id: &IntentIdentifier,
+        intent_id: &OrderId,
     ) -> Result<Option<AccountValue<'_>>, StorageError> {
         let account_id = res_some!(self.get_account_id_for_intent(intent_id)?);
         self.get_account(&account_id)
@@ -70,7 +70,7 @@ impl StateTxn<'_, RW> {
     pub fn index_intents(
         &self,
         account_id: &AccountId,
-        intents: &[IntentIdentifier],
+        intents: &[OrderId],
     ) -> Result<(), StorageError> {
         for intent in intents.iter() {
             self.inner().write(INTENT_TO_WALLET_TABLE, intent, account_id)?;
@@ -86,7 +86,7 @@ impl StateTxn<'_, RW> {
 
 #[cfg(test)]
 mod test {
-    use types_account::account::{Account, IntentIdentifier};
+    use types_account::account::{Account, OrderId};
     use types_core::AccountId;
 
     use crate::{INTENT_TO_WALLET_TABLE, WALLETS_TABLE, test_helpers::mock_db};
@@ -120,9 +120,9 @@ mod test {
         db.create_table(INTENT_TO_WALLET_TABLE).unwrap();
 
         // Write the mapping
-        let intent_id1 = IntentIdentifier::new_v4();
-        let intent_id2 = IntentIdentifier::new_v4();
-        let intent_id3 = IntentIdentifier::new_v4();
+        let intent_id1 = OrderId::new_v4();
+        let intent_id2 = OrderId::new_v4();
+        let intent_id3 = OrderId::new_v4();
         let account_id1 = AccountId::new_v4();
         let account_id2 = AccountId::new_v4();
 

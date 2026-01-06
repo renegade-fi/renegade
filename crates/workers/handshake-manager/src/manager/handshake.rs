@@ -4,7 +4,7 @@
 //!     2. Order selection
 //!     3. State management
 
-use common::types::wallet::IntentIdentifier;
+use types_account::account::OrderId;
 use types_gossip::handshake::ConnectionRole;
 use gossip_api::{
     pubsub::{
@@ -42,7 +42,7 @@ impl HandshakeExecutor {
     /// Perform a handshake with a peer
     pub async fn perform_handshake(
         &self,
-        peer_order_id: IntentIdentifier,
+        peer_order_id: OrderId,
     ) -> Result<(), HandshakeManagerError> {
         if let Some(local_order_id) = self.choose_match_proposal(peer_order_id).await {
             // Choose a peer to match this order with
@@ -272,8 +272,8 @@ impl HandshakeExecutor {
     fn reject_match_proposal(
         &self,
         request_id: Uuid,
-        peer_order: IntentIdentifier,
-        local_order: IntentIdentifier,
+        peer_order: OrderId,
+        local_order: OrderId,
         reason: MatchRejectionReason,
     ) -> Result<HandshakeMessage, HandshakeManagerError> {
         let message = HandshakeMessage {

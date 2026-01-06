@@ -1,7 +1,7 @@
 //! Helpers for working with the integration node's state
 
 use types_runtime::MatchingPoolName;
-use types_account::account::IntentIdentifier;
+use types_account::account::OrderId;
 use eyre::Result;
 use state::State;
 
@@ -41,7 +41,7 @@ impl IntegrationTestCtx {
     /// Move a given order into the given matching pool
     pub async fn move_order_into_pool(
         &self,
-        oid: IntentIdentifier,
+        oid: OrderId,
         pool: MatchingPoolName,
     ) -> Result<()> {
         let state = self.state();

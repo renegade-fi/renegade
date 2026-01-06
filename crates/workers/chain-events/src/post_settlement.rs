@@ -8,7 +8,7 @@ use crate::error::OnChainEventListenerError;
 use crate::listener::OnChainEventListenerExecutor;
 use circuit_types::{fees::FeeTake, fixed_point::FixedPoint, r#match::ExternalMatchResult};
 use types_core::price::TimestampedPrice;
-use types_account::account::{IntentIdentifier, WalletIdentifier, order_metadata::OrderState};
+use types_account::account::{OrderId, WalletIdentifier, order_metadata::OrderState};
 use constants::DEFAULT_EXTERNAL_MATCH_RELAYER_FEE;
 use job_types::event_manager::{ExternalFillEvent, RelayerEventType, try_send_event};
 use renegade_metrics;
@@ -55,7 +55,7 @@ impl OnChainEventListenerExecutor {
     /// Record the internal fill and update the order metadata
     pub(crate) async fn record_order_fill(
         &self,
-        order_id: IntentIdentifier,
+        order_id: OrderId,
         ctx: &PostSettlementCtx,
     ) -> Result<(), OnChainEventListenerError> {
         let match_result = ctx.external_match_result.to_match_result();
@@ -87,7 +87,7 @@ impl OnChainEventListenerExecutor {
     /// Emit `ExternalFill` relayer event
     pub(crate) fn emit_event(
         &self,
-        order_id: IntentIdentifier,
+        order_id: OrderId,
         ctx: &PostSettlementCtx,
     ) -> Result<(), OnChainEventListenerError> {
         let fee_take = internal_fee_take(&ctx.external_match_result);

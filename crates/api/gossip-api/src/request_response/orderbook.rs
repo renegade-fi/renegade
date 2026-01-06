@@ -1,13 +1,13 @@
 //! Types for request response about order book info
 
 use serde::{Deserialize, Serialize};
-use types_account::account::IntentIdentifier;
+use types_account::account::OrderId;
 
 /// The message type used to request order information from a peer
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct OrderInfoRequest {
     /// The IDs of the orders
-    pub order_ids: Vec<IntentIdentifier>,
+    pub order_ids: Vec<OrderId>,
 }
 
 /// The message type used to response with order information to a peer

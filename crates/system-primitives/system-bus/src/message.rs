@@ -2,7 +2,7 @@
 
 use darkpool_types::bounded_match_result::BoundedMatchResult;
 use external_api::{http::task::ApiTaskStatus, types::ApiHistoricalTask};
-use types_account::account::{Account, IntentIdentifier};
+use types_account::account::{Account, OrderId};
 use types_core::{AccountId, Token};
 use types_gossip::{PeerInfo, WrappedPeerId};
 use types_tasks::TaskIdentifier;
@@ -65,18 +65,18 @@ pub enum SystemBusMessage {
     /// A message indicating that a handshake with a peer has started
     HandshakeInProgress {
         /// The order_id of the local party
-        local_order_id: IntentIdentifier,
+        local_order_id: OrderId,
         /// The order_id of the remote peer
-        peer_order_id: IntentIdentifier,
+        peer_order_id: OrderId,
         /// The timestamp of the event
         timestamp: u64,
     },
     /// A message indicating that a handshake with a peer has completed
     HandshakeCompleted {
         /// The order_id of the local party
-        local_order_id: IntentIdentifier,
+        local_order_id: OrderId,
         /// The order_id of the remote peer
-        peer_order_id: IntentIdentifier,
+        peer_order_id: OrderId,
         /// The timestamp of the event
         timestamp: u64,
     },

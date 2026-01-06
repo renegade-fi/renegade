@@ -21,7 +21,7 @@ use rand::{
 };
 use system_bus::SystemBusMessage;
 use tracing::instrument;
-use types_account::account::{IntentIdentifier, Pair};
+use types_account::account::{OrderId, Pair};
 use types_gossip::WrappedPeerId;
 use types_runtime::MatchingPoolName;
 use util::{res_some, telemetry::helpers::backfill_trace_field};
@@ -44,7 +44,7 @@ impl StateInner {
     // -----------
 
     /// Returns whether or not the state contains a given order
-    pub async fn contains_order(&self, order_id: &IntentIdentifier) -> Result<bool, StateError> {
+    pub async fn contains_order(&self, order_id: &OrderId) -> Result<bool, StateError> {
         let oid = *order_id;
         self.with_read_tx(move |tx| {
             let contains = tx.contains_order(&oid)?;
@@ -54,10 +54,7 @@ impl StateInner {
     }
 
     /// Get an order
-    pub async fn get_order(
-        &self,
-        order_id: &IntentIdentifier,
-    ) -> Result<Option<NetworkOrder>, StateError> {
+    pub async fn get_order(&self, order_id: &OrderId) -> Result<Option<NetworkOrder>, StateError> {
         let oid = *order_id;
         self.with_read_tx(move |tx| {
             let info = tx.get_order_info(&oid)?;
@@ -71,7 +68,7 @@ impl StateInner {
     /// Returns `None` for the orders that are not in the state
     pub async fn get_orders_batch(
         &self,
-        order_ids: &[IntentIdentifier],
+        order_ids: &[OrderId],
     ) -> Result<Vec<NetworkOrderInfo>, StateError> {
         let order_ids = order_ids.to_vec();
         self.with_read_tx(move |tx| {
@@ -91,7 +88,7 @@ impl StateInner {
     /// Get the nullifier for an order
     pub async fn get_nullifier_for_order(
         &self,
-        order_id: &IntentIdentifier,
+        order_id: &OrderId,
     ) -> Result<Option<Nullifier>, StateError> {
         let oid = *order_id;
         self.with_read_tx(move |tx| {
@@ -104,7 +101,7 @@ impl StateInner {
     /// Get the validity proofs for an order
     pub async fn get_validity_proofs(
         &self,
-        order_id: &IntentIdentifier,
+        order_id: &OrderId,
     ) -> Result<Option<OrderValidityProofBundle>, StateError> {
         let oid = *order_id;
         self.with_read_tx(move |tx| tx.get_validity_proof_bundle(&oid).map_err(Into::into)).await
@@ -113,7 +110,7 @@ impl StateInner {
     /// Get the validity proof witness for an order
     pub async fn get_validity_proof_witness(
         &self,
-        order_id: &IntentIdentifier,
+        order_id: &OrderId,
     ) -> Result<Option<OrderValidityWitnessBundle>, StateError> {
         let oid = *order_id;
         self.with_read_tx(move |tx| tx.get_validity_proof_witness(&oid).map_err(Into::into)).await
@@ -122,17 +119,14 @@ impl StateInner {
     /// Get the cancellation proof for an order
     pub async fn get_cancellation_proof(
         &self,
-        order_id: &IntentIdentifier,
+        order_id: &OrderId,
     ) -> Result<Option<ValidWalletUpdateBundle>, StateError> {
         let oid = *order_id;
         self.with_read_tx(move |tx| tx.get_cancellation_proof(&oid).map_err(Into::into)).await
     }
 
     /// Return whether the given order is ready for a match
-    pub async fn order_ready_for_match(
-        &self,
-        order_id: &IntentIdentifier,
-    ) -> Result<bool, StateError> {
+    pub async fn order_ready_for_match(&self, order_id: &OrderId) -> Result<bool, StateError> {
         let oid = *order_id;
         self.with_read_tx(move |tx| {
             let info = tx.get_order_info(&oid)?.ok_or(StateError::Db(StorageError::NotFound(
@@ -168,8 +162,8 @@ impl StateInner {
     /// Given a list of order IDs, return the subset that are not in the state
     pub async fn get_missing_orders(
         &self,
-        order_ids: &[IntentIdentifier],
-    ) -> Result<Vec<IntentIdentifier>, StateError> {
+        order_ids: &[OrderId],
+    ) -> Result<Vec<OrderId>, StateError> {
         let oids = order_ids.to_vec();
         self.with_read_tx(move |tx| {
             let mut missing = Vec::new();
@@ -188,7 +182,7 @@ impl StateInner {
     /// Sample a peer in the cluster managing an order
     pub async fn get_peer_managing_order(
         &self,
-        order_id: &IntentIdentifier,
+        order_id: &OrderId,
     ) -> Result<Option<WrappedPeerId>, StateError> {
         let oid = *order_id;
         self.with_read_tx(move |tx| {
@@ -207,7 +201,7 @@ impl StateInner {
     pub async fn get_matchable_orders(
         &self,
         filter: OrderBookFilter,
-    ) -> Result<Vec<IntentIdentifier>, StateError> {
+    ) -> Result<Vec<OrderId>, StateError> {
         let candidates = self.order_cache.get_intents(filter);
         backfill_trace_field("num_candidates", candidates.len());
         let filtered = self.filter_matchable_orders(candidates, None /* matching_pool */)?;
@@ -218,7 +212,7 @@ impl StateInner {
 
     /// Get a list of order IDs that are locally managed and ready for match
     #[instrument(name = "get_locally_matchable_orders", skip_all)]
-    pub async fn get_all_matchable_orders(&self) -> Result<Vec<IntentIdentifier>, StateError> {
+    pub async fn get_all_matchable_orders(&self) -> Result<Vec<OrderId>, StateError> {
         let candidates = self.order_cache.get_all_intents();
         self.filter_matchable_orders(candidates, None /* matching_pool */)
     }
@@ -230,7 +224,7 @@ impl StateInner {
         &self,
         matching_pool: MatchingPoolName,
         filter: OrderBookFilter,
-    ) -> Result<Vec<IntentIdentifier>, StateError> {
+    ) -> Result<Vec<OrderId>, StateError> {
         let candidates = self.order_cache.get_intents(filter);
         backfill_trace_field("num_candidates", candidates.len());
         let filtered = self.filter_matchable_orders(candidates, Some(matching_pool))?;
@@ -244,7 +238,7 @@ impl StateInner {
     pub async fn get_all_orders_in_matching_pool(
         &self,
         matching_pool: MatchingPoolName,
-    ) -> Result<Vec<IntentIdentifier>, StateError> {
+    ) -> Result<Vec<OrderId>, StateError> {
         let candidates = self.order_cache.get_all_intents();
         self.filter_matchable_orders(candidates, Some(matching_pool))
     }
@@ -256,9 +250,9 @@ impl StateInner {
     /// - Filters out orders in incorrect matching pools
     fn filter_matchable_orders(
         &self,
-        orders: Vec<IntentIdentifier>,
+        orders: Vec<OrderId>,
         matching_pool: Option<MatchingPoolName>,
-    ) -> Result<Vec<IntentIdentifier>, StateError> {
+    ) -> Result<Vec<OrderId>, StateError> {
         self.with_blocking_read_tx(move |tx| {
             let mut res = Vec::new();
             for id in orders.into_iter() {
@@ -281,7 +275,7 @@ impl StateInner {
     /// Choose an order to handshake with according to their priorities
     ///
     /// TODO(@joeykraut): Optimize this method when implementing multi-cluster
-    pub async fn choose_handshake_order(&self) -> Result<Option<IntentIdentifier>, StateError> {
+    pub async fn choose_handshake_order(&self) -> Result<Option<OrderId>, StateError> {
         self.with_read_tx(|tx| {
             // Get all orders and filter by those that are not managed internally and ready
             // for match
@@ -339,7 +333,7 @@ impl StateInner {
     /// Add a validity proof to an order
     pub async fn add_order_validity_proof(
         &self,
-        order_id: IntentIdentifier,
+        order_id: OrderId,
         proof: OrderValidityProofBundle,
     ) -> Result<(), StateError> {
         let bus = self.bus.clone();
@@ -365,7 +359,7 @@ impl StateInner {
     /// Add a validity proof and witness to an order managed by the local node
     pub async fn add_local_order_validity_bundle(
         &self,
-        order_id: IntentIdentifier,
+        order_id: OrderId,
         proof: OrderValidityProofBundle,
         witness: OrderValidityWitnessBundle,
     ) -> Result<ProposalWaiter, StateError> {
@@ -376,14 +370,14 @@ impl StateInner {
     /// Add cancellation proofs for a batch of orders managed by the local node
     pub async fn add_local_order_cancellation_proofs(
         &self,
-        proofs: Vec<(IntentIdentifier, ValidWalletUpdateBundle)>,
+        proofs: Vec<(OrderId, ValidWalletUpdateBundle)>,
     ) -> Result<ProposalWaiter, StateError> {
         self.send_proposal(StateTransition::AddOrderCancellationProofs { proofs }).await
     }
 
     /// Nullify all orders on the given nullifier
     pub async fn nullify_orders(&self, nullifier: Nullifier) -> Result<(), StateError> {
-        let order_ids: Vec<IntentIdentifier> = self
+        let order_ids: Vec<OrderId> = self
             .with_write_tx(move |tx| {
                 let order_ids = tx.nullify_orders(nullifier)?;
                 Ok(order_ids)
@@ -406,7 +400,7 @@ impl StateInner {
 impl StateInner {
     /// Checks whether a given serial task queue is free, for a given order
     fn is_serial_queue_free<T: TransactionKind>(
-        order_id: &IntentIdentifier,
+        order_id: &OrderId,
         tx: &StateTxn<T>,
     ) -> Result<bool, StateError> {
         // Check that there are no tasks in the queue for the containing wallet

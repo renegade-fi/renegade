@@ -6,7 +6,7 @@ use super::error::HandshakeManagerError;
 use common::types::handshake::HandshakeState;
 use types_gossip::handshake::ConnectionRole;
 use types_core::price::TimestampedPrice;
-use types_account::account::IntentIdentifier;
+use types_account::account::OrderId;
 use constants::Scalar;
 use crossbeam::channel::Sender;
 use state::State;
@@ -51,8 +51,8 @@ impl HandshakeStateIndex {
         &self,
         request_id: Uuid,
         role: ConnectionRole,
-        peer_order_id: IntentIdentifier,
-        local_order_id: IntentIdentifier,
+        peer_order_id: OrderId,
+        local_order_id: OrderId,
         execution_price: TimestampedPrice,
     ) -> Result<(), HandshakeManagerError> {
         // Lookup the public share nullifiers for the order

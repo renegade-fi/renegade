@@ -1,6 +1,6 @@
 //! Groups API definitions for handshake request response
 use std::collections::HashMap;
-use types_account::account::IntentIdentifier;
+use types_account::account::OrderId;
 use types_core::{TimestampedPrice, Token};
 use types_gossip::WrappedPeerId;
 use uuid::Uuid;
@@ -65,9 +65,9 @@ pub struct ProposeMatchCandidate {
     /// The ID of the peer proposing a match candidate
     pub peer_id: WrappedPeerId,
     /// The recipient's order that the sender is proposing a match with
-    pub peer_order: IntentIdentifier,
+    pub peer_order: OrderId,
     /// The sender's order that it wishes to match against the receiver's
-    pub sender_order: IntentIdentifier,
+    pub sender_order: OrderId,
     /// The vector of prices that the sender is proposing to the receiver
     pub price_vector: PriceVector,
 }
@@ -84,10 +84,10 @@ pub struct RejectMatchCandidate {
     pub peer_id: WrappedPeerId,
     /// The recipient's order, i.e. the order that the proposer used from
     /// their own managed book
-    pub peer_order: IntentIdentifier,
+    pub peer_order: OrderId,
     /// The order of the sender, i.e. the peer that rejects the match
     /// proposal
-    pub sender_order: IntentIdentifier,
+    pub sender_order: OrderId,
     /// The reason that the rejecting peer is rejecting the proposal
     pub reason: MatchRejectionReason,
 }
@@ -113,7 +113,7 @@ pub struct AcceptMatchCandidate {
     /// The port that the sender can be dialed on to begin the request
     pub port: u16,
     /// The first order to attempt to match
-    pub order1: IntentIdentifier,
+    pub order1: OrderId,
     /// The second order to attempt to match
-    pub order2: IntentIdentifier,
+    pub order2: OrderId,
 }

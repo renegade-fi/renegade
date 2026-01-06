@@ -22,7 +22,7 @@ use common::types::proof_bundles::{
     OrderValidityProofBundle, OrderValidityWitnessBundle, ProofBundle,
 };
 use types_core::token::Token;
-use types_account::account::{IntentIdentifier, Wallet};
+use types_account::account::{OrderId, Wallet};
 use gossip_api::pubsub::PubsubMessage;
 use gossip_api::pubsub::orderbook::{ORDER_BOOK_TOPIC, OrderBookManagementMessage};
 use job_types::network_manager::NetworkManagerJob;
@@ -308,7 +308,7 @@ fn get_relayer_fee_for_order(
 /// bundle and schedule matches on the proven order
 #[instrument(skip_all)]
 async fn link_and_store_proofs(
-    order_id: &IntentIdentifier,
+    order_id: &OrderId,
     commitments_witness: &SizedValidCommitmentsWitness,
     reblind_witness: &SizedValidReblindWitness,
     commitments_bundle: ProofBundle,

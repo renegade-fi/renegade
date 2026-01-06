@@ -21,7 +21,7 @@ use types_tasks::{
     SettleExternalMatchTaskDescriptor, SettleMalleableExternalMatchTaskDescriptor,
     TaskDescriptor,
 };
-use types_account::account::{Order, IntentIdentifier};
+use types_account::account::{Order, OrderId};
 use constants::Scalar;
 use system_bus::SystemBusMessage;
 use job_types::handshake_manager::ExternalMatchingEngineOptions;
@@ -167,7 +167,7 @@ impl HandshakeExecutor {
         &self,
         order: &Order,
         matching_pool: Option<MatchingPoolName>,
-    ) -> Result<HashSet<IntentIdentifier>, HandshakeManagerError> {
+    ) -> Result<HashSet<OrderId>, HandshakeManagerError> {
         let filter = matching_order_filter(order, true /* external */);
         let candidates = match matching_pool {
             Some(pool) => self.state.get_matchable_orders_in_matching_pool(pool, filter).await?,
@@ -181,7 +181,7 @@ impl HandshakeExecutor {
     /// Handle a match against an order
     async fn handle_match(
         &self,
-        order_id: IntentIdentifier,
+        order_id: OrderId,
         ts_price: TimestampedPriceFp,
         match_res: MatchResult,
         response_topic: String,
@@ -199,7 +199,7 @@ impl HandshakeExecutor {
     /// Handle an exact match result on the given order
     async fn handle_exact_match(
         &self,
-        other_order_id: IntentIdentifier,
+        other_order_id: OrderId,
         ts_price: TimestampedPriceFp,
         match_res: MatchResult,
         response_topic: String,
@@ -234,7 +234,7 @@ impl HandshakeExecutor {
     /// Settle an external match
     async fn try_settle_external_match(
         &self,
-        internal_order_id: IntentIdentifier,
+        internal_order_id: OrderId,
         ts_price: TimestampedPriceFp,
         match_res: MatchResult,
         response_topic: String,
@@ -261,7 +261,7 @@ impl HandshakeExecutor {
     /// and forward the task to the task driver to create a bundle.
     async fn handle_bounded_match(
         &self,
-        order_id: IntentIdentifier,
+        order_id: OrderId,
         ts_price: TimestampedPriceFp,
         match_res: MatchResult,
         response_topic: String,
@@ -294,7 +294,7 @@ impl HandshakeExecutor {
     /// Try settling a malleable match
     async fn try_settle_bounded_match(
         &self,
-        order_id: IntentIdentifier,
+        order_id: OrderId,
         bounded_res: BoundedMatchResult,
         response_topic: String,
         options: &ExternalMatchingEngineOptions,
@@ -316,7 +316,7 @@ impl HandshakeExecutor {
     /// Returns a tuple containing `(min_amount, max_amount)`
     async fn derive_match_bounds(
         &self,
-        order_id: &IntentIdentifier,
+        order_id: &OrderId,
         price: FixedPoint,
         match_amt: Amount,
     ) -> Result<(Amount, Amount), HandshakeManagerError> {

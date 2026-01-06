@@ -11,7 +11,7 @@ use circuits_core::{
 };
 use types_gossip::ClusterId;
 use common::types::{network_order::NetworkOrder, proof_bundles::OrderValidityProofBundle};
-use types_account::account::IntentIdentifier;
+use types_account::account::OrderId;
 use futures::executor::block_on;
 use gossip_api::{
     pubsub::orderbook::OrderBookManagementMessage,
@@ -39,7 +39,7 @@ impl GossipProtocolExecutor {
     /// Handles a request for order information from a peer
     pub(crate) async fn handle_order_info_request(
         &self,
-        order_ids: &[IntentIdentifier],
+        order_ids: &[OrderId],
     ) -> Result<GossipResponseType, GossipError> {
         let order_info = self.state.get_orders_batch(order_ids).await?;
         let resp = OrderInfoResponse { order_info };
@@ -118,7 +118,7 @@ impl GossipProtocolExecutor {
     /// Handles a newly discovered order added to the book
     async fn handle_new_order(
         &self,
-        order_id: IntentIdentifier,
+        order_id: OrderId,
         nullifier: Nullifier,
         cluster: ClusterId,
     ) -> Result<(), GossipError> {
@@ -140,7 +140,7 @@ impl GossipProtocolExecutor {
     /// contract state, e.g. merkle root, nullifiers, etc.
     async fn handle_new_validity_proof(
         &self,
-        order_id: IntentIdentifier,
+        order_id: OrderId,
         cluster: ClusterId,
         proof_bundle: OrderValidityProofBundle,
     ) -> Result<(), GossipError> {

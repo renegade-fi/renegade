@@ -9,7 +9,7 @@ use darkpool_types::intent::Intent;
 use gossip_api::request_response::{AuthenticatedGossipResponse, handshake::HandshakeMessage};
 use libp2p::request_response::ResponseChannel;
 use system_bus::gen_atomic_match_response_topic;
-use types_account::{IntentIdentifier, MatchingPoolName};
+use types_account::{MatchingPoolName, OrderId};
 use types_core::TimestampedPrice;
 use types_gossip::WrappedPeerId;
 use util::channels::{TracedTokioReceiver, TracedTokioSender, new_traced_tokio_channel};
@@ -37,7 +37,7 @@ pub enum HandshakeManagerJob {
     /// the local peer
     InternalMatchingEngine {
         /// The order to match
-        order: IntentIdentifier,
+        order: OrderId,
     },
     /// Run the external matching engine on the given order
     ExternalMatchingEngine {
@@ -69,7 +69,7 @@ pub enum HandshakeManagerJob {
     /// A request to initiate a handshake with a scheduled peer
     PerformHandshake {
         /// The order to attempt a handshake on
-        order: IntentIdentifier,
+        order: OrderId,
     },
 
     // --- Caching --- //
@@ -77,9 +77,9 @@ pub enum HandshakeManagerJob {
     /// cluster peer has executed
     CacheEntry {
         /// The first of the orders matched
-        order1: IntentIdentifier,
+        order1: OrderId,
         /// The second of the orders matched
-        order2: IntentIdentifier,
+        order2: OrderId,
     },
     /// Indicates that the local peer should halt any MPCs active on the given
     /// nullifier
@@ -97,9 +97,9 @@ pub enum HandshakeManagerJob {
     /// match for some duration
     PeerMatchInProgress {
         /// The first of the orders in the pair
-        order1: IntentIdentifier,
+        order1: OrderId,
         /// The second of the orders in the pair
-        order2: IntentIdentifier,
+        order2: OrderId,
     },
 
     // --- Networking --- //
