@@ -1,11 +1,18 @@
 //! Storage helpers for relayer fees
 
 use circuit_types::fixed_point::FixedPoint;
+use darkpool_types::rkyv_remotes::FixedPointDef;
 use libmdbx::{RW, TransactionKind};
 
-use crate::{RELAYER_FEES_TABLE, storage::error::StorageError};
+use crate::{
+    RELAYER_FEES_TABLE,
+    storage::{error::StorageError, traits::RkyvWith},
+};
 
 use super::StateTxn;
+
+/// A type alias for a with-wrapped fixed point
+type WithFixedPoint = RkyvWith<FixedPoint, FixedPointDef>;
 
 /// Construct a key for a wallet's relayer fee
 fn relayer_fee_key(ticker: &str) -> String {
@@ -22,9 +29,9 @@ impl<T: TransactionKind> StateTxn<'_, T> {
     /// Defaults to the default relayer fee if no fee is set
     pub fn get_relayer_fee(&self, ticker: &str) -> Result<FixedPoint, StorageError> {
         let key = relayer_fee_key(ticker);
-        let maybe_fee = self.inner().read(RELAYER_FEES_TABLE, &key)?;
+        let maybe_fee = self.inner().read::<_, WithFixedPoint>(RELAYER_FEES_TABLE, &key)?;
         let fee = match maybe_fee {
-            Some(fee) => fee,
+            Some(fee) => fee.deserialize_with()?,
             None => self.get_default_relayer_fee()?,
         };
 
@@ -40,7 +47,8 @@ impl StateTxn<'_, RW> {
     /// Set the relayer fee for a ticker
     pub fn set_asset_relayer_fee(&self, ticker: &str, fee: FixedPoint) -> Result<(), StorageError> {
         let key = relayer_fee_key(ticker);
-        self.inner().write(RELAYER_FEES_TABLE, &key, &fee)
+        let wrapped = WithFixedPoint::cast(&fee);
+        self.inner().write(RELAYER_FEES_TABLE, &key, wrapped)
     }
 }
 

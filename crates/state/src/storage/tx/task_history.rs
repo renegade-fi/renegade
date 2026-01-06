@@ -52,7 +52,8 @@ impl<T: TransactionKind> StateTxn<'_, T> {
         let mut tasks = Vec::new();
         for task_id in ids.iter() {
             let item_key = task_history_item_key(key, task_id);
-            let task_value = self.inner.read::<_, HistoricalTask>(TASK_HISTORY_TABLE, &item_key)?;
+            let task_value =
+                self.inner().read::<_, HistoricalTask>(TASK_HISTORY_TABLE, &item_key)?;
 
             if let Some(v) = task_value {
                 tasks.push(v);
@@ -79,7 +80,7 @@ impl<T: TransactionKind> StateTxn<'_, T> {
     fn check_task_history_enabled(&self) -> Result<(), StorageError> {
         // If the flag doesn't exist, treat it as disabled
         let enabled_value = self
-            .inner
+            .inner()
             .read::<_, bool>(NODE_METADATA_TABLE, &HISTORICAL_STATE_ENABLED_KEY.to_string())?;
 
         if enabled_value.is_none() || !*enabled_value.unwrap() {
@@ -99,7 +100,7 @@ impl<T: TransactionKind> StateTxn<'_, T> {
         // Fetch a list of the tasks in history
         let history_key = task_history_key(key);
         let ids_value =
-            self.inner.read::<_, Vec<TaskIdentifier>>(TASK_HISTORY_TABLE, &history_key)?;
+            self.inner().read::<_, Vec<TaskIdentifier>>(TASK_HISTORY_TABLE, &history_key)?;
 
         Ok(ids_value)
     }
@@ -120,7 +121,7 @@ impl StateTxn<'_, RW> {
 
         // Write the task individually
         let item_key = task_history_item_key(key, &task.id);
-        self.inner.write(TASK_HISTORY_TABLE, &item_key, task)?;
+        self.inner().write(TASK_HISTORY_TABLE, &item_key, task)?;
 
         // Update the history list (just IDs)
         let ids_value = self.get_task_ids_in_history(key)?;
@@ -128,7 +129,7 @@ impl StateTxn<'_, RW> {
 
         // Insert at the front to keep the most recent tasks first
         task_ids.insert(0, task.id);
-        self.inner.write(TASK_HISTORY_TABLE, &task_history_key(key), &task_ids)?;
+        self.inner().write(TASK_HISTORY_TABLE, &task_history_key(key), &task_ids)?;
 
         Ok(())
     }
@@ -144,11 +145,11 @@ impl StateTxn<'_, RW> {
         // Delete each individual task
         for task_id in task_ids {
             let item_key = task_history_item_key(key, &task_id);
-            self.inner.delete(TASK_HISTORY_TABLE, &item_key)?;
+            self.inner().delete(TASK_HISTORY_TABLE, &item_key)?;
         }
 
         // Delete the history list
-        self.inner.delete(TASK_HISTORY_TABLE, &history_key).map(|_| ())
+        self.inner().delete(TASK_HISTORY_TABLE, &history_key).map(|_| ())
     }
 }
 

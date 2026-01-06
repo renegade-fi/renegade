@@ -136,6 +136,9 @@ mod rkyv_impl {
     use libp2p::PeerId;
     use rkyv::{Archive, Deserialize, Serialize};
 
+    use std::hash::{Hash, Hasher};
+
+    use super::*;
     // -------------
     // | PeerIdDef |
     // -------------
@@ -188,9 +191,53 @@ mod rkyv_impl {
         }
     }
 
+    // --- Trait Implementations --- //
+
+    // The following implementations allow these types to be used as keys in
+    // zero-copy collections
+
     impl PartialEq<libp2p::multihash::MultihashGeneric<64>> for ArchivedMultihash {
         fn eq(&self, other: &libp2p::multihash::MultihashGeneric<64>) -> bool {
             self.code == other.code() && self.digest == other.digest().to_vec()
+        }
+    }
+
+    impl Hash for ArchivedMultihash {
+        fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+            self.code.hash(state);
+            self.digest.hash(state);
+        }
+    }
+
+    impl Hash for ArchivedPeerId {
+        fn hash<H: Hasher>(&self, state: &mut H) {
+            self.multihash.hash(state);
+        }
+    }
+
+    impl PartialEq for ArchivedMultihash {
+        fn eq(&self, other: &ArchivedMultihash) -> bool {
+            self.code == other.code && self.digest == other.digest
+        }
+    }
+
+    impl PartialEq for ArchivedPeerId {
+        fn eq(&self, other: &ArchivedPeerId) -> bool {
+            self.multihash == other.multihash
+        }
+    }
+
+    impl PartialEq for ArchivedWrappedPeerId {
+        fn eq(&self, other: &ArchivedWrappedPeerId) -> bool {
+            self.0 == other.0
+        }
+    }
+
+    impl Eq for ArchivedWrappedPeerId {}
+
+    impl Hash for ArchivedWrappedPeerId {
+        fn hash<H: Hasher>(&self, state: &mut H) {
+            self.0.hash(state);
         }
     }
 }

@@ -1,8 +1,8 @@
 //! Helpers for accessing information about matching pools in the database
 
-use types_runtime::MatchingPoolName;
-use types_account::account::IntentIdentifier;
 use libmdbx::{RW, TransactionKind};
+use types_account::account::IntentIdentifier;
+use types_runtime::MatchingPoolName;
 
 use crate::{POOL_TABLE, storage::error::StorageError};
 
@@ -13,11 +13,13 @@ pub const GLOBAL_MATCHING_POOL: &str = "global";
 
 /// The prefix of all matching pool keys
 pub const POOL_KEY_PREFIX: &str = "matching-pool/";
+/// The prefix for pool existence keys
+pub const POOL_EXISTS_PREFIX: &str = "pool-exists/";
 
 /// The error message used when trying to create a matching pool that already
 /// exists
 pub const MATCHING_POOL_EXISTS_ERR: &str = "matching pool already exists";
-/// The error message used when assigning an order to a nonexistent matching
+/// The error message used when assigning an intent to a nonexistent matching
 /// pool
 pub const MATCHING_POOL_DOES_NOT_EXIST_ERR: &str = "matching pool does not exist";
 
@@ -25,14 +27,14 @@ pub const MATCHING_POOL_DOES_NOT_EXIST_ERR: &str = "matching pool does not exist
 // | Key Helpers |
 // ---------------
 
-/// The key for the set of all matching pools
-pub fn all_matching_pools_key() -> String {
-    "all-matching-pools".to_string()
+/// The key for checking if a pool exists
+pub fn pool_exists_key(pool_name: &str) -> String {
+    format!("{}{}", POOL_EXISTS_PREFIX, pool_name)
 }
 
-/// The key for the given order's matching pool
-pub fn matching_pool_key(order_id: &IntentIdentifier) -> String {
-    format!("{}{}", POOL_KEY_PREFIX, order_id)
+/// The key for the given intent's matching pool
+pub fn matching_pool_key(intent_id: &IntentIdentifier) -> String {
+    format!("{}{}", POOL_KEY_PREFIX, intent_id)
 }
 
 // -----------
@@ -40,16 +42,18 @@ pub fn matching_pool_key(order_id: &IntentIdentifier) -> String {
 // -----------
 
 impl<T: TransactionKind> StateTxn<'_, T> {
-    /// Get the name of the matching pool the given order is in, if it's been
-    /// assigned to one. If not explicitly assigned, the order is considered to
+    /// Get the name of the matching pool the given intent is in, if it's been
+    /// assigned to one. If not explicitly assigned, the intent is considered to
     /// be in the global matching pool.
-    pub fn get_matching_pool_for_order(
+    pub fn get_matching_pool_for_intent(
         &self,
-        order_id: &IntentIdentifier,
+        intent_id: &IntentIdentifier,
     ) -> Result<MatchingPoolName, StorageError> {
-        let pool_key = matching_pool_key(order_id);
+        let pool_key = matching_pool_key(intent_id);
         self.inner()
-            .read(POOL_TABLE, &pool_key)
+            .read::<_, MatchingPoolName>(POOL_TABLE, &pool_key)?
+            .map(|archived| archived.deserialize())
+            .transpose()
             .map(|pool| pool.unwrap_or(GLOBAL_MATCHING_POOL.to_string()))
     }
 
@@ -59,9 +63,9 @@ impl<T: TransactionKind> StateTxn<'_, T> {
             return Ok(true);
         }
 
-        let all_pools_key = all_matching_pools_key();
-        let all_pools: Vec<MatchingPoolName> = self.read_set(POOL_TABLE, &all_pools_key)?;
-        Ok(all_pools.contains(&pool_name.to_string()))
+        let pool_exists_key = pool_exists_key(pool_name);
+        let exists = self.inner().read::<_, bool>(POOL_TABLE, &pool_exists_key)?.is_some();
+        Ok(exists)
     }
 }
 
@@ -77,13 +81,13 @@ impl StateTxn<'_, RW> {
             return Err(StorageError::reject(MATCHING_POOL_EXISTS_ERR));
         }
 
-        let all_pools_key = all_matching_pools_key();
-        self.add_to_set(POOL_TABLE, &all_pools_key, &pool_name.to_string())
+        let pool_exists_key = pool_exists_key(pool_name);
+        self.inner().write(POOL_TABLE, &pool_exists_key, &true)
     }
 
     /// Destroy a matching pool
     pub fn destroy_matching_pool(&self, pool_name: &str) -> Result<(), StorageError> {
-        // Remove all the order assignments in the pool
+        // Remove all the intent assignments in the pool
         let cursor = self
             .inner()
             .cursor::<String, MatchingPoolName>(POOL_TABLE)?
@@ -91,23 +95,25 @@ impl StateTxn<'_, RW> {
 
         for entry in cursor.into_iter() {
             let (key, value) = entry?;
-            if value == pool_name {
-                self.inner().delete(POOL_TABLE, &key)?;
+            let pool_name_value = value.deserialize()?;
+            if pool_name_value == pool_name {
+                let key_deserialized = key.deserialize()?;
+                self.inner().delete(POOL_TABLE, &key_deserialized)?;
             }
         }
 
-        // Remove the pool from the set of all pools
-        let all_pools_key = all_matching_pools_key();
-        self.remove_from_set(POOL_TABLE, &all_pools_key, &pool_name.to_string())
+        // Delete the pool existence key
+        let pool_exists_key = pool_exists_key(pool_name);
+        self.inner().delete(POOL_TABLE, &pool_exists_key).map(|_| ())
     }
 
-    /// Assign an order to a matching pool.
+    /// Assign an intent to a matching pool.
     ///
-    /// Note that we allow overwriting an order's pool, this signifies moving
-    /// the order from one pool to another.
-    pub fn assign_order_to_matching_pool(
+    /// Note that we allow overwriting an intent's pool, this signifies moving
+    /// the intent from one pool to another.
+    pub fn assign_intent_to_matching_pool(
         &self,
-        order_id: &IntentIdentifier,
+        intent_id: &IntentIdentifier,
         pool_name: &str,
     ) -> Result<(), StorageError> {
         // Check that the pool exists
@@ -118,27 +124,27 @@ impl StateTxn<'_, RW> {
         // If assigning to the global pool, simply remove the existing assignment
         // (this is safe to do if an existing assignment does not exist)
         if pool_name == GLOBAL_MATCHING_POOL {
-            self.remove_order_from_matching_pool(order_id)
+            self.remove_intent_from_matching_pool(intent_id)
         } else {
-            let pool_key = matching_pool_key(order_id);
+            let pool_key = matching_pool_key(intent_id);
             self.inner().write(POOL_TABLE, &pool_key, &pool_name.to_string())
         }
     }
 
-    /// Remove an order's matching pool assignment, this implicitly moves the
-    /// order back to the global pool
-    pub fn remove_order_from_matching_pool(
+    /// Remove an intent's matching pool assignment, this implicitly moves the
+    /// intent back to the global pool
+    pub fn remove_intent_from_matching_pool(
         &self,
-        order_id: &IntentIdentifier,
+        intent_id: &IntentIdentifier,
     ) -> Result<(), StorageError> {
-        let pool_key = matching_pool_key(order_id);
+        let pool_key = matching_pool_key(intent_id);
         self.inner().delete(POOL_TABLE, &pool_key).map(|_| ())
     }
 }
 
 #[cfg(test)]
 mod test {
-    use common::types::wallet::IntentIdentifier;
+    use types_account::account::IntentIdentifier;
 
     use crate::test_helpers::mock_db;
 
@@ -210,35 +216,35 @@ mod test {
         assert!(!pool_exists);
     }
 
-    /// Tests assigning an order to a matching pool
+    /// Tests assigning an intent to a matching pool
     #[test]
-    fn test_assign_order_to_matching_pool() {
+    fn test_assign_intent_to_matching_pool() {
         let db = mock_db();
 
         let pool_name = TEST_POOL_NAME.to_string();
-        let order_id = IntentIdentifier::new_v4();
+        let intent_id = IntentIdentifier::new_v4();
 
         // Create a matching pool
         let tx = db.new_write_tx().unwrap();
         tx.create_matching_pool(&pool_name).unwrap();
         tx.commit().unwrap();
 
-        // Assign the order to the matching pool
+        // Assign the intent to the matching pool
         let tx = db.new_write_tx().unwrap();
-        tx.assign_order_to_matching_pool(&order_id, &pool_name).unwrap();
+        tx.assign_intent_to_matching_pool(&intent_id, &pool_name).unwrap();
         tx.commit().unwrap();
 
-        // Assert that the order is in the matching pool
+        // Assert that the intent is in the matching pool
         let tx = db.new_read_tx().unwrap();
-        let pool_for_order = tx.get_matching_pool_for_order(&order_id).unwrap();
+        let pool_for_intent = tx.get_matching_pool_for_intent(&intent_id).unwrap();
         tx.commit().unwrap();
 
-        assert_eq!(pool_for_order, pool_name);
+        assert_eq!(pool_for_intent, pool_name);
     }
 
-    /// Tests re-assigning an order to a different matching pool
+    /// Tests re-assigning an intent to a different matching pool
     #[test]
-    fn test_reassign_order_matching_pool() {
+    fn test_reassign_intent_matching_pool() {
         let db = mock_db();
 
         let pool_1_name = "pool-1".to_string();
@@ -250,36 +256,36 @@ mod test {
         tx.create_matching_pool(&pool_2_name).unwrap();
         tx.commit().unwrap();
 
-        let order_id = IntentIdentifier::new_v4();
+        let intent_id = IntentIdentifier::new_v4();
 
-        // Assign the order to the first matching pool
+        // Assign the intent to the first matching pool
         let tx = db.new_write_tx().unwrap();
-        tx.assign_order_to_matching_pool(&order_id, &pool_1_name).unwrap();
+        tx.assign_intent_to_matching_pool(&intent_id, &pool_1_name).unwrap();
         tx.commit().unwrap();
 
-        // Re-assign the order to the second matching pool
+        // Re-assign the intent to the second matching pool
         let tx = db.new_write_tx().unwrap();
-        tx.assign_order_to_matching_pool(&order_id, &pool_2_name).unwrap();
+        tx.assign_intent_to_matching_pool(&intent_id, &pool_2_name).unwrap();
         tx.commit().unwrap();
 
-        // Assert that the order is in the second matching pool
+        // Assert that the intent is in the second matching pool
         let tx = db.new_read_tx().unwrap();
-        let pool_for_order = tx.get_matching_pool_for_order(&order_id).unwrap();
+        let pool_for_intent = tx.get_matching_pool_for_intent(&intent_id).unwrap();
         tx.commit().unwrap();
 
-        assert_eq!(pool_for_order, pool_2_name);
+        assert_eq!(pool_for_intent, pool_2_name);
     }
 
     #[test]
-    fn test_assign_order_to_nonexistent_matching_pool() {
+    fn test_assign_intent_to_nonexistent_matching_pool() {
         let db = mock_db();
 
         let pool_name = TEST_POOL_NAME.to_string();
-        let order_id = IntentIdentifier::new_v4();
+        let intent_id = IntentIdentifier::new_v4();
 
-        // Try assigning the order to the matching pool (before creating it)
+        // Try assigning the intent to the matching pool (before creating it)
         let tx = db.new_write_tx().unwrap();
-        let res = tx.assign_order_to_matching_pool(&order_id, &pool_name);
+        let res = tx.assign_intent_to_matching_pool(&intent_id, &pool_name);
         tx.commit().unwrap();
 
         assert!(res.is_err());
