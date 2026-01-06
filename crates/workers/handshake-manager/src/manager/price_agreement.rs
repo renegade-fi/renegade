@@ -7,7 +7,7 @@ use types_core::{
     price::TimestampedPrice,
     token::{Token, get_all_base_tokens},
 };
-use types_account::account::IntentIdentifier;
+use types_account::account::OrderId;
 use gossip_api::request_response::handshake::PriceVector;
 use tracing::warn;
 use util::err_str;
@@ -61,7 +61,7 @@ impl HandshakeExecutor {
     pub(super) async fn validate_price_vector(
         &self,
         proposed_prices: &PriceVector,
-        my_order_id: &IntentIdentifier,
+        my_order_id: &OrderId,
     ) -> Result<bool, HandshakeManagerError> {
         // Find the price of the asset pair that the local party's order is on in the
         // peer's proposed prices list

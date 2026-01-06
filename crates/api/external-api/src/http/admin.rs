@@ -5,7 +5,7 @@
 // ---------------
 
 use serde::{Deserialize, Serialize};
-use types_account::account::IntentIdentifier;
+use types_account::account::OrderId;
 use types_runtime::MatchingPoolName;
 
 use crate::{
@@ -59,7 +59,7 @@ pub struct IsLeaderResponse {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct OpenOrdersResponse {
     /// The open order IDs
-    pub orders: Vec<IntentIdentifier>,
+    pub orders: Vec<OrderId>,
 }
 
 /// The request type to add a new order to a given wallet, within a non-global
@@ -96,5 +96,5 @@ pub struct AdminGetOrderMatchingPoolResponse {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AdminWalletMatchableOrderIdsResponse {
     /// The order IDs
-    pub order_ids: Vec<IntentIdentifier>,
+    pub order_ids: Vec<OrderId>,
 }

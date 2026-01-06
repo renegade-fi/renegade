@@ -10,9 +10,9 @@ use serde::{Deserialize, Serialize};
 #[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Pair {
     /// The input token on the pair
-    in_token: Address,
+    pub in_token: Address,
     /// The output token on the pair
-    out_token: Address,
+    pub out_token: Address,
 }
 
 impl Pair {

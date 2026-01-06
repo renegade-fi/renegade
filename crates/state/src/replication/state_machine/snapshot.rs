@@ -567,7 +567,7 @@ mod tests {
     // #[tokio::test]
     // async fn test_apply_snapshot_order_cache() {
     //     use std::sync::Arc;
-    //     use types_account::account::IntentIdentifier;
+    //     use types_account::account::OrderId;
     //     use types_account::account::mocks::mock_intent;
     //     // use crate::caching::order_cache::OrderBookFilter;
     //
@@ -579,9 +579,9 @@ mod tests {
     // is ready for match     // The second does not allow external matches,
     // but is ready for matching     // The third is neither ready for
     // matching nor allows external matches     let oid1 =
-    // IntentIdentifier::new_v4();     let oid2 =
-    // IntentIdentifier::new_v4();     let oid3 =
-    // IntentIdentifier::new_v4();     // NOTE: Order types with
+    // OrderId::new_v4();     let oid2 =
+    // OrderId::new_v4();     let oid3 =
+    // OrderId::new_v4();     // NOTE: Order types with
     // allow_external_matches are not currently used     // let mut order1 =
     // mock_order();     // let mut order2 = mock_order();
     //     // let mut order3 = mock_order();

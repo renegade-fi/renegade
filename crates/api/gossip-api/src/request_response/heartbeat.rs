@@ -1,6 +1,6 @@
 //! Groups API definitions for heartbeat requests and responses
 
-use types_account::account::IntentIdentifier;
+use types_account::account::OrderId;
 use types_gossip::{PeerInfo, WrappedPeerId};
 
 use serde::{Deserialize, Serialize};
@@ -12,7 +12,7 @@ pub struct HeartbeatMessage {
     /// The list of peer IDs known to the sending node
     pub known_peers: Vec<WrappedPeerId>,
     /// The list of orders known to the sending node
-    pub known_orders: Vec<IntentIdentifier>,
+    pub known_orders: Vec<OrderId>,
 }
 
 /// Defines a request to bootstrap the cluster state from the recipient

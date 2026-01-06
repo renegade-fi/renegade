@@ -6,7 +6,7 @@ use circuit_types::{
     Amount, balance::Balance, fixed_point::FixedPoint, max_amount, max_price, order::OrderSide,
 };
 use common::types::proof_bundles::mocks::{dummy_validity_proof_bundle, dummy_validity_witness_bundle};
-use types_account::account::{Order, IntentIdentifier, Wallet, mocks::mock_empty_wallet};
+use types_account::account::{Order, OrderId, Wallet, mocks::mock_empty_wallet};
 use external_api::http::external_match::ExternalOrder;
 use eyre::Result;
 
@@ -25,7 +25,7 @@ impl IntegrationTestCtx {
     /// Setup a well capitalized wallet with the given order
     pub async fn setup_wallet_with_order(&self, order: Order) -> Result<Wallet> {
         let mut wallet = mock_empty_wallet();
-        let oid = IntentIdentifier::new_v4();
+        let oid = OrderId::new_v4();
         wallet.add_order(oid, order.clone()).to_eyre()?;
 
         // Add a balance to capitalize the order
@@ -81,7 +81,7 @@ impl IntegrationTestCtx {
     /// Add a validity proof bundle to the state for the given order
     async fn add_validity_proof_bundle(
         &self,
-        order_id: IntentIdentifier,
+        order_id: OrderId,
         order: Order,
     ) -> Result<()> {
         let bundle = dummy_validity_proof_bundle();

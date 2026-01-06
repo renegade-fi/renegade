@@ -1,6 +1,6 @@
 use darkpool_types::{bounded_match_result::BoundedMatchResult, fee::FeeTake};
 use serde::{Deserialize, Serialize};
-use types_account::IntentIdentifier;
+use types_account::OrderId;
 use types_core::{AccountId, TimestampedPrice};
 
 /// A fill event on an order, resulting from an external match
@@ -9,7 +9,7 @@ pub struct ExternalFillEvent {
     /// The ID of the internal wallet containing the filled order
     pub internal_account_id: AccountId,
     /// The ID of the internal order that received the fill
-    pub internal_order_id: IntentIdentifier,
+    pub internal_order_id: OrderId,
     /// The price at which the fill was executed
     pub execution_price: TimestampedPrice,
     /// The external match result
@@ -22,7 +22,7 @@ impl ExternalFillEvent {
     /// Creates a new external fill event
     pub fn new(
         internal_account_id: AccountId,
-        internal_order_id: IntentIdentifier,
+        internal_order_id: OrderId,
         execution_price: TimestampedPrice,
         external_match_result: BoundedMatchResult,
         internal_fee_take: FeeTake,

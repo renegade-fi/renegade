@@ -8,7 +8,7 @@ use circuit_types::{
 };
 use types_core::{chain::Chain, hmac::HmacKey, token::Token};
 use common::types::proof_bundles::mocks::{dummy_validity_proof_bundle, dummy_validity_witness_bundle};
-use types_account::account::{Order, IntentIdentifier, mocks::mock_empty_wallet};
+use types_account::account::{Order, OrderId, mocks::mock_empty_wallet};
 use config::{RelayerConfig, setup_token_remaps};
 use darkpool_client::conversion::address_to_biguint;
 use external_api::auth::add_expiring_auth_to_headers;
@@ -60,7 +60,7 @@ pub async fn setup_internal_order_on_token(
     mock_node: &MockNodeController,
 ) -> Result<()> {
     // Setup an internal party wallet
-    let oid = IntentIdentifier::new_v4();
+    let oid = OrderId::new_v4();
     let order = internal_party_order(&base, side);
     let bal = internal_party_balance(&base, side);
     let mut wallet = mock_empty_wallet();
@@ -103,7 +103,7 @@ fn internal_party_balance(base: &Token, side: OrderSide) -> Balance {
 /// Add a validity proof bundle to the state for the given order
 async fn add_validity_proof_bundle(
     mock_node: &MockNodeController,
-    oid: IntentIdentifier,
+    oid: OrderId,
     order: Order,
 ) -> Result<()> {
     let bundle = dummy_validity_proof_bundle();

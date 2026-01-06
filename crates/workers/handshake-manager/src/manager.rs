@@ -16,7 +16,7 @@ use common::{
         proof_bundles::{OrderValidityProofBundle, ValidMatchSettleBundle},
         tasks::{SettleMatchTaskDescriptor, TaskDescriptor},
         token::Token,
-        wallet::IntentIdentifier,
+        wallet::OrderId,
     },
 };
 use types_gossip::handshake::ConnectionRole;
@@ -100,7 +100,7 @@ pub struct HandshakeExecutor {
     /// matches on
     pub(crate) min_fill_size: Amount,
     /// The cache used to mark order pairs as already matched
-    pub(crate) handshake_cache: SharedHandshakeCache<IntentIdentifier>,
+    pub(crate) handshake_cache: SharedHandshakeCache<OrderId>,
     /// Stores the state of existing handshake executions
     pub(crate) handshake_state_index: HandshakeStateIndex,
     /// The channel on which other workers enqueue jobs for the protocol
@@ -328,7 +328,7 @@ impl HandshakeExecutor {
     /// and casting this to a `Token`
     async fn token_pair_for_order(
         &self,
-        order_id: &IntentIdentifier,
+        order_id: &OrderId,
     ) -> Result<(Token, Token), HandshakeManagerError> {
         let order = self
             .state
@@ -380,7 +380,7 @@ impl HandshakeExecutor {
     }
 
     /// Chooses an order to match against a remote order
-    async fn choose_match_proposal(&self, peer_order: IntentIdentifier) -> Option<IntentIdentifier> {
+    async fn choose_match_proposal(&self, peer_order: OrderId) -> Option<OrderId> {
         let locked_handshake_cache = self.handshake_cache.read().await;
 
         // Shuffle the locally managed orders to avoid always matching the same order
@@ -432,8 +432,8 @@ impl HandshakeExecutor {
     /// that a handshake has completed
     fn publish_completion_messages(
         &self,
-        local_order_id: IntentIdentifier,
-        peer_order_id: IntentIdentifier,
+        local_order_id: OrderId,
+        peer_order_id: OrderId,
     ) -> Result<(), HandshakeManagerError> {
         // Send a message to cluster peers indicating that the local peer has completed
         // a match. Cluster peers should cache the matched order pair as

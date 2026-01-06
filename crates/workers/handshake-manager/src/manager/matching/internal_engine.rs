@@ -7,7 +7,7 @@ use common::types::network_order::NetworkOrder;
 use types_core::price::TimestampedPriceFp;
 use common::types::proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle};
 use types_tasks::{SettleMatchInternalTaskDescriptor, TaskDescriptor};
-use types_account::account::{Order, IntentIdentifier, Wallet, WalletIdentifier};
+use types_account::account::{Order, OrderId, Wallet, WalletIdentifier};
 use tracing::{error, info, instrument};
 
 use crate::{
@@ -39,7 +39,7 @@ impl HandshakeExecutor {
     #[instrument(name = "run_internal_matching_engine", skip_all)]
     pub async fn run_internal_matching_engine(
         &self,
-        order_id: IntentIdentifier,
+        order_id: OrderId,
     ) -> Result<(), HandshakeManagerError> {
         info!("Running internal matching engine on order {order_id}");
         // Lookup the order and its wallet
@@ -103,10 +103,10 @@ impl HandshakeExecutor {
     /// Shuffles the ordering of the other orders for fairness
     async fn get_internal_match_candidates(
         &self,
-        order_id: IntentIdentifier,
+        order_id: OrderId,
         order: &Order,
         wallet: &Wallet,
-    ) -> Result<HashSet<IntentIdentifier>, HandshakeManagerError> {
+    ) -> Result<HashSet<OrderId>, HandshakeManagerError> {
         // Filter by matching pool
         let my_pool_name = self.state.get_matching_pool_for_order(&order_id).await?;
         let filter = matching_order_filter(order, false /* external */);
@@ -126,8 +126,8 @@ impl HandshakeExecutor {
     /// Try a match and settle it if the two orders cross
     async fn try_settle_match(
         &self,
-        order_id1: IntentIdentifier,
-        order_id2: IntentIdentifier,
+        order_id1: OrderId,
+        order_id2: OrderId,
         price: TimestampedPriceFp,
         match_result: MatchResult,
     ) -> Result<(), HandshakeManagerError> {
@@ -165,7 +165,7 @@ impl HandshakeExecutor {
     /// Get the validity proof and witness for a given order
     async fn get_validity_proof_and_witness(
         &self,
-        order_id: &IntentIdentifier,
+        order_id: &OrderId,
     ) -> Result<(OrderValidityProofBundle, OrderValidityWitnessBundle), HandshakeManagerError> {
         let state = &self.state;
         let proof = state
@@ -183,7 +183,7 @@ impl HandshakeExecutor {
     /// Get the wallet for an order
     pub(crate) async fn get_wallet_id_for_order(
         &self,
-        order_id: &IntentIdentifier,
+        order_id: &OrderId,
     ) -> Result<WalletIdentifier, HandshakeManagerError> {
         self.state
             .get_wallet_id_for_order(order_id)
@@ -194,7 +194,7 @@ impl HandshakeExecutor {
     /// Fetch the order and wallet for the given order identifier
     async fn fetch_order_and_wallet(
         &self,
-        order: &IntentIdentifier,
+        order: &OrderId,
     ) -> Result<(NetworkOrder, Wallet), HandshakeManagerError> {
         let state = &self.state;
         let order = state

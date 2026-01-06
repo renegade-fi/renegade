@@ -3,7 +3,7 @@
 use itertools::Itertools;
 use libmdbx::RW;
 use system_bus::{ADMIN_WALLET_UPDATES_TOPIC, SystemBusMessage, account_topic};
-use types_account::account::{Account, IntentIdentifier};
+use types_account::account::{Account, OrderId};
 
 use crate::storage::tx::StateTxn;
 
@@ -98,7 +98,7 @@ impl StateApplicator {
     }
 
     /// Handle a cancelled intent
-    fn handle_cancelled_intent(&self, id: IntentIdentifier, tx: &StateTxn<RW>) -> Result<()> {
+    fn handle_cancelled_intent(&self, id: OrderId, tx: &StateTxn<RW>) -> Result<()> {
         // Remove the intent from its matching pool
         tx.remove_intent_from_matching_pool(&id)?;
 

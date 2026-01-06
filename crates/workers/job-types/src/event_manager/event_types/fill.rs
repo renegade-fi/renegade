@@ -1,6 +1,6 @@
 use darkpool_types::{fee::FeeTake, settlement_obligation::SettlementObligation};
 use serde::{Deserialize, Serialize};
-use types_account::account::IntentIdentifier;
+use types_account::account::OrderId;
 use types_core::{AccountId, TimestampedPrice};
 
 /// A fill event on an order, resulting from an internal match
@@ -9,7 +9,7 @@ pub struct FillEvent {
     /// The ID of the wallet containing the filled order
     pub account_id: AccountId,
     /// The ID of the order that received the fill
-    pub order_id: IntentIdentifier,
+    pub order_id: OrderId,
     /// The price at which the fill was executed
     pub execution_price: TimestampedPrice,
     /// The settlement obligation
@@ -22,7 +22,7 @@ impl FillEvent {
     /// Creates a new fill event
     pub fn new(
         account_id: AccountId,
-        order_id: IntentIdentifier,
+        order_id: OrderId,
         execution_price: TimestampedPrice,
         obligation: SettlementObligation,
         fee_take: FeeTake,

@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use types_account::{
     keyed_list::KeyedList,
     wallet::{
-        IntentIdentifier, Order, Wallet, WalletIdentifier,
+        Order, OrderId, Wallet, WalletIdentifier,
         keychain::{KeyChain, PrivateKeyChain},
     },
 };
@@ -168,8 +168,8 @@ pub struct ApiOrder {
     pub allow_external_matches: bool,
 }
 
-impl From<(IntentIdentifier, Order)> for ApiOrder {
-    fn from((order_id, order): (IntentIdentifier, Order)) -> Self {
+impl From<(OrderId, Order)> for ApiOrder {
+    fn from((order_id, order): (OrderId, Order)) -> Self {
         ApiOrder {
             id: order_id,
             quote_mint: order.quote_mint,

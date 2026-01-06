@@ -1,6 +1,6 @@
 //! Applicator methods for matching pools
 
-use types_account::account::IntentIdentifier;
+use types_account::account::OrderId;
 
 use crate::storage::tx::matching_pools::MATCHING_POOL_DOES_NOT_EXIST_ERR;
 
@@ -39,7 +39,7 @@ impl StateApplicator {
     /// Assign an intent to a matching pool
     pub fn assign_intent_to_matching_pool(
         &self,
-        intent_id: &IntentIdentifier,
+        intent_id: &OrderId,
         pool_name: &str,
     ) -> Result<ApplicatorReturnType, StateApplicatorError> {
         let tx = self.db().new_write_tx()?;
@@ -52,7 +52,7 @@ impl StateApplicator {
 
 #[cfg(test)]
 mod test {
-    use types_account::account::IntentIdentifier;
+    use types_account::account::OrderId;
     use types_runtime::MatchingPoolName;
 
     use crate::applicator::test_helpers::mock_applicator;
@@ -96,7 +96,7 @@ mod test {
     fn test_assign_intent_to_matching_pool() {
         let applicator = mock_applicator();
         let pool_name: MatchingPoolName = TEST_POOL_NAME.to_string();
-        let intent_id = IntentIdentifier::new_v4();
+        let intent_id = OrderId::new_v4();
 
         // Create a matching pool, then assign the intent
         applicator.create_matching_pool(&pool_name).unwrap();
@@ -114,7 +114,7 @@ mod test {
         let applicator = mock_applicator();
         let pool_1_name: MatchingPoolName = "pool-1".to_string();
         let pool_2_name: MatchingPoolName = "pool-2".to_string();
-        let intent_id = IntentIdentifier::new_v4();
+        let intent_id = OrderId::new_v4();
 
         // Create both matching pools
         applicator.create_matching_pool(&pool_1_name).unwrap();
@@ -146,7 +146,7 @@ mod test {
     fn test_assign_intent_to_nonexistent_matching_pool() {
         let applicator = mock_applicator();
         let pool_name: MatchingPoolName = TEST_POOL_NAME.to_string();
-        let intent_id = IntentIdentifier::new_v4();
+        let intent_id = OrderId::new_v4();
 
         // Try assigning the intent to a nonexistent matching pool
         let result = applicator.assign_intent_to_matching_pool(&intent_id, &pool_name);

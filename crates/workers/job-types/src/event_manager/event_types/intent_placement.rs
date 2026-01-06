@@ -1,6 +1,6 @@
 use darkpool_types::intent::Intent;
 use serde::{Deserialize, Serialize};
-use types_account::{IntentIdentifier, MatchingPoolName};
+use types_account::{MatchingPoolName, OrderId};
 use types_core::AccountId;
 
 /// An intent placement event
@@ -9,7 +9,7 @@ pub struct IntentPlacementEvent {
     /// The ID of the wallet that placed the intent
     pub account_id: AccountId,
     /// The ID of the intent that was placed
-    pub intent_id: IntentIdentifier,
+    pub intent_id: OrderId,
     /// The placed intent
     pub intent: Intent,
     /// The matching pool to which the intent was assigned
@@ -20,7 +20,7 @@ impl IntentPlacementEvent {
     /// Creates a new intent placement event
     pub fn new(
         account_id: AccountId,
-        intent_id: IntentIdentifier,
+        intent_id: OrderId,
         intent: Intent,
         matching_pool: MatchingPoolName,
     ) -> Self {

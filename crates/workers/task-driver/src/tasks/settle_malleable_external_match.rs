@@ -24,7 +24,7 @@ use common::types::proof_bundles::{
     OrderValidityProofBundle, OrderValidityWitnessBundle, ValidMalleableMatchSettleAtomicBundle,
 };
 use types_tasks::SettleMalleableExternalMatchTaskDescriptor;
-use types_account::account::{IntentIdentifier, WalletIdentifier};
+use types_account::account::{OrderId, WalletIdentifier};
 use darkpool_client::errors::DarkpoolClientError;
 use system_bus::SystemBusMessage;
 use job_types::proof_manager::ProofJob;
@@ -365,7 +365,7 @@ impl SettleMalleableExternalMatchTask {
 
     /// Fetch the internal order validity proof bundle
     async fn fetch_internal_order_validity_bundle(
-        order_id: IntentIdentifier,
+        order_id: OrderId,
         state: &State,
     ) -> Result<(OrderValidityProofBundle, OrderValidityWitnessBundle)> {
         let validity_proofs = state

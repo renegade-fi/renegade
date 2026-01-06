@@ -2,7 +2,7 @@
 //!
 //! This checks both the order book table and the local orders list
 
-use types_account::account::IntentIdentifier;
+use types_account::account::OrderId;
 use state::State;
 use tracing::{error, info};
 
@@ -19,7 +19,7 @@ pub async fn remove_phantom_orders(state: &State) -> Result<(), String> {
 // --- Find Orders --- //
 
 /// Find all phantom orders
-async fn find_phantom_orders(state: &State) -> Result<Vec<IntentIdentifier>, String> {
+async fn find_phantom_orders(state: &State) -> Result<Vec<OrderId>, String> {
     let all_orders = state.get_all_orders().await?;
     let mut phantom_orders = Vec::new();
     for order in all_orders {
@@ -33,7 +33,7 @@ async fn find_phantom_orders(state: &State) -> Result<Vec<IntentIdentifier>, Str
 }
 
 /// Check whether an order is missing from its wallet
-async fn check_order_missing(state: &State, order_id: &IntentIdentifier) -> Result<bool, String> {
+async fn check_order_missing(state: &State, order_id: &OrderId) -> Result<bool, String> {
     // Check that the order has a wallet ID mapped to it
     let maybe_wallet = state.get_wallet_for_order(order_id).await?;
     if maybe_wallet.is_none() || !maybe_wallet.unwrap().contains_order(order_id) {
@@ -48,7 +48,7 @@ async fn check_order_missing(state: &State, order_id: &IntentIdentifier) -> Resu
 /// Remove a set of orders from the order book state
 async fn remove_orders_from_order_book(
     state: &State,
-    orders: &[IntentIdentifier],
+    orders: &[OrderId],
 ) -> Result<(), String> {
     // Remove each order in a new tx to avoid blocking the db for too long
     for order_id in orders {

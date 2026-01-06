@@ -2,7 +2,7 @@
 
 use circuit_types::Nullifier;
 use serde::{Deserialize, Serialize};
-use types_account::account::IntentIdentifier;
+use types_account::account::OrderId;
 use types_gossip::ClusterId;
 
 /// The network pubsub topic to use for listening to orderbook changes
@@ -15,7 +15,7 @@ pub enum OrderBookManagementMessage {
     /// received state in their local book
     OrderReceived {
         /// The identifier of the new order
-        order_id: IntentIdentifier,
+        order_id: OrderId,
         /// The public share nullifier of the new order's wallet
         nullifier: Nullifier,
         /// The cluster that manages this order
@@ -25,7 +25,7 @@ pub enum OrderBookManagementMessage {
     /// be placed in the `Verified` state after local peers verify the proof
     OrderProofUpdated {
         /// The identifier of the now updated order
-        order_id: IntentIdentifier,
+        order_id: OrderId,
         /// The cluster that manages this order
         cluster: ClusterId,
         /// The new validity proof bundle for the order, containing a proof of
