@@ -68,6 +68,12 @@ impl ClusterId {
     }
 }
 
+impl PartialEq<ClusterId> for ArchivedClusterId {
+    fn eq(&self, other: &ClusterId) -> bool {
+        self.0 == other.0
+    }
+}
+
 /// A wrapped cluster keypair which allows us to implement traits on the type
 #[derive(Debug)]
 pub struct ClusterAsymmetricKeypair(pub Keypair);

@@ -73,7 +73,7 @@ impl StateApplicator {
     /// Index the intents of an account
     fn index_intents_with_tx(&self, account: &Account, tx: &StateTxn<RW>) -> Result<()> {
         // Update the intent -> account mapping
-        let nonzero_intents = account.intents.keys().copied().collect_vec();
+        let nonzero_intents = account.orders.keys().copied().collect_vec();
         tx.index_intents(&account.wallet_id, &nonzero_intents)?;
 
         // Handle cancelled intents
@@ -84,12 +84,12 @@ impl StateApplicator {
     fn handle_cancelled_intents(&self, account: &Account, tx: &StateTxn<RW>) -> Result<()> {
         let old_account = tx.get_account(&account.wallet_id)?;
         let old_intents = old_account
-            .map(|a| a.deserialize().unwrap().intents.keys().copied().collect_vec())
+            .map(|a| a.deserialize().unwrap().orders.keys().copied().collect_vec())
             .unwrap_or_default();
 
         // Handle cancelled intents
         for id in old_intents {
-            if !account.intents.contains_key(&id) {
+            if !account.orders.contains_key(&id) {
                 self.handle_cancelled_intent(id, tx)?;
             }
         }
@@ -115,12 +115,11 @@ impl StateApplicator {
 
 #[cfg(test)]
 pub(crate) mod test {
-    use types_account::account::{
-        Account,
-        mocks::{mock_empty_account, mock_intent},
+    use types_account::{
+        account::{Account, mocks::mock_empty_account},
+        order::mocks::mock_order,
     };
     use types_core::AccountId;
-    use uuid::Uuid;
 
     use crate::{INTENT_TO_WALLET_TABLE, WALLETS_TABLE, applicator::test_helpers::mock_applicator};
 
@@ -153,7 +152,8 @@ pub(crate) mod test {
         applicator.create_account(&account).unwrap();
 
         // Update the account by adding an intent
-        account.intents.insert(Uuid::new_v4(), mock_intent());
+        let order = mock_order();
+        account.orders.insert(order.id, order);
         applicator.update_account(&account).unwrap();
 
         // Check that the indexed account is as expected
@@ -165,8 +165,8 @@ pub(crate) mod test {
         assert_eq!(account, expected_account);
 
         // Check the intent -> account mapping
-        let intent_id = account.intents.keys().next().unwrap();
-        let account_id: AccountId = db.read(INTENT_TO_WALLET_TABLE, intent_id).unwrap().unwrap();
+        let order_id = account.orders.keys().next().unwrap();
+        let account_id: AccountId = db.read(INTENT_TO_WALLET_TABLE, order_id).unwrap().unwrap();
         assert_eq!(account_id, expected_account.wallet_id);
     }
 }

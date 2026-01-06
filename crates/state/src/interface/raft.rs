@@ -4,7 +4,6 @@ use std::collections::BTreeMap;
 
 use tracing::instrument;
 use types_gossip::WrappedPeerId;
-use util::err_str;
 
 use crate::{
     StateInner, ciborium_deserialize,
@@ -87,6 +86,6 @@ impl StateInner {
     /// Deserialize a raft request from bytes
     #[instrument(name = "deserialize_raft_request", skip_all, fields(msg_size = msg_bytes.len()), err)]
     pub fn deserialize_raft_request(msg_bytes: &[u8]) -> Result<RaftRequest, StateError> {
-        ciborium_deserialize(msg_bytes).map_err(StateError::Serde)
+        ciborium_deserialize(msg_bytes).map_err(StateError::serde)
     }
 }

@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use crate::{OrderId, pair::Pair};
 
 /// The order type for an account
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "rkyv", derive(Archive, RkyvDeserialize, RkyvSerialize))]
 #[cfg_attr(feature = "rkyv", rkyv(derive(Debug)))]
 pub struct Order {

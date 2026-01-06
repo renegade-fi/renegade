@@ -1,17 +1,22 @@
 //! The interface for interacting with the task queue
 
+use tracing::instrument;
+use types_core::AccountId;
 use types_gossip::WrappedPeerId;
 use types_tasks::{
-    HistoricalTask, QueuedTask, QueuedTaskState, RefreshWalletTaskDescriptor, TaskDescriptor,
-    TaskIdentifier, TaskQueueKey,
+    HistoricalTask, QueuedTask, QueuedTaskState, TaskDescriptor, TaskIdentifier, TaskQueueKey,
 };
-use types_account::account::WalletIdentifier;
-use tracing::instrument;
-use util::telemetry::helpers::backfill_trace_field;
+use util::{res_some, telemetry::helpers::backfill_trace_field};
 
 use crate::{
-    StateInner, StateTransition, error::StateError, notifications::ProposalWaiter,
-    storage::tx::task_queue::TaskQueuePreemptionState,
+    StateInner,
+    error::StateError,
+    notifications::ProposalWaiter,
+    state_transition::StateTransition,
+    storage::{
+        error::StorageError, traits::RkyvValue,
+        tx::task_queue::queue_type::ArchivedTaskQueuePreemptionState,
+    },
 };
 
 impl StateInner {
@@ -31,7 +36,9 @@ impl StateInner {
         self.with_read_tx(move |tx| {
             let queue = tx.get_task_queue(&key)?;
             let paused_serial = queue
-                .map(|q| q.preemption_state == TaskQueuePreemptionState::SerialPreemptionQueued)
+                .map(|q| {
+                    q.preemption_state == ArchivedTaskQueuePreemptionState::SerialPreemptionQueued
+                })
                 .unwrap_or(false);
             Ok(paused_serial)
         })
@@ -62,6 +69,11 @@ impl StateInner {
         let key = *key;
         self.with_read_tx(move |tx| {
             let queue = tx.get_queued_tasks(&key)?;
+            let queue = queue
+                .into_iter()
+                .map(|q| q.deserialize())
+                .collect::<Result<Vec<QueuedTask>, StorageError>>()?;
+
             Ok(queue)
         })
         .await
@@ -79,12 +91,19 @@ impl StateInner {
             let running = tx.get_queued_tasks(&key)?;
             let remaining = len.saturating_sub(running.len());
             let historical = tx.get_truncated_task_history(remaining, &key)?;
-            Ok(running
+
+            // Deserialize and collect all tasks
+            let all_tasks = running
                 .into_iter()
-                .filter_map(|t| HistoricalTask::from_queued_task(key, t))
-                .chain(historical)
+                .filter_map(|t| {
+                    let task = t.deserialize().ok()?;
+                    HistoricalTask::from_queued_task(key, task)
+                })
+                .chain(historical.into_iter().filter_map(|h| h.deserialize().ok()))
                 .take(len)
-                .collect())
+                .collect();
+
+            Ok(all_tasks)
         })
         .await
     }
@@ -96,8 +115,9 @@ impl StateInner {
     ) -> Result<Option<QueuedTask>, StateError> {
         let tid = *task_id;
         self.with_read_tx(move |tx| {
-            let task = tx.get_task(&tid)?;
-            Ok(task)
+            let task_value = res_some!(tx.get_task(&tid)?);
+            let task = task_value.deserialize()?;
+            Ok(Some(task))
         })
         .await
     }
@@ -109,8 +129,9 @@ impl StateInner {
     ) -> Result<Option<QueuedTaskState>, StateError> {
         let tid = *task_id;
         self.with_read_tx(move |tx| {
-            let status = tx.get_task(&tid)?;
-            Ok(status.map(|x| x.state))
+            let status = res_some!(tx.get_task(&tid)?);
+            let state = QueuedTaskState::from_archived(&status.state)?;
+            Ok(Some(state))
         })
         .await
     }
@@ -119,19 +140,15 @@ impl StateInner {
     // | Setters |
     // -----------
 
-    /// A shorthand to append a wallet refresh task to the queue and await the
+    /// A shorthand to append an account refresh task to the queue and await the
     /// state transition
     ///
     /// Returns the task ID for the refresh
-    pub async fn append_wallet_refresh_task(
+    pub async fn append_account_refresh_task(
         &self,
-        wallet_id: WalletIdentifier,
+        _account_id: AccountId,
     ) -> Result<TaskIdentifier, StateError> {
-        let task = RefreshWalletTaskDescriptor::new(wallet_id);
-        let (task_id, waiter) = self.append_task(task.into()).await?;
-        waiter.await?;
-
-        Ok(task_id)
+        todo!("Implement append_account_refresh_task")
     }
 
     /// Append a task to the queue
@@ -221,13 +238,11 @@ impl StateInner {
 
 #[cfg(test)]
 mod test {
-    use common::types::{
-        tasks::{
-            QueuedTaskState, TaskQueueKey,
-            mocks::{mock_queued_task, mock_task_descriptor},
-        },
-        wallet::WalletIdentifier,
-        wallet_mocks::mock_empty_wallet,
+    use types_account::account::mocks::mock_empty_account;
+    use types_core::AccountId;
+    use types_tasks::{
+        QueuedTaskState, TaskQueueKey,
+        mocks::{mock_queued_task, mock_task_descriptor},
     };
 
     use crate::test_helpers::mock_state;
@@ -270,14 +285,14 @@ mod test {
     async fn test_pop() {
         let state = mock_state().await;
 
-        // Add a wallet that the task may reference
-        let wallet = mock_empty_wallet();
-        let wallet_id = wallet.wallet_id;
-        let waiter = state.new_wallet(wallet).await.unwrap();
+        // Add an account that the task may reference
+        let account = mock_empty_account();
+        let account_id = account.wallet_id;
+        let waiter = state.new_account(account).await.unwrap();
         waiter.await.unwrap();
 
         // Propose a task to the queue
-        let task = mock_queued_task(wallet_id).descriptor;
+        let task = mock_queued_task(account_id).descriptor;
         let (task_id, waiter) = state.append_task(task).await.unwrap();
         waiter.await.unwrap();
 
@@ -286,7 +301,7 @@ mod test {
         waiter.await.unwrap();
 
         // Check that the task was removed
-        assert_eq!(state.serial_tasks_queue_len(&wallet_id).await.unwrap(), 0);
+        assert_eq!(state.serial_tasks_queue_len(&account_id).await.unwrap(), 0);
     }
 
     /// Tests transitioning the state of a task
@@ -324,12 +339,12 @@ mod test {
     async fn test_task_history() {
         const N: usize = 10;
         let state = mock_state().await;
-        let wallet_id = WalletIdentifier::new_v4();
+        let account_id = AccountId::new_v4();
 
         // Add historical tasks
         for _ in 0..N {
             // First push to the queue then pop
-            let task = mock_task_descriptor(wallet_id);
+            let task = mock_task_descriptor(account_id);
             let (task_id, waiter) = state.append_task(task).await.unwrap();
             waiter.await.unwrap();
 
@@ -339,13 +354,13 @@ mod test {
 
         // Add a few running tasks
         for _ in 0..N / 2 {
-            let task = mock_task_descriptor(wallet_id);
+            let task = mock_task_descriptor(account_id);
             let (_, waiter) = state.append_task(task).await.unwrap();
             waiter.await.unwrap();
         }
 
         // Fetch the task history
-        let history = state.get_task_history(N, &wallet_id).await.unwrap();
+        let history = state.get_task_history(N, &account_id).await.unwrap();
         assert_eq!(history.len(), N);
         assert!(matches!(history[0].state, QueuedTaskState::Running { .. }));
         for task in history.iter().take(N / 2).skip(1) {
