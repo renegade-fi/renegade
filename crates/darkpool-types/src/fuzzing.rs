@@ -2,6 +2,15 @@
 
 use std::cmp;
 
+use crate::{
+    balance::{Balance, PostMatchBalanceShare},
+    bounded_match_result::BoundedMatchResult,
+    deposit::Deposit,
+    intent::Intent,
+    settlement_obligation::SettlementObligation,
+    state_wrapper::StateWrapper,
+    withdrawal::Withdrawal,
+};
 use alloy_primitives::Address;
 use circuit_types::{
     AMOUNT_BITS, Amount,
@@ -14,15 +23,6 @@ use circuit_types::{
 };
 use constants::{MAX_RELAYER_FEE_RATE, Scalar};
 use crypto::fields::scalar_to_u128;
-use darkpool_types::{
-    balance::{Balance, PostMatchBalanceShare},
-    bounded_match_result::BoundedMatchResult,
-    deposit::Deposit,
-    intent::Intent,
-    settlement_obligation::SettlementObligation,
-    state_wrapper::StateWrapper,
-    withdrawal::Withdrawal,
-};
 use itertools::Itertools;
 use rand::{Rng, distributions::uniform::SampleRange, thread_rng};
 

@@ -8,13 +8,9 @@
 //!
 //! This only caches externally enabled matchable amounts.
 
-use std::collections::HashMap;
-
-use circuit_types::{Amount, order::OrderSide};
-use tokio::sync::RwLock;
-use types_account::account::Pair;
-
-use super::RwLockHashMap;
+use circuit_types::Amount;
+use dashmap::DashMap;
+use types_account::account::pair::Pair;
 
 /// A mapping from pair -> side -> matchable amount
 #[derive(Default)]
@@ -23,13 +19,13 @@ pub struct MatchableAmountMap {
     ///
     /// This is used to efficiently query the matchable amount for a given pair
     /// and side
-    matchable_amount_map: RwLockHashMap<(Pair, OrderSide), Amount>,
+    matchable_amount_map: DashMap<Pair, Amount>,
 }
 
 impl MatchableAmountMap {
     /// Construct a new matchable amount map
     pub fn new() -> Self {
-        Self { matchable_amount_map: RwLock::new(HashMap::new()) }
+        Self { matchable_amount_map: DashMap::new() }
     }
 
     // --- Getters --- //
@@ -38,28 +34,28 @@ impl MatchableAmountMap {
     ///
     /// Returns (buy_amount, sell_amount) where buy amount is denominated in the
     /// quote token, sell amount is denominated in the base token
-    pub async fn get(&self, pair: &Pair) -> (Amount, Amount) {
-        let matchable_amount_map = self.matchable_amount_map.read().await;
-        let buy_amount =
-            matchable_amount_map.get(&(pair.clone(), OrderSide::Buy)).copied().unwrap_or(0);
-        let sell_amount =
-            matchable_amount_map.get(&(pair.clone(), OrderSide::Sell)).copied().unwrap_or(0);
+    pub fn get(&self, pair: &Pair) -> (Amount, Amount) {
+        let buy_amount = self.get_amount(pair);
+        let sell_amount = self.get_amount(&pair.reverse());
         (buy_amount, sell_amount)
+    }
+
+    /// Get the matchable amount for a pair
+    fn get_amount(&self, pair: &Pair) -> Amount {
+        self.matchable_amount_map.get(pair).map(|a| *a.value()).unwrap_or_default()
     }
 
     // --- Setters --- //
 
     /// Add to the matchable amount for a given pair and side
-    pub async fn add_amount(&self, pair: Pair, side: OrderSide, delta: Amount) {
-        let mut amount_map = self.matchable_amount_map.write().await;
-        let cached_amount = amount_map.entry((pair, side)).or_insert(0);
-        *cached_amount += delta;
+    pub fn add_amount(&self, pair: Pair, delta: Amount) {
+        let mut amt = self.matchable_amount_map.entry(pair).or_insert(0);
+        *amt += delta;
     }
 
     /// Subtract from the matchable amount for a given pair and side
-    pub async fn sub_amount(&self, pair: Pair, side: OrderSide, delta: Amount) {
-        let mut amount_map = self.matchable_amount_map.write().await;
-        let cached_amount = amount_map.entry((pair, side)).or_insert(0);
-        *cached_amount = cached_amount.saturating_sub(delta);
+    pub fn sub_amount(&self, pair: Pair, delta: Amount) {
+        let mut amt = self.matchable_amount_map.entry(pair).or_insert(0);
+        *amt = amt.saturating_sub(delta);
     }
 }

@@ -6470,6 +6470,7 @@ dependencies = [
  "criterion",
  "crossbeam",
  "darkpool-types",
+ "dashmap",
  "external-api",
  "eyre",
  "flate2",

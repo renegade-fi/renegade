@@ -6,6 +6,7 @@
 pub mod keychain;
 #[cfg(feature = "mocks")]
 pub mod mocks;
+pub mod pair;
 
 use std::collections::HashMap;
 
