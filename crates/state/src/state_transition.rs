@@ -5,7 +5,7 @@
 #![allow(missing_docs)]
 
 use serde::{Deserialize, Serialize};
-use types_account::Account;
+use types_account::{Account, account::IntentIdentifier};
 use types_gossip::WrappedPeerId;
 use types_runtime::MatchingPoolName;
 use types_tasks::{QueuedTask, QueuedTaskState, TaskIdentifier, TaskQueueKey};
@@ -48,6 +48,8 @@ pub enum StateTransition {
     CreateMatchingPool { pool_name: MatchingPoolName },
     /// Destroy a matching pool
     DestroyMatchingPool { pool_name: MatchingPoolName },
+    /// Assign an intent to a matching pool
+    AssignIntentToMatchingPool { intent_id: IntentIdentifier, pool_name: MatchingPoolName },
 
     // --- Task Queue --- //
     /// Add a task to the task queue

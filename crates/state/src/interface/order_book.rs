@@ -6,15 +6,11 @@
 //! peers
 
 use circuit_types::{Amount, wallet::Nullifier};
-use types_runtime::MatchingPoolName;
-use types_gossip::WrappedPeerId;
 use common::types::network_order::NetworkOrder;
 use common::types::proof_bundles::{
     OrderValidityProofBundle, OrderValidityWitnessBundle, ValidWalletUpdateBundle,
 };
-use types_account::account::{IntentIdentifier, Pair};
 use constants::ORDER_STATE_CHANGE_TOPIC;
-use system_bus::SystemBusMessage;
 use futures::future::join_all;
 use gossip_api::request_response::orderbook::NetworkOrderInfo;
 use libmdbx::TransactionKind;
@@ -23,7 +19,11 @@ use rand::{
     seq::SliceRandom,
     thread_rng,
 };
+use system_bus::SystemBusMessage;
 use tracing::instrument;
+use types_account::account::{IntentIdentifier, Pair};
+use types_gossip::WrappedPeerId;
+use types_runtime::MatchingPoolName;
 use util::{res_some, telemetry::helpers::backfill_trace_field};
 
 use crate::{
@@ -263,8 +263,8 @@ impl StateInner {
             let mut res = Vec::new();
             for id in orders.into_iter() {
                 if let Some(ref pool) = matching_pool {
-                    let order_matching_pool = tx.get_matching_pool_for_order(&id)?;
-                    if order_matching_pool != *pool {
+                    let intent_matching_pool = tx.get_matching_pool_for_intent(&id)?;
+                    if intent_matching_pool != *pool {
                         continue;
                     }
                 }
