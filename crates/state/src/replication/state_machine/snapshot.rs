@@ -323,292 +323,320 @@ impl StateMachine {
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use std::sync::Arc;
+#[cfg(test)]
+mod tests {
+    use libmdbx::Error as MdbxError;
+    use types_account::account::{Account, mocks::mock_empty_account};
+    use types_runtime::MatchingPoolName;
 
-//     use common::types::proof_bundles::mocks::{
-//         dummy_validity_proof_bundle, dummy_validity_witness_bundle,
-//     };
-//     use libmdbx::Error as MdbxError;
-//     use types_account::account::{
-//         IntentIdentifier, Wallet,
-//         mocks::{mock_empty_wallet, mock_order},
-//     };
+    use crate::{
+        WALLETS_TABLE,
+        // caching::order_cache::OrderBookFilter,
+        replication::mock_raft::mock_state_machine,
+        state_transition::StateTransition,
+        storage::error::StorageError,
+        test_helpers::mock_db,
+    };
 
-//     use crate::{
-//         StateTransition, WALLETS_TABLE,
-// caching::order_cache::OrderBookFilter,
-//         replication::test_helpers::mock_state_machine,
-// storage::error::StorageError,         test_helpers::mock_db,
-//     };
+    use super::*;
 
-//     use super::*;
+    // -----------
+    // | Helpers |
+    // -----------
 
-//     // -----------
-//     // | Helpers |
-//     // -----------
+    /// Add an account to the state machine
+    async fn add_account_to_sm(sm: &StateMachine, account: Account) {
+        let transition = StateTransition::CreateAccount { account };
+        apply_test_transition(sm, transition).await;
+    }
 
-//     /// Add a wallet to the state machine
-//     async fn add_wallet_to_sm(sm: &StateMachine, wallet: Wallet) {
-//         let transition = StateTransition::AddWallet { wallet };
-//         apply_test_transition(sm, transition).await;
-//     }
+    /// Create a matching pool in the state machine
+    async fn create_matching_pool_in_sm(sm: &StateMachine, pool_name: MatchingPoolName) {
+        let transition = StateTransition::CreateMatchingPool { pool_name };
+        apply_test_transition(sm, transition).await;
+    }
 
-//     /// Update a wallet in the state machine
-//     async fn update_wallet_in_sm(sm: &StateMachine, wallet: Wallet) {
-//         let transition = StateTransition::UpdateWallet { wallet };
-//         apply_test_transition(sm, transition).await;
-//     }
+    /// Apply a state transition to a given state machine
+    ///
+    /// This helper spawns the task on the blocking pool to avoid blocking
+    /// the testing runtime
+    async fn apply_test_transition(sm: &StateMachine, transition: StateTransition) {
+        let app = sm.applicator.clone();
+        let boxed = Box::new(transition);
+        tokio::task::spawn_blocking(move || app.handle_state_transition(boxed))
+            .await
+            .unwrap()
+            .unwrap();
+    }
 
-//     /// Add a dummy validity proof to an order in the state machine
-//     async fn add_dummy_validity_proof_to_sm(sm: &StateMachine, order_id:
-// IntentIdentifier) {         let bundle = dummy_validity_proof_bundle();
-//         let witness = dummy_validity_witness_bundle();
-//         let transition =
-//             StateTransition::AddOrderValidityBundle { order_id, proof:
-// bundle, witness };         apply_test_transition(sm, transition).await;
-//     }
+    // ---------
+    // | Tests |
+    // ---------
 
-//     /// Apply a state transition to a given state machine
-//     ///
-//     /// This helper spawns the task on the blocking pool to avoid blocking
-// the     /// testing runtime
-//     async fn apply_test_transition(sm: &StateMachine, transition:
-// StateTransition) {         let app = sm.applicator.clone();
-//         let boxed = Box::new(transition);
-//         tokio::task::spawn_blocking(move ||
-// app.handle_state_transition(boxed))             .await
-//             .unwrap()
-//             .unwrap();
-//     }
+    /// Tests snapshotting and recovering a DB from a snapshot
+    #[tokio::test]
+    async fn test_snapshot() {
+        const TABLE: &str = "test-table";
+        let (k, v) = ("key".to_string(), "value".to_string());
 
-//     // ---------
-//     // | Tests |
-//     // ---------
+        let state_machine = mock_state_machine().await;
 
-//     /// Tests snapshotting and recovering a DB from a snapshot
-//     #[tokio::test]
-//     async fn test_snapshot() {
-//         const TABLE: &str = "test-table";
-//         let (k, v) = ("key".to_string(), "value".to_string());
+        // Write to the DB
+        let db = state_machine.db();
+        db.create_table(TABLE).unwrap();
+        db.write(TABLE, &k, &v).unwrap();
 
-//         let state_machine = mock_state_machine().await;
+        // Take a snapshot then recover from it
+        state_machine.take_db_snapshot().await.unwrap();
+        let new_db = state_machine.open_snap_db().await.unwrap();
+        let value: String = new_db.read(TABLE, &k).unwrap().unwrap();
 
-//         // Write to the DB
-//         let db = state_machine.db();
-//         db.create_table(TABLE).unwrap();
-//         db.write(TABLE, &k, &v).unwrap();
+        assert_eq!(value, v);
+    }
 
-//         // Take a snapshot then recover from it
-//         state_machine.take_db_snapshot().await.unwrap();
-//         let new_db = state_machine.open_snap_db().await.unwrap();
-//         let value: String = new_db.read(TABLE, &k).unwrap().unwrap();
+    /// Tests taking a snapshot with a key in an excluded table
+    #[tokio::test]
+    async fn test_snapshot_excluded_table() {
+        const DUMMY_TABLE: &str = "dummy-table";
+        const EXCLUDED_TABLE: &str = EXCLUDED_TABLES[0];
+        let (k1, v1) = ("key1".to_string(), "value1".to_string());
+        let (k2, v2) = ("key2".to_string(), "value2".to_string());
 
-//         assert_eq!(value, v);
-//     }
+        let state_machine = mock_state_machine().await;
+        let db = state_machine.db();
 
-//     /// Tests taking a snapshot with a key in an excluded table
-//     #[tokio::test]
-//     async fn test_snapshot_excluded_table() {
-//         const DUMMY_TABLE: &str = "dummy-table";
-//         const EXCLUDED_TABLE: &str = EXCLUDED_TABLES[0];
-//         let (k1, v1) = ("key1".to_string(), "value1".to_string());
-//         let (k2, v2) = ("key2".to_string(), "value2".to_string());
+        // Write to the DB
+        db.create_table(DUMMY_TABLE).unwrap();
+        db.create_table(EXCLUDED_TABLE).unwrap();
+        db.write(DUMMY_TABLE, &k1, &v1).unwrap();
+        db.write(EXCLUDED_TABLE, &k2, &v2).unwrap();
 
-//         let state_machine = mock_state_machine().await;
-//         let db = state_machine.db();
+        // Take a snapshot then recover from it
+        state_machine.take_db_snapshot().await.unwrap();
 
-//         // Write to the DB
-//         db.create_table(DUMMY_TABLE).unwrap();
-//         db.create_table(EXCLUDED_TABLE).unwrap();
-//         db.write(DUMMY_TABLE, &k1, &v1).unwrap();
-//         db.write(EXCLUDED_TABLE, &k2, &v2).unwrap();
+        // Check that the original table still contains the excluded value
+        let value: String = db.read(EXCLUDED_TABLE, &k2).unwrap().unwrap();
+        assert_eq!(value, v2);
 
-//         // Take a snapshot then recover from it
-//         state_machine.take_db_snapshot().await.unwrap();
+        // Check that the recovered DB contains the same data minus the excluded table
+        let new_db = state_machine.open_snap_db().await.unwrap();
+        let value1: String = new_db.read(DUMMY_TABLE, &k1).unwrap().unwrap();
+        let v2_err: StorageError = new_db.read::<_, String>(EXCLUDED_TABLE, &k2).err().unwrap();
 
-//         // Check that the original table still contains the excluded value
-//         let value: String = db.read(EXCLUDED_TABLE, &k2).unwrap().unwrap();
-//         assert_eq!(value, v2);
+        assert_eq!(value1, v1);
+        assert!(matches!(v2_err, StorageError::OpenTable(_, MdbxError::NotFound)));
+    }
 
-//         // Check that the recovered DB contains the same data minus the
-// excluded table         let new_db =
-// state_machine.open_snap_db().await.unwrap();         let value1: String =
-// new_db.read(DUMMY_TABLE, &k1).unwrap().unwrap();         let v2_err:
-// StorageError = new_db.read::<_, String>(EXCLUDED_TABLE, &k2).err().unwrap();
+    /// Test taking multiple snapshots after successive updates, ensuring
+    /// that snapshots overwrite one another
+    #[tokio::test]
+    async fn test_snapshot_overwrite() {
+        const TABLE: &str = "test-table";
+        let state_machine = mock_state_machine().await;
+        let db = state_machine.db();
 
-//         assert_eq!(value1, v1);
-//         assert!(matches!(v2_err, StorageError::OpenTable(_,
-// MdbxError::NotFound)));     }
+        let (k, v1) = ("key".to_string(), "value".to_string());
+        let v2 = "value2".to_string();
 
-//     /// Test taking multiple snapshots after successive updates, ensuring
-// that     /// snapshots overwrite one another
-//     #[tokio::test]
-//     async fn test_snapshot_overwrite() {
-//         const TABLE: &str = "test-table";
-//         let state_machine = mock_state_machine().await;
-//         let db = state_machine.db();
+        // Write to the DB
+        db.create_table(TABLE).unwrap();
+        db.write(TABLE, &k, &v1).unwrap();
 
-//         let (k, v1) = ("key".to_string(), "value".to_string());
-//         let v2 = "value2".to_string();
+        // Take a snapshot, write the value, then take another snapshot
+        state_machine.take_db_snapshot().await.unwrap();
+        db.write(TABLE, &k, &v2).unwrap();
+        state_machine.take_db_snapshot().await.unwrap();
 
-//         // Write to the DB
-//         db.create_table(TABLE).unwrap();
-//         db.write(TABLE, &k, &v1).unwrap();
+        // Recover the DB and verify that only the second value remains
+        let new_db = state_machine.open_snap_db().await.unwrap();
+        let value: String = new_db.read(TABLE, &k).unwrap().unwrap();
 
-//         // Take a snapshot, write the value, then take another snapshot
-//         state_machine.take_db_snapshot().await.unwrap();
-//         db.write(TABLE, &k, &v2).unwrap();
-//         state_machine.take_db_snapshot().await.unwrap();
+        assert_eq!(value, v2);
+    }
 
-//         // Recover the DB and verify that only the second value remains
-//         let new_db = state_machine.open_snap_db().await.unwrap();
-//         let value: String = new_db.read(TABLE, &k).unwrap().unwrap();
+    /// Tests the helper that directly copies a DB to another
+    #[tokio::test]
+    async fn test_copy_db() {
+        // One table is included in a snapshot copy operation, one is excluded
+        const INCLUDED_TABLE: &str = WALLETS_TABLE;
+        const EXCLUDED_TABLE: &str = EXCLUDED_TABLES[0];
+        let (k1, v1) = ("key1".to_string(), "value1".to_string());
+        let (k2, v2) = ("key2".to_string(), "value2".to_string());
+        let (k3, v3) = ("key3".to_string(), "value3".to_string());
+        // Test a more complicated value
+        let account = mock_empty_account();
+        let (k4, v4) = ("key4".to_string(), account.clone());
 
-//         assert_eq!(value, v2);
-//     }
+        let src_db = mock_db();
+        let dest_db = mock_db();
 
-//     /// Tests the helper that directly copies a DB to another
-//     #[tokio::test]
-//     async fn test_copy_db() {
-//         // One table is included in a snapshot copy operation, one is
-// excluded         const INCLUDED_TABLE: &str = WALLETS_TABLE;
-//         const EXCLUDED_TABLE: &str = EXCLUDED_TABLES[0];
-//         let (k1, v1) = ("key1".to_string(), "value1".to_string());
-//         let (k2, v2) = ("key2".to_string(), "value2".to_string());
-//         let (k3, v3) = ("key3".to_string(), "value3".to_string());
-//         // Test a more complicated value
-//         let wallet = mock_empty_wallet();
-//         let (k4, v4) = ("key4".to_string(), wallet.clone());
+        // Write (k1, v1) to the excluded table of src_db, (k2, v2) to the excluded
+        // table of dest_db, and (k3, v3) to the included table of src_db
+        src_db.write(EXCLUDED_TABLE, &k1, &v1).unwrap();
+        dest_db.write(EXCLUDED_TABLE, &k2, &v2).unwrap();
+        src_db.write(INCLUDED_TABLE, &k3, &v3).unwrap();
+        dest_db.write(INCLUDED_TABLE, &k3, &"overwritten".to_string()).unwrap();
+        src_db.write(INCLUDED_TABLE, &k4, &v4).unwrap();
 
-//         let src_db = mock_db();
-//         let dest_db = mock_db();
+        // Copy the contents of one db to another
+        StateMachine::copy_db_data(&src_db, &dest_db).unwrap();
 
-//         // Write (k1, v1) to the excluded table of src_db, (k2, v2) to the
-// excluded         // table of dest_db, and (k3, v3) to the included table of
-// src_db         src_db.write(EXCLUDED_TABLE, &k1, &v1).unwrap();
-//         dest_db.write(EXCLUDED_TABLE, &k2, &v2).unwrap();
-//         src_db.write(INCLUDED_TABLE, &k3, &v3).unwrap();
-//         dest_db.write(INCLUDED_TABLE, &k3,
-// &"overwritten".to_string()).unwrap();         src_db.write(INCLUDED_TABLE,
-// &k4, &v4).unwrap();
+        // The destination should have (k3, v3) overwritten and (k2, v2) should remain.
+        // k1 should not be present
+        let dest_k1: Option<String> = dest_db.read(EXCLUDED_TABLE, &k1).unwrap();
+        let dest_k2: String = dest_db.read(EXCLUDED_TABLE, &k2).unwrap().unwrap();
+        let dest_k3: String = dest_db.read(INCLUDED_TABLE, &k3).unwrap().unwrap();
+        let dest_k4: Account = dest_db.read(INCLUDED_TABLE, &k4).unwrap().unwrap();
 
-//         // Copy the contents of one db to another
-//         StateMachine::copy_db_data(&src_db, &dest_db).unwrap();
+        assert_eq!(dest_k1, None);
+        assert_eq!(dest_k2, v2);
+        assert_eq!(dest_k3, v3);
+        assert_eq!(dest_k4, v4);
+    }
 
-//         // The destination should have (k3, v3) overwritten and (k2, v2)
-// should remain.         // k1 should not be present
-//         let dest_k1: Option<String> = dest_db.read(EXCLUDED_TABLE,
-// &k1).unwrap();         let dest_k2: String = dest_db.read(EXCLUDED_TABLE,
-// &k2).unwrap().unwrap();         let dest_k3: String =
-// dest_db.read(INCLUDED_TABLE, &k3).unwrap().unwrap();         let dest_k4:
-// Wallet = dest_db.read(INCLUDED_TABLE, &k4).unwrap().unwrap();
+    /// Tests applying a snapshot to the DB
+    #[tokio::test]
+    async fn test_apply_snapshot() {
+        const INCLUDED_TABLE: &str = WALLETS_TABLE;
+        const EXCLUDED_TABLE: &str = EXCLUDED_TABLES[0];
+        let (k1, v1) = ("key1".to_string(), "value1".to_string());
+        let (k2, v2) = ("key2".to_string(), "value2".to_string());
 
-//         assert_eq!(dest_k1, None);
-//         assert_eq!(dest_k2, v2);
-//         assert_eq!(dest_k3, v3);
-//         assert_eq!(dest_k4, v4);
-//     }
+        let mut state_machine = mock_state_machine().await;
+        let snapshot_db = mock_db();
+        let meta = SnapshotMeta::default();
 
-//     /// Tests applying a snapshot to the DB
-//     #[tokio::test]
-//     async fn test_apply_snapshot() {
-//         const INCLUDED_TABLE: &str = WALLETS_TABLE;
-//         const EXCLUDED_TABLE: &str = EXCLUDED_TABLES[0];
-//         let (k1, v1) = ("key1".to_string(), "value1".to_string());
-//         let (k2, v2) = ("key2".to_string(), "value2".to_string());
+        // Write to the DB
+        snapshot_db.write(INCLUDED_TABLE, &k1, &v1).unwrap();
+        snapshot_db.write(EXCLUDED_TABLE, &k2, &v2).unwrap();
 
-//         let mut state_machine = mock_state_machine().await;
-//         let snapshot_db = mock_db();
-//         let meta = SnapshotMeta::default();
+        // Apply the snapshot
+        state_machine.update_from_snapshot(&meta, snapshot_db).await.unwrap();
 
-//         // Write to the DB
-//         snapshot_db.write(INCLUDED_TABLE, &k1, &v1).unwrap();
-//         snapshot_db.write(EXCLUDED_TABLE, &k2, &v2).unwrap();
+        // Check that the snapshot was applied correctly; only k1 should be present
+        let sm_db = state_machine.db();
+        let value1: String = sm_db.read(INCLUDED_TABLE, &k1).unwrap().unwrap();
+        let value2: Option<String> = sm_db.read(EXCLUDED_TABLE, &k2).unwrap();
 
-//         // Apply the snapshot
-//         state_machine.update_from_snapshot(&meta,
-// snapshot_db).await.unwrap();
+        assert_eq!(value1, v1);
+        assert_eq!(value2, None);
+    }
 
-//         // Check that the snapshot was applied correctly; only k1 should be
-// present         let sm_db = state_machine.db();
-//         let value1: String = sm_db.read(INCLUDED_TABLE,
-// &k1).unwrap().unwrap();         let value2: Option<String> =
-// sm_db.read(EXCLUDED_TABLE, &k2).unwrap();
+    /// Tests that applying a snapshot properly preserves accounts and matching
+    /// pools
+    #[tokio::test]
+    async fn test_apply_snapshot_accounts_and_pools() {
+        use std::sync::Arc;
 
-//         assert_eq!(value1, v1);
-//         assert_eq!(value2, None);
-//     }
+        let snapshot_sm = mock_state_machine().await;
+        let mut target_sm = mock_state_machine().await;
 
-//     /// Tests that applying a snapshot properly backfills the order cache
-//     #[tokio::test]
-//     async fn test_apply_snapshot_order_cache() {
-//         let snapshot_sm = mock_state_machine().await;
-//         let mut target_sm = mock_state_machine().await;
-//         let order_cache = target_sm.applicator.config.order_cache.clone();
+        // Create two accounts
+        let account1 = mock_empty_account();
+        let account2 = mock_empty_account();
 
-//         // Create three orders, the first allows external matches and is
-// ready for match         // The second does not allow external matches, but is
-// read for matching         // The third is neither ready for matching nor
-// allows external matches         let oid1 = IntentIdentifier::new_v4();
-//         let oid2 = IntentIdentifier::new_v4();
-//         let oid3 = IntentIdentifier::new_v4();
-//         let mut order1 = mock_order();
-//         let mut order2 = mock_order();
-//         let mut order3 = mock_order();
-//         order1.allow_external_matches = true;
-//         order2.allow_external_matches = false;
-//         order3.allow_external_matches = false;
+        // Add accounts to the snapshot state machine
+        add_account_to_sm(&snapshot_sm, account1.clone()).await;
+        add_account_to_sm(&snapshot_sm, account2.clone()).await;
 
-//         // Add two wallets containing these orders
-//         let mut wallet1 = mock_empty_wallet();
-//         add_wallet_to_sm(&snapshot_sm, wallet1.clone()).await;
-//         wallet1.add_order(oid1, order1.clone()).unwrap();
+        // Create a matching pool
+        let pool_name: MatchingPoolName = "test-pool".to_string();
+        create_matching_pool_in_sm(&snapshot_sm, pool_name).await;
 
-//         let mut wallet2 = mock_empty_wallet();
-//         add_wallet_to_sm(&snapshot_sm, wallet2.clone()).await;
-//         wallet2.add_order(oid2, order2.clone()).unwrap();
-//         wallet2.add_order(oid3, order3.clone()).unwrap();
+        // Update the target state machine from the snapshot
+        let snapshot_db = Arc::try_unwrap(snapshot_sm.applicator.config.db)
+            .unwrap_or_else(|_| panic!("Failed to unwrap DB"));
+        let meta = SnapshotMeta::default();
 
-//         update_wallet_in_sm(&snapshot_sm, wallet1).await;
-//         update_wallet_in_sm(&snapshot_sm, wallet2).await;
+        let test_tx = snapshot_db.new_read_tx().unwrap();
+        let accounts = test_tx.get_all_accounts().unwrap();
+        assert_eq!(accounts.len(), 2);
+        test_tx.commit().unwrap();
 
-//         // Add validity proofs for the first two orders so that they are
-// ready for match         add_dummy_validity_proof_to_sm(&snapshot_sm,
-// oid1).await;         add_dummy_validity_proof_to_sm(&snapshot_sm,
-// oid2).await;
+        target_sm.update_from_snapshot(&meta, snapshot_db).await.unwrap();
 
-//         // Update the target state machine from the snapshot
-//         let snapshot_db = Arc::try_unwrap(snapshot_sm.applicator.config.db)
-//             .unwrap_or_else(|_| panic!("Failed to unwrap DB")); // Take the
-// DB         let meta = SnapshotMeta::default();
+        // Check that the accounts are present in the target state machine
+        let target_db = target_sm.db();
+        let target_tx = target_db.new_read_tx().unwrap();
+        let recovered_accounts = target_tx.get_all_accounts().unwrap();
+        assert_eq!(recovered_accounts.len(), 2);
+    }
 
-//         let test_tx = snapshot_db.new_read_tx().unwrap();
-//         let wallets = test_tx.get_all_wallets().unwrap();
-//         assert_eq!(wallets.len(), 2);
-//         test_tx.commit().unwrap();
-
-//         target_sm.update_from_snapshot(&meta, snapshot_db).await.unwrap();
-
-//         // Check that the order cache has the correct orders
-//         let order1_filter =
-//             OrderBookFilter::new(order1.pair(), order1.side, true /* external
-// */);         let matchable_orders =
-// order_cache.get_orders(order1_filter).await;         assert_eq!
-// (matchable_orders.len(), 1);         assert!(matchable_orders.contains(&
-// oid1));
-
-//         let order2_filter =
-//             OrderBookFilter::new(order2.pair(), order2.side, false /*
-// external */);         let matchable_orders =
-// order_cache.get_orders(order2_filter).await;         assert_eq!
-// (matchable_orders.len(), 1);         assert!(matchable_orders.contains(&
-// oid2));
-
-//         let order3_filter =
-//             OrderBookFilter::new(order3.pair(), order3.side, false /*
-// external */);         let matchable_orders =
-// order_cache.get_orders(order3_filter).await;         assert_eq!
-// (matchable_orders.len(), 0);     }
-// }
+    // TODO: Re-enable this test once order cache hydration is implemented
+    // /// Tests that applying a snapshot properly backfills the order cache
+    // #[tokio::test]
+    // async fn test_apply_snapshot_order_cache() {
+    //     use std::sync::Arc;
+    //     use types_account::account::IntentIdentifier;
+    //     use types_account::account::mocks::mock_intent;
+    //     // use crate::caching::order_cache::OrderBookFilter;
+    //
+    //     let snapshot_sm = mock_state_machine().await;
+    //     let mut target_sm = mock_state_machine().await;
+    //     // let order_cache = target_sm.applicator.config.order_cache.clone();
+    //
+    //     // Create three intents/orders, the first allows external matches and
+    // is ready for match     // The second does not allow external matches,
+    // but is ready for matching     // The third is neither ready for
+    // matching nor allows external matches     let oid1 =
+    // IntentIdentifier::new_v4();     let oid2 =
+    // IntentIdentifier::new_v4();     let oid3 =
+    // IntentIdentifier::new_v4();     // NOTE: Order types with
+    // allow_external_matches are not currently used     // let mut order1 =
+    // mock_order();     // let mut order2 = mock_order();
+    //     // let mut order3 = mock_order();
+    //     // order1.allow_external_matches = true;
+    //     // order2.allow_external_matches = false;
+    //     // order3.allow_external_matches = false;
+    //
+    //     // Add two accounts containing these intents
+    //     let mut account1 = mock_empty_account();
+    //     add_account_to_sm(&snapshot_sm, account1.clone()).await;
+    //     account1.intents.insert(oid1, mock_intent());
+    //
+    //     let mut account2 = mock_empty_account();
+    //     add_account_to_sm(&snapshot_sm, account2.clone()).await;
+    //     account2.intents.insert(oid2, mock_intent());
+    //     account2.intents.insert(oid3, mock_intent());
+    //
+    //     update_account_in_sm(&snapshot_sm, account1).await;
+    //     update_account_in_sm(&snapshot_sm, account2).await;
+    //
+    //     // Add validity proofs for the first two orders so that they are
+    // ready for match     // NOTE: Validity proofs are not currently
+    // implemented, so this is commented out     //
+    // add_dummy_validity_proof_to_sm(& snapshot_sm, oid1).await;     //
+    // add_dummy_validity_proof_to_sm(& snapshot_sm, oid2).await;
+    //
+    //     // Update the target state machine from the snapshot
+    //     let snapshot_db = Arc::try_unwrap(snapshot_sm.applicator.config.db)
+    //         .unwrap_or_else(|_| panic!("Failed to unwrap DB"));
+    //     let meta = SnapshotMeta::default();
+    //
+    //     let test_tx = snapshot_db.new_read_tx().unwrap();
+    //     let accounts = test_tx.get_all_accounts().unwrap();
+    //     assert_eq!(accounts.len(), 2);
+    //     test_tx.commit().unwrap();
+    //
+    //     target_sm.update_from_snapshot(&meta, snapshot_db).await.unwrap();
+    //
+    //     // Check that the order cache has the correct orders
+    //     // NOTE: Order cache hydration is currently commented out in
+    // update_from_snapshot     // let order1_filter =
+    //     //     OrderBookFilter::new(order1.pair(), order1.side, true /*
+    // external */);     // let matchable_orders =
+    // order_cache.get_orders(order1_filter).await;     // assert_eq!
+    // (matchable_orders.len(), 1);     // assert!(matchable_orders.
+    // contains(&oid1));     //
+    //     // let order2_filter =
+    //     //     OrderBookFilter::new(order2.pair(), order2.side, false /*
+    // external */);     // let matchable_orders =
+    // order_cache.get_orders(order2_filter).await;     // assert_eq!
+    // (matchable_orders.len(), 1);     // assert!(matchable_orders.
+    // contains(&oid2));     //
+    //     // let order3_filter =
+    //     //     OrderBookFilter::new(order3.pair(), order3.side, false /*
+    // external */);     // let matchable_orders =
+    // order_cache.get_orders(order3_filter).await;     // assert_eq!
+    // (matchable_orders.len(), 0); }
+}

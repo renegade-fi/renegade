@@ -87,6 +87,8 @@ mod test {
     use std::time::Duration;
 
     use openraft::{StorageError as RaftStorageError, testing::StoreBuilder};
+    use rand::{seq::IteratorRandom, thread_rng};
+    use types_account::account::mocks::mock_empty_account;
     use types_gossip::mocks::mock_peer;
     use types_tasks::{TaskQueueKey, mocks::mock_queued_task};
 
@@ -95,7 +97,7 @@ mod test {
         state_transition::{Proposal, StateTransition},
     };
 
-    use super::{NodeId, TypeConfig, log_store::LogStore, state_machine::StateMachine};
+    use super::{NodeId, RaftNode, TypeConfig, log_store::LogStore, state_machine::StateMachine};
 
     /// A builder for the storage layer, used to fit into the `openraft` test
     /// interface
@@ -137,310 +139,309 @@ mod test {
         assert!(task.is_some());
     }
 
-    // /// Tests proposing a state transition directly to the leader
-    // #[tokio::test]
-    // #[allow(non_snake_case)]
-    // async fn test_simple_raft__propose_leader() {
-    //     const N: usize = 5;
-    //     let mut rng = thread_rng();
+    /// Tests proposing a state transition directly to the leader
+    #[tokio::test]
+    #[allow(non_snake_case)]
+    async fn test_simple_raft__propose_leader() {
+        const N: usize = 5;
+        let mut rng = thread_rng();
 
-    //     // Setup a raft
-    //     let nodes = MockRaft::create_initialized_raft(N).await;
-    //     let leader = nodes.get_client(0).await.leader().await;
-    //     let leader = match leader {
-    //         Some(leader) => leader,
-    //         None => panic!("no leader in raft"),
-    //     };
+        // Setup a raft
+        let nodes = MockRaft::create_initialized_raft(N).await;
+        let leader = nodes.get_client(0).await.leader().await;
+        let leader = match leader {
+            Some(leader) => leader,
+            None => panic!("no leader in raft"),
+        };
 
-    //     // Propose a wallet to the leader
-    //     let target_raft = &nodes.get_client(leader).await;
-    //     let wallet = mock_empty_wallet();
-    //     let wallet_id = wallet.wallet_id;
-    //     let update = Proposal::from(StateTransition::AddWallet { wallet });
-    //     target_raft.propose_transition(update).await.unwrap();
-    //     tokio::time::sleep(Duration::from_millis(100)).await;
+        // Propose an account to the leader
+        let target_raft = &nodes.get_client(leader).await;
+        let account = mock_empty_account();
+        let account_id = account.wallet_id;
+        let update = Proposal::from(StateTransition::CreateAccount { account });
+        target_raft.propose_transition(update).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(100)).await;
 
-    //     // Check a random node's DB to ensure the wallet exists
-    //     let nid = (0..N).choose(&mut rng).unwrap();
-    //     let db = nodes.get_db(nid as NodeId).await;
-    //     let tx = db.new_read_tx().unwrap();
-    //     let wallet = tx.get_wallet(&wallet_id).unwrap();
-    //     assert!(wallet.is_some());
-    // }
+        // Check a random node's DB to ensure the account exists
+        let nid = (0..N).choose(&mut rng).unwrap();
+        let db = nodes.get_db(nid as NodeId).await;
+        let tx = db.new_read_tx().unwrap();
+        let account = tx.get_account(&account_id).unwrap();
+        assert!(account.is_some());
+    }
 
-    // /// Tests proposing a state transition to a random node, assuming it will
-    // /// be forwarded to the leader
-    // #[tokio::test]
-    // #[allow(non_snake_case)]
-    // async fn test_simple_raft__propose_random() {
-    //     const N: usize = 5;
-    //     let mut rng = thread_rng();
+    /// Tests proposing a state transition to a random node, assuming it will
+    /// be forwarded to the leader
+    #[tokio::test]
+    #[allow(non_snake_case)]
+    async fn test_simple_raft__propose_random() {
+        const N: usize = 5;
+        let mut rng = thread_rng();
 
-    //     // Setup a raft
-    //     let nodes = MockRaft::create_initialized_raft(N).await;
-    //     let leader = nodes.get_client(0).await.leader().await;
-    //     if leader.is_none() {
-    //         panic!("no leader in raft");
-    //     }
+        // Setup a raft
+        let nodes = MockRaft::create_initialized_raft(N).await;
+        let leader = nodes.get_client(0).await.leader().await;
+        if leader.is_none() {
+            panic!("no leader in raft");
+        }
 
-    //     // Propose a wallet update to a random node
-    //     let nid = (0..N).choose(&mut rng).unwrap();
-    //     let target_raft = nodes.get_client(nid as NodeId).await;
-    //     let wallet = mock_empty_wallet();
-    //     let wallet_id = wallet.wallet_id;
-    //     let update = Proposal::from(StateTransition::AddWallet { wallet });
-    //     target_raft.propose_transition(update).await.unwrap();
-    //     tokio::time::sleep(Duration::from_millis(100)).await;
+        // Propose an account to a random node
+        let nid = (0..N).choose(&mut rng).unwrap();
+        let target_raft = nodes.get_client(nid as NodeId).await;
+        let account = mock_empty_account();
+        let account_id = account.wallet_id;
+        let update = Proposal::from(StateTransition::CreateAccount { account });
+        target_raft.propose_transition(update).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(100)).await;
 
-    //     // Check a random node's DB to ensure the wallet exists
-    //     let nid = (0..N).choose(&mut rng).unwrap();
-    //     let db = nodes.get_db(nid as NodeId).await;
-    //     let tx = db.new_read_tx().unwrap();
-    //     let wallet = tx.get_wallet(&wallet_id).unwrap();
-    //     assert!(wallet.is_some());
-    // }
+        // Check a random node's DB to ensure the account exists
+        let nid = (0..N).choose(&mut rng).unwrap();
+        let db = nodes.get_db(nid as NodeId).await;
+        let tx = db.new_read_tx().unwrap();
+        let account = tx.get_account(&account_id).unwrap();
+        assert!(account.is_some());
+    }
 
-    // /// Tests adding a new node to the raft
-    // #[cfg_attr(feature = "ci", ignore)]
-    // #[tokio::test]
-    // #[allow(non_snake_case)]
-    // async fn test_add_node__to_singleton() {
-    //     let mut rng = thread_rng();
+    /// Tests adding a new node to the raft
+    #[cfg_attr(feature = "ci", ignore)]
+    #[tokio::test]
+    #[allow(non_snake_case)]
+    async fn test_add_node__to_singleton() {
+        let mut rng = thread_rng();
 
-    //     // Begin a singleton cluster
-    //     let raft = MockRaft::create_singleton_raft().await;
-    //     let client = raft.get_client(0).await;
-    //     let wallet = mock_empty_wallet();
-    //     let wallet_id = wallet.wallet_id;
-    //     let update = Proposal::from(StateTransition::AddWallet { wallet });
-    //     client.propose_transition(update).await.unwrap();
+        // Begin a singleton cluster
+        let raft = MockRaft::create_singleton_raft().await;
+        let client = raft.get_client(0).await;
+        let account = mock_empty_account();
+        let account_id = account.wallet_id;
+        let update = Proposal::from(StateTransition::CreateAccount { account });
+        client.propose_transition(update).await.unwrap();
 
-    //     // Add a new node
-    //     let new_nid = 2;
-    //     raft.add_node(new_nid).await;
+        // Add a new node
+        let new_nid = 2;
+        raft.add_node(new_nid).await;
 
-    //     // Add the node as a learner and wait for replication
-    //     client.add_learner(new_nid, RaftNode::default()).await.unwrap();
-    //     tokio::time::sleep(Duration::from_millis(10)).await;
+        // Add the node as a learner and wait for replication
+        client.add_learner(new_nid, RaftNode::default()).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(10)).await;
 
-    //     // Check the DB of the new node
-    //     let db = raft.get_db(new_nid).await;
-    //     let tx = db.new_read_tx().unwrap();
-    //     let wallet = tx.get_wallet(&wallet_id).unwrap();
-    //     assert!(wallet.is_some());
+        // Check the DB of the new node
+        let db = raft.get_db(new_nid).await;
+        let tx = db.new_read_tx().unwrap();
+        let account = tx.get_account(&account_id).unwrap();
+        assert!(account.is_some());
 
-    //     // Promote the learner, propose a new wallet, ensure consensus is
-    // reached     client.promote_learner(new_nid).await.unwrap();
-    //     let wallet = mock_empty_wallet();
-    //     let wallet_id = wallet.wallet_id;
-    //     let update = Proposal::from(StateTransition::AddWallet { wallet });
-    //     client.propose_transition(update).await.unwrap();
-    //     tokio::time::sleep(Duration::from_millis(100)).await;
+        // Promote the learner, propose a new account, ensure consensus is reached
+        client.promote_learner(new_nid).await.unwrap();
+        let account = mock_empty_account();
+        let account_id = account.wallet_id;
+        let update = Proposal::from(StateTransition::CreateAccount { account });
+        client.propose_transition(update).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(100)).await;
 
-    //     // Check the DB of either node
-    //     let nid = [0, new_nid].into_iter().choose(&mut rng).unwrap();
-    //     let db = raft.get_db(nid).await;
-    //     let tx = db.new_read_tx().unwrap();
-    //     let wallet = tx.get_wallet(&wallet_id).unwrap();
-    //     assert!(wallet.is_some());
-    // }
+        // Check the DB of either node
+        let nid = [0, new_nid].into_iter().choose(&mut rng).unwrap();
+        let db = raft.get_db(nid).await;
+        let tx = db.new_read_tx().unwrap();
+        let account = tx.get_account(&account_id).unwrap();
+        assert!(account.is_some());
+    }
 
-    // /// Tests adding a node to a larger established cluster
-    // #[tokio::test]
-    // #[allow(non_snake_case)]
-    // async fn test_add_node__to_existing() {
-    //     const N: usize = 5;
-    //     let mut rng = thread_rng();
+    /// Tests adding a node to a larger established cluster
+    #[tokio::test]
+    #[allow(non_snake_case)]
+    async fn test_add_node__to_existing() {
+        const N: usize = 5;
+        let mut rng = thread_rng();
 
-    //     // Create a cluster of size N
-    //     let raft = MockRaft::create_initialized_raft(N).await;
-    //     let nid = (0..N).choose(&mut rng).unwrap();
-    //     let client = raft.get_client(nid as NodeId).await;
+        // Create a cluster of size N
+        let raft = MockRaft::create_initialized_raft(N).await;
+        let nid = (0..N).choose(&mut rng).unwrap();
+        let client = raft.get_client(nid as NodeId).await;
 
-    //     // Add a new node as a learner
-    //     let new_nid = N as u64 + 1;
-    //     raft.add_node(new_nid).await;
-    //     client.add_learner(new_nid, RaftNode::default()).await.unwrap();
-    //     client.promote_learner(new_nid).await.unwrap();
-    //     tokio::time::sleep(Duration::from_millis(100)).await;
+        // Add a new node as a learner
+        let new_nid = N as u64 + 1;
+        raft.add_node(new_nid).await;
+        client.add_learner(new_nid, RaftNode::default()).await.unwrap();
+        client.promote_learner(new_nid).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(100)).await;
 
-    //     // Propose a new state transition
-    //     let new_wallet = mock_empty_wallet();
-    //     let new_wallet_id = new_wallet.wallet_id;
-    //     let update = Proposal::from(StateTransition::AddWallet { wallet:
-    // new_wallet });     client.propose_transition(update).await.unwrap();
-    //     tokio::time::sleep(Duration::from_millis(100)).await;
+        // Propose a new state transition
+        let new_account = mock_empty_account();
+        let new_account_id = new_account.wallet_id;
+        let update = Proposal::from(StateTransition::CreateAccount { account: new_account });
+        client.propose_transition(update).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(100)).await;
 
-    //     // Check the DB of the new node
-    //     let db = raft.get_db(new_nid).await;
-    //     let tx = db.new_read_tx().unwrap();
-    //     let wallet = tx.get_wallet(&new_wallet_id).unwrap();
-    //     assert!(wallet.is_some());
+        // Check the DB of the new node
+        let db = raft.get_db(new_nid).await;
+        let tx = db.new_read_tx().unwrap();
+        let account = tx.get_account(&new_account_id).unwrap();
+        assert!(account.is_some());
 
-    //     // Check the DB of a random node
-    //     let nid = (0..N).choose(&mut rng).unwrap();
-    //     let db = raft.get_db(nid as NodeId).await;
-    //     let tx = db.new_read_tx().unwrap();
-    //     let wallet = tx.get_wallet(&new_wallet_id).unwrap();
-    //     assert!(wallet.is_some());
-    // }
+        // Check the DB of a random node
+        let nid = (0..N).choose(&mut rng).unwrap();
+        let db = raft.get_db(nid as NodeId).await;
+        let tx = db.new_read_tx().unwrap();
+        let account = tx.get_account(&new_account_id).unwrap();
+        assert!(account.is_some());
+    }
 
-    // /// Tests a scale up from 1 to `N` cluster nodes
-    // #[tokio::test]
-    // async fn test_raft_scale_up() {
-    //     const N: usize = 5;
-    //     // Create a singleton raft
-    //     let raft = MockRaft::create_singleton_raft().await;
-    //     let client = raft.get_client(0).await;
+    /// Tests a scale up from 1 to `N` cluster nodes
+    #[tokio::test]
+    async fn test_raft_scale_up() {
+        const N: usize = 5;
+        // Create a singleton raft
+        let raft = MockRaft::create_singleton_raft().await;
+        let client = raft.get_client(0).await;
 
-    //     // Add nodes one by one until we have a cluster of size N
-    //     for i in 1..N {
-    //         let new_nid = i as u64;
-    //         raft.add_node(new_nid).await;
-    //         client.add_learner(new_nid, RaftNode::default()).await.unwrap();
-    //         client.promote_learner(new_nid).await.unwrap();
-    //     }
+        // Add nodes one by one until we have a cluster of size N
+        for i in 1..N {
+            let new_nid = i as u64;
+            raft.add_node(new_nid).await;
+            client.add_learner(new_nid, RaftNode::default()).await.unwrap();
+            client.promote_learner(new_nid).await.unwrap();
+        }
 
-    //     // Propose a new wallet and check that each node in the cluster has
-    // the wallet     // saved in the DB
-    //     let new_wallet = mock_empty_wallet();
-    //     let new_wallet_id = new_wallet.wallet_id;
-    //     let update = Proposal::from(StateTransition::AddWallet { wallet:
-    // new_wallet });     client.propose_transition(update).await.unwrap();
-    //     tokio::time::sleep(Duration::from_millis(100)).await;
+        // Propose a new account and check that each node in the cluster has
+        // the account saved in the DB
+        let new_account = mock_empty_account();
+        let new_account_id = new_account.wallet_id;
+        let update = Proposal::from(StateTransition::CreateAccount { account: new_account });
+        client.propose_transition(update).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(100)).await;
 
-    //     for i in 0..N {
-    //         let db = raft.get_db(i as NodeId).await;
-    //         let tx = db.new_read_tx().unwrap();
-    //         let wallet = tx.get_wallet(&new_wallet_id).unwrap();
-    //         assert!(wallet.is_some());
-    //     }
-    // }
+        for i in 0..N {
+            let db = raft.get_db(i as NodeId).await;
+            let tx = db.new_read_tx().unwrap();
+            let account = tx.get_account(&new_account_id).unwrap();
+            assert!(account.is_some());
+        }
+    }
 
-    // /// Tests removing a node from a minimal (3 node) raft
-    // #[tokio::test]
-    // #[allow(non_snake_case)]
-    // async fn test_remove_node__minimal() {
-    //     const N: u64 = 3;
-    //     let mut rng = thread_rng();
+    /// Tests removing a node from a minimal (3 node) raft
+    #[tokio::test]
+    #[allow(non_snake_case)]
+    async fn test_remove_node__minimal() {
+        const N: u64 = 3;
+        let mut rng = thread_rng();
 
-    //     // Create a singleton raft
-    //     let raft = MockRaft::create_initialized_raft(N as usize).await;
+        // Create a singleton raft
+        let raft = MockRaft::create_initialized_raft(N as usize).await;
 
-    //     // Remove a node from the cluster
-    //     let removed_nid = (0..N).choose(&mut rng).unwrap();
-    //     raft.remove_node(removed_nid).await;
-    //     tokio::time::sleep(Duration::from_millis(100)).await;
+        // Remove a node from the cluster
+        let removed_nid = (0..N).choose(&mut rng).unwrap();
+        raft.remove_node(removed_nid).await;
+        tokio::time::sleep(Duration::from_millis(100)).await;
 
-    //     // Propose removal to another client
-    //     let client_id = (removed_nid + 1) % N;
-    //     let client = raft.get_client(client_id).await;
-    //     client.remove_peer(removed_nid).await.unwrap();
+        // Propose removal to another client
+        let client_id = (removed_nid + 1) % N;
+        let client = raft.get_client(client_id).await;
+        client.remove_peer(removed_nid).await.unwrap();
 
-    //     // Propose a new wallet, ensure that consensus is reached
-    //     let new_wallet = mock_empty_wallet();
-    //     let new_wallet_id = new_wallet.wallet_id;
-    //     let update = Proposal::from(StateTransition::AddWallet { wallet:
-    // new_wallet });     client.propose_transition(update).await.unwrap();
-    //     tokio::time::sleep(Duration::from_millis(100)).await;
+        // Propose a new account, ensure that consensus is reached
+        let new_account = mock_empty_account();
+        let new_account_id = new_account.wallet_id;
+        let update = Proposal::from(StateTransition::CreateAccount { account: new_account });
+        client.propose_transition(update).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(100)).await;
 
-    //     let db = raft.get_db(client_id).await;
-    //     let tx = db.new_read_tx().unwrap();
-    //     let wallet = tx.get_wallet(&new_wallet_id).unwrap();
-    //     assert!(wallet.is_some());
-    // }
+        let db = raft.get_db(client_id).await;
+        let tx = db.new_read_tx().unwrap();
+        let account = tx.get_account(&new_account_id).unwrap();
+        assert!(account.is_some());
+    }
 
-    // /// Tests removing the leader from a cluster
-    // #[tokio::test]
-    // async fn test_remove_leader() {
-    //     const N: u64 = 5;
+    /// Tests removing the leader from a cluster
+    #[tokio::test]
+    async fn test_remove_leader() {
+        const N: u64 = 5;
 
-    //     // Create a cluster of size N
-    //     let raft = MockRaft::create_initialized_raft(N as usize).await;
-    //     let client = raft.get_client(0).await;
+        // Create a cluster of size N
+        let raft = MockRaft::create_initialized_raft(N as usize).await;
+        let client = raft.get_client(0).await;
 
-    //     // Remove the leader from the cluster
-    //     let leader = client.leader().await.unwrap();
-    //     raft.remove_node(leader).await;
-    //     tokio::time::sleep(Duration::from_millis(100)).await;
+        // Remove the leader from the cluster
+        let leader = client.leader().await.unwrap();
+        raft.remove_node(leader).await;
+        tokio::time::sleep(Duration::from_millis(100)).await;
 
-    //     // Propose a removal to a node that was not just removed
-    //     let non_leader_nid = (leader + 1) % N;
-    //     let client = raft.get_client(non_leader_nid as NodeId).await;
-    //     client.remove_peer(leader).await.unwrap();
-    //     tokio::time::sleep(Duration::from_millis(100)).await;
+        // Propose a removal to a node that was not just removed
+        let non_leader_nid = (leader + 1) % N;
+        let client = raft.get_client(non_leader_nid as NodeId).await;
+        client.remove_peer(leader).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(100)).await;
 
-    //     // Propose a new wallet, ensure that consensus is reached
-    //     let new_wallet = mock_empty_wallet();
-    //     let new_wallet_id = new_wallet.wallet_id;
-    //     let update = Proposal::from(StateTransition::AddWallet { wallet:
-    // new_wallet });     client.propose_transition(update).await.unwrap();
-    //     tokio::time::sleep(Duration::from_millis(100)).await;
+        // Propose a new account, ensure that consensus is reached
+        let new_account = mock_empty_account();
+        let new_account_id = new_account.wallet_id;
+        let update = Proposal::from(StateTransition::CreateAccount { account: new_account });
+        client.propose_transition(update).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(100)).await;
 
-    //     // Check the DB of the non-leader
-    //     let db = raft.get_db(non_leader_nid).await;
-    //     let tx = db.new_read_tx().unwrap();
-    //     let wallet = tx.get_wallet(&new_wallet_id).unwrap();
-    //     assert!(wallet.is_some());
-    // }
+        // Check the DB of the non-leader
+        let db = raft.get_db(non_leader_nid).await;
+        let tx = db.new_read_tx().unwrap();
+        let account = tx.get_account(&new_account_id).unwrap();
+        assert!(account.is_some());
+    }
 
-    // /// Tests scaling down a cluster from `N` nodes to two
-    // #[tokio::test]
-    // async fn test_raft_scale_down() {
-    //     const N: usize = 5;
-    //     const SCALE_TO: usize = 2;
-    //     let mut rng = thread_rng();
+    /// Tests scaling down a cluster from `N` nodes to two
+    #[tokio::test]
+    async fn test_raft_scale_down() {
+        const N: usize = 5;
+        const SCALE_TO: usize = 2;
+        let mut rng = thread_rng();
 
-    //     // Create a cluster of size N
-    //     let raft = MockRaft::create_initialized_raft(N).await;
-    //     let client = raft.get_client(0).await;
+        // Create a cluster of size N
+        let raft = MockRaft::create_initialized_raft(N).await;
+        let client = raft.get_client(0).await;
 
-    //     // Remove nodes until we have a cluster of size SCALE_TO
-    //     // Only nodes {0, 1} remain
-    //     for i in 0..N - SCALE_TO {
-    //         let removed_nid = N - i - 1;
-    //         raft.remove_node(removed_nid as u64).await;
-    //         client.remove_peer(removed_nid as u64).await.unwrap();
-    //         tokio::time::sleep(Duration::from_millis(200)).await;
-    //     }
+        // Remove nodes until we have a cluster of size SCALE_TO
+        // Only nodes {0, 1} remain
+        for i in 0..N - SCALE_TO {
+            let removed_nid = N - i - 1;
+            raft.remove_node(removed_nid as u64).await;
+            client.remove_peer(removed_nid as u64).await.unwrap();
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        }
 
-    //     // Propose a state transition and ensure consensus is reached
-    //     let new_wallet = mock_empty_wallet();
-    //     let new_wallet_id = new_wallet.wallet_id;
-    //     let update = Proposal::from(StateTransition::AddWallet { wallet:
-    // new_wallet });     client.propose_transition(update).await.unwrap();
-    //     tokio::time::sleep(Duration::from_millis(100)).await;
+        // Propose a state transition and ensure consensus is reached
+        let new_account = mock_empty_account();
+        let new_account_id = new_account.wallet_id;
+        let update = Proposal::from(StateTransition::CreateAccount { account: new_account });
+        client.propose_transition(update).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(100)).await;
 
-    //     // Check either of the remaining nodes' DBs
-    //     let nid = [0, 1].into_iter().choose(&mut rng).unwrap();
-    //     let db = raft.get_db(nid).await;
-    //     let tx = db.new_read_tx().unwrap();
-    //     let wallet = tx.get_wallet(&new_wallet_id).unwrap();
-    //     assert!(wallet.is_some());
-    // }
+        // Check either of the remaining nodes' DBs
+        let nid = [0, 1].into_iter().choose(&mut rng).unwrap();
+        let db = raft.get_db(nid).await;
+        let tx = db.new_read_tx().unwrap();
+        let account = tx.get_account(&new_account_id).unwrap();
+        assert!(account.is_some());
+    }
 
-    // #[tokio::test]
-    // async fn test_concurrent_membership_change() {
-    //     const N: usize = 5;
+    #[tokio::test]
+    async fn test_concurrent_membership_change() {
+        const N: usize = 5;
 
-    //     // Create a cluster of size N
-    //     let raft = MockRaft::create_initialized_raft(N).await;
-    //     let client = raft.get_client(0).await;
-    //     let client2 = raft.get_client(1).await;
+        // Create a cluster of size N
+        let raft = MockRaft::create_initialized_raft(N).await;
+        let client = raft.get_client(0).await;
+        let client2 = raft.get_client(1).await;
 
-    //     // Add 2 new learners concurrently
-    //     let learner_1 = N as u64 + 1;
-    //     let learner_2 = N as u64 + 2;
-    //     raft.add_node(learner_1).await;
-    //     raft.add_node(learner_2).await;
+        // Add 2 new learners concurrently
+        let learner_1 = N as u64 + 1;
+        let learner_2 = N as u64 + 2;
+        raft.add_node(learner_1).await;
+        raft.add_node(learner_2).await;
 
-    //     let fut1 =
-    //         tokio::spawn(async move { client.add_learner(learner_1,
-    // RaftNode::default()).await });     let fut2 =
-    //         tokio::spawn(async move { client2.add_learner(learner_2,
-    // RaftNode::default()).await });
+        let fut1 =
+            tokio::spawn(async move { client.add_learner(learner_1, RaftNode::default()).await });
+        let fut2 =
+            tokio::spawn(async move { client2.add_learner(learner_2, RaftNode::default()).await });
 
-    //     fut1.await.unwrap().unwrap();
-    //     fut2.await.unwrap().unwrap();
-    // }
+        fut1.await.unwrap().unwrap();
+        fut2.await.unwrap().unwrap();
+    }
 }
