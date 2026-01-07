@@ -24,8 +24,8 @@ use darkpool_client::{client::DarkpoolClientConfig, DarkpoolClient};
 use event_manager::{manager::EventManager, worker::EventManagerConfig};
 use system_bus::SystemBusMessage;
 use gossip_server::{server::GossipServer, worker::GossipServerConfig};
-use handshake_manager::{manager::HandshakeManager, worker::HandshakeManagerConfig};
-use job_types::handshake_manager::new_handshake_manager_queue;
+use matching_engine_worker::{manager::HandshakeManager, worker::HandshakeManagerConfig};
+use job_types::matching_engine_worker::new_matching_engine_worker_queue;
 use job_types::network_manager::new_network_manager_queue;
 use job_types::proof_manager::new_proof_manager_queue;
 use job_types::task_driver::new_task_driver_queue;
@@ -102,7 +102,7 @@ async fn main() -> Result<(), CoordinatorError> {
     let system_clock = SystemClock::new().await;
     let (network_sender, network_receiver) = new_network_manager_queue();
     let (gossip_worker_sender, gossip_worker_receiver) = new_gossip_server_queue();
-    let (handshake_worker_sender, handshake_worker_receiver) = new_handshake_manager_queue();
+    let (handshake_worker_sender, handshake_worker_receiver) = new_matching_engine_worker_queue();
     let (proof_generation_worker_sender, proof_generation_worker_receiver) =
         new_proof_manager_queue();
     let (task_sender, task_receiver) = new_task_driver_queue();

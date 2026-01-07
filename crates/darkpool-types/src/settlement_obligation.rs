@@ -38,3 +38,32 @@ pub struct SettlementObligation {
     /// The amount of the output token to receive, before fees
     pub amount_out: Amount,
 }
+
+/// A match result is a pair of settlement obligations; one for each party
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct MatchResult {
+    /// The settlement obligation for the first party
+    pub party0_obligation: SettlementObligation,
+    /// The settlement obligation for the second party
+    pub party1_obligation: SettlementObligation,
+}
+
+impl MatchResult {
+    /// Creates a new match result from two settlement obligations
+    pub fn new(
+        party0_obligation: SettlementObligation,
+        party1_obligation: SettlementObligation,
+    ) -> Self {
+        Self { party0_obligation, party1_obligation }
+    }
+
+    /// Get the first party's obligation
+    pub fn party0_obligation(&self) -> &SettlementObligation {
+        &self.party0_obligation
+    }
+
+    /// Get the second party's obligation
+    pub fn party1_obligation(&self) -> &SettlementObligation {
+        &self.party1_obligation
+    }
+}
