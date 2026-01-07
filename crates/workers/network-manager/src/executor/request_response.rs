@@ -2,7 +2,6 @@
 
 use std::time::{Duration, Instant};
 
-use types_gossip::WrappedPeerId;
 use gossip_api::{
     GossipDestination,
     request_response::{
@@ -15,6 +14,7 @@ use libp2p::PeerId;
 use libp2p::request_response::{Message as RequestResponseMessage, ResponseChannel};
 use tracing::{error, instrument, warn};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
+use types_gossip::WrappedPeerId;
 use util::{err_str, telemetry::propagation::set_parent_span_from_context};
 
 use crate::error::NetworkManagerError;

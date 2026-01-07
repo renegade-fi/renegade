@@ -9,12 +9,6 @@ test_helpers = ["dep:ctor", "util/mocks", "util/matching-engine"]
 stats = ["ark-mpc/stats"]
 ci = ["test_helpers"]
 
-[[test]]
-name = "integration"
-path = "integration/main.rs"
-harness = false
-required-features = ["test_helpers"]
-
 #####################
 ### Benchmarks ###
 #####################

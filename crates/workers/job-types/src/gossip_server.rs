@@ -1,12 +1,12 @@
 //! Groups job definitions for the gossip server
 //! These jobs are enqueued for execution by other workers within the relayer
 
-use types_gossip::WrappedPeerId;
 use gossip_api::{
     pubsub::PubsubMessage,
     request_response::{AuthenticatedGossipResponse, GossipRequest, GossipResponse},
 };
 use libp2p::request_response::ResponseChannel;
+use types_gossip::WrappedPeerId;
 use util::channels::{TracedTokioReceiver, TracedTokioSender, new_traced_tokio_channel};
 
 /// The queue sender type to send jobs to the gossip server

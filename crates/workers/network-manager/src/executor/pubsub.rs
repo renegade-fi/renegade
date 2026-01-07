@@ -2,7 +2,6 @@
 
 use std::sync::atomic::Ordering;
 
-use types_gossip::WrappedPeerId;
 use gossip_api::{
     GossipDestination,
     pubsub::{
@@ -12,6 +11,7 @@ use gossip_api::{
 };
 use job_types::{gossip_server::GossipServerJob, handshake_manager::HandshakeManagerJob};
 use libp2p::gossipsub::{Message as GossipsubMessage, Sha256Topic};
+use types_gossip::WrappedPeerId;
 use util::err_str;
 
 use crate::error::NetworkManagerError;

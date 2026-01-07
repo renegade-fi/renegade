@@ -5,10 +5,6 @@ mod identify;
 mod pubsub;
 mod request_response;
 
-use util::default_wrapper::{DefaultOption, DefaultWrapper};
-use types_runtime::CancelChannel;
-use types_gossip::WrappedPeerId;
-use types_core::hmac::HmacKey;
 use futures::StreamExt;
 use gossip_api::pubsub::PubsubMessage;
 use job_types::{
@@ -22,6 +18,10 @@ use libp2p::{
 };
 use state::State;
 use tracing::{debug, error, info};
+use types_core::HmacKey;
+use types_gossip::WrappedPeerId;
+use types_runtime::CancelChannel;
+use util::{DefaultOption, DefaultWrapper};
 use util::{
     channels::TracedMessage,
     concurrency::{AsyncShared, new_async_shared},

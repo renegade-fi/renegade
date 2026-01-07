@@ -108,6 +108,7 @@ impl QueuedTaskState {
     }
 }
 
+#[cfg(feature = "rkyv")]
 impl ArchivedQueuedTaskState {
     /// Whether the task is running
     pub fn is_running(&self) -> bool {

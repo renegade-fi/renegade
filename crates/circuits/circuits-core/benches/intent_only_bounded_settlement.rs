@@ -7,7 +7,6 @@ use circuits_core::zk_circuits::settlement::intent_only_bounded_settlement::Inte
 use circuits_core::zk_circuits::settlement::intent_only_bounded_settlement::test_helpers::create_witness_statement;
 use circuits_core::{singleprover_prove, verify_singleprover_proof};
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
-use mpc_relation::proof_linking::LinkableCircuit;
 
 /// Benchmark applying constraints to a circuit
 pub fn bench_apply_constraints(c: &mut Criterion) {
