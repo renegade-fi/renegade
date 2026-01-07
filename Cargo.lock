@@ -3477,6 +3477,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "http-auth-basic"
+version = "0.3.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0e0c088bddfd73005b09807131224ad12c302655436b1270c8346a3ae8aaa37a"
+dependencies = [
+ "base64 0.22.1",
+]
+
+[[package]]
 name = "http-body"
 version = "0.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5824,6 +5833,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "proof-manager"
+version = "0.1.0"
+dependencies = [
+ "ark-mpc",
+ "async-trait",
+ "circuit-types",
+ "circuits-core",
+ "constants",
+ "crossbeam",
+ "http-auth-basic",
+ "job-types",
+ "mpc-plonk",
+ "rayon",
+ "renegade-metrics",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.17",
+ "tokio",
+ "tracing",
+ "types-account",
+ "types-core",
+ "types-runtime",
+ "types-tasks",
+ "util",
+]
+
+[[package]]
 name = "proptest"
 version = "1.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7380,6 +7417,55 @@ name = "tap"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "55937e1799185b12863d447f42597ed69d9928686b8d88a1df17376a097d8369"
+
+[[package]]
+name = "task-driver"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "alloy-primitives",
+ "ark-mpc",
+ "async-trait",
+ "circuit-types",
+ "circuits-core",
+ "clap",
+ "colored",
+ "config",
+ "constants",
+ "crossbeam",
+ "crypto",
+ "darkpool-client",
+ "external-api",
+ "eyre",
+ "flate2",
+ "futures",
+ "gossip-api",
+ "inventory",
+ "itertools 0.11.0",
+ "job-types",
+ "lazy_static",
+ "metrics",
+ "num-bigint",
+ "num-traits",
+ "proof-manager",
+ "rand 0.8.5",
+ "renegade-metrics",
+ "serde",
+ "serde_json",
+ "state",
+ "system-bus",
+ "test-helpers",
+ "thiserror 2.0.17",
+ "tokio",
+ "tracing",
+ "types-account",
+ "types-core",
+ "types-gossip",
+ "types-runtime",
+ "types-tasks",
+ "util",
+ "uuid",
+]
 
 [[package]]
 name = "tempfile"

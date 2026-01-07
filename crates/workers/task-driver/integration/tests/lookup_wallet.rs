@@ -1,13 +1,13 @@
 //! Integration tests for the `LookupWalletTask`
 
-use types_tasks::LookupWalletTaskDescriptor;
-use types_account::account::mocks::mock_empty_wallet;
 use constants::Scalar;
 use eyre::Result;
 use rand::{distributions::uniform::SampleRange, thread_rng};
 use test_helpers::{
     assert_true_result, contract_interaction::new_wallet_in_darkpool, integration_test_async,
 };
+use types_account::account::mocks::mock_empty_wallet;
+use types_tasks::LookupWalletTaskDescriptor;
 use uuid::Uuid;
 
 use crate::{

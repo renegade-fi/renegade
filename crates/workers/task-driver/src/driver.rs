@@ -3,12 +3,12 @@
 
 use std::{collections::HashMap, fmt::Debug, time::Duration};
 
-use types_tasks::{QueuedTask, TaskDescriptor, TaskIdentifier};
-use types_account::account::WalletIdentifier;
 use job_types::task_driver::{TaskDriverJob, TaskDriverReceiver, TaskNotificationSender};
 use state::State;
 use tokio::runtime::Builder as TokioRuntimeBuilder;
 use tracing::{error, info, instrument, warn};
+use types_core::AccountId;
+use types_tasks::{QueuedTask, TaskDescriptor, TaskIdentifier};
 use util::{
     channels::TracedMessage,
     concurrency::{Shared, new_shared},
@@ -17,15 +17,6 @@ use util::{
 use crate::{
     error::TaskDriverError,
     running_task::RunnableTask,
-    tasks::{
-        create_new_wallet::NewWalletTask, lookup_wallet::LookupWalletTask,
-        node_startup::NodeStartupTask, pay_offline_fee::PayOfflineFeeTask,
-        redeem_fee::RedeemFeeTask, refresh_wallet::RefreshWalletTask,
-        settle_malleable_external_match::SettleMalleableExternalMatchTask,
-        settle_match::SettleMatchTask, settle_match_external::SettleMatchExternalTask,
-        settle_match_internal::SettleMatchInternalTask, update_merkle_proof::UpdateMerkleProofTask,
-        update_wallet::UpdateWalletTask,
-    },
     traits::{Descriptor as _, Task, TaskContext},
     worker::TaskDriverConfig,
 };
@@ -162,8 +153,8 @@ impl TaskExecutor {
     async fn handle_job(&self, job: TracedMessage<TaskDriverJob>) -> Result<(), TaskDriverError> {
         match job.consume() {
             TaskDriverJob::Run { task, channel } => {
-                let affected_wallets = task.descriptor.affected_wallets();
-                self.start_task(task.id, task, affected_wallets, channel).await
+                let affected_accounts = task.descriptor.affected_accounts();
+                self.start_task(task.id, task, affected_accounts, channel).await
             },
             TaskDriverJob::Notify { task_id, channel } => {
                 self.handle_notification_request(task_id, channel).await
@@ -202,13 +193,13 @@ impl TaskExecutor {
     #[instrument(name = "task", skip_all, err, fields(
         task_id = %id,
         task = %task.descriptor.display_description(),
-        wallet_ids = ?affected_wallets,
+        account_ids = ?affected_accounts,
     ))]
     async fn start_task(
         &self,
         id: TaskIdentifier,
         task: QueuedTask,
-        affected_wallets: Vec<WalletIdentifier>,
+        affected_accounts: Vec<AccountId>,
         channel: Option<TaskNotificationSender>,
     ) -> Result<(), TaskDriverError> {
         task.enter_parent_span();
@@ -220,47 +211,11 @@ impl TaskExecutor {
         }
 
         // Construct the task from the descriptor
-        let res = match task.descriptor {
-            TaskDescriptor::NewWallet(desc) => {
-                self.start_task_helper::<NewWalletTask>(id, desc, affected_wallets).await
-            },
-            TaskDescriptor::LookupWallet(desc) => {
-                self.start_task_helper::<LookupWalletTask>(id, desc, affected_wallets).await
-            },
-            TaskDescriptor::RefreshWallet(desc) => {
-                self.start_task_helper::<RefreshWalletTask>(id, desc, affected_wallets).await
-            },
-            TaskDescriptor::OfflineFee(desc) => {
-                self.start_task_helper::<PayOfflineFeeTask>(id, desc, affected_wallets).await
-            },
-            TaskDescriptor::RedeemFee(desc) => {
-                self.start_task_helper::<RedeemFeeTask>(id, desc, affected_wallets).await
-            },
-            TaskDescriptor::UpdateWallet(desc) => {
-                self.start_task_helper::<UpdateWalletTask>(id, desc, affected_wallets).await
-            },
-            TaskDescriptor::SettleMatch(desc) => {
-                self.start_task_helper::<SettleMatchTask>(id, desc, affected_wallets).await
-            },
-            TaskDescriptor::SettleMatchInternal(desc) => {
-                self.start_task_helper::<SettleMatchInternalTask>(id, desc, affected_wallets).await
-            },
-            TaskDescriptor::UpdateMerkleProof(desc) => {
-                self.start_task_helper::<UpdateMerkleProofTask>(id, desc, affected_wallets).await
-            },
-            TaskDescriptor::NodeStartup(desc) => {
-                self.start_task_helper::<NodeStartupTask>(id, desc, affected_wallets).await
-            },
-            TaskDescriptor::SettleExternalMatch(desc) => {
-                self.start_task_helper::<SettleMatchExternalTask>(id, desc, affected_wallets).await
-            },
-            TaskDescriptor::SettleMalleableExternalMatch(desc) => {
-                self.start_task_helper::<SettleMalleableExternalMatchTask>(
-                    id,
-                    desc,
-                    affected_wallets,
-                )
-                .await
+        let res: Result<(), TaskDriverError> = match task.descriptor {
+            TaskDescriptor::NewAccount(desc) => {
+                todo!("implement start_task for NewAccount task")
+                // self.start_task_helper::<NewAccountTask>(id, desc,
+                // affected_accounts).await
             },
         };
 
@@ -279,7 +234,7 @@ impl TaskExecutor {
         &self,
         id: TaskIdentifier,
         descriptor: T::Descriptor,
-        affected_wallets: Vec<WalletIdentifier>,
+        affected_accounts: Vec<AccountId>,
     ) -> Result<(), TaskDriverError> {
         // Collect the arguments then spawn
         let ctx = self.task_context();
@@ -305,7 +260,7 @@ impl TaskExecutor {
         let res = Self::run_task_to_completion(&mut task, args).await;
 
         // Cleanup
-        let cleanup_res = task.cleanup(res.is_ok(), affected_wallets).await;
+        let cleanup_res = task.cleanup(res.is_ok(), affected_accounts).await;
         res.and(cleanup_res)
     }
 

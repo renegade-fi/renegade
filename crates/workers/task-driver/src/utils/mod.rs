@@ -1,15 +1,11 @@
 //! Helpers for the task driver
 
-use common::types::proof_bundles::ProofBundle;
-use job_types::proof_manager::{ProofJob, ProofManagerJob};
+use job_types::proof_manager::{ProofBundle, ProofJob, ProofManagerJob};
 use tokio::sync::oneshot::{self, Receiver as TokioReceiver};
 
 use crate::traits::TaskContext;
 
-pub mod find_wallet;
 pub(crate) mod merkle_path;
-pub mod order_states;
-pub mod proofs;
 
 /// Error message emitted when enqueuing a job with the proof manager fails
 const ERR_ENQUEUING_JOB: &str = "error enqueuing job with proof manager";

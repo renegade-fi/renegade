@@ -36,7 +36,7 @@ members = [
 	# "crates/workers/price-reporter/worker",
 	# "crates/workers/price-reporter/price-state",
 	# "crates/workers/proof-manager",
-	# "crates/workers/task-driver",
+	"crates/workers/task-driver",
 	"crates/metrics/renegade-metrics",
 	"crates/system-primitives/system-clock",
 	# "crates/metrics/metrics-sampler",

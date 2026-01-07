@@ -7,41 +7,13 @@
 
 use state::State;
 use tokio::task::JoinHandle;
-use tracing::{error, info};
-
-mod remove_phantom_orders;
-pub(crate) use remove_phantom_orders::remove_phantom_orders;
-
-mod remove_old_proofs;
-pub(crate) use remove_old_proofs::remove_old_proofs;
 
 /// Apply all state migrations
-pub(crate) fn run_state_migrations(state: &State) -> Vec<JoinHandle<()>> {
+pub(crate) fn run_state_migrations(_state: &State) -> Vec<JoinHandle<()>> {
+    #[allow(unused_mut)]
     let mut handles = Vec::new();
 
-    // Remove phantom orders in the order book
-    let state_clone = state.clone();
-    let handle = tokio::task::spawn(async move {
-        info!("removing phantom orders...");
-        if let Err(e) = remove_phantom_orders(&state_clone).await {
-            error!("error removing phantom orders: {e}");
-        } else {
-            info!("done removing phantom orders");
-        }
-    });
-    handles.push(handle);
-
-    // Remove proofs for deleted orders
-    let state_clone = state.clone();
-    let handle = tokio::task::spawn(async move {
-        info!("removing old proofs...");
-        if let Err(e) = remove_old_proofs(&state_clone).await {
-            error!("error removing old proofs: {e}");
-        } else {
-            info!("done removing old proofs");
-        }
-    });
-    handles.push(handle);
+    // Add state migrations here
 
     handles
 }
