@@ -1,10 +1,10 @@
 //! Encapsulates the running task's bookkeeping structure to simplify the driver
 //! logic
 
-use types_tasks::TaskIdentifier;
-use types_account::account::WalletIdentifier;
 use state::{State, error::StateError};
 use tracing::{error, info};
+use types_core::AccountId;
+use types_tasks::TaskIdentifier;
 
 use crate::{
     error::TaskDriverError,
@@ -115,7 +115,7 @@ impl<T: Task> RunnableTask<T> {
     pub async fn cleanup(
         &mut self,
         success: bool,
-        affected_wallets: Vec<WalletIdentifier>,
+        affected_accounts: Vec<AccountId>,
     ) -> Result<(), TaskDriverError> {
         // Do not propagate errors from cleanup, continue to cleanup
         if let Err(e) = self.task.cleanup().await {
@@ -123,17 +123,17 @@ impl<T: Task> RunnableTask<T> {
         }
 
         // Pop the task from the state, unless this task bypasses the task queue
-        // Do not propagate this error; otherwise we may skip the wallet refresh step
+        // Do not propagate this error; otherwise we may skip the account refresh step
         let mut should_refresh = false;
         if !self.bypass_task_queue() {
-            if let Err(e) = self.pop_task_or_clear_queue(success, &affected_wallets).await {
+            if let Err(e) = self.pop_task_or_clear_queue(success, &affected_accounts).await {
                 error!("error popping task: {e}");
                 should_refresh = true;
             }
         }
 
-        // If the task failed at/after its commit point, we enqueue a wallet refresh
-        // task for the affected wallets to ensure they are in sync w/ the
+        // If the task failed at/after its commit point, we enqueue an account refresh
+        // task for the affected accounts to ensure they are in sync w/ the
         // onchain state.
         //
         // Note: it's important to do this after popping / resuming above, as those
@@ -141,9 +141,9 @@ impl<T: Task> RunnableTask<T> {
         let failed_past_commit = !success && self.state().committed();
         should_refresh = should_refresh || failed_past_commit;
         if should_refresh {
-            for wallet_id in affected_wallets {
-                let task_id = self.state.append_wallet_refresh_task(wallet_id).await?;
-                info!("enqueued wallet refresh task ({task_id}) for {wallet_id}");
+            for account_id in affected_accounts {
+                let task_id = self.state.append_account_refresh_task(account_id).await?;
+                info!("enqueued account refresh task ({task_id}) for {account_id}");
             }
         }
 
@@ -152,12 +152,12 @@ impl<T: Task> RunnableTask<T> {
 
     /// Pop a task from a queue
     ///
-    /// This method will clear the task queues of the affected wallets if
+    /// This method will clear the task queues of the affected accounts if
     /// popping the task fails
     async fn pop_task_or_clear_queue(
         &self,
         success: bool,
-        affected_wallets: &[WalletIdentifier],
+        affected_accounts: &[AccountId],
     ) -> Result<(), TaskDriverError> {
         let waiter = self.state.pop_task(self.task_id, success).await?;
         let mut res = waiter.await;
@@ -166,8 +166,8 @@ impl<T: Task> RunnableTask<T> {
         }
 
         // Failing through the match implies we should clear the task queues
-        for wallet_id in affected_wallets {
-            let clear_res = self.state.clear_task_queue(wallet_id).await?.await;
+        for account_id in affected_accounts {
+            let clear_res = self.state.clear_task_queue(account_id).await?.await;
             res = clear_res.and(res);
         }
 

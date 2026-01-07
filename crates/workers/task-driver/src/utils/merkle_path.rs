@@ -1,28 +1,26 @@
 //! Helpers for finding Merkle authentication paths
 
 use alloy::rpc::types::TransactionReceipt;
-use types_account::account::{Wallet, WalletAuthenticationPath};
+use circuit_types::Commitment;
 use darkpool_client::errors::DarkpoolClientError;
+use types_account::account::WalletAuthenticationPath;
 
 use crate::traits::TaskContext;
 
-/// Find the merkle authentication path of a wallet
+/// Find the merkle authentication path of a commitment
 pub(crate) async fn find_merkle_path(
-    wallet: &Wallet,
-    ctx: &TaskContext,
+    _commitment: Commitment,
+    _ctx: &TaskContext,
 ) -> Result<WalletAuthenticationPath, DarkpoolClientError> {
-    // The contract indexes the wallet by its commitment to the public and private
-    // secret shares, find this in the Merkle tree
-    ctx.darkpool_client.find_merkle_authentication_path(wallet.get_wallet_share_commitment()).await
+    todo!("implement find_merkle_path")
 }
 
-/// Find the merkle authentication path of a wallet given an updating
+/// Find the merkle authentication path of a commitment given an updating
 /// transaction
 pub(crate) fn find_merkle_path_with_tx(
-    wallet: &Wallet,
-    tx: &TransactionReceipt,
-    ctx: &TaskContext,
+    _commitment: Commitment,
+    _tx: &TransactionReceipt,
+    _ctx: &TaskContext,
 ) -> Result<WalletAuthenticationPath, DarkpoolClientError> {
-    let commitment = wallet.get_wallet_share_commitment();
-    ctx.darkpool_client.find_merkle_authentication_path_with_tx(commitment, tx)
+    todo!("implement find_merkle_path_with_tx")
 }

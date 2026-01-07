@@ -4,7 +4,6 @@ use std::fmt::{Debug, Display};
 
 use async_trait::async_trait;
 use darkpool_client::DarkpoolClient;
-use system_bus::SystemBusMessage;
 use job_types::{
     event_manager::EventManagerQueue, network_manager::NetworkManagerQueue,
     proof_manager::ProofManagerQueue, task_driver::TaskDriverQueue,
@@ -124,5 +123,5 @@ pub struct TaskContext {
     /// A sender back to the task driver's queue
     pub task_queue: TaskDriverQueue,
     /// A handle on the system bus
-    pub bus: SystemBus<SystemBusMessage>,
+    pub bus: SystemBus,
 }

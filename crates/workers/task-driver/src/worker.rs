@@ -3,10 +3,7 @@
 use std::thread::{self, JoinHandle};
 
 use async_trait::async_trait;
-use util::default_wrapper::DefaultOption;
-use types_runtime::worker::Worker;
 use darkpool_client::DarkpoolClient;
-use system_bus::SystemBusMessage;
 use job_types::{
     event_manager::EventManagerQueue,
     network_manager::NetworkManagerQueue,
@@ -15,6 +12,8 @@ use job_types::{
 };
 use state::State;
 use system_bus::SystemBus;
+use types_runtime::Worker;
+use util::DefaultOption;
 
 use crate::{
     driver::{RuntimeArgs, TaskExecutor},
@@ -44,7 +43,7 @@ pub struct TaskDriverConfig {
     /// A sender to the event manager's work queue
     pub event_queue: EventManagerQueue,
     /// The system bus to publish task updates onto
-    pub system_bus: SystemBus<SystemBusMessage>,
+    pub system_bus: SystemBus,
     /// A handle on the global state
     pub state: State,
 }
@@ -59,7 +58,7 @@ impl TaskDriverConfig {
         network_queue: NetworkManagerQueue,
         proof_queue: ProofManagerQueue,
         event_queue: EventManagerQueue,
-        system_bus: SystemBus<SystemBusMessage>,
+        system_bus: SystemBus,
         state: State,
     ) -> Self {
         Self {

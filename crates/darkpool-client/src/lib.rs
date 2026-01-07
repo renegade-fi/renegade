@@ -12,6 +12,10 @@
 #![feature(let_chains)]
 #![feature(iterator_try_collect)]
 
+// TODO: Replace this with the real darkpool client
+/// A placeholder for the darkpool client
+pub type DarkpoolClient = ();
+
 // // Make sure we don't enable both features at the same time
 // #[cfg(all(feature = "arbitrum", feature = "base", not(feature =
 // "all-chains")))] compile_error!("Only one of features 'arbitrum' or 'base'
@@ -20,7 +24,7 @@
 // pub mod client;
 // pub mod constants;
 // pub mod conversion;
-// pub mod errors;
+pub mod errors;
 // pub mod traits;
 
 // #[cfg(feature = "transfer-auth")]
