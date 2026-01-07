@@ -850,6 +850,7 @@ dependencies = [
  "itertools 0.11.0",
  "job-types",
  "k256",
+ "matching-engine-core",
  "matchit",
  "mock-node",
  "num-bigint",
@@ -1949,6 +1950,7 @@ dependencies = [
  "gossip-api",
  "job-types",
  "lazy_static",
+ "matching-engine-core",
  "rand 0.8.5",
  "renegade-metrics",
  "state",
@@ -2084,6 +2086,7 @@ dependencies = [
  "jf-primitives",
  "k256",
  "lazy_static",
+ "matching-engine-core",
  "mpc-plonk",
  "mpc-relation",
  "num-bigint",
@@ -2603,6 +2606,7 @@ dependencies = [
  "inventory",
  "itertools 0.12.1",
  "lazy_static",
+ "matching-engine-core",
  "mpc-plonk",
  "num-bigint",
  "num-traits",
@@ -3588,54 +3592,6 @@ dependencies = [
  "pasta_curves 0.4.1",
  "rand_core 0.6.4",
  "rayon",
-]
-
-[[package]]
-name = "handshake-manager"
-version = "0.1.0"
-dependencies = [
- "ark-mpc",
- "ark-serialize 0.4.2",
- "async-trait",
- "circuit-types",
- "circuits-core",
- "clap",
- "colored",
- "constants",
- "crossbeam",
- "crypto",
- "darkpool-client",
- "external-api",
- "eyre",
- "futures",
- "gossip-api",
- "inventory",
- "itertools 0.11.0",
- "job-types",
- "lazy_static",
- "libp2p",
- "lru 0.11.1",
- "mpc-plonk",
- "num-traits",
- "portpicker",
- "price-state",
- "proof-manager",
- "rand 0.8.5",
- "renegade-metrics",
- "serde",
- "state",
- "system-bus",
- "test-helpers",
- "thiserror 2.0.17",
- "tokio",
- "tracing",
- "types-account",
- "types-core",
- "types-gossip",
- "types-runtime",
- "types-tasks",
- "util",
- "uuid",
 ]
 
 [[package]]
@@ -5006,6 +4962,68 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2532096657941c2fea9c289d370a250971c689d4f143798ff67113ec042024a5"
 
 [[package]]
+name = "matching-engine-core"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "circuit-types",
+ "crypto",
+ "darkpool-types",
+ "rand 0.8.5",
+ "types-account",
+ "util",
+]
+
+[[package]]
+name = "matching-engine-worker"
+version = "0.1.0"
+dependencies = [
+ "ark-mpc",
+ "ark-serialize 0.4.2",
+ "async-trait",
+ "circuit-types",
+ "circuits-core",
+ "clap",
+ "colored",
+ "constants",
+ "crossbeam",
+ "crypto",
+ "darkpool-client",
+ "external-api",
+ "eyre",
+ "futures",
+ "gossip-api",
+ "inventory",
+ "itertools 0.11.0",
+ "job-types",
+ "lazy_static",
+ "libp2p",
+ "lru 0.11.1",
+ "matching-engine-core",
+ "mpc-plonk",
+ "num-traits",
+ "portpicker",
+ "price-state",
+ "proof-manager",
+ "rand 0.8.5",
+ "renegade-metrics",
+ "serde",
+ "state",
+ "system-bus",
+ "test-helpers",
+ "thiserror 2.0.17",
+ "tokio",
+ "tracing",
+ "types-account",
+ "types-core",
+ "types-gossip",
+ "types-runtime",
+ "types-tasks",
+ "util",
+ "uuid",
+]
+
+[[package]]
 name = "matchit"
 version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5167,9 +5185,9 @@ dependencies = [
  "futures",
  "gossip-api",
  "gossip-server",
- "handshake-manager",
  "job-types",
  "libp2p",
+ "matching-engine-worker",
  "network-manager",
  "price-reporter",
  "price-state",
@@ -8128,6 +8146,7 @@ dependencies = [
  "itertools 0.11.0",
  "job-types",
  "lazy_static",
+ "matching-engine-core",
  "metrics",
  "mock-node",
  "num-bigint",
@@ -8809,7 +8828,6 @@ version = "0.1.0"
 dependencies = [
  "alloy",
  "circuit-types",
- "circuits-core",
  "constants",
  "crypto",
  "darkpool-types",
@@ -8839,6 +8857,7 @@ dependencies = [
  "hmac",
  "num-bigint",
  "rand 0.8.5",
+ "rkyv",
  "serde",
  "sha2 0.10.9",
  "util",
@@ -8876,6 +8895,7 @@ version = "0.1.0"
 dependencies = [
  "rkyv",
  "serde",
+ "types-account",
  "types-core",
  "util",
  "uuid",

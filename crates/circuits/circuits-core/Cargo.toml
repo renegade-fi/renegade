@@ -5,7 +5,7 @@ edition = "2024"
 
 [features]
 default = []
-test_helpers = ["dep:ctor", "util/mocks", "util/matching-engine"]
+test_helpers = ["dep:ctor", "util/mocks"]
 stats = ["ark-mpc/stats"]
 ci = ["test_helpers"]
 
@@ -190,8 +190,5 @@ rand = "0.8"
 serde_json = "1.0"
 test-helpers = { workspace = true, features = ["mpc-network", "test-harness"] }
 tokio = { version = "1.12", features = ["macros", "rt-multi-thread"] }
-util = { workspace = true, features = [
-    "mocks",
-    "matching-engine",
-    "telemetry",
-] }
+matching-engine-core = { workspace = true }
+util = { workspace = true, features = ["mocks", "telemetry"] }

@@ -17,8 +17,6 @@ pub use default_wrapper::*;
 pub mod errors;
 #[cfg(any(feature = "hex", feature = "hex-core"))]
 pub mod hex;
-#[cfg(all(feature = "matching-engine", feature = "v1"))]
-pub mod matching_engine;
 #[cfg(feature = "networking")]
 pub mod networking;
 #[cfg(feature = "blockchain")]

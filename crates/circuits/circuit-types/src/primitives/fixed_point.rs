@@ -146,13 +146,22 @@ impl FixedPoint {
         (val as u128).into()
     }
 
+    /// Create a fixed point from the ratio of two integers
+    ///
+    /// Computes `numerator / denominator` as a fixed point, rounding down
+    pub fn from_integer_ratio(numerator: u128, denominator: u128) -> Self {
+        let shifted = BigUint::from(numerator) << DEFAULT_FP_PRECISION;
+        let repr = shifted / BigUint::from(denominator);
+        Self { repr: biguint_to_scalar(&repr) }
+    }
+
     /// Create a new fixed point representation, rounding down to the nearest
     /// representable float
     pub fn from_f32_round_down(val: f32) -> Self {
         Self::from_f64_round_down(val as f64)
     }
 
-    /// Create a new fixed point representation, rounding up to the nearest
+    /// Create a new fixed point representation, rounding down to the nearest
     /// representable float
     pub fn from_f64_round_down(val: f64) -> Self {
         // Convert to a bigdecimal to shift
@@ -280,13 +289,14 @@ impl From<FixedPoint> for Scalar {
 
 impl From<u64> for FixedPoint {
     fn from(val: u64) -> Self {
-        Self { repr: Scalar::from(val) }
+        let repr = Scalar::from(val) * Scalar::new(*TWO_TO_M_SCALAR);
+        Self { repr }
     }
 }
 
 impl From<FixedPoint> for u64 {
     fn from(fp: FixedPoint) -> Self {
-        scalar_to_u64(&fp.repr)
+        scalar_to_u64(&fp.floor())
     }
 }
 
@@ -325,6 +335,13 @@ impl Mul<Scalar> for FixedPoint {
     type Output = FixedPoint;
     fn mul(self, rhs: Scalar) -> Self::Output {
         Self { repr: self.repr * rhs }
+    }
+}
+
+impl Mul<Amount> for FixedPoint {
+    type Output = FixedPoint;
+    fn mul(self, rhs: Amount) -> Self::Output {
+        Self { repr: self.repr * Scalar::from(rhs) }
     }
 }
 
@@ -379,7 +396,18 @@ impl PartialOrd for FixedPoint {
 
 impl Ord for FixedPoint {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.repr.cmp(&other.repr)
+        // Handle negative numbers correctly - they are represented as values
+        // near the field modulus, so raw comparison doesn't work
+        match (self.is_negative(), other.is_negative()) {
+            // Both negative: larger repr means more negative (smaller value)
+            (true, true) => other.repr.cmp(&self.repr),
+            // Both positive: standard comparison
+            (false, false) => self.repr.cmp(&other.repr),
+            // Negative < Positive
+            (true, false) => Ordering::Less,
+            // Positive > Negative
+            (false, true) => Ordering::Greater,
+        }
     }
 }
 

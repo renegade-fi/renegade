@@ -1,0 +1,65 @@
+[package]
+name = "matching-engine-worker"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+# === Arithmetic and Cryptography === #
+ark-mpc = { workspace = true }
+mpc-plonk = { workspace = true }
+
+# === Concurrency + Networking === #
+async-trait = { workspace = true }
+crossbeam = { workspace = true }
+futures = { workspace = true }
+libp2p = { workspace = true }
+tokio = { workspace = true }
+
+#=== Workspace Dependencies === #
+darkpool-client = { workspace = true }
+circuits-core = { workspace = true }
+circuit-types = { workspace = true }
+types-core = { workspace = true }
+types-gossip = { workspace = true }
+types-tasks = { workspace = true }
+types-account = { workspace = true }
+types-runtime = { workspace = true }
+constants = { workspace = true }
+crypto = { workspace = true }
+external-api = { workspace = true }
+job-types = { workspace = true }
+gossip-api = { workspace = true }
+price-state = { workspace = true }
+state = { workspace = true }
+system-bus = { workspace = true }
+test-helpers = { workspace = true, features = [
+    "mpc-network",
+], default-features = false }
+matching-engine-core = { path = "../matching-engine-core" }
+util = { workspace = true }
+renegade-metrics = { workspace = true }
+
+# === Misc Dependencies === #
+ark-serialize = "0.4"
+itertools = "0.11"
+lazy_static = { workspace = true }
+lru = "0.11"
+portpicker = "0.1"
+rand = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+uuid = { version = "1.1.2", features = ["v4", "serde"] }
+
+[dev-dependencies]
+clap = { version = "4.0", features = ["derive"] }
+colored = "2"
+eyre = { workspace = true }
+inventory = "0.3"
+
+lazy_static = { workspace = true }
+num-traits = "0.2"
+
+rand = { workspace = true }
+util = { workspace = true }
+proof-manager = { workspace = true, features = ["mocks"] }

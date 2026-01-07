@@ -101,7 +101,8 @@ event-manager = { path = "crates/workers/event-manager", default-features = fals
 external-api = { path = "crates/api/external-api", default-features = false }
 gossip-api = { path = "crates/api/gossip-api", default-features = false }
 gossip-server = { path = "crates/workers/gossip-server", default-features = false }
-handshake-manager = { path = "crates/workers/handshake-manager", default-features = false }
+matching-engine-core = { path = "crates/workers/matching-engine/matching-engine-core", default-features = false }
+matching-engine-worker = { path = "crates/workers/matching-engine/matching-engine-worker", default-features = false }
 job-types = { path = "crates/workers/job-types", default-features = false }
 metrics-sampler = { path = "crates/metrics/metrics-sampler", default-features = false }
 mock-node = { path = "crates/testing/mock-node", default-features = false }
