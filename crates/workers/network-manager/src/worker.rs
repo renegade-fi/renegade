@@ -4,11 +4,6 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::thread::{Builder, JoinHandle};
 
 use async_trait::async_trait;
-use util::default_wrapper::DefaultOption;
-use types_runtime::{CancelChannel, worker::Worker};
-use types_gossip::{ClusterAsymmetricKeypair, ClusterId, PeerInfo, WrappedPeerId};
-use types_core::hmac::HmacKey;
-use system_bus::SystemBusMessage;
 use futures::executor::block_on;
 use gossip_api::pubsub::orderbook::ORDER_BOOK_TOPIC;
 use job_types::gossip_server::GossipServerQueue;
@@ -19,6 +14,10 @@ use libp2p::gossipsub::Sha256Topic;
 use libp2p::identity::Keypair as LibP2PKeypair;
 use state::State;
 use system_bus::SystemBus;
+use types_core::HmacKey;
+use types_gossip::{ClusterAsymmetricKeypair, ClusterId, PeerInfo, WrappedPeerId};
+use types_runtime::{CancelChannel, Worker};
+use util::DefaultOption;
 
 use libp2p::multiaddr::{Multiaddr, Protocol};
 use libp2p::quic::{Config as QuicConfig, tokio::Transport as QuicTransport};
@@ -68,7 +67,7 @@ pub struct NetworkManagerConfig {
     /// The work queue to forward inbound handshake requests to
     pub handshake_work_queue: HandshakeManagerQueue,
     /// The system bus, used to stream internal pubsub messages
-    pub system_bus: SystemBus<SystemBusMessage>,
+    pub system_bus: SystemBus,
     /// The global shared state of the local relayer
     pub global_state: State,
     /// The channel on which the coordinator can send a cancel signal to

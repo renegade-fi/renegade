@@ -4,7 +4,6 @@
 use std::{net::SocketAddr, sync::atomic::Ordering};
 
 use ark_mpc::network::QuicTwoPartyNet;
-use types_gossip::handshake::ConnectionRole;
 use itertools::Itertools;
 use job_types::{
     handshake_manager::{HandshakeManagerJob, HandshakeManagerQueue},
@@ -14,6 +13,7 @@ use libp2p::PeerId;
 use libp2p_core::Multiaddr;
 use tokio::sync::oneshot;
 use tracing::{info, warn};
+use types_gossip::ConnectionRole;
 use util::{
     err_str,
     networking::{is_dialable_addr, is_dialable_multiaddr, multiaddr_to_socketaddr},

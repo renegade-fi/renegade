@@ -61,8 +61,8 @@ fn bench_add_amount(c: &mut Criterion) {
                 let cache = MatchableAmountMap::new();
                 for (i, pair) in pairs.iter().enumerate() {
                     let amt = (i * 100) as Amount;
-                    cache.add_amount(pair.clone(), amt);
-                    cache.add_amount(pair.clone(), amt);
+                    cache.add_amount(*pair, amt);
+                    cache.add_amount(*pair, amt);
                 }
             })
         },
@@ -81,16 +81,16 @@ fn bench_sub_amount(c: &mut Criterion) {
             // Setup: Pre-populate cache
             for (i, pair) in pairs.iter().enumerate() {
                 let amt = (i * 100) as Amount;
-                cache.add_amount(pair.clone(), amt);
-                cache.add_amount(pair.clone(), amt);
+                cache.add_amount(*pair, amt);
+                cache.add_amount(*pair, amt);
             }
 
             b.iter(|| {
                 // Then subtract
                 for (i, pair) in pairs.iter().enumerate() {
                     let amt = i * 100;
-                    cache.sub_amount(pair.clone(), amt as Amount);
-                    cache.sub_amount(pair.clone(), amt as Amount);
+                    cache.sub_amount(*pair, amt as Amount);
+                    cache.sub_amount(*pair, amt as Amount);
                 }
             })
         },

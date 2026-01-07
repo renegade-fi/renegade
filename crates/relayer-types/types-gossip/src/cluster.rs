@@ -68,9 +68,10 @@ impl ClusterId {
     }
 }
 
+#[cfg(feature = "rkyv")]
 impl PartialEq<ClusterId> for ArchivedClusterId {
     fn eq(&self, other: &ClusterId) -> bool {
-        self.0 == other.0
+        self.0.as_str() == other.0.as_str()
     }
 }
 
