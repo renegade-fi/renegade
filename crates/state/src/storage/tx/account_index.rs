@@ -63,7 +63,7 @@ impl<T: TransactionKind> StateTxn<'_, T> {
 impl StateTxn<'_, RW> {
     /// Write an account to the table
     pub fn write_account(&self, account: &Account) -> Result<(), StorageError> {
-        self.inner().write(WALLETS_TABLE, &account.wallet_id, account)
+        self.inner().write(WALLETS_TABLE, &account.id, account)
     }
 
     /// Update the mapping from order to account for each of the given orders
@@ -107,10 +107,10 @@ mod test {
 
         // Read the account
         let tx = db.new_read_tx().unwrap();
-        let account_res = tx.get_account(&account.wallet_id).unwrap();
+        let account_res = tx.get_account(&account.id).unwrap();
         assert!(account_res.is_some());
         let retrieved = account_res.unwrap().deserialize().unwrap();
-        assert_eq!(retrieved.wallet_id, account.wallet_id);
+        assert_eq!(retrieved.id, account.id);
     }
 
     /// Tests adding an account for an order then retrieving it
@@ -164,8 +164,8 @@ mod test {
         // Deserialize and sort for comparison
         let mut deserialized: Vec<_> =
             accounts_res.into_iter().map(|archived| archived.deserialize().unwrap()).collect();
-        deserialized.sort_by_key(|account| account.wallet_id);
-        accounts.sort_by_key(|account| account.wallet_id);
+        deserialized.sort_by_key(|account| account.id);
+        accounts.sort_by_key(|account| account.id);
         assert_eq!(deserialized, accounts);
     }
 }

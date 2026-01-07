@@ -1,16 +1,11 @@
 //! A mock price reporter used for testing
 
-use types_core::{
-    chain::Chain,
-    exchange::Exchange,
-    price::Price,
-    token::{
-        Token, USD_TICKER, USDC_TICKER, USDT_TICKER, default_exchange_stable, set_default_chain,
-        write_token_remaps,
-    },
-};
 use itertools::Itertools;
 use price_state::PriceStreamStates;
+use types_core::{
+    Chain, Exchange, Price, Token, USD_TICKER, USDC_TICKER, USDT_TICKER, default_exchange_stable,
+    set_default_chain, write_token_remaps,
+};
 use util::get_current_time_millis;
 
 use crate::manager::utils::get_all_stream_tuples;

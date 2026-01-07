@@ -1,6 +1,6 @@
 //! The error type for the price state primitive
 
-use types_core::token::Token;
+use types_core::Token;
 
 /// The error type for the price state primitive
 #[derive(Debug, thiserror::Error)]

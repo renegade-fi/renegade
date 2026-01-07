@@ -2,12 +2,9 @@
 
 use std::collections::HashSet;
 
-use types_core::{
-    exchange::Exchange,
-    token::{Token, default_exchange_stable, get_all_base_tokens},
-};
 use itertools::Itertools;
 use price_state::util::eligible_for_stable_quote_conversion;
+use types_core::{Exchange, Token, default_exchange_stable, get_all_base_tokens};
 
 use crate::worker::PriceReporterConfig;
 

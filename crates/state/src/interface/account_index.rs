@@ -180,8 +180,8 @@ mod test {
         waiter.await.unwrap();
 
         // Check for the account in the state
-        let retrieved_account = state.get_account(&account.wallet_id).await.unwrap().unwrap();
-        assert_eq!(retrieved_account.wallet_id, account.wallet_id);
+        let retrieved_account = state.get_account(&account.id).await.unwrap().unwrap();
+        assert_eq!(retrieved_account.id, account.id);
     }
 
     /// Test updating an account
@@ -198,7 +198,7 @@ mod test {
         let order = mock_order();
         updated_account.orders.insert(order.id, order);
         // Verify the account was updated
-        let retrieved_account = state.get_account(&account.wallet_id).await.unwrap().unwrap();
-        assert_eq!(retrieved_account.wallet_id, updated_account.wallet_id);
+        let retrieved_account = state.get_account(&account.id).await.unwrap().unwrap();
+        assert_eq!(retrieved_account.id, updated_account.id);
     }
 }

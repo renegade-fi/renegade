@@ -4,7 +4,7 @@ use base64::engine::{Engine, general_purpose as b64_general_purpose};
 use http::{HeaderMap, HeaderValue};
 use itertools::Itertools;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use types_core::hmac::HmacKey;
+use types_core::HmacKey;
 use util::get_current_time_millis;
 
 use crate::{RENEGADE_AUTH_HEADER_NAME, RENEGADE_SIG_EXPIRATION_HEADER_NAME};

@@ -26,7 +26,9 @@ reqwest = { workspace = true }
 types-core = { workspace = true }
 types-runtime = { workspace = true }
 constants = { workspace = true }
-external-api = { workspace = true }
+external-api = { workspace = true, default-features = false, features = [
+    "websocket",
+] }
 job-types = { workspace = true }
 price-state = { workspace = true }
 system-bus = { workspace = true }

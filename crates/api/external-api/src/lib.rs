@@ -17,7 +17,8 @@ use util::hex::{biguint_from_hex_string, biguint_to_hex_addr};
 pub mod auth;
 pub mod http;
 pub mod types;
-// pub mod websocket;
+#[cfg(feature = "websocket")]
+pub mod websocket;
 
 /// Header name for the HTTP auth signature; lower cased
 pub const RENEGADE_AUTH_HEADER_NAME: &str = "x-renegade-auth";

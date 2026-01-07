@@ -7,12 +7,8 @@
 
 use std::{str::FromStr, time::Duration};
 
-use util::default_wrapper::DefaultOption;
-use types_runtime::CancelChannel;
-use types_core::{exchange::Exchange, price::Price, token::Token};
 use constants::in_bootstrap_mode;
 use external_api::websocket::WebsocketMessage;
-use system_bus::{SystemBusMessage, price_report_topic};
 use futures::{
     SinkExt, StreamExt,
     stream::{SplitSink, SplitStream},
@@ -26,8 +22,12 @@ use tokio::{
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async};
 use tracing::{error, info, warn};
 use tungstenite::Message;
+use types_core::{Exchange, Price, Token};
+use types_runtime::CancelChannel;
 use url::Url;
-use util::{concurrency::runtime::sleep_forever_async, err_str, get_current_time_millis};
+use util::{
+    DefaultOption, concurrency::runtime::sleep_forever_async, err_str, get_current_time_millis,
+};
 
 use crate::{
     errors::{ExchangeConnectionError, PriceReporterError},
@@ -165,19 +165,7 @@ impl ExternalPriceReporterExecutor {
         // Save the price update for the pair on the given exchange
         self.price_stream_states
             .new_price(exchange, base_token.clone(), quote_token.clone(), price, ts)
-            .map_err(err_str!(ExchangeConnectionError::SaveState))?;
-
-        // Publish the price report to the system bus
-        let topic = price_report_topic(&base_token, &quote_token);
-        let bus = &self.config.system_bus;
-        if bus.has_listeners(&topic) {
-            let report = self.price_stream_states.get_state(&base_token, &quote_token);
-            if let Some(report) = report.into_nominal() {
-                bus.publish(topic, SystemBusMessage::PriceReport(report));
-            }
-        }
-
-        Ok(())
+            .map_err(ExchangeConnectionError::save_state)
     }
 }
 
@@ -363,7 +351,7 @@ fn format_topic(exchange: &Exchange, base_token: &Token, quote_token: &Token) ->
 fn parse_topic(topic: &str) -> Result<(Exchange, Token, Token), ExchangeConnectionError> {
     let parts: Vec<&str> = topic.split('-').collect();
     let exchange =
-        Exchange::from_str(parts[0]).map_err(err_str!(ExchangeConnectionError::InvalidMessage))?;
+        Exchange::from_str(parts[0]).map_err(ExchangeConnectionError::invalid_message)?;
     let base = Token::from_addr(parts[1]);
     let quote = Token::from_addr(parts[2]);
 
