@@ -19,7 +19,6 @@ circuit-types = { workspace = true }
 types-core = { workspace = true }
 types-gossip = { workspace = true }
 types-runtime = { workspace = true }
-util = { workspace = true }
 constants = { workspace = true }
 gossip-api = { workspace = true }
 job-types = { workspace = true }
