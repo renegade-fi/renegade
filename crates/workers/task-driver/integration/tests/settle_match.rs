@@ -17,14 +17,11 @@ use circuit_types::{
 use circuits_core::zk_circuits::valid_match_settle::{
     ValidMatchSettleStatement, ValidMatchSettleWitness,
 };
-use types_core::price::TimestampedPrice;
 use common::types::handshake::{HandshakeState, mocks::mock_handshake_state};
 use common::types::proof_bundles::{
     MatchBundle, OrderValidityProofBundle, OrderValidityWitnessBundle, ValidMatchSettleBundle,
     mocks::dummy_link_proof,
 };
-use types_tasks::{SettleMatchInternalTaskDescriptor, SettleMatchTaskDescriptor};
-use types_account::account::{Order, OrderBuilder, Wallet, mocks::mock_empty_wallet};
 use constants::Scalar;
 use eyre::{Result, eyre};
 use job_types::proof_manager::{ProofJob, ProofManagerJob};
@@ -32,6 +29,9 @@ use rand::thread_rng;
 use state::State;
 use test_helpers::{assert_eq_result, assert_true_result, integration_test_async};
 use tokio::sync::oneshot::channel;
+use types_account::account::{Order, OrderBuilder, Wallet, mocks::mock_empty_wallet};
+use types_core::price::TimestampedPrice;
+use types_tasks::{SettleMatchInternalTaskDescriptor, SettleMatchTaskDescriptor};
 use util::{
     hex::biguint_from_hex_string,
     matching_engine::{

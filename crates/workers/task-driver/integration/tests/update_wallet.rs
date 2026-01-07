@@ -7,9 +7,7 @@ use circuit_types::{
     order::OrderSide,
     transfers::{ExternalTransfer, ExternalTransferDirection},
 };
-use types_tasks::{UpdateWalletTaskDescriptor, WalletUpdateType, mocks::gen_wallet_update_sig};
 use common::types::transfer_auth::ExternalTransferWithAuth;
-use types_account::account::{Order, OrderBuilder, OrderId, Wallet, mocks::{mock_empty_wallet, mock_order}};
 use constants::Scalar;
 use eyre::Result;
 use lazy_static::lazy_static;
@@ -20,6 +18,11 @@ use test_helpers::{
     integration_test_async,
 };
 use tracing::info;
+use types_account::account::{
+    Order, OrderBuilder, OrderId, Wallet,
+    mocks::{mock_empty_wallet, mock_order},
+};
+use types_tasks::{UpdateWalletTaskDescriptor, WalletUpdateType, mocks::gen_wallet_update_sig};
 use util::hex::biguint_from_hex_string;
 use uuid::Uuid;
 
