@@ -2,13 +2,12 @@
 //! dispatches jobs to the PriceReporterExecutor.
 
 use async_trait::async_trait;
-use types_runtime::{CancelChannel, worker::Worker};
-use types_core::exchange::Exchange;
-use system_bus::SystemBusMessage;
 use price_state::PriceStreamStates;
 use std::thread::{self, JoinHandle};
 use system_bus::SystemBus;
 use tokio::runtime::Builder as TokioBuilder;
+use types_core::Exchange;
+use types_runtime::{CancelChannel, Worker};
 use url::Url;
 
 use crate::manager::{
@@ -28,7 +27,7 @@ const PRICE_REPORTER_MANAGER_NUM_THREADS: usize = 2;
 #[derive(Clone, Debug)]
 pub struct PriceReporterConfig {
     /// The global system bus
-    pub system_bus: SystemBus<SystemBusMessage>,
+    pub system_bus: SystemBus,
     /// Exchange connection config options
     pub exchange_conn_config: ExchangeConnectionsConfig,
     /// The URL of an external price reporter service

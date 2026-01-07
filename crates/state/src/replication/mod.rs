@@ -157,7 +157,7 @@ mod test {
         // Propose an account to the leader
         let target_raft = &nodes.get_client(leader).await;
         let account = mock_empty_account();
-        let account_id = account.wallet_id;
+        let account_id = account.id;
         let update = Proposal::from(StateTransition::CreateAccount { account });
         target_raft.propose_transition(update).await.unwrap();
         tokio::time::sleep(Duration::from_millis(100)).await;
@@ -189,7 +189,7 @@ mod test {
         let nid = (0..N).choose(&mut rng).unwrap();
         let target_raft = nodes.get_client(nid as NodeId).await;
         let account = mock_empty_account();
-        let account_id = account.wallet_id;
+        let account_id = account.id;
         let update = Proposal::from(StateTransition::CreateAccount { account });
         target_raft.propose_transition(update).await.unwrap();
         tokio::time::sleep(Duration::from_millis(100)).await;
@@ -213,7 +213,7 @@ mod test {
         let raft = MockRaft::create_singleton_raft().await;
         let client = raft.get_client(0).await;
         let account = mock_empty_account();
-        let account_id = account.wallet_id;
+        let account_id = account.id;
         let update = Proposal::from(StateTransition::CreateAccount { account });
         client.propose_transition(update).await.unwrap();
 
@@ -234,7 +234,7 @@ mod test {
         // Promote the learner, propose a new account, ensure consensus is reached
         client.promote_learner(new_nid).await.unwrap();
         let account = mock_empty_account();
-        let account_id = account.wallet_id;
+        let account_id = account.id;
         let update = Proposal::from(StateTransition::CreateAccount { account });
         client.propose_transition(update).await.unwrap();
         tokio::time::sleep(Duration::from_millis(100)).await;
@@ -268,7 +268,7 @@ mod test {
 
         // Propose a new state transition
         let new_account = mock_empty_account();
-        let new_account_id = new_account.wallet_id;
+        let new_account_id = new_account.id;
         let update = Proposal::from(StateTransition::CreateAccount { account: new_account });
         client.propose_transition(update).await.unwrap();
         tokio::time::sleep(Duration::from_millis(100)).await;
@@ -306,7 +306,7 @@ mod test {
         // Propose a new account and check that each node in the cluster has
         // the account saved in the DB
         let new_account = mock_empty_account();
-        let new_account_id = new_account.wallet_id;
+        let new_account_id = new_account.id;
         let update = Proposal::from(StateTransition::CreateAccount { account: new_account });
         client.propose_transition(update).await.unwrap();
         tokio::time::sleep(Duration::from_millis(100)).await;
@@ -341,7 +341,7 @@ mod test {
 
         // Propose a new account, ensure that consensus is reached
         let new_account = mock_empty_account();
-        let new_account_id = new_account.wallet_id;
+        let new_account_id = new_account.id;
         let update = Proposal::from(StateTransition::CreateAccount { account: new_account });
         client.propose_transition(update).await.unwrap();
         tokio::time::sleep(Duration::from_millis(100)).await;
@@ -374,7 +374,7 @@ mod test {
 
         // Propose a new account, ensure that consensus is reached
         let new_account = mock_empty_account();
-        let new_account_id = new_account.wallet_id;
+        let new_account_id = new_account.id;
         let update = Proposal::from(StateTransition::CreateAccount { account: new_account });
         client.propose_transition(update).await.unwrap();
         tokio::time::sleep(Duration::from_millis(100)).await;
@@ -408,7 +408,7 @@ mod test {
 
         // Propose a state transition and ensure consensus is reached
         let new_account = mock_empty_account();
-        let new_account_id = new_account.wallet_id;
+        let new_account_id = new_account.id;
         let update = Proposal::from(StateTransition::CreateAccount { account: new_account });
         client.propose_transition(update).await.unwrap();
         tokio::time::sleep(Duration::from_millis(100)).await;

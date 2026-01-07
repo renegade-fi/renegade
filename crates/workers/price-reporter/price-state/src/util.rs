@@ -1,12 +1,10 @@
 //! Utility functions for the price state module
 
-use types_core::{
-    exchange::{Exchange, PriceReport, PriceReporterState},
-    price::Price,
-    token::{Token, USD_TICKER, default_exchange_stable},
-};
 use itertools::Itertools;
 use statrs::statistics::{Data, Median};
+use types_core::{
+    Exchange, Price, PriceReport, PriceReporterState, Token, USD_TICKER, default_exchange_stable,
+};
 use util::get_current_time_millis;
 
 /// If a pair has not reported an update within

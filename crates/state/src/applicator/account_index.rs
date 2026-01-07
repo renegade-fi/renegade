@@ -51,7 +51,7 @@ impl StateApplicator {
         self.publish_account_update(account);
         self.system_bus().publish(
             ADMIN_WALLET_UPDATES_TOPIC.to_string(),
-            SystemBusMessage::AdminAccountUpdate { account_id: account.wallet_id },
+            SystemBusMessage::AdminAccountUpdate { account_id: account.id },
         );
 
         Ok(ApplicatorReturnType::None)
@@ -63,7 +63,7 @@ impl StateApplicator {
 
     /// Publish an account update message to the system bus
     fn publish_account_update(&self, account: &Account) {
-        let account_topic = account_topic(&account.wallet_id);
+        let account_topic = account_topic(&account.id);
         self.system_bus().publish(
             account_topic,
             SystemBusMessage::AccountUpdate { account: Box::new(account.clone()) },
@@ -74,7 +74,7 @@ impl StateApplicator {
     fn index_intents_with_tx(&self, account: &Account, tx: &StateTxn<RW>) -> Result<()> {
         // Update the intent -> account mapping
         let nonzero_intents = account.orders.keys().copied().collect_vec();
-        tx.index_intents(&account.wallet_id, &nonzero_intents)?;
+        tx.index_intents(&account.id, &nonzero_intents)?;
 
         // Handle cancelled intents
         self.handle_cancelled_intents(account, tx)
@@ -82,7 +82,7 @@ impl StateApplicator {
 
     /// Handle cancelled intents
     fn handle_cancelled_intents(&self, account: &Account, tx: &StateTxn<RW>) -> Result<()> {
-        let old_account = tx.get_account(&account.wallet_id)?;
+        let old_account = tx.get_account(&account.id)?;
         let old_intents = old_account
             .map(|a| a.deserialize().unwrap().orders.keys().copied().collect_vec())
             .unwrap_or_default();
@@ -136,8 +136,7 @@ pub(crate) mod test {
         let expected_account: Account = account;
 
         let db = applicator.db();
-        let account: Account =
-            db.read(WALLETS_TABLE, &expected_account.wallet_id).unwrap().unwrap();
+        let account: Account = db.read(WALLETS_TABLE, &expected_account.id).unwrap().unwrap();
 
         assert_eq!(account, expected_account);
     }
@@ -159,14 +158,13 @@ pub(crate) mod test {
         // Check that the indexed account is as expected
         let expected_account: Account = account.clone();
         let db = applicator.db();
-        let account: Account =
-            db.read(WALLETS_TABLE, &expected_account.wallet_id).unwrap().unwrap();
+        let account: Account = db.read(WALLETS_TABLE, &expected_account.id).unwrap().unwrap();
 
         assert_eq!(account, expected_account);
 
         // Check the intent -> account mapping
         let order_id = account.orders.keys().next().unwrap();
         let account_id: AccountId = db.read(INTENT_TO_WALLET_TABLE, order_id).unwrap().unwrap();
-        assert_eq!(account_id, expected_account.wallet_id);
+        assert_eq!(account_id, expected_account.id);
     }
 }

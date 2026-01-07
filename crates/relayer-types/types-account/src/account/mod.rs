@@ -38,7 +38,7 @@ pub type WalletAuthenticationPath = MerkleAuthenticationPath;
 #[cfg_attr(feature = "rkyv", rkyv(derive(Debug)))]
 pub struct Account {
     /// The identifier used to index the wallet
-    pub wallet_id: AccountId,
+    pub id: AccountId,
     /// A list of orders in this account
     pub orders: HashMap<OrderId, Order>,
     /// A list of balances in this account
@@ -48,8 +48,8 @@ pub struct Account {
 
 impl Account {
     /// Create a new empty account from the given seed information
-    pub fn new_empty_account(wallet_id: AccountId) -> Self {
-        Self { wallet_id, orders: HashMap::new(), balances: HashMap::new() }
+    pub fn new_empty_account(id: AccountId) -> Self {
+        Self { id, orders: HashMap::new(), balances: HashMap::new() }
     }
 
     /// Remove default balances

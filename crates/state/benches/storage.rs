@@ -96,7 +96,7 @@ pub fn bench_read_account(c: &mut Criterion) {
     let mut account_ids = Vec::new();
     for _ in 0..N_ACCOUNTS {
         let account = mock_empty_account();
-        account_ids.push(account.wallet_id);
+        account_ids.push(account.id);
         tx.write_account(&account).unwrap();
     }
     tx.commit().unwrap();

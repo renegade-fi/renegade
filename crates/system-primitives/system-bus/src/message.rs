@@ -3,7 +3,7 @@
 use darkpool_types::bounded_match_result::BoundedMatchResult;
 use external_api::{http::task::ApiTaskStatus, types::ApiHistoricalTask};
 use types_account::account::{Account, OrderId};
-use types_core::{AccountId, Token};
+use types_core::AccountId;
 use types_gossip::{PeerInfo, WrappedPeerId};
 use types_tasks::TaskIdentifier;
 // TODO: Uncomment when external-api build issues are resolved
@@ -45,11 +45,6 @@ pub fn task_topic(task_id: &TaskIdentifier) -> String {
 /// Get the task history topic name for a wallet
 pub fn task_history_topic(account_id: &AccountId) -> String {
     format!("task-history-{}", account_id)
-}
-
-/// Get the topic name for a price report
-pub fn price_report_topic(base: &Token, quote: &Token) -> String {
-    format!("price-report-{}-{}", base.get_addr(), quote.get_addr())
 }
 
 /// Get a topic name for an atomic match response

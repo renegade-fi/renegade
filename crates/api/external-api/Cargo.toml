@@ -5,13 +5,14 @@ edition = "2024"
 
 [features]
 default = ["full-api"]
-auth = ["http", "thiserror", "types-core/hmac"]
+auth = ["dep:http", "dep:thiserror", "types-core/hmac"]
 external-match-api = []
 admin-api = ["full-api"]
 network-api = []
 order-book-api = []
 task-api = []
 wallet-api = []
+websocket = []
 full-api = [
     "circuit-types/default",
     "external-match-api",
@@ -20,6 +21,7 @@ full-api = [
     "order-book-api",
     "task-api",
     "wallet-api",
+    "websocket",
 ]
 
 [dependencies]

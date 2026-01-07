@@ -9,12 +9,11 @@ use std::{
 };
 
 use atomic_float::AtomicF64;
-use types_core::{
-    exchange::{Exchange, PriceReporterState},
-    price::{Price, TimestampedPrice},
-    token::{Token, default_exchange_stable, is_pair_named},
-};
 use itertools::Itertools;
+use types_core::{
+    Exchange, Price, PriceReporterState, TimestampedPrice, Token, default_exchange_stable,
+    is_pair_named,
+};
 
 use crate::{
     StreamTuple,

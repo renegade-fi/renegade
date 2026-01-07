@@ -3,8 +3,8 @@
 use std::error::Error;
 use std::fmt::{self, Display};
 
-use types_core::{exchange::Exchange, token::Token};
 use thiserror::Error;
+use types_core::{Exchange, Token};
 
 /// The core error type used by the ExchangeConnection. All thrown errors are
 /// handled by the PriceReporter, either for restarts or panics upon too many
@@ -41,6 +41,20 @@ pub enum ExchangeConnectionError {
     /// Tried to initialize an ExchangeConnection that was already initialized
     #[error("tried to initialize an ExchangeConnection that was already initialized: {0}")]
     AlreadyInitialized(Exchange, Token, Token),
+}
+
+impl ExchangeConnectionError {
+    /// Create an invalid message error
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn invalid_message<T: ToString>(message: T) -> Self {
+        Self::InvalidMessage(message.to_string())
+    }
+
+    /// Create a save state error
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn save_state<T: ToString>(message: T) -> Self {
+        Self::SaveState(message.to_string())
+    }
 }
 
 /// The core error type thrown by the PriceReporter worker.

@@ -4,10 +4,10 @@
 pub mod matching_pools;
 pub mod node_metadata;
 // pub mod order_book;
+pub mod account_index;
 pub mod peer_index;
 pub mod raft;
 pub mod task_queue;
-pub mod wallet_index;
 
 use std::{sync::Arc, time::Duration};
 
@@ -462,7 +462,7 @@ mod test {
 
         // Check for the account in the state
         let expected_account = account.clone();
-        let actual_account = state.get_account(&account.wallet_id).await.unwrap().unwrap();
+        let actual_account = state.get_account(&account.id).await.unwrap().unwrap();
         assert_eq!(expected_account, actual_account);
     }
 }

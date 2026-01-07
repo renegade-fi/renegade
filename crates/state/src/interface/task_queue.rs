@@ -287,7 +287,7 @@ mod test {
 
         // Add an account that the task may reference
         let account = mock_empty_account();
-        let account_id = account.wallet_id;
+        let account_id = account.id;
         let waiter = state.new_account(account).await.unwrap();
         waiter.await.unwrap();
 
