@@ -1,17 +1,19 @@
-//! Indexing of intents by metadata
+//! Indexing of orders by metadata
 //!
 //! Specifically, we build an efficiently queryable mapping from pair -> side ->
-//! (matchable_amount, intent_id)
+//! (matchable_amount, order_id)
 //!
 //! This allows the matching engine to efficiently query a narrow set of
-//! candidate intents to match against a target intent.
+//! candidate orders to match against a target order.
 
 use circuit_types::Amount;
-use darkpool_types::intent::Intent;
 use dashmap::DashMap;
-use types_account::account::{OrderId, pair::Pair};
+use types_account::{
+    account::{OrderId, pair::Pair},
+    order::Order,
+};
 
-/// The intent metadata index
+/// The order metadata index
 #[derive(Default)]
 pub struct OrderMetadataIndex {
     /// The mapping from pair -> (matchable_amount, order_id)
@@ -24,7 +26,7 @@ pub struct OrderMetadataIndex {
 }
 
 impl OrderMetadataIndex {
-    /// Construct a new intent metadata index
+    /// Construct a new order metadata index
     pub fn new() -> Self {
         let index = DashMap::new();
         let reverse_index = DashMap::new();
@@ -33,57 +35,57 @@ impl OrderMetadataIndex {
 
     // --- Getters --- //
 
-    /// Get all intents for a given pair and side, sorted by matchable amount
-    pub fn get_intents(&self, pair: &Pair) -> Vec<OrderId> {
+    /// Get all orders for a given pair and side, sorted by matchable amount
+    pub fn get_orders(&self, pair: &Pair) -> Vec<OrderId> {
         match self.index.get(pair) {
             Some(v) => v.iter().map(|(_, iid)| *iid).collect(),
             None => Vec::new(),
         }
     }
 
-    /// Get all intents in the index
+    /// Get all orders in the index
     ///
     /// No sort ordering is guaranteed, given that the units on which individual
-    /// intents are sorted may differ
-    pub fn get_all_intents(&self) -> Vec<OrderId> {
+    /// orders are sorted may differ
+    pub fn get_all_orders(&self) -> Vec<OrderId> {
         self.reverse_index.iter().map(|entry| *entry.key()).collect()
     }
 
-    /// Get the pair and side for a given intent_id
-    pub fn get_pair(&self, intent_id: &OrderId) -> Option<Pair> {
-        self.reverse_index.get(intent_id).map(|entry| *entry.value())
+    /// Get the pair and side for a given order_id
+    pub fn get_pair(&self, order_id: &OrderId) -> Option<Pair> {
+        self.reverse_index.get(order_id).map(|entry| *entry.value())
     }
 
-    /// Returns whether an intent exists in the index synchronously
-    pub fn intent_exists(&self, intent_id: &OrderId) -> bool {
-        self.reverse_index.contains_key(intent_id)
+    /// Returns whether an order exists in the index synchronously
+    pub fn order_exists(&self, order_id: &OrderId) -> bool {
+        self.reverse_index.contains_key(order_id)
     }
 
     // --- Setters --- //
 
-    /// Add an intent to the index
-    pub fn add_intent(&self, intent_id: OrderId, intent: &Intent, matchable_amount: Amount) {
-        let pair = Pair::from_intent(intent);
+    /// Add an order to the index
+    pub fn add_order(&self, order_id: OrderId, order: &Order, matchable_amount: Amount) {
+        let pair = order.pair();
         let mut entry = self.index.entry(pair).or_insert_with(SortedVec::new);
-        entry.insert((matchable_amount, intent_id));
+        entry.insert((matchable_amount, order_id));
 
         // Update the reverse index
-        self.reverse_index.insert(intent_id, pair);
+        self.reverse_index.insert(order_id, pair);
     }
 
-    /// Update the matchable amount for an intent
+    /// Update the matchable amount for an order
     ///
     /// Returns the old matchable amount if it was updated, otherwise None
     pub fn update_matchable_amount(
         &self,
-        intent_id: OrderId,
+        order_id: OrderId,
         matchable_amount: Amount,
     ) -> Option<Amount> {
-        let pair = self.get_pair(&intent_id).unwrap();
+        let pair = self.get_pair(&order_id).unwrap();
         let mut entry = self.index.entry(pair).or_insert_with(SortedVec::new);
 
         // Remove the old entry
-        let old_amount = if let Some(idx) = entry.find_index(|(_, iid)| *iid == intent_id) {
+        let old_amount = if let Some(idx) = entry.find_index(|(_, oid)| *oid == order_id) {
             let (amt, _) = entry.remove(idx);
             Some(amt)
         } else {
@@ -91,24 +93,24 @@ impl OrderMetadataIndex {
         };
 
         // Insert the new entry (this will maintain the sort order)
-        entry.insert((matchable_amount, intent_id));
+        entry.insert((matchable_amount, order_id));
         old_amount
     }
 
-    /// Remove an intent from the index
+    /// Remove an order from the index
     ///
     /// Note that we do not clean up sub-index entries when their
     /// lists become empty.
     ///
-    /// Returns the pair, side, and matchable amount if the intent was removed,
+    /// Returns the pair, side, and matchable amount if the order was removed,
     /// otherwise None
-    pub fn remove_intent(&self, intent_id: &OrderId) -> Option<(Pair, Amount)> {
+    pub fn remove_order(&self, order_id: &OrderId) -> Option<(Pair, Amount)> {
         // Get the pair and side from the reverse index
-        let pair = self.get_pair(intent_id)?;
+        let pair = self.get_pair(order_id)?;
 
         // Remove from the main index
         let mut entry = self.index.get_mut(&pair)?;
-        let old_amount = if let Some(idx) = entry.find_index(|(_, iid)| iid == intent_id) {
+        let old_amount = if let Some(idx) = entry.find_index(|(_, oid)| oid == order_id) {
             let (amt, _) = entry.remove(idx);
             Some(amt)
         } else {
@@ -116,7 +118,7 @@ impl OrderMetadataIndex {
         };
 
         // Remove from the reverse index
-        self.reverse_index.remove(intent_id);
+        self.reverse_index.remove(order_id);
         old_amount.map(|amt| (pair, amt))
     }
 }
@@ -254,38 +256,38 @@ mod sorted_vec_tests {
 }
 
 #[cfg(test)]
-mod intent_index_tests {
+mod order_index_tests {
     use darkpool_types::fuzzing::random_address;
-    use types_account::mocks::mock_intent;
+    use types_account::order::mocks::mock_order;
 
     use super::*;
 
     #[test]
-    fn test_get_all_intents() {
+    fn test_get_all_orders() {
         let index = OrderMetadataIndex::new();
-        let intent_id1 = OrderId::new_v4();
-        let intent_id2 = OrderId::new_v4();
-        let intent_id3 = OrderId::new_v4();
+        let order_id1 = OrderId::new_v4();
+        let order_id2 = OrderId::new_v4();
+        let order_id3 = OrderId::new_v4();
 
-        // Create mock intents
-        let intent1 = mock_intent();
-        let intent2 = mock_intent();
-        let intent3 = mock_intent();
+        // Create mock orders
+        let order1 = mock_order();
+        let order2 = mock_order();
+        let order3 = mock_order();
 
-        // Add intents to the index
-        index.add_intent(intent_id1, &intent1, 100);
-        index.add_intent(intent_id2, &intent2, 200);
-        index.add_intent(intent_id3, &intent3, 300);
+        // Add orders to the index
+        index.add_order(order_id1, &order1, 100);
+        index.add_order(order_id2, &order2, 200);
+        index.add_order(order_id3, &order3, 300);
 
-        // Get all intents and verify
-        let all_intents = index.get_all_intents();
-        let mut intents: Vec<OrderId> = all_intents.into_iter().collect();
-        intents.sort();
+        // Get all orders and verify
+        let all_orders = index.get_all_orders();
+        let mut orders: Vec<OrderId> = all_orders.into_iter().collect();
+        orders.sort();
 
-        let mut expected = vec![intent_id1, intent_id2, intent_id3];
+        let mut expected = vec![order_id1, order_id2, order_id3];
         expected.sort();
 
-        assert_eq!(intents, expected);
+        assert_eq!(orders, expected);
     }
 
     #[test]
@@ -294,93 +296,93 @@ mod intent_index_tests {
         let base = random_address();
         let quote = random_address();
         let pair = Pair::new(base, quote);
-        let intents = index.get_intents(&pair);
-        assert!(intents.is_empty());
+        let orders = index.get_orders(&pair);
+        assert!(orders.is_empty());
     }
 
     #[test]
-    fn test_add_and_get_single_intent() {
+    fn test_add_and_get_single_order() {
         let index = OrderMetadataIndex::new();
-        let intent_id = OrderId::new_v4();
-        let intent = mock_intent();
-        let pair = Pair::from_intent(&intent);
+        let order_id = OrderId::new_v4();
+        let order = mock_order();
+        let pair = order.pair();
 
         let fillable_amount = 100;
-        index.add_intent(intent_id, &intent, fillable_amount);
-        let intents = index.get_intents(&pair);
-        assert_eq!(intents.len(), 1);
-        assert_eq!(intents[0], intent_id);
+        index.add_order(order_id, &order, fillable_amount);
+        let orders = index.get_orders(&pair);
+        assert_eq!(orders.len(), 1);
+        assert_eq!(orders[0], order_id);
     }
 
     #[test]
-    fn test_intents_sorted_by_amount() {
+    fn test_orders_sorted_by_amount() {
         let index = OrderMetadataIndex::new();
-        let intent = mock_intent();
-        let pair = Pair::from_intent(&intent);
+        let order = mock_order();
+        let pair = order.pair();
 
-        // Add intents with different matchable amounts
-        let intent_id1 = OrderId::new_v4();
-        let intent_id2 = OrderId::new_v4();
-        let intent_id3 = OrderId::new_v4();
-        let intent_id4 = OrderId::new_v4();
+        // Add orders with different matchable amounts
+        let order_id1 = OrderId::new_v4();
+        let order_id2 = OrderId::new_v4();
+        let order_id3 = OrderId::new_v4();
+        let order_id4 = OrderId::new_v4();
 
-        index.add_intent(intent_id1, &intent, 300);
-        index.add_intent(intent_id2, &intent, 100);
-        index.add_intent(intent_id3, &intent, 200);
-        index.add_intent(intent_id4, &intent, 400);
+        index.add_order(order_id1, &order, 300);
+        index.add_order(order_id2, &order, 100);
+        index.add_order(order_id3, &order, 200);
+        index.add_order(order_id4, &order, 400);
 
-        let intents = index.get_intents(&pair);
-        assert_eq!(intents.len(), 4);
-        assert_eq!(intents[0], intent_id4); // 400
-        assert_eq!(intents[1], intent_id1); // 300
-        assert_eq!(intents[2], intent_id3); // 200
-        assert_eq!(intents[3], intent_id2); // 100
+        let orders = index.get_orders(&pair);
+        assert_eq!(orders.len(), 4);
+        assert_eq!(orders[0], order_id4); // 400
+        assert_eq!(orders[1], order_id1); // 300
+        assert_eq!(orders[2], order_id3); // 200
+        assert_eq!(orders[3], order_id2); // 100
     }
 
     #[test]
     fn test_different_pairs() {
         let index = OrderMetadataIndex::new();
-        let intent1 = mock_intent();
-        let intent2 = mock_intent();
-        let pair1 = Pair::from_intent(&intent1);
-        let pair2 = Pair::from_intent(&intent2);
+        let order1 = mock_order();
+        let order2 = mock_order();
+        let pair1 = order1.pair();
+        let pair2 = order2.pair();
 
-        let intent_id1 = OrderId::new_v4();
-        let intent_id2 = OrderId::new_v4();
-        let intent_id3 = OrderId::new_v4();
-        let intent_id4 = OrderId::new_v4();
+        let order_id1 = OrderId::new_v4();
+        let order_id2 = OrderId::new_v4();
+        let order_id3 = OrderId::new_v4();
+        let order_id4 = OrderId::new_v4();
 
-        index.add_intent(intent_id1, &intent1, 100);
-        index.add_intent(intent_id2, &intent2, 200);
-        index.add_intent(intent_id3, &intent1, 300);
-        index.add_intent(intent_id4, &intent2, 400);
+        index.add_order(order_id1, &order1, 100);
+        index.add_order(order_id2, &order2, 200);
+        index.add_order(order_id3, &order1, 300);
+        index.add_order(order_id4, &order2, 400);
 
-        let intents1 = index.get_intents(&pair1);
-        let intents2 = index.get_intents(&pair2);
+        let orders1 = index.get_orders(&pair1);
+        let orders2 = index.get_orders(&pair2);
 
-        assert_eq!(intents1.len(), 2);
-        assert_eq!(intents2.len(), 2);
+        assert_eq!(orders1.len(), 2);
+        assert_eq!(orders2.len(), 2);
     }
 
     #[test]
     fn test_update_matchable_amount() {
         let index = OrderMetadataIndex::new();
-        let intent_id = OrderId::new_v4();
-        let intent = mock_intent();
-        let pair = Pair::from_intent(&intent);
+        let order_id = OrderId::new_v4();
+        let order = mock_order();
+        let pair = order.pair();
 
-        // Add an intent with an initial matchable amount
+        // Add an order with an initial matchable amount
         let initial_amount = 100;
-        index.add_intent(intent_id, &intent, initial_amount);
+        index.add_order(order_id, &order, initial_amount);
 
         // Update the matchable amount
         let updated_amount = 200;
-        let old_amount = index.update_matchable_amount(intent_id, updated_amount);
+        let old_amount = index.update_matchable_amount(order_id, updated_amount);
 
-        // Get the intents and verify the intent is in the correct position
-        let intents = index.get_intents(&pair);
-        assert_eq!(intents.len(), 1);
-        assert_eq!(intents[0], intent_id);
+        // Get the orders and verify the order is in the correct position
+        let orders = index.get_orders(&pair);
+        assert_eq!(orders.len(), 1);
+        assert_eq!(orders[0], order_id);
 
         // Verify the updated amount by checking the internal state
         let side_index = index.index.get(&pair).unwrap();
@@ -394,96 +396,96 @@ mod intent_index_tests {
     #[test]
     fn test_update_matchable_amount_sort_order() {
         let index = OrderMetadataIndex::new();
-        let intent = mock_intent();
-        let pair = Pair::from_intent(&intent);
+        let order = mock_order();
+        let pair = order.pair();
 
-        // Add two intents with initial amounts
-        let intent_id1 = OrderId::new_v4();
-        let intent_id2 = OrderId::new_v4();
+        // Add two orders with initial amounts
+        let order_id1 = OrderId::new_v4();
+        let order_id2 = OrderId::new_v4();
 
-        index.add_intent(intent_id1, &intent, 200);
-        index.add_intent(intent_id2, &intent, 100);
+        index.add_order(order_id1, &order, 200);
+        index.add_order(order_id2, &order, 100);
 
         // Verify initial sort order (descending by amount)
-        let intents = index.get_intents(&pair);
-        assert_eq!(intents.len(), 2);
-        assert_eq!(intents[0], intent_id1); // 200
-        assert_eq!(intents[1], intent_id2); // 100
+        let orders = index.get_orders(&pair);
+        assert_eq!(orders.len(), 2);
+        assert_eq!(orders[0], order_id1); // 200
+        assert_eq!(orders[1], order_id2); // 100
 
-        // Update intent2's amount to be larger than intent1
-        let old_amount = index.update_matchable_amount(intent_id2, 300);
+        // Update order2's amount to be larger than order1
+        let old_amount = index.update_matchable_amount(order_id2, 300);
 
         // Verify the sort order has changed
-        let intents = index.get_intents(&pair);
-        assert_eq!(intents.len(), 2);
-        assert_eq!(intents[0], intent_id2); // 300
-        assert_eq!(intents[1], intent_id1); // 200
+        let orders = index.get_orders(&pair);
+        assert_eq!(orders.len(), 2);
+        assert_eq!(orders[0], order_id2); // 300
+        assert_eq!(orders[1], order_id1); // 200
 
         // Verify the returned old amount
         assert_eq!(old_amount, Some(100));
     }
 
     #[test]
-    fn test_remove_intent() {
+    fn test_remove_order() {
         let index = OrderMetadataIndex::new();
-        let intent_id = OrderId::new_v4();
-        let intent = mock_intent();
-        let pair = Pair::from_intent(&intent);
+        let order_id = OrderId::new_v4();
+        let order = mock_order();
+        let pair = order.pair();
 
-        // Add an intent
-        index.add_intent(intent_id, &intent, 100);
+        // Add an order
+        index.add_order(order_id, &order, 100);
 
         // Verify it was added
-        let intents = index.get_intents(&pair.clone());
-        assert_eq!(intents.len(), 1);
-        assert_eq!(intents[0], intent_id);
+        let orders = index.get_orders(&pair.clone());
+        assert_eq!(orders.len(), 1);
+        assert_eq!(orders[0], order_id);
 
-        // Remove the intent
-        let result = index.remove_intent(&intent_id);
+        // Remove the order
+        let result = index.remove_order(&order_id);
         assert_eq!(result, Some((pair, 100)));
 
         // Verify it was removed
-        let intents = index.get_intents(&pair.clone());
-        assert!(intents.is_empty());
+        let orders = index.get_orders(&pair.clone());
+        assert!(orders.is_empty());
 
         // Verify it was removed from reverse index
-        let pair_and_side = index.get_pair(&intent_id);
+        let pair_and_side = index.get_pair(&order_id);
         assert!(pair_and_side.is_none());
     }
 
     #[test]
-    fn test_remove_nonexistent_intent() {
+    fn test_remove_nonexistent_order() {
         let index = OrderMetadataIndex::new();
-        let intent_id = OrderId::new_v4();
+        let order_id = OrderId::new_v4();
 
-        // Try to remove a nonexistent intent
-        let result = index.remove_intent(&intent_id);
+        // Try to remove a nonexistent order
+        let result = index.remove_order(&order_id);
         assert!(result.is_none());
     }
 
     #[test]
-    fn test_remove_intent_maintains_sort() {
+    fn test_remove_order_maintains_sort() {
         let index = OrderMetadataIndex::new();
-        let intent = mock_intent();
-        let pair = Pair::from_intent(&intent);
+        let order = mock_order();
+        let pair = order.pair();
 
-        // Add three intents
-        let intent_id1 = OrderId::new_v4();
-        let intent_id2 = OrderId::new_v4();
-        let intent_id3 = OrderId::new_v4();
+        // Add three orders
+        let order_id1 = OrderId::new_v4();
+        let order_id2 = OrderId::new_v4();
+        let order_id3 = OrderId::new_v4();
 
-        index.add_intent(intent_id1, &intent, 300);
-        index.add_intent(intent_id2, &intent, 200);
-        index.add_intent(intent_id3, &intent, 100);
+        index.add_order(order_id1, &order, 300);
+        index.add_order(order_id2, &order, 200);
+        index.add_order(order_id3, &order, 100);
 
-        // Remove the middle intent
-        let result = index.remove_intent(&intent_id2);
+        // Remove the middle order
+        let result = index.remove_order(&order_id2);
         assert_eq!(result, Some((pair, 200)));
 
-        // Verify remaining intents are still sorted
-        let intents = index.get_intents(&pair.clone());
-        assert_eq!(intents.len(), 2);
-        assert_eq!(intents[0], intent_id1); // 300
-        assert_eq!(intents[1], intent_id3); // 100
+        // Verify remaining orders are still sorted
+        let orders = index.get_orders(&pair.clone());
+        assert_eq!(orders.len(), 2);
+        assert_eq!(orders[0], order_id1); // 300
+        assert_eq!(orders[1], order_id3); // 100
     }
 }

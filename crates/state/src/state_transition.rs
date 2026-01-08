@@ -4,10 +4,11 @@
 //! generates archived types with undocumented fields.
 #![allow(missing_docs)]
 
+use circuit_types::Nullifier;
+use darkpool_types::rkyv_remotes::ScalarDef;
 use serde::{Deserialize, Serialize};
-use types_account::{Account, account::OrderId};
+use types_account::{Account, MatchingPoolName, account::OrderId};
 use types_gossip::WrappedPeerId;
-use types_runtime::MatchingPoolName;
 use types_tasks::{QueuedTask, QueuedTaskState, TaskIdentifier, TaskQueueKey};
 use uuid::Uuid;
 
@@ -43,13 +44,20 @@ pub enum StateTransition {
     /// Update an account
     UpdateAccount { account: Account },
 
+    // --- Orders --- //
+    /// Add a validity proof to an order
+    AddOrderValidityProof { 
+        order_id: OrderId, 
+        #[rkyv(with = ScalarDef)]
+        proof: Nullifier },
+
     // --- Matching Pools --- //
     /// Create a matching pool
     CreateMatchingPool { pool_name: MatchingPoolName },
     /// Destroy a matching pool
     DestroyMatchingPool { pool_name: MatchingPoolName },
-    /// Assign an intent to a matching pool
-    AssignIntentToMatchingPool { intent_id: OrderId, pool_name: MatchingPoolName },
+    /// Assign an order to a matching pool
+    AssignOrderToMatchingPool { order_id: OrderId, pool_name: MatchingPoolName },
 
     // --- Task Queue --- //
     /// Add a task to the task queue

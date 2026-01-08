@@ -5,7 +5,7 @@ edition = "2024"
 
 [features]
 # Used to enable mocks from other crates in tests
-mocks = ["dep:tempfile", "dep:test-helpers"]
+mocks = ["dep:tempfile", "dep:test-helpers", "types-gossip/mocks"]
 ci = ["mocks"]
 
 [[bench]]

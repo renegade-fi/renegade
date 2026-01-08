@@ -11,6 +11,7 @@
 pub mod account_index;
 pub mod matching_pools;
 pub mod node_metadata;
+pub mod order_book;
 pub mod peer_index;
 pub mod proofs;
 pub mod raft_log;

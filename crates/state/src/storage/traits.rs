@@ -2,6 +2,8 @@
 
 use std::{fmt::Debug, marker::PhantomData};
 
+use constants::Scalar;
+use darkpool_types::rkyv_remotes::ScalarDef;
 use rkyv::{
     Archive, Deserialize, Portable, Serialize,
     api::high::{HighSerializer, HighValidator},
@@ -232,3 +234,6 @@ impl<A, T, D: for<'a> DeserializeWith<A, T, Strategy<Pool, rancor::Error>>>
     RkyvDeserializableWith<A, T> for D
 {
 }
+
+/// Type aliases for RkyvWith wrappers
+pub type WithScalar = RkyvWith<Scalar, ScalarDef>;

@@ -74,7 +74,7 @@ impl StateApplicator {
     fn index_intents_with_tx(&self, account: &Account, tx: &StateTxn<RW>) -> Result<()> {
         // Update the intent -> account mapping
         let nonzero_intents = account.orders.keys().copied().collect_vec();
-        tx.index_intents(&account.id, &nonzero_intents)?;
+        tx.index_orders(&account.id, &nonzero_intents)?;
 
         // Handle cancelled intents
         self.handle_cancelled_intents(account, tx)
@@ -100,7 +100,7 @@ impl StateApplicator {
     /// Handle a cancelled intent
     fn handle_cancelled_intent(&self, id: OrderId, tx: &StateTxn<RW>) -> Result<()> {
         // Remove the intent from its matching pool
-        tx.remove_intent_from_matching_pool(&id)?;
+        tx.remove_order_from_matching_pool(&id)?;
 
         // TODO: Remove the intent from the order book table
         // TODO: Delete proofs for the intent

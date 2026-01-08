@@ -5,33 +5,27 @@
 //! of unconditional writes only and inconsistent state is okay between cluster
 //! peers
 
-use circuit_types::{Amount, wallet::Nullifier};
-use common::types::network_order::NetworkOrder;
-use common::types::proof_bundles::{
-    OrderValidityProofBundle, OrderValidityWitnessBundle, ValidWalletUpdateBundle,
-};
-use constants::ORDER_STATE_CHANGE_TOPIC;
-use futures::future::join_all;
-use gossip_api::request_response::orderbook::NetworkOrderInfo;
+use circuit_types::{Amount, Nullifier};
 use libmdbx::TransactionKind;
 use rand::{
+    Rng,
     distributions::{Distribution, WeightedIndex},
-    seq::SliceRandom,
     thread_rng,
 };
-use system_bus::SystemBusMessage;
 use tracing::instrument;
-use types_account::account::{OrderId, Pair};
-use types_gossip::WrappedPeerId;
-use types_runtime::MatchingPoolName;
+use types_account::{MatchingPoolName, OrderId, pair::Pair};
+use types_gossip::{ClusterId, WrappedPeerId, network_order::NetworkOrder};
 use util::{res_some, telemetry::helpers::backfill_trace_field};
 
 use crate::{
-    StateInner, StateTransition,
+    StateInner,
     caching::order_cache::OrderBookFilter,
     error::StateError,
-    notifications::ProposalWaiter,
-    storage::{error::StorageError, tx::StateTxn},
+    storage::{
+        error::StorageError,
+        traits::{RkyvValue, WithScalar},
+        tx::StateTxn,
+    },
 };
 
 /// The error message emitted when a caller attempts to add a local order
@@ -54,11 +48,15 @@ impl StateInner {
     }
 
     /// Get an order
-    pub async fn get_order(&self, order_id: &OrderId) -> Result<Option<NetworkOrder>, StateError> {
+    pub async fn get_network_order(
+        &self,
+        order_id: &OrderId,
+    ) -> Result<Option<NetworkOrder>, StateError> {
         let oid = *order_id;
         self.with_read_tx(move |tx| {
-            let info = tx.get_order_info(&oid)?;
-            Ok(info)
+            let info_value = res_some!(tx.get_order_info(&oid)?);
+            let info = info_value.deserialize()?;
+            Ok(Some(info))
         })
         .await
     }
@@ -66,17 +64,16 @@ impl StateInner {
     /// Get a batch of orders
     ///
     /// Returns `None` for the orders that are not in the state
-    pub async fn get_orders_batch(
+    pub async fn get_network_orders(
         &self,
         order_ids: &[OrderId],
-    ) -> Result<Vec<NetworkOrderInfo>, StateError> {
+    ) -> Result<Vec<NetworkOrder>, StateError> {
         let order_ids = order_ids.to_vec();
         self.with_read_tx(move |tx| {
             let mut orders = Vec::with_capacity(order_ids.len());
             for id in order_ids.iter() {
                 if let Some(o) = tx.get_order_info(id)? {
-                    let proof = tx.get_validity_proof_bundle(&o.id)?;
-                    orders.push(NetworkOrderInfo { order: o, validity_proofs: proof });
+                    orders.push(o.deserialize()?);
                 }
             }
 
@@ -92,37 +89,11 @@ impl StateInner {
     ) -> Result<Option<Nullifier>, StateError> {
         let oid = *order_id;
         self.with_read_tx(move |tx| {
-            let order = tx.get_order_info(&oid)?;
-            Ok(order.map(|o| o.public_share_nullifier))
+            let order = res_some!(tx.get_order_info(&oid)?);
+            let nullifier = WithScalar::from_archived(&order.nullifier)?.into_inner();
+            Ok(Some(nullifier))
         })
         .await
-    }
-
-    /// Get the validity proofs for an order
-    pub async fn get_validity_proofs(
-        &self,
-        order_id: &OrderId,
-    ) -> Result<Option<OrderValidityProofBundle>, StateError> {
-        let oid = *order_id;
-        self.with_read_tx(move |tx| tx.get_validity_proof_bundle(&oid).map_err(Into::into)).await
-    }
-
-    /// Get the validity proof witness for an order
-    pub async fn get_validity_proof_witness(
-        &self,
-        order_id: &OrderId,
-    ) -> Result<Option<OrderValidityWitnessBundle>, StateError> {
-        let oid = *order_id;
-        self.with_read_tx(move |tx| tx.get_validity_proof_witness(&oid).map_err(Into::into)).await
-    }
-
-    /// Get the cancellation proof for an order
-    pub async fn get_cancellation_proof(
-        &self,
-        order_id: &OrderId,
-    ) -> Result<Option<ValidWalletUpdateBundle>, StateError> {
-        let oid = *order_id;
-        self.with_read_tx(move |tx| tx.get_cancellation_proof(&oid).map_err(Into::into)).await
     }
 
     /// Return whether the given order is ready for a match
@@ -132,6 +103,7 @@ impl StateInner {
             let info = tx.get_order_info(&oid)?.ok_or(StateError::Db(StorageError::NotFound(
                 format!("order {oid} not found in state"),
             )))?;
+
             Ok(info.ready_for_match())
         })
         .await
@@ -143,7 +115,12 @@ impl StateInner {
     /// number of orders
     pub async fn get_all_orders(&self) -> Result<Vec<NetworkOrder>, StateError> {
         self.with_read_tx(move |tx| {
-            let orders = tx.get_all_orders()?;
+            let orders = tx
+                .get_all_orders()?
+                .into_iter()
+                .map(|o| o.deserialize())
+                .collect::<Result<Vec<_>, _>>()?;
+
             Ok(orders)
         })
         .await
@@ -154,7 +131,7 @@ impl StateInner {
     /// Returns (buy_amount, sell_amount) where buy amount is denominated in the
     /// quote token, sell amount is denominated in the base token
     pub async fn get_liquidity_for_pair(&self, pair: &Pair) -> (Amount, Amount) {
-        self.order_cache.get_matchable_amount(pair).await
+        self.order_cache.get_matchable_amount(pair)
     }
 
     // --- Heartbeat --- //
@@ -186,9 +163,21 @@ impl StateInner {
     ) -> Result<Option<WrappedPeerId>, StateError> {
         let oid = *order_id;
         self.with_read_tx(move |tx| {
+            // Get the cluster ID managing the order
             let order = res_some!(tx.get_order_info(&oid)?);
-            let peers = tx.get_cluster_peers(&order.cluster)?;
-            Ok(peers.choose(&mut thread_rng()).cloned())
+            let cluster = ClusterId::from_archived(&order.cluster)?;
+
+            // Get the peers in the cluster
+            let peers = res_some!(tx.get_cluster_peers(&cluster)?);
+            let n_peers = peers.len();
+            if n_peers == 0 {
+                return Ok(None);
+            }
+
+            // Choose a random peer from the cluster
+            let peer_idx = thread_rng().gen_range(0..n_peers);
+            let peer = peers.iter().nth(peer_idx).unwrap(); // safe because bounds are sampled
+            Ok(Some(WrappedPeerId::from_archived(peer)?))
         })
         .await
     }
@@ -198,11 +187,11 @@ impl StateInner {
     /// If `requires_serial` is true, then the returned orders will all be
     /// serial-preemptable, otherwise they only require concurrent preemption
     #[instrument(name = "get_matchable_orders", skip_all, fields(filter = ?filter, num_candidates, num_available))]
-    pub async fn get_matchable_orders(
+    pub fn get_matchable_orders(
         &self,
-        filter: OrderBookFilter,
+        filter: &OrderBookFilter,
     ) -> Result<Vec<OrderId>, StateError> {
-        let candidates = self.order_cache.get_intents(filter);
+        let candidates = self.order_cache.get_orders(filter);
         backfill_trace_field("num_candidates", candidates.len());
         let filtered = self.filter_matchable_orders(candidates, None /* matching_pool */)?;
         backfill_trace_field("num_available", filtered.len());
@@ -212,20 +201,20 @@ impl StateInner {
 
     /// Get a list of order IDs that are locally managed and ready for match
     #[instrument(name = "get_locally_matchable_orders", skip_all)]
-    pub async fn get_all_matchable_orders(&self) -> Result<Vec<OrderId>, StateError> {
-        let candidates = self.order_cache.get_all_intents();
+    pub fn get_all_matchable_orders(&self) -> Result<Vec<OrderId>, StateError> {
+        let candidates = self.order_cache.get_all_orders();
         self.filter_matchable_orders(candidates, None /* matching_pool */)
     }
 
     /// Get a list of order IDs that are locally managed and ready for match in
     /// the given matching pool
     #[instrument(name = "get_matchable_orders_in_matching_pool", skip_all, fields(matching_pool = ?matching_pool, num_candidates, num_available))]
-    pub async fn get_matchable_orders_in_matching_pool(
+    pub fn get_matchable_orders_in_matching_pool(
         &self,
         matching_pool: MatchingPoolName,
-        filter: OrderBookFilter,
+        filter: &OrderBookFilter,
     ) -> Result<Vec<OrderId>, StateError> {
-        let candidates = self.order_cache.get_intents(filter);
+        let candidates = self.order_cache.get_orders(filter);
         backfill_trace_field("num_candidates", candidates.len());
         let filtered = self.filter_matchable_orders(candidates, Some(matching_pool))?;
         backfill_trace_field("num_available", filtered.len());
@@ -239,7 +228,7 @@ impl StateInner {
         &self,
         matching_pool: MatchingPoolName,
     ) -> Result<Vec<OrderId>, StateError> {
-        let candidates = self.order_cache.get_all_intents();
+        let candidates = self.order_cache.get_all_orders();
         self.filter_matchable_orders(candidates, Some(matching_pool))
     }
 
@@ -257,8 +246,8 @@ impl StateInner {
             let mut res = Vec::new();
             for id in orders.into_iter() {
                 if let Some(ref pool) = matching_pool {
-                    let intent_matching_pool = tx.get_matching_pool_for_intent(&id)?;
-                    if intent_matching_pool != *pool {
+                    let order_matching_pool = tx.get_matching_pool_for_order(&id)?;
+                    if order_matching_pool != *pool {
                         continue;
                     }
                 }
@@ -330,63 +319,18 @@ impl StateInner {
         .await
     }
 
-    /// Add a validity proof to an order
-    pub async fn add_order_validity_proof(
-        &self,
-        order_id: OrderId,
-        proof: OrderValidityProofBundle,
-    ) -> Result<(), StateError> {
-        let bus = self.bus.clone();
-        self.with_write_tx(move |tx| {
-            tx.attach_validity_proof(&order_id, &proof)?;
-
-            // Read back the order and check if it is local, if so, abort
-            let order = tx.get_order_info(&order_id)?.unwrap();
-            if order.local {
-                return Err(StateError::InvalidUpdate(ERR_LOCAL_ORDER.to_string()));
-            }
-
-            // Push a notification to the system bus
-            bus.publish(
-                ORDER_STATE_CHANGE_TOPIC.to_string(),
-                SystemBusMessage::OrderStateChange { order },
-            );
-            Ok(())
-        })
-        .await
-    }
-
-    /// Add a validity proof and witness to an order managed by the local node
-    pub async fn add_local_order_validity_bundle(
-        &self,
-        order_id: OrderId,
-        proof: OrderValidityProofBundle,
-        witness: OrderValidityWitnessBundle,
-    ) -> Result<ProposalWaiter, StateError> {
-        self.send_proposal(StateTransition::AddOrderValidityBundle { order_id, proof, witness })
-            .await
-    }
-
-    /// Add cancellation proofs for a batch of orders managed by the local node
-    pub async fn add_local_order_cancellation_proofs(
-        &self,
-        proofs: Vec<(OrderId, ValidWalletUpdateBundle)>,
-    ) -> Result<ProposalWaiter, StateError> {
-        self.send_proposal(StateTransition::AddOrderCancellationProofs { proofs }).await
-    }
-
     /// Nullify all orders on the given nullifier
     pub async fn nullify_orders(&self, nullifier: Nullifier) -> Result<(), StateError> {
-        let order_ids: Vec<OrderId> = self
+        let order_id = self
             .with_write_tx(move |tx| {
-                let order_ids = tx.nullify_orders(nullifier)?;
-                Ok(order_ids)
+                let order_id = tx.nullify_order(nullifier)?;
+                Ok(order_id)
             })
             .await?;
 
         // Remove the orders from the order cache
-        for id in order_ids {
-            self.order_cache.remove_intent(id);
+        if let Some(order_id) = order_id {
+            self.order_cache.remove_order(order_id);
         }
 
         Ok(())
@@ -408,12 +352,12 @@ impl StateInner {
         //
         // Note that we only check for serial tasks here, concurrent tasks
         // will be preempted by the task queue
-        let wallet_id = match tx.get_wallet_id_for_order(order_id)? {
+        let account_id = match tx.get_account_id_for_order(order_id)? {
             None => return Ok(false),
-            Some(wallet) => wallet,
+            Some(account_id) => account_id,
         };
 
-        let queue_locked_serial = !tx.serial_tasks_active(&wallet_id)?;
+        let queue_locked_serial = !tx.serial_tasks_active(&account_id)?;
         Ok(queue_locked_serial)
     }
 }
@@ -424,10 +368,8 @@ impl StateInner {
 
 #[cfg(test)]
 mod test {
-    use common::types::{
-        network_order::{NetworkOrderState, test_helpers::dummy_network_order},
-        proof_bundles::mocks::dummy_validity_proof_bundle,
-    };
+
+    use types_gossip::network_order::test_helpers::dummy_network_order;
 
     use crate::test_helpers::mock_state;
 
@@ -440,7 +382,7 @@ mod test {
         state.add_order(order.clone()).await.unwrap();
 
         // Check for the order in the state
-        let stored_order = state.get_order(&order.id).await.unwrap();
+        let stored_order = state.get_network_order(&order.id).await.unwrap();
         assert_eq!(stored_order, Some(order));
     }
 
@@ -449,28 +391,18 @@ mod test {
     async fn test_get_orders_batch() {
         let state = mock_state().await;
 
-        // Create two orders and only add one
-        let mut order1 = dummy_network_order();
+        // Create two orders
+        let order1 = dummy_network_order();
         let order2 = dummy_network_order();
-        let validity_bundle = dummy_validity_proof_bundle();
-        let nullifier = validity_bundle.reblind_proof.statement.original_shares_nullifier;
-
         state.add_order(order1.clone()).await.unwrap();
         state.add_order(order2.clone()).await.unwrap();
-        state.add_order_validity_proof(order1.id, validity_bundle).await.unwrap();
 
         // Get the orders in a batch call
-        let res = state.get_orders_batch(&[order1.id, order2.id]).await.unwrap();
+        let res = state.get_network_orders(&[order1.id, order2.id]).await.unwrap();
         assert_eq!(res.len(), 2);
 
-        // Check the result
-        order1.public_share_nullifier = nullifier;
-        order1.state = NetworkOrderState::Verified;
-
-        assert_eq!(res[0].order, order1);
-        assert!(res[0].validity_proofs.is_some());
-        assert_eq!(res[1].order, order2);
-        assert!(res[1].validity_proofs.is_none());
+        assert_eq!(res[0], order1);
+        assert_eq!(res[1], order2);
     }
 
     /// Tests getting the missing orders
@@ -486,7 +418,7 @@ mod test {
         state.add_order(order1.clone()).await.unwrap();
 
         // Check for the order in the state
-        let stored_order = state.get_order(&order1.id).await.unwrap();
+        let stored_order = state.get_network_order(&order1.id).await.unwrap();
         assert_eq!(stored_order.unwrap(), order1);
 
         // Get the missing orders
@@ -499,29 +431,6 @@ mod test {
         assert_eq!(missing, expected);
     }
 
-    /// Test adding a validity proof to an order
-    #[tokio::test]
-    async fn test_add_order_validity_proof() {
-        let state = mock_state().await;
-
-        let order = dummy_network_order();
-        state.add_order(order.clone()).await.unwrap();
-
-        // Check for the order in the state
-        let stored_order = state.get_order(&order.id).await.unwrap();
-        assert_eq!(stored_order, Some(order.clone()));
-
-        // Add a validity proof to the order
-        let proof = dummy_validity_proof_bundle();
-        state.add_order_validity_proof(order.id, proof).await.unwrap();
-
-        // Check for the order in the state
-        let stored_order = state.get_order(&order.id).await.unwrap().unwrap();
-        let proof = state.get_validity_proofs(&order.id).await.unwrap();
-        assert_eq!(stored_order.state, NetworkOrderState::Verified);
-        assert!(proof.is_some());
-    }
-
     /// Tests nullifying an order
     #[tokio::test]
     async fn test_nullify_order() {
@@ -531,13 +440,13 @@ mod test {
         state.add_order(order.clone()).await.unwrap();
 
         // Check for the order in the state
-        let stored_order = state.get_order(&order.id).await.unwrap();
+        let stored_order = state.get_network_order(&order.id).await.unwrap();
         assert_eq!(stored_order, Some(order.clone()));
 
         // Nullify the order
-        state.nullify_orders(order.public_share_nullifier).await.unwrap();
+        state.nullify_orders(order.nullifier).await.unwrap();
 
         // Check for the order in the state
-        assert!(state.get_order(&order.id).await.unwrap().is_none());
+        assert!(state.get_network_order(&order.id).await.unwrap().is_none());
     }
 }

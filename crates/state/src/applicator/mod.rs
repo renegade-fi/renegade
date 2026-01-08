@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use job_types::{
-    event_manager::EventManagerQueue, handshake_manager::HandshakeManagerQueue,
+    event_manager::EventManagerQueue, matching_engine::MatchingEngineWorkerQueue,
     task_driver::TaskDriverQueue,
 };
 use system_bus::SystemBus;
@@ -18,6 +18,7 @@ use self::{error::StateApplicatorError, return_type::ApplicatorReturnType};
 pub mod account_index;
 pub mod error;
 pub mod matching_pools;
+pub mod order_book;
 pub mod return_type;
 pub mod task_queue;
 
@@ -42,7 +43,7 @@ pub struct StateApplicatorConfig {
     /// A sender to the task driver's work queue
     pub task_queue: TaskDriverQueue,
     /// The handshake manager's work queue
-    pub handshake_manager_queue: HandshakeManagerQueue,
+    pub handshake_manager_queue: MatchingEngineWorkerQueue,
     /// The event manager's work queue
     pub event_queue: EventManagerQueue,
     /// The order book cache
@@ -80,14 +81,17 @@ impl StateApplicator {
         match *transition {
             StateTransition::CreateAccount { account } => self.create_account(&account),
             StateTransition::UpdateAccount { account } => self.update_account(&account),
+            StateTransition::AddOrderValidityProof { order_id, proof } => {
+                self.add_order_validity_proof(order_id, proof)
+            },
             StateTransition::CreateMatchingPool { pool_name } => {
                 self.create_matching_pool(&pool_name)
             },
             StateTransition::DestroyMatchingPool { pool_name } => {
                 self.destroy_matching_pool(&pool_name)
             },
-            StateTransition::AssignIntentToMatchingPool { intent_id, pool_name } => {
-                self.assign_intent_to_matching_pool(&intent_id, &pool_name)
+            StateTransition::AssignOrderToMatchingPool { order_id, pool_name } => {
+                self.assign_order_to_matching_pool(&order_id, &pool_name)
             },
             StateTransition::AppendTask { task, executor } => self.append_task(&task, &executor),
             StateTransition::PopTask { task_id, success } => self.pop_task(task_id, success),
@@ -113,10 +117,10 @@ impl StateApplicator {
         &self.config.system_bus
     }
 
-    // /// Get a reference to the order cache
-    // pub(crate) fn order_cache(&self) -> &OrderBookCache {
-    //     &self.config.order_cache
-    // }
+    /// Get a reference to the order cache
+    pub(crate) fn order_cache(&self) -> &OrderBookCache {
+        &self.config.order_cache
+    }
 }
 
 /// Test helpers for mock state applicator
@@ -125,10 +129,8 @@ pub mod test_helpers {
     use std::{mem, str::FromStr, sync::Arc};
 
     use job_types::{
-        // event_manager::new_event_manager_queue,
-        // handshake_manager::new_handshake_manager_queue,
         event_manager::new_event_manager_queue,
-        handshake_manager::new_handshake_manager_queue,
+        matching_engine::new_matching_engine_worker_queue,
         task_driver::{TaskDriverQueue, new_task_driver_queue},
     };
     use system_bus::SystemBus;
@@ -148,7 +150,7 @@ pub mod test_helpers {
 
     /// Create a mock `StateApplicator` with the given task queue
     pub(crate) fn mock_applicator_with_task_queue(task_queue: TaskDriverQueue) -> StateApplicator {
-        let (handshake_manager_queue, _recv) = new_handshake_manager_queue();
+        let (handshake_manager_queue, _recv) = new_matching_engine_worker_queue();
         mem::forget(_recv);
 
         let (event_queue, _recv) = new_event_manager_queue();
