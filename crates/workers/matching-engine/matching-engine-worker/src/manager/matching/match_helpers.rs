@@ -2,11 +2,8 @@
 
 use circuit_types::{Amount, balance::Balance, fixed_point::FixedPoint, r#match::MatchResult};
 use matching_engine_core::match_orders_with_min_base_amount;
-use types_account::account::{Order, OrderId};
-use types_core::{
-    price::{TimestampedPrice, TimestampedPriceFp},
-    token::Token,
-};
+use types_account::account::{OrderId, order::Order};
+use types_core::{TimestampedPrice, TimestampedPriceFp, Token};
 use util::err_str;
 
 use crate::{error::HandshakeManagerError, manager::HandshakeExecutor};

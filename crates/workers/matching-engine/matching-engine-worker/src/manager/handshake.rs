@@ -18,6 +18,8 @@ use gossip_api::{
 };
 use job_types::network_manager::{NetworkManagerControlSignal, NetworkManagerJob};
 use portpicker::pick_unused_port;
+use types_account::account::OrderId;
+use types_gossip::ConnectionRole;
 use util::err_str;
 use uuid::Uuid;
 
@@ -44,45 +46,42 @@ impl HandshakeExecutor {
         &self,
         peer_order_id: OrderId,
     ) -> Result<(), HandshakeManagerError> {
-        if let Some(local_order_id) = self.choose_match_proposal(peer_order_id).await {
-            // Choose a peer to match this order with
-            let managing_peer = self.state.get_peer_managing_order(&peer_order_id).await?;
-            if managing_peer.is_none() {
-                // TODO: Lower the order priority for this order
-                return Ok(());
-            }
-            let peer = managing_peer.unwrap();
+        let local_order_id = match self.choose_match_proposal(peer_order_id).await {
+            Some(local_order_id) => local_order_id,
+            None => return Ok(()),
+        };
 
-            // Send a handshake message to the given peer_id
-            let request_id = Uuid::new_v4();
-            let price_vector = self.fetch_price_vector()?;
-            let message = HandshakeMessage {
-                request_id,
-                message_type: HandshakeMessageType::Propose(ProposeMatchCandidate {
-                    peer_id: self.state.get_peer_id()?,
-                    peer_order: peer_order_id,
-                    sender_order: local_order_id,
-                    price_vector: price_vector.clone(),
-                }),
-            };
-            self.send_message(peer, message, None /* response_channel */)?;
-
-            // Determine the execution price for the new order
-            let (base, quote) = self.token_pair_for_order(&local_order_id).await?;
-            let (_, _, price) = price_vector
-                .find_pair(&base, &quote)
-                .ok_or_else(|| HandshakeManagerError::NoPriceData(ERR_NO_PRICE_DATA.to_string()))?;
-
-            self.handshake_state_index
-                .new_handshake(
-                    request_id,
-                    ConnectionRole::Dialer,
-                    peer_order_id,
-                    local_order_id,
-                    price,
-                )
-                .await?;
+        // Choose a peer to match this order with
+        let managing_peer = self.state.get_peer_managing_order(&peer_order_id).await?;
+        if managing_peer.is_none() {
+            // TODO: Lower the order priority for this order
+            return Ok(());
         }
+        let peer = managing_peer.unwrap();
+
+        // Send a handshake message to the given peer_id
+        let request_id = Uuid::new_v4();
+        let price_vector = self.fetch_price_vector()?;
+        let message = HandshakeMessage {
+            request_id,
+            message_type: HandshakeMessageType::Propose(ProposeMatchCandidate {
+                peer_id: self.state.get_peer_id()?,
+                peer_order: peer_order_id,
+                sender_order: local_order_id,
+                price_vector: price_vector.clone(),
+            }),
+        };
+        self.send_message(peer, message, None /* response_channel */)?;
+
+        // Determine the execution price for the new order
+        let (base, quote) = self.token_pair_for_order(&local_order_id).await?;
+        let (_, _, price) = price_vector
+            .find_pair(&base, &quote)
+            .ok_or_else(|| HandshakeManagerError::NoPriceData(ERR_NO_PRICE_DATA.to_string()))?;
+
+        self.handshake_state_index
+            .new_handshake(request_id, ConnectionRole::Dialer, peer_order_id, local_order_id, price)
+            .await?;
 
         Ok(())
     }

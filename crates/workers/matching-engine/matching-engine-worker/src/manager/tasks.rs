@@ -44,9 +44,9 @@ impl HandshakeExecutor {
         descriptor: TaskDescriptor,
     ) -> Result<(), HandshakeManagerError> {
         // Send the proposal to the raft
-        let wallets = descriptor.affected_wallets();
+        let accounts = descriptor.affected_accounts();
         let (tid, waiter) =
-            self.state.enqueue_preemptive_task(wallets, descriptor, true /* is_serial */).await?;
+            self.state.enqueue_preemptive_task(accounts, descriptor, true /* is_serial */).await?;
         waiter.await?;
 
         // Await a completion notification from the task driver

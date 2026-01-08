@@ -1,4 +1,4 @@
-//! Jobs consumed by the handshake manager
+//! Jobs consumed by the matching engine worker
 
 use std::time::Duration;
 
@@ -9,25 +9,26 @@ use darkpool_types::intent::Intent;
 use gossip_api::request_response::{AuthenticatedGossipResponse, handshake::HandshakeMessage};
 use libp2p::request_response::ResponseChannel;
 use system_bus::gen_atomic_match_response_topic;
-use types_account::{MatchingPoolName, OrderId};
+use types_account::{MatchingPoolName, OrderId, order::Order};
 use types_core::TimestampedPrice;
 use types_gossip::WrappedPeerId;
 use util::channels::{TracedTokioReceiver, TracedTokioSender, new_traced_tokio_channel};
 use uuid::Uuid;
 
-/// The job queue for the handshake manager
-pub type HandshakeManagerQueue = TracedTokioSender<HandshakeManagerJob>;
-/// The job queue receiver for the handshake manager
-pub type HandshakeManagerReceiver = TracedTokioReceiver<HandshakeManagerJob>;
+/// The job queue for the matching engine worker
+pub type MatchingEngineWorkerQueue = TracedTokioSender<MatchingEngineWorkerJob>;
+/// The job queue receiver for the matching engine worker
+pub type MatchingEngineWorkerReceiver = TracedTokioReceiver<MatchingEngineWorkerJob>;
 
-/// Create a new handshake manager queue and receiver
-pub fn new_handshake_manager_queue() -> (HandshakeManagerQueue, HandshakeManagerReceiver) {
+/// Create a new matching engine worker queue and receiver
+pub fn new_matching_engine_worker_queue()
+-> (MatchingEngineWorkerQueue, MatchingEngineWorkerReceiver) {
     new_traced_tokio_channel()
 }
 
-/// Represents a job for the handshake manager's thread pool to execute
+/// Represents a job for the matching engine worker's thread pool to execute
 #[allow(clippy::large_enum_variant)]
-pub enum HandshakeManagerJob {
+pub enum MatchingEngineWorkerJob {
     // --- Handshakes and Matching --- //
     /// Run the internal matching engine on the given order
     ///
@@ -41,8 +42,8 @@ pub enum HandshakeManagerJob {
     },
     /// Run the external matching engine on the given order
     ExternalMatchingEngine {
-        /// The external intent to match
-        intent: Intent,
+        /// The external order to match
+        order: Order,
         /// The system bus topic on which to send the resulting external match
         ///
         /// We send on the bus rather than directly through a oneshot for two
@@ -116,38 +117,38 @@ pub enum HandshakeManagerJob {
     },
 }
 
-impl HandshakeManagerJob {
+impl MatchingEngineWorkerJob {
     /// Get a quote for an external order
-    pub fn get_external_quote(intent: Intent) -> (Self, String) {
+    pub fn get_external_quote(order: Order) -> (Self, String) {
         let opt = ExternalMatchingEngineOptions::only_quote();
-        Self::new_external_match_job(intent, opt)
+        Self::new_external_match_job(order, opt)
     }
 
     /// Get an external match bundle with a previously committed-to price
     pub fn get_external_match_bundle_with_price(
-        intent: Intent,
+        order: Order,
         price: TimestampedPrice,
         bundle_duration: Duration,
     ) -> (Self, String) {
         let opt = ExternalMatchingEngineOptions::new()
             .with_bundle_duration(bundle_duration)
             .with_price(price);
-        Self::new_external_match_job(intent, opt)
+        Self::new_external_match_job(order, opt)
     }
 
     /// Run the external matching engine and create a bundle
-    pub fn get_external_match_bundle(intent: Intent) -> (Self, String) {
+    pub fn get_external_match_bundle(order: Order) -> (Self, String) {
         let opt = ExternalMatchingEngineOptions::default();
-        Self::new_external_match_job(intent, opt)
+        Self::new_external_match_job(order, opt)
     }
 
     /// Create a new external matching job
     pub fn new_external_match_job(
-        intent: Intent,
+        order: Order,
         options: ExternalMatchingEngineOptions,
     ) -> (Self, String) {
         let topic = gen_atomic_match_response_topic();
-        (Self::ExternalMatchingEngine { intent, response_topic: topic.clone(), options }, topic)
+        (Self::ExternalMatchingEngine { order, response_topic: topic.clone(), options }, topic)
     }
 }
 
