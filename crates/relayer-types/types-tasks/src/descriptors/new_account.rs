@@ -3,6 +3,7 @@
 #[cfg(feature = "rkyv")]
 use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
 use serde::{Deserialize, Serialize};
+use types_account::keychain::KeyChain;
 use types_core::AccountId;
 
 use super::TaskDescriptor;
@@ -15,6 +16,8 @@ use super::TaskDescriptor;
 pub struct NewAccountTaskDescriptor {
     /// The account ID to create
     pub account_id: AccountId,
+    /// The keychain for the account
+    pub keychain: KeyChain,
 }
 
 impl From<NewAccountTaskDescriptor> for TaskDescriptor {

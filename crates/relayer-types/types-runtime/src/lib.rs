@@ -23,6 +23,3 @@ pub type CancelChannel = WatchReceiver<()>;
 pub fn new_cancel_channel() -> (WatchSender<()>, CancelChannel) {
     watch_channel(())
 }
-
-/// A type alias for matching pool names
-pub type MatchingPoolName = String;

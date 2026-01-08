@@ -5,6 +5,7 @@ pub mod matching_pools;
 pub mod node_metadata;
 // pub mod order_book;
 pub mod account_index;
+pub mod order_book;
 pub mod peer_index;
 pub mod raft;
 pub mod task_queue;
@@ -14,7 +15,7 @@ use std::{sync::Arc, time::Duration};
 use config::RelayerConfig;
 use crossbeam::channel::Sender as UnboundedSender;
 use job_types::{
-    event_manager::EventManagerQueue, handshake_manager::HandshakeManagerQueue,
+    event_manager::EventManagerQueue, matching_engine::MatchingEngineWorkerQueue,
     network_manager::NetworkManagerQueue, task_driver::TaskDriverQueue,
 };
 use libmdbx::{RO, RW};
@@ -73,7 +74,7 @@ pub async fn create_global_state(
     config: &RelayerConfig,
     network_queue: NetworkManagerQueue,
     task_queue: TaskDriverQueue,
-    handshake_manager_queue: HandshakeManagerQueue,
+    handshake_manager_queue: MatchingEngineWorkerQueue,
     event_queue: EventManagerQueue,
     system_bus: SystemBus,
     system_clock: &SystemClock,
@@ -159,7 +160,7 @@ impl StateInner {
         config: &RelayerConfig,
         network_queue: NetworkManagerQueue,
         task_queue: TaskDriverQueue,
-        handshake_manager_queue: HandshakeManagerQueue,
+        handshake_manager_queue: MatchingEngineWorkerQueue,
         event_queue: EventManagerQueue,
         system_bus: SystemBus,
         system_clock: &SystemClock,
@@ -188,7 +189,7 @@ impl StateInner {
         raft_config: RaftClientConfig,
         network: N,
         task_queue: TaskDriverQueue,
-        handshake_manager_queue: HandshakeManagerQueue,
+        handshake_manager_queue: MatchingEngineWorkerQueue,
         event_queue: EventManagerQueue,
         system_bus: SystemBus,
         system_clock: &SystemClock,

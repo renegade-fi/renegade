@@ -3,7 +3,8 @@
 //! This type wraps an intent and adds metadata to the order that doesn't appear
 //! in the circuits (and thereby the intent) directly.
 
-use circuit_types::Amount;
+use alloy::primitives::Address;
+use circuit_types::{Amount, fixed_point::FixedPoint};
 use darkpool_types::intent::Intent;
 #[cfg(feature = "rkyv")]
 use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
@@ -52,6 +53,25 @@ impl Order {
         &self.metadata
     }
 
+    /// The input token for the order
+    pub fn input_token(&self) -> Address {
+        self.intent.in_token
+    }
+
+    /// The output token for the order
+    pub fn output_token(&self) -> Address {
+        self.intent.out_token
+    }
+
+    /// Whether the order is zero'd out
+    ///
+    /// This can happen without an order being removed from an account because
+    /// the order shares are directly updated on-chain
+    #[inline]
+    pub fn is_zero(&self) -> bool {
+        self.intent.amount_in == 0
+    }
+
     /// Get the pair for the order
     pub fn pair(&self) -> Pair {
         Pair::new(self.intent.in_token, self.intent.out_token)
@@ -65,6 +85,13 @@ impl Order {
     /// Whether the order has external matches enabled
     pub fn allow_external_matches(&self) -> bool {
         self.metadata.allow_external_matches
+    }
+
+    /// Validate a match's price against the order's bounds
+    pub fn validate_match_price(&self, input_amount: Amount, output_amount: Amount) -> bool {
+        // Check the worst case price
+        let implied_price = FixedPoint::from_integer_ratio(output_amount, input_amount);
+        implied_price >= self.intent.min_price
     }
 }
 

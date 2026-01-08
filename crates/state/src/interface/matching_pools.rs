@@ -4,8 +4,8 @@
 // | Constants |
 // -------------
 
+use types_account::MatchingPoolName;
 use types_account::account::OrderId;
-use types_runtime::MatchingPoolName;
 
 use crate::{
     StateInner, error::StateError, notifications::ProposalWaiter, state_transition::StateTransition,
@@ -16,15 +16,15 @@ impl StateInner {
     // | Getters |
     // -----------
 
-    /// Get the name of the matching pool the given intent is in, if it's been
+    /// Get the name of the matching pool the given order is in, if it's been
     /// assigned to one
-    pub async fn get_matching_pool_for_intent(
+    pub async fn get_matching_pool_for_order(
         &self,
-        intent_id: &OrderId,
+        order_id: &OrderId,
     ) -> Result<MatchingPoolName, StateError> {
-        let intent_id = *intent_id;
+        let order_id = *order_id;
         self.with_read_tx(move |tx| {
-            let matching_pool = tx.get_matching_pool_for_intent(&intent_id)?;
+            let matching_pool = tx.get_matching_pool_for_order(&order_id)?;
             Ok(matching_pool)
         })
         .await
@@ -62,13 +62,12 @@ impl StateInner {
         self.send_proposal(StateTransition::DestroyMatchingPool { pool_name }).await
     }
 
-    /// Assign an intent to a matching pool
-    pub async fn assign_intent_to_matching_pool(
+    /// Assign an order to a matching pool
+    pub async fn assign_order_to_matching_pool(
         &self,
-        intent_id: OrderId,
+        order_id: OrderId,
         pool_name: MatchingPoolName,
     ) -> Result<ProposalWaiter, StateError> {
-        self.send_proposal(StateTransition::AssignIntentToMatchingPool { intent_id, pool_name })
-            .await
+        self.send_proposal(StateTransition::AssignOrderToMatchingPool { order_id, pool_name }).await
     }
 }

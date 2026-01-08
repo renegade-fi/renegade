@@ -134,7 +134,7 @@ pub mod test_helpers {
     use config::RelayerConfig;
     use job_types::{
         event_manager::new_event_manager_queue,
-        handshake_manager::new_handshake_manager_queue,
+        matching_engine::new_matching_engine_worker_queue,
         task_driver::{TaskDriverQueue, new_task_driver_queue},
     };
     use libp2p::identity::Keypair;
@@ -241,7 +241,7 @@ pub mod test_helpers {
         )
         .await;
         let net = raft.new_network_client();
-        let (handshake_manager_queue, _recv) = new_handshake_manager_queue();
+        let (handshake_manager_queue, _recv) = new_matching_engine_worker_queue();
         let (event_queue, _recv) = new_event_manager_queue();
         let (failure_send, _failure_recv) = new_worker_failure_channel();
 

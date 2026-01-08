@@ -10,11 +10,11 @@
 
 mod cluster;
 mod handshake;
-mod peer_id;
-mod peer_info;
-
 #[cfg(feature = "mocks")]
 pub mod mocks;
+pub mod network_order;
+mod peer_id;
+mod peer_info;
 
 // Re-exports
 pub use cluster::{CLUSTER_MANAGEMENT_TOPIC_PREFIX, ClusterAsymmetricKeypair, ClusterId};

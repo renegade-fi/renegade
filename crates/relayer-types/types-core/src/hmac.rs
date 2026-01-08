@@ -3,6 +3,8 @@
 use base64::engine::{Engine, general_purpose as b64_general_purpose};
 use hmac::Mac;
 use rand::{RngCore, thread_rng};
+#[cfg(feature = "rkyv")]
+use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 
@@ -14,6 +16,8 @@ type HmacSha256 = hmac::Hmac<Sha256>;
 
 /// A type representing a symmetric HMAC key
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "rkyv", derive(Archive, RkyvDeserialize, RkyvSerialize))]
+#[cfg_attr(feature = "rkyv", rkyv(derive(Debug)))]
 pub struct HmacKey(pub [u8; HMAC_KEY_LEN]);
 
 impl HmacKey {

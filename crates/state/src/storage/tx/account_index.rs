@@ -28,7 +28,7 @@ impl<T: TransactionKind> StateTxn<'_, T> {
     }
 
     /// Get the account ID managing a given order
-    pub fn get_account_id_for_intent(
+    pub fn get_account_id_for_order(
         &self,
         intent_id: &OrderId,
     ) -> Result<Option<AccountId>, StorageError> {
@@ -38,11 +38,11 @@ impl<T: TransactionKind> StateTxn<'_, T> {
     }
 
     /// Get the account for a given order
-    pub fn get_account_for_intent(
+    pub fn get_account_for_order(
         &self,
         intent_id: &OrderId,
     ) -> Result<Option<AccountValue<'_>>, StorageError> {
-        let account_id = res_some!(self.get_account_id_for_intent(intent_id)?);
+        let account_id = res_some!(self.get_account_id_for_order(intent_id)?);
         self.get_account(&account_id)
     }
 
@@ -67,13 +67,13 @@ impl StateTxn<'_, RW> {
     }
 
     /// Update the mapping from order to account for each of the given orders
-    pub fn index_intents(
+    pub fn index_orders(
         &self,
         account_id: &AccountId,
-        intents: &[OrderId],
+        orders: &[OrderId],
     ) -> Result<(), StorageError> {
-        for intent in intents.iter() {
-            self.inner().write(INTENT_TO_WALLET_TABLE, intent, account_id)?;
+        for order in orders.iter() {
+            self.inner().write(INTENT_TO_WALLET_TABLE, order, account_id)?;
         }
 
         Ok(())
@@ -86,7 +86,7 @@ impl StateTxn<'_, RW> {
 
 #[cfg(test)]
 mod test {
-    use types_account::account::{Account, OrderId};
+    use types_account::{account::OrderId, mocks::mock_empty_account};
     use types_core::AccountId;
 
     use crate::{INTENT_TO_WALLET_TABLE, WALLETS_TABLE, test_helpers::mock_db};
@@ -99,8 +99,7 @@ mod test {
         db.create_table(WALLETS_TABLE).unwrap();
 
         // Write the account
-        let account_id = AccountId::new_v4();
-        let account = Account::new_empty_account(account_id);
+        let account = mock_empty_account();
         let tx = db.new_write_tx().unwrap();
         tx.write_account(&account).unwrap();
         tx.commit().unwrap();
@@ -127,17 +126,17 @@ mod test {
         let account_id2 = AccountId::new_v4();
 
         let tx = db.new_write_tx().unwrap();
-        tx.index_intents(&account_id1, &[intent_id1, intent_id2]).unwrap();
-        tx.index_intents(&account_id2, &[intent_id3]).unwrap();
+        tx.index_orders(&account_id1, &[intent_id1, intent_id2]).unwrap();
+        tx.index_orders(&account_id2, &[intent_id3]).unwrap();
         tx.commit().unwrap();
 
         // Check all order mappings
         let tx = db.new_read_tx().unwrap();
-        let account_res1 = tx.get_account_id_for_intent(&intent_id1).unwrap();
+        let account_res1 = tx.get_account_id_for_order(&intent_id1).unwrap();
         assert_eq!(account_res1, Some(account_id1));
-        let account_res2 = tx.get_account_id_for_intent(&intent_id2).unwrap();
+        let account_res2 = tx.get_account_id_for_order(&intent_id2).unwrap();
         assert_eq!(account_res2, Some(account_id1));
-        let account_res3 = tx.get_account_id_for_intent(&intent_id3).unwrap();
+        let account_res3 = tx.get_account_id_for_order(&intent_id3).unwrap();
         assert_eq!(account_res3, Some(account_id2));
     }
 
@@ -148,8 +147,7 @@ mod test {
         db.create_table(WALLETS_TABLE).unwrap();
 
         const N: usize = 10;
-        let mut accounts =
-            (0..N).map(|_| Account::new_empty_account(AccountId::new_v4())).collect_vec();
+        let mut accounts = (0..N).map(|_| mock_empty_account()).collect_vec();
         let tx = db.new_write_tx().unwrap();
         for account in accounts.iter() {
             tx.write_account(account).unwrap();

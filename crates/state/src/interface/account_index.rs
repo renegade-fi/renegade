@@ -8,7 +8,7 @@ use types_account::{
     account::{Account, OrderId},
     order::Order,
 };
-use types_core::AccountId;
+use types_core::{AccountId, HmacKey};
 use types_tasks::QueuedTask;
 use util::res_some;
 
@@ -28,6 +28,22 @@ impl StateInner {
         self.with_read_tx(move |tx| {
             let exists = tx.get_account(&id)?.is_some();
             Ok(exists)
+        })
+        .await
+    }
+
+    /// Get the symmetric key for an account
+    pub async fn get_account_symmetric_key(
+        &self,
+        id: &AccountId,
+    ) -> Result<Option<HmacKey>, StateError> {
+        let id = *id;
+        self.with_read_tx(move |tx| {
+            let account_value = res_some!(tx.get_account(&id)?);
+            let archived_key = &account_value.keychain.secret_keys.symmetric_key;
+            let key = HmacKey::from_archived(archived_key)?;
+
+            Ok(Some(key))
         })
         .await
     }
@@ -77,7 +93,7 @@ impl StateInner {
     pub async fn get_managed_order(&self, id: &OrderId) -> Result<Option<Order>, StateError> {
         let id = *id;
         self.with_read_tx(move |tx| {
-            let account_value = res_some!(tx.get_account_for_intent(&id)?);
+            let account_value = res_some!(tx.get_account_for_order(&id)?);
             let account = account_value.deserialize()?;
             Ok(account.orders.get(&id).cloned())
         })
@@ -91,7 +107,7 @@ impl StateInner {
     ) -> Result<Option<(Order, Balance)>, StateError> {
         let id = *id;
         self.with_read_tx(move |tx| {
-            let account = res_some!(tx.get_account_for_intent(&id)?);
+            let account = res_some!(tx.get_account_for_order(&id)?);
             let archived_order = res_some!(account.orders.get(&id));
             let order = Order::from_archived(archived_order)?;
 
@@ -108,26 +124,26 @@ impl StateInner {
     }
 
     /// Get the account ID that contains the given intent ID
-    pub async fn get_account_id_for_intent(
+    pub async fn get_account_id_for_order(
         &self,
         intent_id: &OrderId,
     ) -> Result<Option<AccountId>, StateError> {
         let id = *intent_id;
         self.with_read_tx(move |tx| {
-            let account_id = tx.get_account_id_for_intent(&id)?;
+            let account_id = tx.get_account_id_for_order(&id)?;
             Ok(account_id)
         })
         .await
     }
 
     /// Get the account that contains the given intent ID
-    pub async fn get_account_for_intent(
+    pub async fn get_account_for_order(
         &self,
         intent_id: &OrderId,
     ) -> Result<Option<Account>, StateError> {
         let iid = *intent_id;
         self.with_read_tx(move |tx| {
-            let account_value = res_some!(tx.get_account_for_intent(&iid)?);
+            let account_value = res_some!(tx.get_account_for_order(&iid)?);
             let account = account_value.deserialize()?;
             Ok(Some(account))
         })

@@ -1,5 +1,7 @@
 //! Mock types for testing
 
+use types_account::account::mocks::mock_keychain;
+
 use crate::{NewAccountTaskDescriptor, QueuedTask, TaskDescriptor, TaskQueueKey};
 
 /// Create a mock queued task
@@ -10,5 +12,8 @@ pub fn mock_queued_task(key: TaskQueueKey) -> QueuedTask {
 
 /// Create a mock task descriptor
 pub fn mock_task_descriptor(key: TaskQueueKey) -> TaskDescriptor {
-    TaskDescriptor::NewAccount(NewAccountTaskDescriptor { account_id: key })
+    TaskDescriptor::NewAccount(NewAccountTaskDescriptor {
+        account_id: key,
+        keychain: mock_keychain(),
+    })
 }

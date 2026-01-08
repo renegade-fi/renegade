@@ -326,8 +326,8 @@ impl StateMachine {
 #[cfg(test)]
 mod tests {
     use libmdbx::Error as MdbxError;
+    use types_account::MatchingPoolName;
     use types_account::account::{Account, mocks::mock_empty_account};
-    use types_runtime::MatchingPoolName;
 
     use crate::{
         WALLETS_TABLE,

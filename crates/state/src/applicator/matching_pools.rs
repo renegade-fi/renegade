@@ -36,14 +36,14 @@ impl StateApplicator {
         Ok(ApplicatorReturnType::None)
     }
 
-    /// Assign an intent to a matching pool
-    pub fn assign_intent_to_matching_pool(
+    /// Assign an order to a matching pool
+    pub fn assign_order_to_matching_pool(
         &self,
-        intent_id: &OrderId,
+        order_id: &OrderId,
         pool_name: &str,
     ) -> Result<ApplicatorReturnType, StateApplicatorError> {
         let tx = self.db().new_write_tx()?;
-        tx.assign_intent_to_matching_pool(intent_id, pool_name)?;
+        tx.assign_order_to_matching_pool(order_id, pool_name)?;
         tx.commit()?;
 
         Ok(ApplicatorReturnType::None)
@@ -52,8 +52,7 @@ impl StateApplicator {
 
 #[cfg(test)]
 mod test {
-    use types_account::account::OrderId;
-    use types_runtime::MatchingPoolName;
+    use types_account::{MatchingPoolName, account::OrderId};
 
     use crate::applicator::test_helpers::mock_applicator;
 
@@ -91,43 +90,43 @@ mod test {
         assert!(!pool_exists);
     }
 
-    /// Tests assigning an intent to a matching pool via the applicator
+    /// Tests assigning an order to a matching pool via the applicator
     #[test]
-    fn test_assign_intent_to_matching_pool() {
+    fn test_assign_order_to_matching_pool() {
         let applicator = mock_applicator();
         let pool_name: MatchingPoolName = TEST_POOL_NAME.to_string();
-        let intent_id = OrderId::new_v4();
+        let order_id = OrderId::new_v4();
 
-        // Create a matching pool, then assign the intent
+        // Create a matching pool, then assign the order
         applicator.create_matching_pool(&pool_name).unwrap();
-        applicator.assign_intent_to_matching_pool(&intent_id, &pool_name).unwrap();
+        applicator.assign_order_to_matching_pool(&order_id, &pool_name).unwrap();
 
-        // Assert that the intent is in the matching pool
+        // Assert that the order is in the matching pool
         let tx = applicator.db().new_read_tx().unwrap();
-        let pool_for_intent = tx.get_matching_pool_for_intent(&intent_id).unwrap();
-        assert_eq!(pool_for_intent, pool_name);
+        let pool_for_order = tx.get_matching_pool_for_order(&order_id).unwrap();
+        assert_eq!(pool_for_order, pool_name);
     }
 
-    /// Tests re-assigning an intent to a different matching pool
+    /// Tests re-assigning an order to a different matching pool
     #[test]
-    fn test_reassign_intent_matching_pool() {
+    fn test_reassign_order_matching_pool() {
         let applicator = mock_applicator();
         let pool_1_name: MatchingPoolName = "pool-1".to_string();
         let pool_2_name: MatchingPoolName = "pool-2".to_string();
-        let intent_id = OrderId::new_v4();
+        let order_id = OrderId::new_v4();
 
         // Create both matching pools
         applicator.create_matching_pool(&pool_1_name).unwrap();
         applicator.create_matching_pool(&pool_2_name).unwrap();
 
-        // Assign then re-assign the intent
-        applicator.assign_intent_to_matching_pool(&intent_id, &pool_1_name).unwrap();
-        applicator.assign_intent_to_matching_pool(&intent_id, &pool_2_name).unwrap();
+        // Assign then re-assign the order
+        applicator.assign_order_to_matching_pool(&order_id, &pool_1_name).unwrap();
+        applicator.assign_order_to_matching_pool(&order_id, &pool_2_name).unwrap();
 
-        // Assert that the intent is in the second matching pool
+        // Assert that the order is in the second matching pool
         let tx = applicator.db().new_read_tx().unwrap();
-        let pool_for_intent = tx.get_matching_pool_for_intent(&intent_id).unwrap();
-        assert_eq!(pool_for_intent, pool_2_name);
+        let pool_for_order = tx.get_matching_pool_for_order(&order_id).unwrap();
+        assert_eq!(pool_for_order, pool_2_name);
     }
 
     /// Tests destroying a nonexistent matching pool
@@ -141,15 +140,15 @@ mod test {
         assert!(result.is_err());
     }
 
-    /// Tests assigning an intent to a nonexistent matching pool
+    /// Tests assigning an order to a nonexistent matching pool
     #[test]
-    fn test_assign_intent_to_nonexistent_matching_pool() {
+    fn test_assign_order_to_nonexistent_matching_pool() {
         let applicator = mock_applicator();
         let pool_name: MatchingPoolName = TEST_POOL_NAME.to_string();
-        let intent_id = OrderId::new_v4();
+        let order_id = OrderId::new_v4();
 
-        // Try assigning the intent to a nonexistent matching pool
-        let result = applicator.assign_intent_to_matching_pool(&intent_id, &pool_name);
+        // Try assigning the order to a nonexistent matching pool
+        let result = applicator.assign_order_to_matching_pool(&order_id, &pool_name);
         assert!(result.is_err());
     }
 }
