@@ -1,18 +1,23 @@
 //! Mock types for wallet testing
 
-use circuits_core::test_helpers::{random_address, random_amount, random_price};
 use constants::{MERKLE_HEIGHT, Scalar};
+use darkpool_types::fuzzing::{random_address, random_amount, random_price};
 use darkpool_types::intent::Intent;
 use num_bigint::BigUint;
 use rand::thread_rng;
 
-use types_core::AccountId;
+use types_core::{AccountId, HmacKey};
 
-use crate::{Account, MerkleAuthenticationPath};
+use crate::{
+    Account, MerkleAuthenticationPath,
+    keychain::{KeyChain, PrivateKeyChain},
+};
 
 /// Create a mock empty account
 pub fn mock_empty_account() -> Account {
-    Account::new_empty_account(AccountId::new_v4())
+    let id = AccountId::new_v4();
+    let keychain = mock_keychain();
+    Account::new_empty_account(id, keychain)
 }
 
 /// Create a mock intent
@@ -24,6 +29,13 @@ pub fn mock_intent() -> Intent {
         min_price: random_price(),
         amount_in: random_amount(),
     }
+}
+
+/// Create a mock keychain
+pub fn mock_keychain() -> KeyChain {
+    let hmac_key = HmacKey::random();
+    let private_keychain = PrivateKeyChain::new(hmac_key);
+    KeyChain::new(private_keychain)
 }
 
 /// Create a mock Merkle path for a wallet

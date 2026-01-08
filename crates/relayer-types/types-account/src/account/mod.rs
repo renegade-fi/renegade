@@ -12,6 +12,7 @@ pub mod pair;
 use std::collections::HashMap;
 
 use alloy::primitives::Address;
+use circuit_types::Amount;
 use darkpool_types::balance::Balance;
 use serde::{Deserialize, Serialize};
 use types_core::AccountId;
@@ -22,7 +23,7 @@ use darkpool_types::rkyv_remotes::AddressDef;
 #[cfg(feature = "rkyv")]
 use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize, with};
 
-use crate::{MerkleAuthenticationPath, order::Order};
+use crate::{MerkleAuthenticationPath, keychain::KeyChain, order::Order};
 
 /// An identifier of an order used for caching
 pub type OrderId = Uuid;
@@ -44,12 +45,14 @@ pub struct Account {
     /// A list of balances in this account
     #[cfg_attr(feature = "rkyv", rkyv(with = with::MapKV<AddressDef, with::Identity>))]
     pub balances: HashMap<Address, Balance>,
+    /// The keychain for the account
+    pub keychain: KeyChain,
 }
 
 impl Account {
     /// Create a new empty account from the given seed information
-    pub fn new_empty_account(id: AccountId) -> Self {
-        Self { id, orders: HashMap::new(), balances: HashMap::new() }
+    pub fn new_empty_account(id: AccountId, keychain: KeyChain) -> Self {
+        Self { id, orders: HashMap::new(), balances: HashMap::new(), keychain }
     }
 
     /// Remove default balances
@@ -57,5 +60,57 @@ impl Account {
         let default_balance = Balance::default();
         self.balances.retain(|_mint, balance| *balance != default_balance);
         self.orders.retain(|_id, order| *order != Order::default());
+    }
+}
+
+// ----------
+// | Orders |
+// ----------
+
+impl Account {
+    /// Get an order by its ID
+    pub fn get_order(&self, id: &OrderId) -> Option<&Order> {
+        self.orders.get(id)
+    }
+
+    /// Get the matchable amount for an order
+    ///
+    /// This is the amount specified by the order, capped at the amount backed
+    /// by the account's balance.
+    pub fn get_matchable_amount_for_order(&self, order: &Order) -> Amount {
+        let bal_amt = self.balances.get(&order.input_token()).map(|b| b.amount).unwrap_or_default();
+        Amount::min(bal_amt, order.intent.amount_in)
+    }
+}
+
+// Implementations on the rkyv-derived type
+#[cfg(feature = "rkyv")]
+mod rkyv_order_impls {
+    //! Implementations for accound orders on the rkyv-derived type
+    use circuit_types::Amount;
+    use rkyv::rend::unaligned::u128_ule;
+
+    use crate::OrderId;
+
+    use super::ArchivedAccount;
+    use super::order::ArchivedOrder;
+
+    impl ArchivedAccount {
+        /// Get an order by its ID
+        pub fn get_order(&self, id: &OrderId) -> Option<&ArchivedOrder> {
+            self.orders.get(id)
+        }
+
+        /// Get the matchable amount for an order
+        pub fn get_matchable_amount_for_order(
+            &self,
+            order: &ArchivedOrder,
+        ) -> <Amount as rkyv::Archive>::Archived {
+            let in_token = &order.intent.in_token;
+            let bal_amt = self.balances.get(in_token).map(|b| b.amount).unwrap_or_default();
+            let intent_amt = order.intent.amount_in;
+
+            u128_ule::min(bal_amt, intent_amt)
+        }
     }
 }

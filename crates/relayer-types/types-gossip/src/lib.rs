@@ -12,7 +12,7 @@ mod cluster;
 mod handshake;
 mod peer_id;
 mod peer_info;
-
+pub mod network_order;
 #[cfg(feature = "mocks")]
 pub mod mocks;
 

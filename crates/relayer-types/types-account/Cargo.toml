@@ -5,9 +5,9 @@ edition = "2024"
 
 [features]
 default = []
-mocks = ["rand", "circuits-core/test_helpers"]
+mocks = ["rand", "darkpool-types/test_helpers"]
 proof-system-types = []
-rkyv = ["dep:rkyv", "darkpool-types/rkyv"]
+rkyv = ["dep:rkyv", "darkpool-types/rkyv", "types-core/rkyv"]
 
 [dependencies]
 # === Cryptography === #
@@ -36,7 +36,6 @@ rkyv = { workspace = true, optional = true, features = [
 
 # === Workspace Dependencies === #
 circuit-types = { workspace = true, features = ["default"] }
-circuits-core = { workspace = true }
 constants = { workspace = true, features = ["default"] }
 crypto = { workspace = true, features = ["default"] }
 darkpool-types = { workspace = true }

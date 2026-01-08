@@ -5,8 +5,8 @@ edition = "2024"
 
 [features]
 default = []
-mocks = []
-rkyv = ["dep:rkyv"]
+mocks = ["dep:constants", "dep:rand", "dep:uuid"]
+rkyv = ["dep:rkyv", "dep:darkpool-types"]
 
 [dependencies]
 # === Cryptography === #
@@ -20,9 +20,17 @@ libp2p-identity = { workspace = true }
 
 # === Serialization === #
 derivative = "2.2"
-rkyv = { workspace = true, optional = true }
+rkyv = { workspace = true, optional = true, features = ["uuid-1"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 
 # === Workspace Dependencies === #
+circuit-types = { workspace = true }
+darkpool-types = { workspace = true, optional = true, features = ["rkyv"] }
+types-account = { workspace = true }
 util = { workspace = true, features = ["networking", "errors"] }
+
+# === Optional === #
+constants = { workspace = true, optional = true }
+rand = { workspace = true, optional = true }
+uuid = { version = "1.1.2", features = ["v4", "serde"], optional = true }
