@@ -80,22 +80,24 @@ impl StateApplicator {
             .get_account_for_order(&order_id)?
             .ok_or_else(|| StateApplicatorError::reject(ERR_WALLET_MISSING))?;
 
-        // Cache the order
+        // Get the order and matchable amount
         let order = account
             .orders
             .get(&order_id)
             .ok_or_else(|| StateApplicatorError::reject(ERR_ORDER_MISSING))?;
         let matchable_value = account.get_matchable_amount_for_order(order);
         let matchable_amount = Amount::from_archived(&matchable_value)?;
+        let order_deser = Order::from_archived(order)?;
 
-        // If order exists, update its matchable amount
-        // Otherwise, add it to the cache
-        let cache = self.order_cache();
-        if cache.order_exists(order_id) {
-            cache.update_order(order_id, matchable_amount);
+        // Get the matching pool for the order
+        let matching_pool = tx.get_matching_pool_for_order(&order_id)?;
+
+        // Update the matching engine
+        let matching_engine = self.matching_engine();
+        if matching_engine.contains_order(&order_deser, matching_pool.clone()) {
+            matching_engine.update_order(&order_deser, matchable_amount, matching_pool);
         } else {
-            let order_deser = Order::from_archived(order)?;
-            cache.add_order(&order_deser, matchable_amount);
+            matching_engine.add_order(&order_deser, matchable_amount, matching_pool);
         }
         tx.commit()?;
 

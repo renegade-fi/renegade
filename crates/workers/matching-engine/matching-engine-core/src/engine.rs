@@ -69,9 +69,17 @@ impl MatchingEngine {
         }
     }
 
+    /// Get the matchable amount for both sides of a pair
+    ///
+    /// Returns (buy_amount, sell_amount) where buy amount is denominated in the
+    /// quote token, sell amount is denominated in the base token
+    pub fn get_liquidity_for_pair(&self, _pair: &Pair) -> (Amount, Amount) {
+        todo!("Implement get_liquidity_for_pair")
+    }
+
     // --- Matching Operations --- //
 
-    /// Find a match for an order
+    /// Find an internal match for an order
     ///
     /// The price here is specified in terms of the input order's output token /
     /// input token. I.e. it is in the same units as the input order's min
@@ -80,6 +88,8 @@ impl MatchingEngine {
     /// In what follows, the input party is the party whose order is input to
     /// this method and the counterparty is the party whose order is discovered
     /// by walking the book.
+    ///
+    /// This method does not filter on externally matchable status.
     pub fn find_match(
         &self,
         input_pair: Pair,
@@ -87,13 +97,59 @@ impl MatchingEngine {
         matching_pool: MatchingPoolName,
         price: FixedPoint,
     ) -> Option<(OrderId, MatchResult)> {
+        self.find_match_helper(input_pair, max_input, matching_pool, price, false)
+    }
+
+    /// Find an external match for an order
+    ///
+    /// The price here is specified in terms of the input order's output token /
+    /// input token. I.e. it is in the same units as the input order's min
+    /// price.
+    ///
+    /// In what follows, the input party is the party whose order is input to
+    /// this method and the counterparty is the party whose order is discovered
+    /// by walking the book.
+    ///
+    /// This method requires any order it matches against to have
+    /// `externally_matchable` set to `true`.
+    pub fn find_match_external(
+        &self,
+        input_pair: Pair,
+        max_input: Amount,
+        matching_pool: MatchingPoolName,
+        price: FixedPoint,
+    ) -> Option<(OrderId, MatchResult)> {
+        self.find_match_helper(input_pair, max_input, matching_pool, price, true)
+    }
+
+    /// Common helper for finding matches
+    ///
+    /// The price here is specified in terms of the input order's output token /
+    /// input token. I.e. it is in the same units as the input order's min
+    /// price.
+    ///
+    /// In what follows, the input party is the party whose order is input to
+    /// this method and the counterparty is the party whose order is discovered
+    /// by walking the book.
+    ///
+    /// If `require_externally_matchable` is `true`, only matches against
+    /// orders that have `externally_matchable` set to `true`. If `false`, does
+    /// not filter on externally matchable status.
+    fn find_match_helper(
+        &self,
+        input_pair: Pair,
+        max_input: Amount,
+        matching_pool: MatchingPoolName,
+        price: FixedPoint,
+        require_externally_matchable: bool,
+    ) -> Option<(OrderId, MatchResult)> {
         let counterparty_pair = input_pair.reverse(); // Reverse the pair to get the counterparty's book
         let counterparty_price = price.inverse()?;
         let max_output = scalar_to_u128(&price.floor_mul_int(max_input));
 
         let book = self.book_map.get(&(counterparty_pair, matching_pool))?;
         let (counterparty_oid, counterparty_input_amount) =
-            book.find_match(counterparty_price, max_output)?;
+            book.find_match(counterparty_price, max_output, require_externally_matchable)?;
         drop(book); // Release the borrow
 
         // Build the match result
@@ -437,5 +493,72 @@ mod tests {
         // Due to floor rounding in fixed-point arithmetic, input amount is rounded down
         assert_eq!(ob1.amount_in, 99);
         assert_eq!(ob1.amount_out, 150);
+    }
+
+    #[test]
+    fn test_find_match_external_only_matches_externally_matchable() {
+        let engine = MatchingEngine::new();
+        let pool = test_matching_pool();
+
+        let input_pair = test_pair();
+        let price = FixedPoint::from_integer(2); // 2 B per A
+        let max_input = 100;
+
+        // Create two counterparty orders:
+        // order1: externally matchable (default)
+        // order2: not externally matchable
+        let mut order1 = create_counterparty_order(500, FixedPoint::from_f64_round_down(0.4));
+        order1.metadata.allow_external_matches = true;
+
+        let mut order2 = create_counterparty_order(300, FixedPoint::from_f64_round_down(0.4));
+        order2.metadata.allow_external_matches = false;
+
+        engine.add_order(&order1, 300, pool.clone());
+        engine.add_order(&order2, 500, pool.clone());
+
+        // find_match (internal) should match with order1 (largest, 500)
+        let result_internal = engine.find_match(input_pair, max_input, pool.clone(), price);
+        assert!(result_internal.is_some());
+        let (matched_oid_internal, _) = result_internal.unwrap();
+        assert_eq!(matched_oid_internal, order2.id, "Internal match should find order2 (largest)");
+
+        // find_match_external should also match with order1 (only externally matchable)
+        let result_external =
+            engine.find_match_external(input_pair, max_input, pool.clone(), price);
+        assert!(result_external.is_some());
+        let (matched_oid_external, _) = result_external.unwrap();
+        assert_eq!(
+            matched_oid_external, order1.id,
+            "External match should find order1 (externally matchable)"
+        );
+    }
+
+    #[test]
+    fn test_find_match_external_no_match_when_no_externally_matchable() {
+        let engine = MatchingEngine::new();
+        let pool = test_matching_pool();
+
+        let input_pair = test_pair();
+        let price = FixedPoint::from_integer(2); // 2 B per A
+        let max_input = 100;
+
+        // Create a counterparty order that is NOT externally matchable
+        let mut order = create_counterparty_order(500, FixedPoint::from_f64_round_down(0.4));
+        order.metadata.allow_external_matches = false;
+        engine.add_order(&order, 500, pool.clone());
+
+        // find_match (internal) should still match
+        let result_internal = engine.find_match(input_pair, max_input, pool.clone(), price);
+        assert!(
+            result_internal.is_some(),
+            "Internal match should work regardless of externally_matchable"
+        );
+
+        // find_match_external should NOT match
+        let result_external = engine.find_match_external(input_pair, max_input, pool, price);
+        assert!(
+            result_external.is_none(),
+            "External match should not find non-externally-matchable orders"
+        );
     }
 }

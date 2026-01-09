@@ -335,9 +335,11 @@ impl MockNodeController {
         let clock = self.clock.clone();
         let (failure_send, failure_recv) = new_worker_failure_channel();
 
+        let matching_engine = matching_engine_core::MatchingEngine::new();
         let state = run_fut(create_global_state(
             &self.config,
             network_queue,
+            matching_engine,
             task_sender,
             handshake_queue,
             event_queue,
@@ -456,7 +458,8 @@ impl MockNodeController {
 
         let conf = HandshakeManagerConfig {
             min_fill_size: self.config.min_fill_size,
-            state,
+            state: state.clone(),
+            matching_engine: state.matching_engine().clone(),
             network_channel,
             price_streams,
             job_sender,

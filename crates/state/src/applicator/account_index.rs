@@ -5,7 +5,7 @@ use libmdbx::RW;
 use system_bus::{ADMIN_WALLET_UPDATES_TOPIC, SystemBusMessage, account_topic};
 use types_account::account::{Account, OrderId};
 
-use crate::storage::tx::StateTxn;
+use crate::{applicator::reject_account_missing, storage::tx::StateTxn};
 
 use super::{Result, StateApplicator, return_type::ApplicatorReturnType};
 
@@ -99,6 +99,13 @@ impl StateApplicator {
 
     /// Handle a cancelled intent
     fn handle_cancelled_intent(&self, id: OrderId, tx: &StateTxn<RW>) -> Result<()> {
+        // Remove the order from the matching engine
+        let matching_pool = tx.get_matching_pool_for_order(&id)?;
+        let account = tx.get_account_for_order(&id)?.ok_or_else(|| reject_account_missing(id))?;
+        if let Some(order) = account.get_order_deserialized(&id) {
+            self.matching_engine().cancel_order(&order, matching_pool);
+        }
+
         // Remove the intent from its matching pool
         tx.remove_order_from_matching_pool(&id)?;
 

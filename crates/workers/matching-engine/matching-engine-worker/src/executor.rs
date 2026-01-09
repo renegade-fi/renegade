@@ -7,6 +7,7 @@ use job_types::{
     matching_engine::{MatchingEngineWorkerJob, MatchingEngineWorkerReceiver},
     task_driver::TaskDriverQueue,
 };
+use matching_engine_core::MatchingEngine;
 use price_state::PriceStreamStates;
 use state::State;
 use system_bus::SystemBus;
@@ -41,6 +42,8 @@ pub struct MatchingEngineExecutor {
     pub(crate) price_streams: PriceStreamStates,
     /// The global relayer state
     pub(crate) state: State,
+    /// The matching engine instance
+    pub(crate) matching_engine: MatchingEngine,
     /// The queue used to send tasks to the task driver
     pub(crate) task_queue: TaskDriverQueue,
     /// The system bus used to publish internal broadcast messages
@@ -58,6 +61,7 @@ impl MatchingEngineExecutor {
         job_channel: MatchingEngineWorkerReceiver,
         price_streams: PriceStreamStates,
         state: State,
+        matching_engine: MatchingEngine,
         task_queue: TaskDriverQueue,
         system_bus: SystemBus,
         cancel: CancelChannel,
@@ -67,6 +71,7 @@ impl MatchingEngineExecutor {
             job_channel: DefaultOption::new(Some(job_channel)),
             price_streams,
             state,
+            matching_engine,
             task_queue,
             system_bus,
             cancel,
