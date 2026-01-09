@@ -1,15 +1,7 @@
 //! Groups handlers for updating and managing order book state in response to
 //! events elsewhere in the local node or the network
 
-use circuit_types::wallet::Nullifier;
-use circuits_core::{
-    verify_singleprover_proof,
-    zk_circuits::{
-        proof_linking::validate_sized_commitments_reblind_link,
-        valid_commitments::SizedValidCommitments, valid_reblind::SizedValidReblind,
-    },
-};
-use common::types::{network_order::NetworkOrder, proof_bundles::OrderValidityProofBundle};
+use circuit_types::Nullifier;
 use futures::executor::block_on;
 use gossip_api::{
     pubsub::orderbook::OrderBookManagementMessage,
@@ -19,9 +11,9 @@ use gossip_api::{
     },
 };
 use tracing::debug;
-use types_account::account::OrderId;
-use types_gossip::ClusterId;
-use util::err_str;
+use types_account::OrderId;
+use types_gossip::{ClusterId, network_order::NetworkOrder};
+use types_proofs::OrderValidityProofBundle;
 
 use super::{errors::GossipError, server::GossipProtocolExecutor};
 
@@ -41,7 +33,10 @@ impl GossipProtocolExecutor {
         &self,
         order_ids: &[OrderId],
     ) -> Result<GossipResponseType, GossipError> {
-        let order_info = self.state.get_orders_batch(order_ids).await?;
+        // TODO: Add validity proofs
+        let network_orders = self.state.get_network_orders(order_ids).await?;
+        let order_info = network_orders.into_iter().map(|o| o.into()).collect();
+
         let resp = OrderInfoResponse { order_info };
         Ok(GossipResponseType::OrderInfo(resp))
     }
@@ -87,9 +82,11 @@ impl GossipProtocolExecutor {
                 .await
                 .unwrap()?;
 
-                // Update the state of the order to `Verified` by attaching the verified
-                // validity proof
-                self.state.add_order_validity_proof(order_id, proof_bundle).await?;
+                // Update the state of the order to `Verified` by attaching the
+                // verified validity proof
+                // TODO: Add a validity proof for the order
+                // self.state.add_order_validity_proof(order_id,
+                // proof_bundle).await?;
             }
         }
 
@@ -162,17 +159,12 @@ impl GossipProtocolExecutor {
 
         // Add the order to the book in the `Validated` state
         if !self.state.contains_order(&order_id).await? {
-            self.state
-                .add_order(NetworkOrder::new(
-                    order_id,
-                    proof_bundle.reblind_proof.statement.original_shares_nullifier,
-                    cluster,
-                    is_local,
-                ))
-                .await?;
+            let nullifier = todo!("get the nullifier from the proof bundle");
+            self.state.add_order(NetworkOrder::new(order_id, nullifier, cluster, is_local)).await?;
         }
 
-        self.state.add_order_validity_proof(order_id, proof_bundle).await?;
+        todo!("add the validity proof to the order");
+        // self.state.add_order_validity_proof(order_id, proof_bundle).await?;
         Ok(())
     }
 
@@ -189,64 +181,68 @@ impl GossipProtocolExecutor {
         &self,
         proof_bundle: &OrderValidityProofBundle,
     ) -> Result<(), GossipError> {
-        // Clone the proof out from behind their references so that the verifier may
-        // take ownership
-        let reblind_proof = proof_bundle.copy_reblind_proof();
-        let commitment_proof = proof_bundle.copy_commitment_proof();
-        let link_proof = &proof_bundle.linking_proof;
+        todo!("validate hte validity proofs for the order");
+        // // Clone the proof out from behind their references so that the
+        // verifier may // take ownership
+        // let reblind_proof = proof_bundle.copy_reblind_proof();
+        // let commitment_proof = proof_bundle.copy_commitment_proof();
+        // let link_proof = &proof_bundle.linking_proof;
 
-        // Check that the proof shares' nullifiers are unused
-        self.assert_nullifier_unused(reblind_proof.statement.original_shares_nullifier).await?;
+        // // Check that the proof shares' nullifiers are unused
+        // self.assert_nullifier_unused(reblind_proof.statement.
+        // original_shares_nullifier).await?;
 
-        // Check that the Merkle root is a valid historical root
-        if !self
-            .darkpool_client()
-            .check_merkle_root_valid(reblind_proof.statement.merkle_root)
-            .await
-            .map_err(err_str!(GossipError::Darkpool))?
-        {
-            return Err(GossipError::ValidCommitmentVerification(
-                ERR_INVALID_MERKLE_ROOT.to_string(),
-            ));
-        }
+        // // Check that the Merkle root is a valid historical root
+        // if !self
+        //     .darkpool_client()
+        //     .check_merkle_root_valid(reblind_proof.statement.merkle_root)
+        //     .await
+        //     .map_err(err_str!(GossipError::Darkpool))?
+        // {
+        //     return Err(GossipError::ValidCommitmentVerification(
+        //         ERR_INVALID_MERKLE_ROOT.to_string(),
+        //     ));
+        // }
 
-        // Verify the reblind proof
-        verify_singleprover_proof::<SizedValidReblind>(
-            reblind_proof.statement,
-            &reblind_proof.proof,
-        )
-        .map_err(err_str!(GossipError::ValidReblindVerification))?;
+        // // Verify the reblind proof
+        // verify_singleprover_proof::<SizedValidReblind>(
+        //     reblind_proof.statement,
+        //     &reblind_proof.proof,
+        // )
+        // .map_err(err_str!(GossipError::ValidReblindVerification))?;
 
-        // Validate the commitment proof
-        verify_singleprover_proof::<SizedValidCommitments>(
-            commitment_proof.statement,
-            &commitment_proof.proof,
-        )
-        .map_err(err_str!(GossipError::ValidCommitmentVerification))?;
+        // // Validate the commitment proof
+        // verify_singleprover_proof::<SizedValidCommitments>(
+        //     commitment_proof.statement,
+        //     &commitment_proof.proof,
+        // )
+        // .map_err(err_str!(GossipError::ValidCommitmentVerification))?;
 
-        // Validate the proof link between the `VALID REBLIND` and `VALID COMMITMENTS`
-        // proofs
-        validate_sized_commitments_reblind_link(
-            link_proof,
-            &reblind_proof.proof,
-            &commitment_proof.proof,
-        )
-        .map_err(err_str!(GossipError::CommitmentsReblindLinkVerification))
+        // // Validate the proof link between the `VALID REBLIND` and `VALID
+        // COMMITMENTS` // proofs
+        // validate_sized_commitments_reblind_link(
+        //     link_proof,
+        //     &reblind_proof.proof,
+        //     &commitment_proof.proof,
+        // )
+        // .map_err(err_str!(GossipError::CommitmentsReblindLinkVerification))
     }
 
     /// Assert that a nullifier is unused in the contract, returns a GossipError
     /// if the nullifier has been used
     async fn assert_nullifier_unused(&self, nullifier: Nullifier) -> Result<(), GossipError> {
-        self.darkpool_client()
-            .check_nullifier_used(nullifier)
-            .await
-            .map(|res| {
-                if res {
-                    Err(GossipError::NullifierUsed(ERR_NULLIFIER_USED.to_string()))
-                } else {
-                    Ok(())
-                }
-            })
-            .map_err(err_str!(GossipError::Darkpool))?
+        todo!("Implement `assert_nullifier_unused`");
+        // self.darkpool_client()
+        //     .check_nullifier_used(nullifier)
+        //     .await
+        //     .map(|res| {
+        //         if res {
+        //
+        // Err(GossipError::NullifierUsed(ERR_NULLIFIER_USED.to_string()))
+        //         } else {
+        //             Ok(())
+        //         }
+        //     })
+        //     .map_err(err_str!(GossipError::Darkpool))?
     }
 }

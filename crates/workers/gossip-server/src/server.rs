@@ -288,7 +288,6 @@ impl GossipProtocolExecutor {
                     ClusterManagementMessageType::RejectExpiry { peer_id, last_heartbeat } => {
                         self.handle_reject_expiry(sender, peer_id, last_heartbeat).await
                     },
-                    _ => Err(GossipError::UnhandledRequest(format!("{message_type:?}"))),
                 }
             },
         }
@@ -309,7 +308,7 @@ fn should_ignore_request(req: &GossipRequest) -> bool {
     // We intentionally do not have a default case here so that when new request
     // types are added, we will remember to update this function
     match req.body {
-        GossipRequestType::Handshake(_) | GossipRequestType::OrderInfo(_) => true,
+        GossipRequestType::OrderInfo(_) => true,
         GossipRequestType::Ack
         | GossipRequestType::Bootstrap(_)
         | GossipRequestType::Heartbeat(_)
@@ -328,7 +327,7 @@ fn should_ignore_response(resp: &GossipResponse) -> bool {
     // We intentionally do not have a default case here so that when new response
     // types are added, we will remember to update this function
     match resp.body {
-        GossipResponseType::Handshake(_) | GossipResponseType::OrderInfo(_) => true,
+        GossipResponseType::OrderInfo(_) => true,
         GossipResponseType::Ack
         | GossipResponseType::Heartbeat(_)
         | GossipResponseType::PeerInfo(_)

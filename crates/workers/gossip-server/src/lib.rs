@@ -1,7 +1,6 @@
 //! The gossip module is responsible for interacting the gossip network at the
 //! application layer
 
-#![feature(let_chains)]
 #![allow(incomplete_features)]
 
 pub mod errors;

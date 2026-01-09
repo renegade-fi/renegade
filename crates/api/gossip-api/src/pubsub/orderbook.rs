@@ -4,6 +4,7 @@ use circuit_types::Nullifier;
 use serde::{Deserialize, Serialize};
 use types_account::account::OrderId;
 use types_gossip::ClusterId;
+use types_proofs::OrderValidityProofBundle;
 
 /// The network pubsub topic to use for listening to orderbook changes
 pub const ORDER_BOOK_TOPIC: &str = "orderbook";
@@ -31,6 +32,6 @@ pub enum OrderBookManagementMessage {
         /// The new validity proof bundle for the order, containing a proof of
         /// `VALID COMMITMENTS` for the order, and one of `VALID
         /// REBLIND` for the wallet
-        proof_bundle: (), // TODO: Add the proof bundle type
+        proof_bundle: OrderValidityProofBundle,
     },
 }

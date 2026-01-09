@@ -5,7 +5,10 @@ use tracing::instrument;
 use types_core::HmacKey;
 use util::telemetry::propagation::{TraceContext, trace_context};
 
-use crate::{GossipDestination, check_hmac, create_hmac};
+use crate::{
+    GossipDestination, check_hmac, create_hmac,
+    request_response::orderbook::{OrderInfoRequest, OrderInfoResponse},
+};
 
 use self::{
     heartbeat::{BootstrapRequest, HeartbeatMessage, PeerInfoRequest, PeerInfoResponse},
@@ -13,7 +16,7 @@ use self::{
 };
 
 pub mod heartbeat;
-// pub mod orderbook;
+pub mod orderbook;
 
 // -----------------
 // | Request Types |
@@ -103,8 +106,8 @@ pub enum GossipRequestType {
     /// package
     Raft(Vec<u8>),
     // // --- Order Book --- //
-    // /// A request for order information from a peer
-    // OrderInfo(OrderInfoRequest),
+    /// A request for order information from a peer
+    OrderInfo(OrderInfoRequest),
 }
 
 impl GossipRequest {
@@ -120,7 +123,7 @@ impl GossipRequest {
             GossipRequestType::Bootstrap(..) => false,
             GossipRequestType::Heartbeat(..) => false,
             GossipRequestType::PeerInfo(..) => false,
-            // GossipRequestType::OrderInfo(..) => false,
+            GossipRequestType::OrderInfo(..) => false,
         }
     }
 
@@ -133,7 +136,7 @@ impl GossipRequest {
             GossipRequestType::Bootstrap(..) => GossipDestination::GossipServer,
             GossipRequestType::Heartbeat(..) => GossipDestination::GossipServer,
             GossipRequestType::PeerInfo(..) => GossipDestination::GossipServer,
-            // GossipRequestType::OrderInfo(..) => GossipDestination::GossipServer,
+            GossipRequestType::OrderInfo(..) => GossipDestination::GossipServer,
         }
     }
 }
@@ -224,8 +227,8 @@ pub enum GossipResponseType {
     Heartbeat(HeartbeatMessage),
     /// A response from a peer to a sender's request for peer info
     PeerInfo(PeerInfoResponse),
-    // /// A response to a request for order information
-    // OrderInfo(OrderInfoResponse),
+    /// A response to a request for order information
+    OrderInfo(OrderInfoResponse),
     /// A response to a raft message
     ///
     /// We (de)serialize at the raft networking layer and pass an opaque byte
@@ -243,7 +246,7 @@ impl GossipResponse {
         match self.body {
             GossipResponseType::Ack => false,
             GossipResponseType::Heartbeat(..) => false,
-            // GossipResponseType::OrderInfo(..) => false,
+            GossipResponseType::OrderInfo(..) => false,
             GossipResponseType::PeerInfo(..) => false,
             GossipResponseType::Raft(..) => true,
         }
@@ -255,7 +258,7 @@ impl GossipResponse {
             GossipResponseType::Ack => GossipDestination::NetworkManager,
             GossipResponseType::Heartbeat(..) => GossipDestination::GossipServer,
             GossipResponseType::PeerInfo(..) => GossipDestination::GossipServer,
-            // GossipResponseType::OrderInfo(..) => GossipDestination::GossipServer,
+            GossipResponseType::OrderInfo(..) => GossipDestination::GossipServer,
             GossipResponseType::Raft(..) => GossipDestination::NetworkManager,
         }
     }

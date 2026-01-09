@@ -41,6 +41,7 @@ types-core = { workspace = true }
 types-gossip = { workspace = true }
 types-tasks = { workspace = true }
 types-account = { workspace = true }
+types-proofs = { workspace = true }
 types-runtime = { workspace = true }
 constants = { workspace = true }
 external-api = { workspace = true }
