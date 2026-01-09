@@ -82,6 +82,11 @@ impl Order {
         self.metadata.min_fill_size
     }
 
+    /// The min price for the order
+    pub fn min_price(&self) -> FixedPoint {
+        self.intent.min_price
+    }
+
     /// Whether the order has external matches enabled
     pub fn allow_external_matches(&self) -> bool {
         self.metadata.allow_external_matches

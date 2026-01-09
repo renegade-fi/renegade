@@ -9,7 +9,7 @@ tracing = { workspace = true }
 metrics = { workspace = true }
 
 # === Cryptography / Arithmetic === #
-num-bigint = { workspace = true }
+alloy-primitives = { workspace = true }
 atomic_float = "1"
 
 # === Workspace Dependencies === #

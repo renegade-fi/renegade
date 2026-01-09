@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+
 # === Workspace Dependencies === #
 circuit-types = { workspace = true }
 crypto = { workspace = true }
@@ -11,7 +12,11 @@ darkpool-types = { workspace = true }
 types-account = { workspace = true }
 util = { workspace = true, features = ["blockchain"] }
 
+# === Misc Dependencies === #
+rustc-hash = "2.1"
+
 [dev-dependencies]
 alloy-primitives = { workspace = true }
 darkpool-types = { workspace = true, features = ["test_helpers"] }
 rand = { workspace = true }
+types-account = { workspace = true, features = ["mocks"] }

@@ -1,8 +1,8 @@
 //! Helpers for calculating and recording metrics
 
-use num_bigint::BigUint;
+use alloy_primitives::Address;
 use types_core::{AccountId, Token};
-use util::hex::biguint_to_hex_addr;
+use util::hex::address_to_hex_string;
 
 use crate::labels::{
     ASSET_METRIC_TAG, BASE_ASSET_METRIC_TAG, DEPOSIT_VOLUME_METRIC, EXTERNAL_MATCH_METRIC_TAG,
@@ -16,22 +16,22 @@ use crate::labels::{
 /// the token's address.
 /// The amount is the decimal amount of the transfer, going through
 /// lossy f64 conversion via the associated number of decimals
-fn get_asset_and_volume(mint: &BigUint, amount: u128) -> (String, f64) {
-    let token = Token::from_addr_biguint(mint);
-    let asset = token.get_ticker().unwrap_or(biguint_to_hex_addr(mint));
+fn get_asset_and_volume(mint: &Address, amount: u128) -> (String, f64) {
+    let token = Token::from_alloy_address(mint);
+    let asset = token.get_ticker().unwrap_or(address_to_hex_string(mint));
     let volume = token.convert_to_decimal(amount);
 
     (asset, volume)
 }
 
 /// Record a volume metric (e.g. deposit, withdrawal, trade)
-fn record_volume(mint: &BigUint, amount: u128, volume_metric_name: &'static str) {
+fn record_volume(mint: &Address, amount: u128, volume_metric_name: &'static str) {
     record_volume_with_tags(mint, amount, volume_metric_name, &[] /* extra_labels */);
 }
 
 /// Record a volume metric with the given extra tags
 fn record_volume_with_tags(
-    mint: &BigUint,
+    mint: &Address,
     amount: u128,
     volume_metric_name: &'static str,
     extra_labels: &[(String, String)],
@@ -94,6 +94,6 @@ pub fn record_match_volume(res: &(), is_external_match: bool, wallet_ids: &[Acco
 }
 
 /// Record the volume of a fee settlement into the relayer's wallet
-pub fn record_relayer_fee_settlement(mint: &BigUint, amount: u128) {
+pub fn record_relayer_fee_settlement(mint: &Address, amount: u128) {
     record_volume(mint, amount, FEES_COLLECTED_METRIC);
 }

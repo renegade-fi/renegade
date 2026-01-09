@@ -133,14 +133,3 @@ pub const NATIVE_ASSET_ADDRESS: &str = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEE
 
 /// The ticker of the native asset's wrapper token
 pub const NATIVE_ASSET_WRAPPER_TICKER: &str = "WETH";
-
-// ----------------------
-// | Pubsub Topic Names |
-// ----------------------
-
-/// The topic published to when the handshake manager begins a new
-/// match computation with a peer
-pub const HANDSHAKE_STATUS_TOPIC: &str = "handshakes";
-
-/// The topic published to when a state change occurs on an order
-pub const ORDER_STATE_CHANGE_TOPIC: &str = "order-state";

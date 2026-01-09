@@ -8,7 +8,6 @@
 use alloy::primitives::Address;
 use bimap::BiMap;
 use constants::NATIVE_ASSET_ADDRESS;
-use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
@@ -18,7 +17,7 @@ use std::{
 };
 use util::{
     concurrency::RwStatic,
-    hex::{biguint_from_hex_string, biguint_to_hex_addr},
+    hex::address_to_hex_string,
     serde::{deserialize_str_lower, serialize_str_lower},
 };
 
@@ -134,16 +133,18 @@ impl Token {
         Self::new(addr, chain)
     }
 
-    /// Given an ERC-20 contract address represented as a `BigUint`, returns a
-    /// Token
-    pub fn from_addr_biguint(addr: &BigUint) -> Self {
-        Self::new(&biguint_to_hex_addr(addr), default_chain())
+    /// Given an ERC-20 contract address represented as an alloy `Address`,
+    /// returns a Token
+    pub fn from_alloy_address(addr: &Address) -> Self {
+        let addr_str = address_to_hex_string(addr);
+        Self::new(&addr_str, default_chain())
     }
 
     /// Given an ERC-20 contract address represented as a `BigUint`, returns a
     /// Token
-    pub fn from_addr_biguint_on_chain(addr: &BigUint, chain: Chain) -> Self {
-        Self::new(&biguint_to_hex_addr(addr), chain)
+    pub fn from_alloy_address_on_chain(addr: &Address, chain: Chain) -> Self {
+        let addr_str = address_to_hex_string(addr);
+        Self::new(&addr_str, chain)
     }
 
     /// Given an ERC-20 ticker, returns a new Token.
@@ -177,11 +178,6 @@ impl Token {
     /// Returns the ERC-20 address.
     pub fn get_addr(&self) -> String {
         self.addr.to_lowercase()
-    }
-
-    /// Get a `BigUint` representation of the token address
-    pub fn get_addr_biguint(&self) -> BigUint {
-        biguint_from_hex_string(&self.get_addr()).expect("invalid token address in mapping")
     }
 
     /// Get the alloy compatible address

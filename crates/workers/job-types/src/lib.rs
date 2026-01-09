@@ -2,7 +2,7 @@
 
 pub mod event_manager;
 pub mod gossip_server;
-pub mod handshake_manager;
+pub mod matching_engine;
 pub mod network_manager;
 pub mod proof_manager;
 pub mod task_driver;
