@@ -3,7 +3,6 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use types_core::chain::Chain;
 use external_api::{
     EmptyRequestResponse,
     http::network::{GetClusterInfoResponse, GetNetworkTopologyResponse, GetPeerInfoResponse},
@@ -12,6 +11,7 @@ use external_api::{
 use hyper::HeaderMap;
 use itertools::Itertools;
 use state::State;
+use types_core::chain::Chain;
 
 use crate::{
     error::{ApiServerError, not_found},

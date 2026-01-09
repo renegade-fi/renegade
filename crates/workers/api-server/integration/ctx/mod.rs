@@ -5,14 +5,14 @@
 
 use alloy::primitives::Address;
 use circuit_types::{Amount, fixed_point::FixedPoint};
-use types_core::{hmac::HmacKey, price::TimestampedPrice, token::Token};
 use config::RelayerConfig;
 use constants::Scalar;
+use crypto::fields::scalar_to_u128;
 use darkpool_client::conversion::address_to_biguint;
 use mock_node::MockNodeController;
 use num_bigint::BigUint;
-use crypto::fields::scalar_to_u128;
 use state::test_helpers::tmp_db_path;
+use types_core::{hmac::HmacKey, price::TimestampedPrice, token::Token};
 
 mod external_match;
 mod http;

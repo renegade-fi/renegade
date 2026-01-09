@@ -9,9 +9,7 @@ use circuits_core::{
         valid_commitments::SizedValidCommitments, valid_reblind::SizedValidReblind,
     },
 };
-use types_gossip::ClusterId;
 use common::types::{network_order::NetworkOrder, proof_bundles::OrderValidityProofBundle};
-use types_account::account::OrderId;
 use futures::executor::block_on;
 use gossip_api::{
     pubsub::orderbook::OrderBookManagementMessage,
@@ -21,6 +19,8 @@ use gossip_api::{
     },
 };
 use tracing::debug;
+use types_account::account::OrderId;
+use types_gossip::ClusterId;
 use util::err_str;
 
 use super::{errors::GossipError, server::GossipProtocolExecutor};

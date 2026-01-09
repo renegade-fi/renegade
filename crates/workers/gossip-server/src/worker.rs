@@ -1,10 +1,6 @@
 //! Implements the `Worker` trait for the GossipServer
 
 use async_trait::async_trait;
-use util::default_wrapper::DefaultWrapper;
-use types_runtime::CancelChannel;
-use types_gossip::{ClusterId, WrappedPeerId};
-use types_runtime::worker::Worker;
 use darkpool_client::DarkpoolClient;
 use futures::executor::block_on;
 use job_types::gossip_server::{GossipServerQueue, GossipServerReceiver};
@@ -13,6 +9,10 @@ use libp2p::Multiaddr;
 use state::State;
 use std::thread::{Builder, JoinHandle};
 use tokio::runtime::Builder as RuntimeBuilder;
+use types_gossip::{ClusterId, WrappedPeerId};
+use types_runtime::CancelChannel;
+use types_runtime::worker::Worker;
+use util::default_wrapper::DefaultWrapper;
 
 use super::server::{GOSSIP_EXECUTOR_N_BLOCKING_THREADS, GOSSIP_EXECUTOR_N_THREADS};
 use super::{

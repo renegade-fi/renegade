@@ -11,16 +11,16 @@
 use alloy::primitives::Address;
 use async_trait::async_trait;
 use circuit_types::{fees::FeeTake, fixed_point::FixedPoint, r#match::ExternalMatchResult};
-use types_core::{hmac::HmacKey, price::TimestampedPrice};
 use constants::Scalar;
+use crypto::fields::scalar_to_u128;
 use external_api::http::external_match::{
     ApiExternalQuote, AssembleExternalMatchRequest, ExternalMatchRequest, ExternalMatchResponse,
     ExternalOrder, ExternalQuoteRequest, ExternalQuoteResponse, MalleableExternalMatchResponse,
     SignedExternalQuote,
 };
 use hyper::HeaderMap;
-use crypto::fields::scalar_to_u128;
 use state::State;
+use types_core::{hmac::HmacKey, price::TimestampedPrice};
 use util::{hex::bytes_to_hex_string, on_chain::get_external_match_fee};
 
 use crate::{

@@ -3,7 +3,6 @@
 use std::iter;
 
 use async_trait::async_trait;
-use types_core::token::{Token, get_all_base_tokens};
 use external_api::{
     EmptyRequestResponse,
     http::price_report::{
@@ -14,6 +13,7 @@ use external_api::{
 use hyper::HeaderMap;
 use itertools::Itertools;
 use price_state::PriceStreamStates;
+use types_core::token::{Token, get_all_base_tokens};
 
 use crate::{
     error::ApiServerError,

@@ -5,10 +5,12 @@ use std::sync::Arc;
 use circuit_types::{
     Amount, balance::Balance, fixed_point::FixedPoint, max_amount, max_price, order::OrderSide,
 };
-use common::types::proof_bundles::mocks::{dummy_validity_proof_bundle, dummy_validity_witness_bundle};
-use types_account::account::{Order, OrderId, Wallet, mocks::mock_empty_wallet};
+use common::types::proof_bundles::mocks::{
+    dummy_validity_proof_bundle, dummy_validity_witness_bundle,
+};
 use external_api::http::external_match::ExternalOrder;
 use eyre::Result;
+use types_account::account::{Order, OrderId, Wallet, mocks::mock_empty_wallet};
 
 use crate::ctx::IntegrationTestCtx;
 use crate::to_eyre::WrapEyre;
@@ -79,11 +81,7 @@ impl IntegrationTestCtx {
     }
 
     /// Add a validity proof bundle to the state for the given order
-    async fn add_validity_proof_bundle(
-        &self,
-        order_id: OrderId,
-        order: Order,
-    ) -> Result<()> {
+    async fn add_validity_proof_bundle(&self, order_id: OrderId, order: Order) -> Result<()> {
         let bundle = dummy_validity_proof_bundle();
         let mut witness = dummy_validity_witness_bundle();
         Arc::make_mut(&mut witness.commitment_witness).order = order.into();

@@ -3,7 +3,6 @@
 use std::{collections::HashMap, iter};
 
 use async_trait::async_trait;
-use types_core::hmac::HmacKey;
 use http_body_util::{BodyExt, Full};
 use hyper::{
     HeaderMap, Method, Request, Response, StatusCode, Uri,
@@ -15,6 +14,7 @@ use matchit::{Params, Router as MatchRouter};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use state::State;
 use tracing::{debug, instrument, warn};
+use types_core::hmac::HmacKey;
 use util::telemetry::propagation::set_parent_span_from_headers;
 
 use crate::{

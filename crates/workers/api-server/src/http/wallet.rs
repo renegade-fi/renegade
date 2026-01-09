@@ -5,13 +5,8 @@ use circuit_types::{
     Amount, SizedWallet as SizedCircuitWallet, balance::Balance,
     native_helpers::create_wallet_shares_from_private,
 };
-use types_tasks::{
-    LookupWalletTaskDescriptor, NewWalletTaskDescriptor, PayOfflineFeeTaskDescriptor,
-    RedeemFeeTaskDescriptor, TaskDescriptor, TaskIdentifier, UpdateWalletTaskDescriptor,
-};
-use types_core::token::Token;
 use common::types::transfer_auth::{DepositAuth, ExternalTransferWithAuth, WithdrawalAuth};
-use types_account::account::{Order, Wallet, WalletIdentifier, keychain::PrivateKeyChain};
+use crypto::fields::biguint_to_scalar;
 use external_api::{
     EmptyRequestResponse,
     http::wallet::{
@@ -29,10 +24,15 @@ use hyper::HeaderMap;
 use num_bigint::BigUint;
 use num_traits::ToPrimitive;
 use price_state::PriceStreamStates;
-use crypto::fields::biguint_to_scalar;
 use reqwest::Url;
 use state::State;
 use task_driver::simulation::simulate_wallet_tasks;
+use types_account::account::{Order, Wallet, WalletIdentifier, keychain::PrivateKeyChain};
+use types_core::token::Token;
+use types_tasks::{
+    LookupWalletTaskDescriptor, NewWalletTaskDescriptor, PayOfflineFeeTaskDescriptor,
+    RedeemFeeTaskDescriptor, TaskDescriptor, TaskIdentifier, UpdateWalletTaskDescriptor,
+};
 use util::{
     err_str,
     hex::{biguint_to_hex_addr, jubjub_to_hex_string, public_sign_key_from_hex_string},

@@ -1,6 +1,5 @@
 //! Groups gossip server logic for the heartbeat protocol
 
-use types_gossip::{PeerInfo, WrappedPeerId};
 use gossip_api::{
     pubsub::{
         PubsubMessage,
@@ -14,6 +13,7 @@ use gossip_api::{
 };
 use job_types::network_manager::{NetworkManagerControlSignal, NetworkManagerJob};
 use tracing::{info, instrument};
+use types_gossip::{PeerInfo, WrappedPeerId};
 use util::{err_str, get_current_time_millis};
 
 use crate::{

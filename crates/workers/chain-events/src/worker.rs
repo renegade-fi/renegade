@@ -1,10 +1,10 @@
 //! The relayer worker implementation for the event listener
 
 use async_trait::async_trait;
-use types_runtime::worker::Worker;
 use std::thread::{Builder, JoinHandle};
 use tokio::runtime::Builder as RuntimeBuilder;
 use tracing::error;
+use types_runtime::worker::Worker;
 
 use super::{
     error::OnChainEventListenerError,

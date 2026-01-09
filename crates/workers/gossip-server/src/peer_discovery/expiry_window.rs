@@ -7,8 +7,8 @@ use std::{
     time::{Duration, Instant},
 };
 
-use types_gossip::WrappedPeerId;
 use tokio::sync::{RwLockReadGuard, RwLockWriteGuard};
+use types_gossip::WrappedPeerId;
 use util::concurrency::{AsyncShared, new_async_shared};
 
 /// The amount of time other cluster peers are allowed to give liveness
