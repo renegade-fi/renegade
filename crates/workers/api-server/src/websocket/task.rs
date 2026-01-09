@@ -5,9 +5,9 @@
 // ------------------
 
 use async_trait::async_trait;
-use system_bus::{SystemBusMessage, task_history_topic, task_topic};
 use state::State;
 use system_bus::{SystemBus, TopicReader};
+use system_bus::{SystemBusMessage, task_history_topic, task_topic};
 
 use crate::{
     auth::AuthType,

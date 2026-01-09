@@ -128,12 +128,13 @@ async-trait = "0.1"
 eyre = "0.6"
 indexmap = "2.0.2"
 itertools = "0.10"
+rustc-hash = "2.1"
 serde = { version = "1.0" }
 serde_json = "1.0.64"
 thiserror = "2.0"
 tracing = "0.1"
 tracing-opentelemetry = "0.22"
-metrics = "=0.22.3"
+metrics = "0.24.3"
 lazy_static = "1.4"
 
 # === Serialization === #

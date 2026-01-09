@@ -4,8 +4,8 @@ use alloy::primitives::{Bytes, U256};
 use alloy_sol_types::SolCall;
 use circuit_types::{Amount, SizedWalletShare, r#match::OrderSettlementIndices, traits::BaseType};
 use constants::Scalar;
+use matching_engine_core::apply_match_to_shares;
 use serde::{Deserialize, Serialize};
-use util::matching_engine::apply_match_to_shares;
 
 use crate::errors::DarkpoolClientError;
 

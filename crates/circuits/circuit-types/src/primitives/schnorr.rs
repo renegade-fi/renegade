@@ -93,7 +93,6 @@ impl From<SchnorrPrivateKey> for SignKey<EmbeddedScalarField> {
 
 impl SchnorrPrivateKey {
     /// Generate a random private key
-    #[cfg(feature = "proof-system-types")]
     pub fn random() -> Self {
         let mut rng = thread_rng();
         let inner = EmbeddedScalarField::rand(&mut rng);

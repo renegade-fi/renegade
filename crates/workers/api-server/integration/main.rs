@@ -3,7 +3,6 @@
 use api_server::http::PING_ROUTE;
 use circuit_types::fixed_point::FixedPoint;
 use clap::Parser;
-use types_core::{chain::Chain, hmac::HmacKey};
 use config::setup_token_remaps;
 use external_api::{EmptyRequestResponse, http::PingResponse};
 use eyre::Result;
@@ -14,6 +13,7 @@ use reqwest::Method;
 use test_helpers::{
     assert_true_result, integration_test_async, integration_test_main, types::TestVerbosity,
 };
+use types_core::{chain::Chain, hmac::HmacKey};
 use util::{on_chain::set_protocol_fee, telemetry::LevelFilter};
 
 use crate::ctx::IntegrationTestCtx;

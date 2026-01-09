@@ -4,15 +4,16 @@ use std::collections::HashSet;
 
 use circuit_types::r#match::MatchResult;
 use common::types::network_order::NetworkOrder;
-use types_core::price::TimestampedPriceFp;
 use common::types::proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle};
-use types_tasks::{SettleMatchInternalTaskDescriptor, TaskDescriptor};
-use types_account::account::{Order, OrderId, Wallet, WalletIdentifier};
 use tracing::{error, info, instrument};
+use types_account::account::{Order, OrderId, Wallet, WalletIdentifier};
+use types_core::price::TimestampedPriceFp;
+use types_tasks::{SettleMatchInternalTaskDescriptor, TaskDescriptor};
 
+use crate::executor::MatchingEngineExecutor;
 use crate::{
     error::HandshakeManagerError,
-    manager::{
+    executor::{
         HandshakeExecutor,
         handshake::{ERR_NO_ORDER, ERR_NO_WALLET},
     },
@@ -27,7 +28,7 @@ const ERR_MISSING_PROOFS: &str = "validity proofs not found in global state";
 // | Matching Engine Impl |
 // ------------------------
 
-impl HandshakeExecutor {
+impl MatchingEngineExecutor {
     /// Run the internal matching engine on the given order
     ///
     /// TODO: This could be optimized by indexing orders by asset pairs in the

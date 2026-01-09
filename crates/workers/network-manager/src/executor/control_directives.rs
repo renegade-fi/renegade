@@ -6,7 +6,7 @@ use std::{net::SocketAddr, sync::atomic::Ordering};
 use ark_mpc::network::QuicTwoPartyNet;
 use itertools::Itertools;
 use job_types::{
-    handshake_manager::{HandshakeManagerJob, HandshakeManagerQueue},
+    matching_engine_worker::{MatchingEngineWorkerJob, MatchingEngineWorkerQueue},
     network_manager::NetworkManagerControlSignal,
 };
 use libp2p::PeerId;

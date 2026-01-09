@@ -5,11 +5,11 @@ use alloy::primitives::U256;
 use alloy_sol_types::SolCall;
 use circuit_types::{SizedWalletShare, traits::BaseType};
 use constants::Scalar;
+use matching_engine_core::apply_match_to_shares;
 use renegade_solidity_abi::IDarkpool::{
     createWalletCall, processAtomicMatchSettleCall, processMalleableAtomicMatchSettleCall,
     processMatchSettleCall, redeemFeeCall, settleOfflineFeeCall, updateWalletCall,
 };
-use util::matching_engine::apply_match_to_shares;
 
 use crate::{
     conversion::{scalar_to_u256, u256_to_amount, u256_to_scalar},

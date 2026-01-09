@@ -6,9 +6,9 @@ use alloy::primitives::Address;
 use circuit_types::{
     Amount, balance::Balance, fixed_point::FixedPoint, max_amount, order::OrderSide,
 };
-use types_core::{chain::Chain, hmac::HmacKey, token::Token};
-use common::types::proof_bundles::mocks::{dummy_validity_proof_bundle, dummy_validity_witness_bundle};
-use types_account::account::{Order, OrderId, mocks::mock_empty_wallet};
+use common::types::proof_bundles::mocks::{
+    dummy_validity_proof_bundle, dummy_validity_witness_bundle,
+};
 use config::{RelayerConfig, setup_token_remaps};
 use darkpool_client::conversion::address_to_biguint;
 use external_api::auth::add_expiring_auth_to_headers;
@@ -18,6 +18,8 @@ use num_bigint::BigUint;
 use reqwest::{Method, header::HeaderMap};
 use serde::{Serialize, de::DeserializeOwned};
 use state::test_helpers::tmp_db_path;
+use types_account::account::{Order, OrderId, mocks::mock_empty_wallet};
+use types_core::{chain::Chain, hmac::HmacKey, token::Token};
 use util::on_chain::set_protocol_fee;
 
 /// The duration of the request auth token

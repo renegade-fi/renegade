@@ -4,9 +4,6 @@
 //! This file groups logic for creating the server as well as the central
 //! dispatch/execution loop of the workers
 
-use util::default_wrapper::DefaultWrapper;
-use types_runtime::CancelChannel;
-use types_gossip::WrappedPeerId;
 use constants::in_bootstrap_mode;
 use darkpool_client::DarkpoolClient;
 use gossip_api::{
@@ -29,6 +26,9 @@ use std::{
     time::{Duration, Instant},
 };
 use tracing::{error, info, instrument, warn};
+use types_gossip::WrappedPeerId;
+use types_runtime::CancelChannel;
+use util::default_wrapper::DefaultWrapper;
 use util::{channels::TracedMessage, err_str};
 
 use crate::peer_discovery::{

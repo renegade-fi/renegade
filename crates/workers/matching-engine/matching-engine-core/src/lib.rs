@@ -11,7 +11,9 @@ use darkpool_types::{
 use types_account::account::order::Order;
 use util::on_chain::get_protocol_fee;
 
-pub mod order_book;
+pub(crate) mod book;
+pub(crate) mod engine;
+pub use engine::MatchingEngine;
 
 // ------------
 // | Matching |

@@ -1,26 +1,13 @@
-//! Groups error types originating from the handshake manager
+//! Groups error types originating from the matching engine worker
 
 use state::error::StateError;
 
-/// The core error type for the handshake manager
+/// The core error type for the matching engine worker
 #[derive(Clone, Debug, thiserror::Error)]
-pub enum HandshakeManagerError {
+pub enum MatchingEngineError {
     /// Error resulting from a cancellation signal
-    #[error("handshake manager worker cancelled: {0}")]
+    #[error("matching engine worker cancelled: {0}")]
     Cancelled(String),
-    /// An invalid request ID was passed in a message; i.e. the request ID is
-    /// not known to the local state machine
-    #[error("invalid request: {0}")]
-    InvalidRequest(String),
-    /// Error in MPC networking
-    #[error("mpc network error: {0}")]
-    MpcNetwork(String),
-    /// An MpcShootdown request has stopped the handshake
-    #[error("mpc shootdown")]
-    MpcShootdown,
-    /// An error while collaboratively proving a statement
-    #[error("multiprover execution error: {0}")]
-    Multiprover(String),
     /// Necessary price data was not available for a token pair
     #[error("no price data: {0}")]
     NoPriceData(String),
@@ -44,28 +31,46 @@ pub enum HandshakeManagerError {
     VerificationError(String),
 }
 
-impl HandshakeManagerError {
-    /// Create a new error from an invalid request
+impl MatchingEngineError {
+    /// Create a new error from a no price data error
     #[allow(clippy::needless_pass_by_value)]
-    pub fn invalid_request<T: ToString>(e: T) -> Self {
-        HandshakeManagerError::InvalidRequest(e.to_string())
+    pub fn no_price<T: ToString>(e: T) -> Self {
+        MatchingEngineError::NoPriceData(e.to_string())
     }
 
     /// Create a new error from a price reporter error
     #[allow(clippy::needless_pass_by_value)]
     pub fn price_reporter<T: ToString>(e: T) -> Self {
-        HandshakeManagerError::PriceReporter(e.to_string())
+        MatchingEngineError::PriceReporter(e.to_string())
+    }
+
+    /// Create a new error from a send message error
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn send_message<T: ToString>(e: T) -> Self {
+        MatchingEngineError::SendMessage(e.to_string())
+    }
+
+    /// Create a new error from a setup error
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn setup<T: ToString>(e: T) -> Self {
+        MatchingEngineError::SetupError(e.to_string())
     }
 
     /// Create a new error from a state error
     #[allow(clippy::needless_pass_by_value)]
     pub fn state<T: ToString>(e: T) -> Self {
-        HandshakeManagerError::State(e.to_string())
+        MatchingEngineError::State(e.to_string())
+    }
+
+    /// Create a new error from a task error
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn task<T: ToString>(e: T) -> Self {
+        MatchingEngineError::TaskError(e.to_string())
     }
 }
 
-impl From<StateError> for HandshakeManagerError {
+impl From<StateError> for MatchingEngineError {
     fn from(value: StateError) -> Self {
-        HandshakeManagerError::State(value.to_string())
+        MatchingEngineError::State(value.to_string())
     }
 }

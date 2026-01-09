@@ -9,7 +9,7 @@ use futures::StreamExt;
 use gossip_api::pubsub::PubsubMessage;
 use job_types::{
     gossip_server::GossipServerQueue,
-    handshake_manager::HandshakeManagerQueue,
+    matching_engine_worker::MatchingEngineWorkerQueue,
     network_manager::{NetworkManagerJob, NetworkManagerReceiver},
 };
 use libp2p::{
@@ -122,7 +122,7 @@ pub(super) struct NetworkManagerExecutor {
     /// The sender for the gossip server's work queue
     gossip_work_queue: GossipServerQueue,
     /// The sender for the handshake manager's work queue
-    handshake_work_queue: HandshakeManagerQueue,
+    handshake_work_queue: MatchingEngineWorkerQueue,
     /// A reference to the relayer-global state
     global_state: State,
     /// The cancel channel that the coordinator thread may use to cancel this
@@ -140,7 +140,7 @@ impl NetworkManagerExecutor {
         cluster_key: HmacKey,
         job_channel: NetworkManagerReceiver,
         gossip_work_queue: GossipServerQueue,
-        handshake_work_queue: HandshakeManagerQueue,
+        handshake_work_queue: MatchingEngineWorkerQueue,
         global_state: State,
         cancel: CancelChannel,
     ) -> Self {

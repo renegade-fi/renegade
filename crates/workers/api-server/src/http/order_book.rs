@@ -1,8 +1,6 @@
 //! Groups routes and handlers for order book API operations
 
 use async_trait::async_trait;
-use types_core::{price::TimestampedPrice, token::{Token, get_all_base_tokens}};
-use types_account::account::pair_from_mints;
 use constants::DEFAULT_EXTERNAL_MATCH_RELAYER_FEE;
 use external_api::{
     EmptyRequestResponse,
@@ -18,6 +16,11 @@ use itertools::Itertools;
 use num_traits::ToPrimitive;
 use price_state::PriceStreamStates;
 use state::State;
+use types_account::account::pair_from_mints;
+use types_core::{
+    price::TimestampedPrice,
+    token::{Token, get_all_base_tokens},
+};
 use util::on_chain::get_external_match_fee;
 
 use crate::{

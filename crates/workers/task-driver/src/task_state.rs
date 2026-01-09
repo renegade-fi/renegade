@@ -5,6 +5,8 @@ use std::fmt::Display;
 use serde::Serialize;
 use types_tasks::QueuedTaskState;
 
+use crate::{tasks::create_new_account::CreateNewAccountTaskState, traits::TaskState};
+
 // --------------------
 // | State Management |
 // --------------------
@@ -13,13 +15,18 @@ use types_tasks::QueuedTaskState;
 #[derive(Clone, Debug, Serialize)]
 #[allow(clippy::large_enum_variant)]
 #[serde(tag = "task_type", content = "state")]
-pub enum StateWrapper {}
+pub enum StateWrapper {
+    /// The state of a create new account task
+    CreateNewAccount(CreateNewAccountTaskState),
+}
 
 impl StateWrapper {
     /// Whether the underlying state is committed or not
     pub fn committed(&self) -> bool {
         match self {
-            _ => todo!("implement committed for {self:?}"),
+            StateWrapper::CreateNewAccount(state) => {
+                <CreateNewAccountTaskState as TaskState>::committed(state)
+            },
         }
     }
 
@@ -27,24 +34,27 @@ impl StateWrapper {
     /// for which `committed` is true
     pub fn is_committing(&self) -> bool {
         match self {
-            _ => todo!("implement is_committing for {self:?}"),
+            StateWrapper::CreateNewAccount(state) => {
+                *state == CreateNewAccountTaskState::commit_point()
+            },
         }
     }
 
     /// Whether the underlying state is completed or not
     pub fn completed(&self) -> bool {
         match self {
-            _ => todo!("implement completed for {self:?}"),
+            StateWrapper::CreateNewAccount(state) => {
+                <CreateNewAccountTaskState as TaskState>::completed(state)
+            },
         }
     }
 }
 
 impl Display for StateWrapper {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let out = match self {
-            _ => todo!("implement display for {self:?}"),
-        };
-        write!(f, "{out}")
+        match self {
+            StateWrapper::CreateNewAccount(state) => write!(f, "{state}"),
+        }
     }
 }
 

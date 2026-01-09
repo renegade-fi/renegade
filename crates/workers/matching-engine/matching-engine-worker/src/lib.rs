@@ -6,10 +6,8 @@
 #![deny(clippy::needless_pass_by_ref_mut)]
 #![deny(missing_docs)]
 #![allow(incomplete_features)]
-#![feature(let_chains)]
 
 pub mod error;
-mod handshake_cache;
+pub mod executor;
 pub mod manager;
-pub mod state;
 pub mod worker;

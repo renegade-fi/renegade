@@ -18,6 +18,7 @@ use circuit_types::{
 use constants::Scalar;
 use crypto::fields::scalar_to_u128;
 use job_types::matching_engine_worker::ExternalMatchingEngineOptions;
+use matching_engine_core::compute_max_amount;
 use system_bus::SystemBusMessage;
 use tracing::{info, instrument, warn};
 use types_account::account::{Order, OrderId};
@@ -26,16 +27,9 @@ use types_runtime::MatchingPoolName;
 use types_tasks::{
     SettleExternalMatchTaskDescriptor, SettleMalleableExternalMatchTaskDescriptor, TaskDescriptor,
 };
-use matching_engine_core::compute_max_amount;
 use util::telemetry::helpers::backfill_trace_field;
 
-use crate::{
-    error::HandshakeManagerError,
-    manager::{
-        HandshakeExecutor,
-        handshake::{ERR_NO_ORDER, ERR_NO_WALLET},
-    },
-};
+use crate::executor::MatchingEngineExecutor;
 
 use super::matching_order_filter;
 
@@ -54,7 +48,7 @@ const MAX_PRICE_OVERRIDE_DIFF: f64 = 0.000001;
 /// limits on the counterparty order
 const MAX_MALLEABLE_RANGE: f64 = 0.1; // 10%
 
-impl HandshakeExecutor {
+impl MatchingEngineExecutor {
     /// Encapsulates the logic for the external matching engine in an error
     /// handler
     ///

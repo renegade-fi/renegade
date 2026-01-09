@@ -1,9 +1,9 @@
 //! Helpers for working with the integration node's state
 
-use types_runtime::MatchingPoolName;
-use types_account::account::OrderId;
 use eyre::Result;
 use state::State;
+use types_account::account::OrderId;
+use types_runtime::MatchingPoolName;
 
 use crate::ctx::IntegrationTestCtx;
 
@@ -39,11 +39,7 @@ impl IntegrationTestCtx {
     }
 
     /// Move a given order into the given matching pool
-    pub async fn move_order_into_pool(
-        &self,
-        oid: OrderId,
-        pool: MatchingPoolName,
-    ) -> Result<()> {
+    pub async fn move_order_into_pool(&self, oid: OrderId, pool: MatchingPoolName) -> Result<()> {
         let state = self.state();
         let pool_exists = state.matching_pool_exists(pool.clone()).await?;
         if !pool_exists {

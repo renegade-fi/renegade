@@ -15,7 +15,6 @@ use admin::{
     AdminWalletMatchableOrderIdsHandler, IsLeaderHandler,
 };
 use async_trait::async_trait;
-use types_core::hmac::HmacKey;
 use external_api::{
     EmptyRequestResponse,
     http::{
@@ -64,6 +63,7 @@ use state::State;
 use std::{net::SocketAddr, sync::Arc};
 use task::GetTaskQueuePausedHandler;
 use tokio::net::{TcpListener, TcpStream};
+use types_core::hmac::HmacKey;
 use util::get_current_time_millis;
 
 use crate::{

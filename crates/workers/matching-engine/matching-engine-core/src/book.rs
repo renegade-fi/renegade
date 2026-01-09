@@ -7,7 +7,7 @@ use std::collections::BTreeSet;
 
 use circuit_types::{Amount, fixed_point::FixedPoint};
 use rustc_hash::FxHashMap;
-use types_account::{OrderId, order::Order, pair::Pair};
+use types_account::{OrderId, order::Order};
 
 /// A key for sorting orders by descending matchable amount
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -41,8 +41,6 @@ impl Ord for ReverseAmountKey {
 
 /// A book of orders
 pub struct Book {
-    /// The pair of the book
-    pair: Pair,
     /// A map of order id to matchable amount
     ///
     /// Used to construct the key for the sorted amounts map
@@ -81,8 +79,8 @@ impl BookOrder {
 
 impl Book {
     /// Create a new book
-    pub fn new(pair: Pair) -> Self {
-        Self { pair, order_map: FxHashMap::default(), sorted_amounts: BTreeSet::new() }
+    pub fn new() -> Self {
+        Self { order_map: FxHashMap::default(), sorted_amounts: BTreeSet::new() }
     }
 
     // --- Getters --- //
@@ -120,6 +118,26 @@ impl Book {
         self.remove_order(order.id);
         self.add_order(order, matchable_amount);
     }
+
+    // --- Matching --- //
+
+    /// Find a match for a given order
+    pub fn find_match(&self, price: FixedPoint, max_amount: Amount) -> Option<(OrderId, Amount)> {
+        // Build an iterator over orders sorted by descending matchable amount
+        let orders = self.iter();
+        for (oid, order) in orders {
+            // Skip orders whose validation conditions are not met
+            if order.min_price > price || order.min_fill_size > max_amount {
+                continue;
+            }
+
+            // Compute the match amount
+            let match_amount = Amount::min(order.matchable_amount, max_amount);
+            return Some((*oid, match_amount));
+        }
+
+        None
+    }
 }
 
 // --- Iteration --- //
@@ -136,8 +154,7 @@ impl Book {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloy_primitives::Address;
-    use types_account::{account::order::Order, order::mocks::mock_order_with_pair};
+    use types_account::{account::order::Order, order::mocks::mock_order};
 
     // -----------
     // | Helpers |
@@ -145,21 +162,15 @@ mod tests {
 
     /// Create a test order with the given matchable amount
     fn create_test_order(matchable_amount: Amount) -> Order {
-        let mut order = mock_order_with_pair(test_pair());
+        let mut order = mock_order();
         order.intent.amount_in = matchable_amount * 2;
         order.intent.min_price = FixedPoint::from_integer(1);
         order
     }
 
-    /// Create a test pair
-    fn test_pair() -> Pair {
-        Pair::new(Address::from([1; 20]), Address::from([2; 20]))
-    }
-
     #[test]
     fn test_add_order() {
-        let pair = test_pair();
-        let mut book = Book::new(pair);
+        let mut book = Book::new();
         let order = create_test_order(100);
 
         assert!(!book.contains_order(order.id));
@@ -169,8 +180,7 @@ mod tests {
 
     #[test]
     fn test_get_matchable_amount() {
-        let pair = test_pair();
-        let mut book = Book::new(pair);
+        let mut book = Book::new();
         let order = create_test_order(150);
 
         assert_eq!(book.get_matchable_amount(order.id), None);
@@ -180,8 +190,7 @@ mod tests {
 
     #[test]
     fn test_update_order() {
-        let pair = test_pair();
-        let mut book = Book::new(pair);
+        let mut book = Book::new();
         let order = create_test_order(100);
 
         book.add_order(&order, 100);
@@ -193,8 +202,7 @@ mod tests {
 
     #[test]
     fn test_remove_order() {
-        let pair = test_pair();
-        let mut book = Book::new(pair);
+        let mut book = Book::new();
         let order = create_test_order(100);
 
         book.add_order(&order, 100);
@@ -207,8 +215,7 @@ mod tests {
 
     #[test]
     fn test_remove_nonexistent_order() {
-        let pair = test_pair();
-        let mut book = Book::new(pair);
+        let mut book = Book::new();
         let order = create_test_order(100);
 
         // Should not panic
@@ -222,8 +229,7 @@ mod tests {
 
     #[test]
     fn test_iteration_order_descending() {
-        let pair = test_pair();
-        let mut book = Book::new(pair);
+        let mut book = Book::new();
 
         // Add orders in random order
         let order1 = create_test_order(300);
@@ -241,8 +247,7 @@ mod tests {
 
     #[test]
     fn test_iteration_order_after_update() {
-        let pair = test_pair();
-        let mut book = Book::new(pair);
+        let mut book = Book::new();
 
         let order1 = create_test_order(100);
         let order2 = create_test_order(200);
@@ -266,8 +271,7 @@ mod tests {
 
     #[test]
     fn test_iteration_order_after_multiple_updates() {
-        let pair = test_pair();
-        let mut book = Book::new(pair);
+        let mut book = Book::new();
 
         let order1 = create_test_order(100);
         let order2 = create_test_order(200);
@@ -295,8 +299,7 @@ mod tests {
 
     #[test]
     fn test_iteration_order_with_duplicate_amounts() {
-        let pair = test_pair();
-        let mut book = Book::new(pair);
+        let mut book = Book::new();
 
         let order1 = create_test_order(100);
         let order2 = create_test_order(100);
@@ -321,8 +324,7 @@ mod tests {
 
     #[test]
     fn test_iteration_order_after_remove() {
-        let pair = test_pair();
-        let mut book = Book::new(pair);
+        let mut book = Book::new();
 
         let order1 = create_test_order(100);
         let order2 = create_test_order(200);
@@ -341,8 +343,7 @@ mod tests {
 
     #[test]
     fn test_iteration_empty_book() {
-        let pair = test_pair();
-        let book = Book::new(pair);
+        let book = Book::new();
 
         let count: usize = book.iter().count();
         assert_eq!(count, 0);
@@ -350,8 +351,7 @@ mod tests {
 
     #[test]
     fn test_iteration_single_order() {
-        let pair = test_pair();
-        let mut book = Book::new(pair);
+        let mut book = Book::new();
         let order = create_test_order(100);
 
         book.add_order(&order, 100);

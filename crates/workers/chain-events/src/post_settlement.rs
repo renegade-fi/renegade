@@ -7,13 +7,14 @@
 use crate::error::OnChainEventListenerError;
 use crate::listener::OnChainEventListenerExecutor;
 use circuit_types::{fees::FeeTake, fixed_point::FixedPoint, r#match::ExternalMatchResult};
-use types_core::price::TimestampedPrice;
-use types_account::account::{OrderId, WalletIdentifier, order_metadata::OrderState};
 use constants::DEFAULT_EXTERNAL_MATCH_RELAYER_FEE;
 use job_types::event_manager::{ExternalFillEvent, RelayerEventType, try_send_event};
 use renegade_metrics;
+use types_account::account::{OrderId, WalletIdentifier, order_metadata::OrderState};
+use types_core::price::TimestampedPrice;
 use util::{
-    matching_engine::compute_fee_obligation_with_protocol_fee, on_chain::get_external_match_fee,
+    matching_engine_core::compute_fee_obligation_with_protocol_fee,
+    on_chain::get_external_match_fee,
 };
 
 /// The error message emitted when metadata for an order cannot be found

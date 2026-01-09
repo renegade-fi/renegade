@@ -1,17 +1,15 @@
 //! Helpers for matching orders
 
-use circuit_types::{Amount, balance::Balance, fixed_point::FixedPoint, r#match::MatchResult};
-use matching_engine_core::match_orders_with_min_base_amount;
+use circuit_types::{Amount, fixed_point::FixedPoint};
 use types_account::account::{OrderId, order::Order};
-use types_core::{TimestampedPrice, TimestampedPriceFp, Token};
-use util::err_str;
+use types_core::{TimestampedPrice, Token};
 
-use crate::{error::HandshakeManagerError, manager::HandshakeExecutor};
+use crate::{error::MatchingEngineError, executor::MatchingEngineExecutor};
 
 /// A successful match between two orders
 pub type SuccessfulMatch = (OrderId, MatchResult);
 
-impl HandshakeExecutor {
+impl MatchingEngineExecutor {
     /// Run a match between two orders
     pub async fn find_match<'a, I>(
         &self,
@@ -19,7 +17,7 @@ impl HandshakeExecutor {
         balance: &Balance,
         price: FixedPoint,
         target_orders: I,
-    ) -> Result<Option<SuccessfulMatch>, HandshakeManagerError>
+    ) -> Result<Option<SuccessfulMatch>, MatchingEngineError>
     where
         I: Iterator<Item = &'a OrderId>,
     {
@@ -35,7 +33,7 @@ impl HandshakeExecutor {
         price: FixedPoint,
         min_quote_amount: Amount,
         target_orders: I,
-    ) -> Result<Option<SuccessfulMatch>, HandshakeManagerError>
+    ) -> Result<Option<SuccessfulMatch>, MatchingEngineError>
     where
         I: Iterator<Item = &'a OrderId>,
     {
@@ -87,7 +85,7 @@ impl HandshakeExecutor {
     pub(crate) async fn get_execution_price_for_order(
         &self,
         order: &OrderId,
-    ) -> Result<TimestampedPriceFp, HandshakeManagerError> {
+    ) -> Result<TimestampedPriceFp, MatchingEngineError> {
         let (base, quote) = self.token_pair_for_order(order).await?;
         self.get_execution_price(&base, &quote)
     }
@@ -97,17 +95,17 @@ impl HandshakeExecutor {
         &self,
         base: &Token,
         quote: &Token,
-    ) -> Result<TimestampedPriceFp, HandshakeManagerError> {
+    ) -> Result<TimestampedPriceFp, MatchingEngineError> {
         let state = self.price_streams.get_state(base, quote);
         let state = &state.into_nominal().ok_or_else(|| {
-            HandshakeManagerError::price_reporter(format!("No price data for {base} / {quote}"))
+            MatchingEngineError::price_reporter(format!("No price data for {base} / {quote}"))
         })?;
         let price: TimestampedPrice = state.into();
 
         // Correct the price for decimals
         let corrected_price = price
             .get_decimal_corrected_price(base, quote)
-            .map_err(err_str!(HandshakeManagerError::NoPriceData))?;
+            .map_err(MatchingEngineError::no_price)?;
         Ok(corrected_price.into())
     }
 }

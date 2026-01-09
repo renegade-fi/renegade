@@ -7,25 +7,24 @@ use alloy::{
     rpc::types::TransactionRequest,
 };
 use circuit_types::{fixed_point::FixedPoint, r#match::ExternalMatchResult};
-use types_runtime::MatchingPoolName;
-use types_core::{hmac::HmacKey, price::TimestampedPrice, token::Token};
 use common::types::proof_bundles::{
-    OrderValidityProofBundle, ValidMalleableMatchSettleAtomicBundle,
-    ValidMatchSettleAtomicBundle,
+    OrderValidityProofBundle, ValidMalleableMatchSettleAtomicBundle, ValidMatchSettleAtomicBundle,
 };
-use types_account::account::Order;
 use constants::{NATIVE_ASSET_ADDRESS, NATIVE_ASSET_WRAPPER_TICKER};
 use darkpool_client::DarkpoolClient;
 use external_api::http::external_match::{
     AtomicMatchApiBundle, ExternalOrder, MalleableAtomicMatchApiBundle, SignedExternalQuote,
 };
-use system_bus::SystemBusMessage;
-use job_types::handshake_manager::{
-    ExternalMatchingEngineOptions, HandshakeManagerJob, HandshakeManagerQueue,
+use job_types::matching_engine_worker::{
+    ExternalMatchingEngineOptions, MatchingEngineWorkerJob, MatchingEngineWorkerQueue,
 };
 use num_bigint::BigUint;
 use price_state::PriceStreamStates;
 use system_bus::SystemBus;
+use system_bus::SystemBusMessage;
+use types_account::account::Order;
+use types_core::{hmac::HmacKey, price::TimestampedPrice, token::Token};
+use types_runtime::MatchingPoolName;
 use util::{
     get_current_time_millis,
     hex::{biguint_from_hex_string, bytes_from_hex_string},
@@ -107,7 +106,7 @@ pub struct ExternalMatchProcessor {
     /// The admin key, used to sign and validate quotes
     admin_key: HmacKey,
     /// The handshake manager's queue
-    handshake_queue: HandshakeManagerQueue,
+    handshake_queue: MatchingEngineWorkerQueue,
     /// A handle on the darkpool RPC client
     darkpool_client: DarkpoolClient,
     /// A handle on the system bus
@@ -121,7 +120,7 @@ impl ExternalMatchProcessor {
     pub fn new(
         min_order_size: f64,
         admin_key: HmacKey,
-        handshake_queue: HandshakeManagerQueue,
+        handshake_queue: MatchingEngineWorkerQueue,
         darkpool_client: DarkpoolClient,
         bus: SystemBus<SystemBusMessage>,
         price_streams: PriceStreamStates,
@@ -451,7 +450,7 @@ impl ExternalMatchProcessor {
         let (order, options) =
             self.external_order_to_internal_order_with_options(order, options)?;
 
-        let (job, response_topic) = HandshakeManagerJob::new_external_match_job(order, options);
+        let (job, response_topic) = MatchingEngineWorkerJob::new_external_match_job(order, options);
         self.handshake_queue
             .send(job)
             .map_err(|_| internal_error(ERR_FAILED_TO_PROCESS_EXTERNAL_MATCH))?;

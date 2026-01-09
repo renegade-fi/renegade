@@ -48,6 +48,9 @@ lazy_static! {
     /// The shift used to generate a scalar representation from a fixed point
     pub static ref TWO_TO_M: BigUint = BigUint::from(1u8) << DEFAULT_FP_PRECISION;
 
+    /// 2^(2M), used for computing fixed-point inverse
+    pub static ref TWO_TO_2M: BigUint = BigUint::from(1u8) << (2 * DEFAULT_FP_PRECISION);
+
     /// The shift, converted to a scalar
     pub static ref TWO_TO_M_SCALAR: ScalarField = biguint_to_scalar(&TWO_TO_M).inner();
 
@@ -258,6 +261,25 @@ impl FixedPoint {
         let q_scalar = biguint_to_scalar(&q);
 
         if r == BigUint::from(0u8) { q_scalar } else { q_scalar + Scalar::one() }
+    }
+
+    /// Computes the multiplicative inverse of the fixed point value (1/self)
+    ///
+    /// Returns `None` if the value is zero
+    pub fn inverse(&self) -> Option<Self> {
+        if self.repr == Scalar::zero() {
+            return None;
+        }
+
+        // To compute 1/x where x has repr x_repr = x * 2^M:
+        // (1/x) * 2^M = 2^M / x = 2^M / (x_repr / 2^M) = 2^(2M) / x_repr
+        //
+        // We must use integer division here, not field arithmetic, because
+        // field inverse wraps around mod p and doesn't give the correct result.
+        let self_repr_bigint = scalar_to_biguint(&self.repr);
+        let inv_repr = &*TWO_TO_2M / &self_repr_bigint;
+
+        Some(Self { repr: biguint_to_scalar(&inv_repr) })
     }
 }
 
@@ -762,6 +784,31 @@ mod fixed_point_tests {
         let res = fixed1.ceil_div(&fixed2);
         let expected = fp1 / fp2;
         check_within_tolerance(res.to_f64(), expected, F64_TOLERANCE);
+    }
+
+    /// Tests that inverse of zero returns None
+    #[test]
+    fn test_inverse_zero() {
+        let zero = FixedPoint::zero();
+        assert!(zero.inverse().is_none());
+    }
+
+    /// Tests the multiplicative inverse
+    #[test]
+    fn test_inverse() {
+        let mut rng = thread_rng();
+        // Use a range that avoids very small values (which would lose precision)
+        let val: f64 = rng.gen_range(0.1..1000.0);
+
+        let fp = FixedPoint::from_f64_round_down(val);
+        let inv = fp.inverse().expect("Non-zero value should have inverse");
+
+        let expected = 1.0 / val;
+        check_within_tolerance(inv.to_f64(), expected, F64_TOLERANCE);
+
+        // Verify that x * (1/x) ≈ 1
+        let product = fp * inv;
+        check_within_tolerance(product.to_f64(), 1.0, F64_TOLERANCE);
     }
 
     /// Test the floor division with integer method

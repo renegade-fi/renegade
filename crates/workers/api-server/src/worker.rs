@@ -1,13 +1,10 @@
 //! Defines the implementation of the `Worker` trait for the ApiServer
 
 use async_trait::async_trait;
-use types_runtime::{CancelChannel, worker::Worker};
-use types_core::{chain::Chain, hmac::HmacKey};
 use darkpool_client::DarkpoolClient;
-use system_bus::SystemBusMessage;
 use futures::executor::block_on;
 use job_types::{
-    handshake_manager::HandshakeManagerQueue, network_manager::NetworkManagerQueue,
+    matching_engine_worker::MatchingEngineWorkerQueue, network_manager::NetworkManagerQueue,
     proof_manager::ProofManagerQueue,
 };
 use price_state::PriceStreamStates;
@@ -15,10 +12,13 @@ use reqwest::Url;
 use state::State;
 use std::thread::{self, JoinHandle};
 use system_bus::SystemBus;
+use system_bus::SystemBusMessage;
 use tokio::{
     runtime::{Builder as TokioBuilder, Runtime},
     task::JoinHandle as TokioJoinHandle,
 };
+use types_core::{chain::Chain, hmac::HmacKey};
+use types_runtime::{CancelChannel, worker::Worker};
 
 use super::{error::ApiServerError, http::HttpServer, websocket::WebsocketServer};
 
@@ -71,13 +71,13 @@ pub struct ApiServerConfig {
     /// The worker job queue for the ProofGenerationManager
     pub proof_generation_work_queue: ProofManagerQueue,
     /// The worker job queue for the HandshakeManager
-    pub handshake_manager_work_queue: HandshakeManagerQueue,
+    pub handshake_manager_work_queue: MatchingEngineWorkerQueue,
     /// The relayer-global state
     pub state: State,
     /// The system pubsub bus that all workers have access to
     /// The ApiServer uses this bus to forward internal events onto open
     /// websocket connections
-    pub system_bus: SystemBus<SystemBusMessage>,
+    pub system_bus: SystemBus,
     /// The channel to receive cancellation signals on from the coordinator
     pub cancel_channel: CancelChannel,
 }

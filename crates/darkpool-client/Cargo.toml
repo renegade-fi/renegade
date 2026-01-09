@@ -45,6 +45,7 @@ circuits-core = { workspace = true }
 types-core = { workspace = true }
 types-account = { workspace = true }
 crypto = { workspace = true }
+matching-engine-core = { workspace = true }
 renegade-solidity-abi = { package = "abi", git = "https://github.com/renegade-fi/renegade-solidity-contracts", optional = true }
 util = { workspace = true, features = ["telemetry"] }
 

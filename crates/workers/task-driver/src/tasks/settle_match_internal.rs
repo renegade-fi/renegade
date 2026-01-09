@@ -16,25 +16,23 @@ use circuit_types::r#match::MatchResult;
 use circuits_core::zk_circuits::valid_match_settle::{
     SizedValidMatchSettleStatement, SizedValidMatchSettleWitness,
 };
-use types_core::price::{TimestampedPrice, TimestampedPriceFp};
 use common::types::proof_bundles::ValidMatchSettleBundle;
-use types_tasks::SettleMatchInternalTaskDescriptor;
-use types_account::account::{OrderId, WalletIdentifier};
 use common::types::proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle};
-use types_account::account::Wallet;
 use constants::Scalar;
 use darkpool_client::errors::DarkpoolClientError;
 use job_types::event_manager::{FillEvent, RelayerEventType, try_send_event};
 use job_types::proof_manager::ProofJob;
+use matching_engine_core::{compute_fee_obligation, compute_max_amount, settle_match_into_wallets};
 use renegade_metrics::helpers::record_match_volume;
 use serde::Serialize;
 use state::error::StateError;
 use tokio::task::JoinHandle as TokioJoinHandle;
 use tracing::{Instrument, instrument};
+use types_account::account::Wallet;
+use types_account::account::{OrderId, WalletIdentifier};
+use types_core::price::{TimestampedPrice, TimestampedPriceFp};
+use types_tasks::SettleMatchInternalTaskDescriptor;
 use util::err_str;
-use util::matching_engine::{
-    compute_fee_obligation, compute_max_amount, settle_match_into_wallets,
-};
 use util::on_chain::get_protocol_fee;
 
 use super::ERR_AWAITING_PROOF;

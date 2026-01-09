@@ -9,7 +9,6 @@ use api_server_bench_util::{
     base_mint, quote_mint, send_admin_post_req, setup_internal_order, setup_mock_node,
 };
 use circuit_types::{Amount, order::OrderSide};
-use types_core::hmac::HmacKey;
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use external_api::http::external_match::{
     ExternalOrder, ExternalQuoteRequest, ExternalQuoteResponse, REQUEST_EXTERNAL_QUOTE_ROUTE,
@@ -17,6 +16,7 @@ use external_api::http::external_match::{
 use eyre::Result;
 use mock_node::MockNodeController;
 use tokio::runtime::Runtime;
+use types_core::hmac::HmacKey;
 
 /// The amount to cross
 const MATCH_AMOUNT: Amount = 1_000_000;
