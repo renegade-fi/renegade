@@ -9,6 +9,7 @@ use state::State;
 use tokio::task::JoinHandle;
 
 /// Apply all state migrations
+#[allow(unused)]
 pub(crate) fn run_state_migrations(_state: &State) -> Vec<JoinHandle<()>> {
     #[allow(unused_mut)]
     let mut handles = Vec::new();

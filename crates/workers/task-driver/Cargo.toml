@@ -46,6 +46,7 @@ constants = { workspace = true }
 external-api = { workspace = true }
 gossip-api = { workspace = true }
 job-types = { workspace = true }
+matching-engine-core = { workspace = true }
 crypto = { workspace = true }
 state = { workspace = true }
 system-bus = { workspace = true }
@@ -73,6 +74,7 @@ flate2 = "1.0"
 inventory = "0.3"
 
 lazy_static = { workspace = true }
+mock-node = { workspace = true }
 num-traits = "0.2"
 
 rand = { workspace = true }

@@ -30,6 +30,7 @@ mpc-network = [
     "dep:crypto",
     "dep:tokio",
     "dep:util",
+    "constants/mpc-types",
 ]
 
 [dependencies]

@@ -17,18 +17,14 @@ tokio = { workspace = true }
 
 #=== Workspace Dependencies === #
 darkpool-client = { workspace = true }
-circuits-core = { workspace = true }
 circuit-types = { workspace = true }
 types-core = { workspace = true }
-types-gossip = { workspace = true }
 types-tasks = { workspace = true }
 types-account = { workspace = true }
 types-runtime = { workspace = true }
 constants = { workspace = true }
 crypto = { workspace = true }
-external-api = { workspace = true }
 job-types = { workspace = true }
-gossip-api = { workspace = true }
 price-state = { workspace = true }
 state = { workspace = true }
 system-bus = { workspace = true }

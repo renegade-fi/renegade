@@ -14,20 +14,20 @@ use circuit_types::r#match::MatchResult;
 use circuits_core::zk_circuits::valid_match_settle_atomic::{
     SizedValidMatchSettleAtomicStatement, SizedValidMatchSettleAtomicWitness,
 };
-use types_core::price::TimestampedPriceFp;
 use common::types::proof_bundles::{
     OrderValidityProofBundle, OrderValidityWitnessBundle, ValidMatchSettleAtomicBundle,
 };
-use types_tasks::SettleExternalMatchTaskDescriptor;
-use types_account::account::{OrderId, WalletIdentifier};
 use darkpool_client::errors::DarkpoolClientError;
-use system_bus::SystemBusMessage;
 use job_types::proof_manager::ProofJob;
+use matching_engine_core::{apply_match_to_shares, compute_fee_obligation_with_protocol_fee};
 use serde::Serialize;
 use state::State;
 use state::error::StateError;
+use system_bus::SystemBusMessage;
 use tracing::instrument;
-use util::matching_engine::{apply_match_to_shares, compute_fee_obligation_with_protocol_fee};
+use types_account::account::{OrderId, WalletIdentifier};
+use types_core::price::TimestampedPriceFp;
+use types_tasks::SettleExternalMatchTaskDescriptor;
 use util::on_chain::get_external_match_fee;
 
 use super::ERR_NO_VALIDITY_PROOF;

@@ -1,10 +1,9 @@
 //! Defines authentication primitives for the API server
 
-use types_core::hmac::HmacKey;
-use types_account::account::WalletIdentifier;
 use external_api::auth::validate_expiring_auth;
 use hyper::HeaderMap;
 use state::State;
+use types_core::{AccountId, HmacKey};
 
 use crate::{
     error::{ApiServerError, not_found},
@@ -45,23 +44,22 @@ impl AuthMiddleware {
         self.admin_key.is_some()
     }
 
-    /// Authenticate a wallet request
-    pub async fn authenticate_wallet_request(
+    /// Authenticate an account request
+    pub async fn authenticate_account_request(
         &self,
-        wallet_id: WalletIdentifier,
+        account_id: AccountId,
         path: &str,
         headers: &HeaderMap,
         payload: &[u8],
     ) -> Result<(), ApiServerError> {
         // Look up the verification key in the global state
-        let wallet = self
+        let key = self
             .state
-            .get_wallet(&wallet_id)
+            .get_account_symmetric_key(&account_id)
             .await?
             .ok_or_else(|| not_found(ERR_WALLET_NOT_FOUND.to_string()))?;
-        let symmetric_key = wallet.key_chain.symmetric_key();
 
-        validate_expiring_auth(path, headers, payload, &symmetric_key)?;
+        validate_expiring_auth(path, headers, payload, &key)?;
         Ok(())
     }
 

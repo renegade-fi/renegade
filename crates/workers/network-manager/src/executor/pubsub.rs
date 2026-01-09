@@ -9,7 +9,7 @@ use gossip_api::{
         cluster::{ClusterManagementMessage, ClusterManagementMessageType},
     },
 };
-use job_types::{gossip_server::GossipServerJob, handshake_manager::HandshakeManagerJob};
+use job_types::{gossip_server::GossipServerJob, matching_engine_worker::MatchingEngineWorkerJob};
 use libp2p::gossipsub::{Message as GossipsubMessage, Sha256Topic};
 use types_gossip::WrappedPeerId;
 use util::err_str;
@@ -84,11 +84,11 @@ impl NetworkManagerExecutor {
                     match message_type {
                         ClusterManagementMessageType::CacheSync(order1, order2) => self
                             .handshake_work_queue
-                            .send(HandshakeManagerJob::CacheEntry { order1, order2 })
+                            .send(MatchingEngineWorkerJob::CacheEntry { order1, order2 })
                             .map_err(err_str!(NetworkManagerError::EnqueueJob)),
                         ClusterManagementMessageType::MatchInProgress(order1, order2) => self
                             .handshake_work_queue
-                            .send(HandshakeManagerJob::PeerMatchInProgress { order1, order2 })
+                            .send(MatchingEngineWorkerJob::PeerMatchInProgress { order1, order2 })
                             .map_err(err_str!(NetworkManagerError::EnqueueJob)),
                         _ => unreachable!("handshake manager should not receive other messages"),
                     }

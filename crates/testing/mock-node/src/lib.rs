@@ -11,26 +11,21 @@ use std::mem;
 
 use api_server::worker::{ApiServer, ApiServerConfig};
 use chain_events::listener::{OnChainEventListener, OnChainEventListenerConfig};
-use util::default_wrapper::{DefaultOption, default_option};
-use types_core::price::Price;
-use types_runtime::worker::{Worker, new_worker_failure_channel};
 use config::RelayerConfig;
 use darkpool_client::{
     DarkpoolClient, client::DarkpoolClientConfig, constants::BLOCK_POLLING_INTERVAL,
 };
-use system_bus::SystemBusMessage;
 use eyre::Result;
 use futures::Future;
 use gossip_server::{server::GossipServer, worker::GossipServerConfig};
-use handshake_manager::{manager::HandshakeManager, worker::HandshakeManagerConfig};
 use job_types::{
     event_manager::{EventManagerQueue, EventManagerReceiver, new_event_manager_queue},
     gossip_server::{
         GossipServerJob, GossipServerQueue, GossipServerReceiver, new_gossip_server_queue,
     },
-    handshake_manager::{
-        HandshakeManagerJob, HandshakeManagerQueue, HandshakeManagerReceiver,
-        new_handshake_manager_queue,
+    matching_engine_worker::{
+        MatchingEngineWorkerJob, MatchingEngineWorkerQueue, MatchingEngineWorkerReceiver,
+        new_matching_engine_worker_queue,
     },
     network_manager::{
         NetworkManagerJob, NetworkManagerQueue, NetworkManagerReceiver, new_network_manager_queue,
@@ -41,6 +36,7 @@ use job_types::{
     task_driver::{TaskDriverJob, TaskDriverQueue, TaskDriverReceiver, new_task_driver_queue},
 };
 use libp2p::Multiaddr;
+use matching_engine_worker::{executor::HandshakeManager, worker::HandshakeManagerConfig};
 use network_manager::worker::{NetworkManager, NetworkManagerConfig};
 use price_reporter::{
     mock::MockPriceReporter,
@@ -55,10 +51,14 @@ use reqwest::{Client, Method, Response, header::HeaderMap};
 use serde::{Serialize, de::DeserializeOwned};
 use state::{State, create_global_state};
 use system_bus::SystemBus;
+use system_bus::SystemBusMessage;
 use system_clock::SystemClock;
 use task_driver::worker::{TaskDriver, TaskDriverConfig};
 use test_helpers::mocks::mock_cancel;
 use tokio::runtime::Handle;
+use types_core::price::Price;
+use types_runtime::worker::{Worker, new_worker_failure_channel};
+use util::default_wrapper::{DefaultOption, default_option};
 
 /// A helper that creates a dummy runtime and blocks a task on it
 ///
@@ -110,7 +110,7 @@ pub struct MockNodeController {
     /// The gossip message queue
     gossip_queue: (GossipServerQueue, DefaultOption<GossipServerReceiver>),
     /// The handshake manager's queue
-    handshake_queue: (HandshakeManagerQueue, DefaultOption<HandshakeManagerReceiver>),
+    handshake_queue: (MatchingEngineWorkerQueue, DefaultOption<MatchingEngineWorkerReceiver>),
     /// The proof generation queue
     proof_queue: (ProofManagerQueue, DefaultOption<ProofManagerReceiver>),
     /// The event manager queue
@@ -127,7 +127,7 @@ impl MockNodeController {
         let clock = run_fut(SystemClock::new());
         let (network_sender, network_recv) = new_network_manager_queue();
         let (gossip_sender, gossip_recv) = new_gossip_server_queue();
-        let (handshake_send, handshake_recv) = new_handshake_manager_queue();
+        let (handshake_send, handshake_recv) = new_matching_engine_worker_queue();
         let (proof_gen_sender, proof_gen_recv) = new_proof_manager_queue();
         let (event_sender, event_recv) = new_event_manager_queue();
         let (task_sender, task_recv) = new_task_driver_queue();
@@ -261,7 +261,7 @@ impl MockNodeController {
     }
 
     /// Send a job to the handshake manager
-    pub fn send_handshake_job(&self, job: HandshakeManagerJob) -> Result<()> {
+    pub fn send_handshake_job(&self, job: MatchingEngineWorkerJob) -> Result<()> {
         self.handshake_queue.0.send(job).map_err(|e| eyre::eyre!(e))
     }
 

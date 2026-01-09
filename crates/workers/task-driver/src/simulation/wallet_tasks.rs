@@ -11,11 +11,7 @@ use super::error::TaskSimulationError;
 // ----------
 
 /// The error message emitted when the wallet id for a given task does not match
-const ERR_INVALID_WALLET_ID: &str = "Task does not apply to wallet";
-/// The error message emitted when an order is missing from the wallet
-const ERR_ORDER_MISSING: &str = "Order not found in wallet";
-/// The error message emitted when a balance is missing from the wallet
-const ERR_BALANCE_MISSING: &str = "Balance not found in wallet";
+const ERR_INVALID_ACCOUNT_ID: &str = "Task does not apply to account";
 
 // --------------
 // | Simulation |
@@ -120,11 +116,11 @@ fn simulate_single_wallet_task(
 /// Simulate a `NewAccount` task applied to a wallet
 #[allow(clippy::needless_pass_by_ref_mut)]
 fn simulate_new_account(
-    wallet: &mut Account,
+    account: &mut Account,
     desc: &NewAccountTaskDescriptor,
 ) -> Result<(), TaskSimulationError> {
-    if desc.account_id != wallet.wallet_id {
-        return Err(TaskSimulationError::InvalidTask(ERR_INVALID_WALLET_ID));
+    if desc.account_id != account.id {
+        return Err(TaskSimulationError::InvalidTask(ERR_INVALID_ACCOUNT_ID));
     }
 
     warn!("TODO: Implement new account simulation");

@@ -17,6 +17,7 @@ use util::{
 use crate::{
     error::TaskDriverError,
     running_task::RunnableTask,
+    tasks::create_new_account::CreateNewAccountTask,
     traits::{Descriptor as _, Task, TaskContext},
     worker::TaskDriverConfig,
 };
@@ -213,9 +214,7 @@ impl TaskExecutor {
         // Construct the task from the descriptor
         let res: Result<(), TaskDriverError> = match task.descriptor {
             TaskDescriptor::NewAccount(desc) => {
-                todo!("implement start_task for NewAccount task")
-                // self.start_task_helper::<NewAccountTask>(id, desc,
-                // affected_accounts).await
+                self.start_task_helper::<CreateNewAccountTask>(id, desc, affected_accounts).await
             },
         };
 

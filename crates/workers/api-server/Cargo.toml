@@ -65,6 +65,7 @@ crypto = { workspace = true }
 external-api = { workspace = true, features = ["auth"] }
 gossip-api = { workspace = true }
 job-types = { workspace = true }
+matching-engine-core = { workspace = true }
 price-state = { workspace = true }
 state = { workspace = true }
 system-bus = { workspace = true }

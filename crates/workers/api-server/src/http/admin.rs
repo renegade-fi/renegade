@@ -8,9 +8,6 @@ use std::iter;
 
 use async_trait::async_trait;
 use circuit_types::{Amount, fixed_point::FixedPoint};
-use types_core::{chain::Chain, price::Price, token::{Token, get_all_tokens}};
-use types_tasks::UpdateWalletTaskDescriptor;
-use types_account::account::{Order, WalletIdentifier, order_metadata::OrderMetadata};
 use config::setup_token_remaps;
 use constants::NATIVE_ASSET_ADDRESS;
 use darkpool_client::DarkpoolClient;
@@ -27,12 +24,19 @@ use external_api::{
     types::AdminOrderMetadata,
 };
 use hyper::HeaderMap;
-use job_types::handshake_manager::{HandshakeManagerJob, HandshakeManagerQueue};
+use job_types::matching_engine_worker::{MatchingEngineWorkerJob, MatchingEngineWorkerQueue};
 use price_state::PriceStreamStates;
 use state::State;
 use tracing::info;
+use types_account::account::{Order, WalletIdentifier, order_metadata::OrderMetadata};
+use types_core::{
+    chain::Chain,
+    price::Price,
+    token::{Token, get_all_tokens},
+};
+use types_tasks::UpdateWalletTaskDescriptor;
 use util::{
-    matching_engine::compute_max_amount,
+    matching_engine_core::compute_max_amount,
     on_chain::{set_external_match_fee, set_protocol_fee},
 };
 
