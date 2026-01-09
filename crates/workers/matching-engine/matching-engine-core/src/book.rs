@@ -12,7 +12,9 @@ use types_account::{OrderId, order::Order};
 /// A key for sorting orders by descending matchable amount
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct ReverseAmountKey {
+    /// The matchable amount
     amount: Amount,
+    /// The order id
     order_id: OrderId,
 }
 
@@ -64,6 +66,8 @@ pub(crate) struct BookOrder {
     pub min_price: FixedPoint,
     /// The minimum fill size of the order
     pub min_fill_size: Amount,
+    /// Whether this order is externally matchable
+    pub externally_matchable: bool,
 }
 
 impl BookOrder {
@@ -73,6 +77,7 @@ impl BookOrder {
             matchable_amount,
             min_price: order.min_price(),
             min_fill_size: order.min_fill_size(),
+            externally_matchable: order.allow_external_matches(),
         }
     }
 }
@@ -122,12 +127,26 @@ impl Book {
     // --- Matching --- //
 
     /// Find a match for a given order
-    pub fn find_match(&self, price: FixedPoint, max_amount: Amount) -> Option<(OrderId, Amount)> {
+    ///
+    /// If `require_externally_matchable` is `true`, only matches against
+    /// orders that have `externally_matchable` set to `true`. If `false`, does
+    /// not filter on externally matchable status.
+    pub fn find_match(
+        &self,
+        price: FixedPoint,
+        max_amount: Amount,
+        require_externally_matchable: bool,
+    ) -> Option<(OrderId, Amount)> {
         // Build an iterator over orders sorted by descending matchable amount
         let orders = self.iter();
         for (oid, order) in orders {
             // Skip orders whose validation conditions are not met
             if order.min_price > price || order.min_fill_size > max_amount {
+                continue;
+            }
+
+            // Filter on externally matchable if required
+            if require_externally_matchable && !order.externally_matchable {
                 continue;
             }
 

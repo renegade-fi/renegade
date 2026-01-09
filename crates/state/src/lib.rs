@@ -12,7 +12,6 @@
 #![deny(unsafe_code)]
 #![allow(incomplete_features)]
 #![feature(inherent_associated_types)]
-#![feature(let_chains)]
 #![feature(io_error_more)]
 
 use crate::error::StateError;
