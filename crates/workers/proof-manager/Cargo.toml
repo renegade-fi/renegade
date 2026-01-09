@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [features]
-mocks = ["types-account/mocks"]
+mocks = ["types-account/mocks", "types-proofs/mocks"]
 
 [dependencies]
 # === Cryptography === #
@@ -23,9 +23,10 @@ reqwest = { version = "0.12.10", features = ["json"] }
 serde_json = { workspace = true }
 
 # === Workspace Dependencies === #
-circuits-core = { workspace = true }
-circuit-types = { workspace = true }
+circuits-core = { workspace = true, features = ["test_helpers"] }
+circuit-types = { workspace = true, features = ["proof-system-types"] }
 types-core = { workspace = true }
+types-proofs = { workspace = true }
 types-tasks = { workspace = true }
 types-account = { workspace = true }
 types-runtime = { workspace = true }

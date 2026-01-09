@@ -9,7 +9,6 @@ use futures::StreamExt;
 use gossip_api::pubsub::PubsubMessage;
 use job_types::{
     gossip_server::GossipServerQueue,
-    matching_engine_worker::MatchingEngineWorkerQueue,
     network_manager::{NetworkManagerJob, NetworkManagerReceiver},
 };
 use libp2p::{
@@ -37,12 +36,6 @@ use super::{
     composed_protocol::{ComposedNetworkBehavior, ComposedProtocolEvent},
     error::NetworkManagerError,
 };
-
-/// Occurs when a peer cannot be dialed because their address is not indexed in
-/// the network behavior
-const ERR_NO_KNOWN_ADDR: &str = "no known address for peer";
-/// Error emitted when brokering an MPC network with a peer fails
-const ERR_BROKER_MPC_NET: &str = "failed to broker MPC network";
 
 /// The multiaddr protocol of the transport in libp2p
 const TRANSPORT_PROTOCOL_NAME: &str = "udp";
@@ -121,8 +114,6 @@ pub(super) struct NetworkManagerExecutor {
     job_channel: DefaultOption<NetworkManagerReceiver>,
     /// The sender for the gossip server's work queue
     gossip_work_queue: GossipServerQueue,
-    /// The sender for the handshake manager's work queue
-    handshake_work_queue: MatchingEngineWorkerQueue,
     /// A reference to the relayer-global state
     global_state: State,
     /// The cancel channel that the coordinator thread may use to cancel this
@@ -140,7 +131,6 @@ impl NetworkManagerExecutor {
         cluster_key: HmacKey,
         job_channel: NetworkManagerReceiver,
         gossip_work_queue: GossipServerQueue,
-        handshake_work_queue: MatchingEngineWorkerQueue,
         global_state: State,
         cancel: CancelChannel,
     ) -> Self {
@@ -158,7 +148,6 @@ impl NetworkManagerExecutor {
             behavior_tx,
             job_channel: DefaultWrapper::new(Some(job_channel)),
             gossip_work_queue,
-            handshake_work_queue,
             global_state,
             cancel: DefaultWrapper::new(Some(cancel)),
         }

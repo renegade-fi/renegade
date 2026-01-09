@@ -1,25 +1,64 @@
 //! Implements the client for the prover service
 
-use circuit_types::ProofLinkingHint;
 use circuits_core::zk_circuits::{
-    valid_commitments::{SizedValidCommitmentsWitness, ValidCommitmentsStatement},
-    valid_fee_redemption::{SizedValidFeeRedemptionStatement, SizedValidFeeRedemptionWitness},
-    valid_malleable_match_settle_atomic::{
-        SizedValidMalleableMatchSettleAtomicStatement, SizedValidMalleableMatchSettleAtomicWitness,
+    fees::{
+        valid_note_redemption::{SizedValidNoteRedemptionWitness, ValidNoteRedemptionStatement},
+        valid_private_protocol_fee_payment::{
+            SizedValidPrivateProtocolFeePaymentWitness, ValidPrivateProtocolFeePaymentStatement,
+        },
+        valid_private_relayer_fee_payment::{
+            SizedValidPrivateRelayerFeePaymentWitness, ValidPrivateRelayerFeePaymentStatement,
+        },
+        valid_public_protocol_fee_payment::{
+            SizedValidPublicProtocolFeePaymentWitness, ValidPublicProtocolFeePaymentStatement,
+        },
+        valid_public_relayer_fee_payment::{
+            SizedValidPublicRelayerFeePaymentWitness, ValidPublicRelayerFeePaymentStatement,
+        },
     },
-    valid_match_settle::{SizedValidMatchSettleStatement, SizedValidMatchSettleWitness},
-    valid_match_settle_atomic::{
-        SizedValidMatchSettleAtomicStatement, SizedValidMatchSettleAtomicWitness,
+    settlement::{
+        intent_and_balance_bounded_settlement::{
+            IntentAndBalanceBoundedSettlementStatement, IntentAndBalanceBoundedSettlementWitness,
+        },
+        intent_and_balance_private_settlement::{
+            IntentAndBalancePrivateSettlementStatement, IntentAndBalancePrivateSettlementWitness,
+        },
+        intent_and_balance_public_settlement::{
+            IntentAndBalancePublicSettlementStatement, IntentAndBalancePublicSettlementWitness,
+        },
+        intent_only_bounded_settlement::{
+            IntentOnlyBoundedSettlementStatement, IntentOnlyBoundedSettlementWitness,
+        },
+        intent_only_public_settlement::{
+            IntentOnlyPublicSettlementStatement, IntentOnlyPublicSettlementWitness,
+        },
     },
-    valid_offline_fee_settlement::{
-        SizedValidOfflineFeeSettlementStatement, SizedValidOfflineFeeSettlementWitness,
+    valid_balance_create::{ValidBalanceCreateStatement, ValidBalanceCreateWitness},
+    valid_deposit::{SizedValidDepositWitness, ValidDepositStatement},
+    valid_order_cancellation::{
+        SizedValidOrderCancellationWitness, ValidOrderCancellationStatement,
     },
-    valid_reblind::{SizedValidReblindWitness, ValidReblindStatement},
-    valid_wallet_create::{SizedValidWalletCreateStatement, SizedValidWalletCreateWitness},
-    valid_wallet_update::{SizedValidWalletUpdateStatement, SizedValidWalletUpdateWitness},
+    valid_withdrawal::{SizedValidWithdrawalWitness, ValidWithdrawalStatement},
+    validity_proofs::{
+        intent_and_balance::{
+            IntentAndBalanceValidityStatement, SizedIntentAndBalanceValidityWitness,
+        },
+        intent_and_balance_first_fill::{
+            IntentAndBalanceFirstFillValidityStatement,
+            SizedIntentAndBalanceFirstFillValidityWitness,
+        },
+        intent_only::{IntentOnlyValidityStatement, SizedIntentOnlyValidityWitness},
+        intent_only_first_fill::{
+            IntentOnlyFirstFillValidityStatement, IntentOnlyFirstFillValidityWitness,
+        },
+        new_output_balance::{
+            NewOutputBalanceValidityStatement, SizedNewOutputBalanceValidityWitness,
+        },
+        output_balance::{OutputBalanceValidityStatement, SizedOutputBalanceValidityWitness},
+    },
 };
-use common::types::proof_bundles::ProofBundle;
 use http_auth_basic::Credentials;
+use job_types::proof_manager::ProofManagerResponse;
 use reqwest::{
     Client, Url,
     header::{AUTHORIZATION, HeaderMap, HeaderValue},
@@ -30,14 +69,20 @@ use util::telemetry::propagation::add_trace_context_to_headers;
 use crate::{
     error::ProofManagerError,
     implementations::external_proof_manager::api_types::{
-        LinkCommitmentsReblindRequest, ProofAndHintResponse, ProofAndLinkResponse,
-        ProofLinkResponse, ProofResponse, ValidCommitmentsRequest, ValidFeeRedemptionRequest,
-        ValidMalleableMatchSettleAtomicRequest, ValidMatchSettleAtomicRequest,
-        ValidMatchSettleRequest, ValidMatchSettleResponse, ValidOfflineFeeSettlementRequest,
-        ValidReblindRequest, ValidWalletCreateRequest, ValidWalletUpdateRequest,
+        IntentAndBalanceBoundedSettlementRequest, IntentAndBalanceFirstFillValidityRequest,
+        IntentAndBalancePrivateSettlementRequest, IntentAndBalancePublicSettlementRequest,
+        IntentAndBalanceValidityRequest, IntentOnlyBoundedSettlementRequest,
+        IntentOnlyFirstFillValidityRequest, IntentOnlyPublicSettlementRequest,
+        IntentOnlyValidityRequest, NewOutputBalanceValidityRequest, OutputBalanceValidityRequest,
+        ProofAndHintResponse, ProofResponse, ValidBalanceCreateRequest, ValidDepositRequest,
+        ValidNoteRedemptionRequest, ValidOrderCancellationRequest,
+        ValidPrivateProtocolFeePaymentRequest, ValidPrivateRelayerFeePaymentRequest,
+        ValidPublicProtocolFeePaymentRequest, ValidPublicRelayerFeePaymentRequest,
+        ValidWithdrawalRequest,
     },
     worker::ProofManagerConfig,
 };
+use types_proofs::{ProofAndHintBundle, ProofBundle};
 
 /// The HTTP basic auth user name to use
 const HTTP_BASIC_AUTH_USER: &str = "admin";
@@ -46,26 +91,55 @@ const HTTP_BASIC_AUTH_USER: &str = "admin";
 // | Paths |
 // ---------
 
-/// The path at which to request a `VALID WALLET CREATE` proof
-const VALID_WALLET_CREATE_PATH: &str = "prove-valid-wallet-create";
-/// The path at which to request a `VALID WALLET UPDATE` proof
-const VALID_WALLET_UPDATE_PATH: &str = "prove-valid-wallet-update";
-/// The path at which to request a `VALID COMMITMENTS` proof
-const VALID_COMMITMENTS_PATH: &str = "prove-valid-commitments";
-/// The path at which to request a `VALID REBLIND` proof
-const VALID_REBLIND_PATH: &str = "prove-valid-reblind";
-/// The path at which to link commitments and reblind
-const LINK_COMMITMENTS_REBLIND_PATH: &str = "link-commitments-reblind";
-/// The path at which to request a `VALID MATCH SETTLE` proof
-const VALID_MATCH_SETTLE_PATH: &str = "prove-valid-match-settle";
-/// The path at which to request a `VALID MATCH SETTLE ATOMIC` proof
-const VALID_MATCH_SETTLE_ATOMIC_PATH: &str = "prove-valid-match-settle-atomic";
-/// The path at which to request a `VALID MALLEABLE MATCH SETTLE ATOMIC` proof
-const VALID_MALLEABLE_MATCH_SETTLE_ATOMIC_PATH: &str = "prove-valid-malleable-match-settle-atomic";
-/// The path at which to request a `VALID FEE REDEMPTION` proof
-const VALID_FEE_REDEMPTION_PATH: &str = "prove-valid-fee-redemption";
-/// The path at which to request a `VALID OFFLINE FEE SETTLEMENT` proof
-const VALID_OFFLINE_FEE_SETTLEMENT_PATH: &str = "prove-valid-offline-fee-settlement";
+// Update proofs
+/// The API path for requesting a `VALID BALANCE CREATE` proof
+const VALID_BALANCE_CREATE_PATH: &str = "/prove-valid-balance-create";
+/// The API path for requesting a `VALID DEPOSIT` proof
+const VALID_DEPOSIT_PATH: &str = "/prove-valid-deposit";
+/// The API path for requesting a `VALID ORDER CANCELLATION` proof
+const VALID_ORDER_CANCELLATION_PATH: &str = "/prove-valid-order-cancellation";
+/// The API path for requesting a `VALID WITHDRAWAL` proof
+const VALID_WITHDRAWAL_PATH: &str = "/prove-valid-withdrawal";
+// Validity proofs
+/// The API path for requesting an `INTENT AND BALANCE VALIDITY` proof
+const INTENT_AND_BALANCE_VALIDITY_PATH: &str = "/prove-intent-and-balance-validity";
+/// The API path for requesting an `INTENT AND BALANCE FIRST FILL VALIDITY`
+/// proof
+const INTENT_AND_BALANCE_FIRST_FILL_VALIDITY_PATH: &str =
+    "/prove-intent-and-balance-first-fill-validity";
+/// The API path for requesting an `INTENT ONLY VALIDITY` proof
+const INTENT_ONLY_VALIDITY_PATH: &str = "/prove-intent-only-validity";
+/// The API path for requesting an `INTENT ONLY FIRST FILL VALIDITY` proof
+const INTENT_ONLY_FIRST_FILL_VALIDITY_PATH: &str = "/prove-intent-only-first-fill-validity";
+/// The API path for requesting a `NEW OUTPUT BALANCE VALIDITY` proof
+const NEW_OUTPUT_BALANCE_VALIDITY_PATH: &str = "/prove-new-output-balance-validity";
+/// The API path for requesting an `OUTPUT BALANCE VALIDITY` proof
+const OUTPUT_BALANCE_VALIDITY_PATH: &str = "/prove-output-balance-validity";
+// Settlement proofs
+/// The API path for requesting an `INTENT AND BALANCE BOUNDED SETTLEMENT` proof
+const INTENT_AND_BALANCE_BOUNDED_SETTLEMENT_PATH: &str =
+    "/prove-intent-and-balance-bounded-settlement";
+/// The API path for requesting an `INTENT AND BALANCE PRIVATE SETTLEMENT` proof
+const INTENT_AND_BALANCE_PRIVATE_SETTLEMENT_PATH: &str =
+    "/prove-intent-and-balance-private-settlement";
+/// The API path for requesting an `INTENT AND BALANCE PUBLIC SETTLEMENT` proof
+const INTENT_AND_BALANCE_PUBLIC_SETTLEMENT_PATH: &str =
+    "/prove-intent-and-balance-public-settlement";
+/// The API path for requesting an `INTENT ONLY BOUNDED SETTLEMENT` proof
+const INTENT_ONLY_BOUNDED_SETTLEMENT_PATH: &str = "/prove-intent-only-bounded-settlement";
+/// The API path for requesting an `INTENT ONLY PUBLIC SETTLEMENT` proof
+const INTENT_ONLY_PUBLIC_SETTLEMENT_PATH: &str = "/prove-intent-only-public-settlement";
+// Fee proofs
+/// The API path for requesting a `VALID NOTE REDEMPTION` proof
+const VALID_NOTE_REDEMPTION_PATH: &str = "/prove-valid-note-redemption";
+/// The API path for requesting a `VALID PRIVATE PROTOCOL FEE PAYMENT` proof
+const VALID_PRIVATE_PROTOCOL_FEE_PAYMENT_PATH: &str = "/prove-valid-private-protocol-fee-payment";
+/// The API path for requesting a `VALID PRIVATE RELAYER FEE PAYMENT` proof
+const VALID_PRIVATE_RELAYER_FEE_PAYMENT_PATH: &str = "/prove-valid-private-relayer-fee-payment";
+/// The API path for requesting a `VALID PUBLIC PROTOCOL FEE PAYMENT` proof
+const VALID_PUBLIC_PROTOCOL_FEE_PAYMENT_PATH: &str = "/prove-valid-public-protocol-fee-payment";
+/// The API path for requesting a `VALID PUBLIC RELAYER FEE PAYMENT` proof
+const VALID_PUBLIC_RELAYER_FEE_PAYMENT_PATH: &str = "/prove-valid-public-relayer-fee-payment";
 
 // ----------
 // | Client |
@@ -125,178 +199,297 @@ impl ProofServiceClient {
 
     // --- Prover Methods --- //
 
-    /// Request a `VALID WALLET CREATE` proof from the prover service
-    pub(crate) async fn prove_valid_wallet_create(
+    // Update proofs
+    /// Request a `VALID BALANCE CREATE` proof from the prover service
+    pub(crate) async fn prove_valid_balance_create(
         &self,
-        witness: SizedValidWalletCreateWitness,
-        statement: SizedValidWalletCreateStatement,
-    ) -> Result<ProofBundle, ProofManagerError> {
-        let req = ValidWalletCreateRequest { statement: statement.clone(), witness };
-        let res = self.send_request::<_, ProofResponse>(VALID_WALLET_CREATE_PATH, req).await?;
-
-        let bundle = ProofBundle::new_valid_wallet_create(statement, res.proof);
-        Ok(bundle)
+        witness: ValidBalanceCreateWitness,
+        statement: ValidBalanceCreateStatement,
+    ) -> Result<ProofManagerResponse, ProofManagerError> {
+        let req = ValidBalanceCreateRequest { statement: statement.clone(), witness };
+        let res = self.send_request::<_, ProofResponse>(VALID_BALANCE_CREATE_PATH, req).await?;
+        let bundle = ProofBundle::new(res.proof, statement);
+        Ok(ProofManagerResponse::ValidBalanceCreate(bundle))
     }
 
-    /// Request a `VALID WALLET UPDATE` proof from the prover service
-    pub(crate) async fn prove_valid_wallet_update(
+    /// Request a `VALID DEPOSIT` proof from the prover service
+    pub(crate) async fn prove_valid_deposit(
         &self,
-        witness: SizedValidWalletUpdateWitness,
-        statement: SizedValidWalletUpdateStatement,
-    ) -> Result<ProofBundle, ProofManagerError> {
-        let req = ValidWalletUpdateRequest { statement: statement.clone(), witness };
-        let res = self.send_request::<_, ProofResponse>(VALID_WALLET_UPDATE_PATH, req).await?;
-
-        let bundle = ProofBundle::new_valid_wallet_update(statement, res.proof);
-        Ok(bundle)
+        witness: SizedValidDepositWitness,
+        statement: ValidDepositStatement,
+    ) -> Result<ProofManagerResponse, ProofManagerError> {
+        let req = ValidDepositRequest { statement: statement.clone(), witness };
+        let res = self.send_request::<_, ProofResponse>(VALID_DEPOSIT_PATH, req).await?;
+        let bundle = ProofBundle::new(res.proof, statement);
+        Ok(ProofManagerResponse::ValidDeposit(bundle))
     }
 
-    /// Request a `VALID COMMITMENTS` proof from the prover service
-    pub(crate) async fn prove_valid_commitments(
+    /// Request a `VALID ORDER CANCELLATION` proof from the prover service
+    pub(crate) async fn prove_valid_order_cancellation(
         &self,
-        witness: SizedValidCommitmentsWitness,
-        statement: ValidCommitmentsStatement,
-    ) -> Result<ProofBundle, ProofManagerError> {
-        let req = ValidCommitmentsRequest { statement, witness };
-        let res = self.send_request::<_, ProofAndHintResponse>(VALID_COMMITMENTS_PATH, req).await?;
-
-        let bundle = ProofBundle::new_valid_commitments(statement, res.proof, res.link_hint);
-        Ok(bundle)
+        witness: SizedValidOrderCancellationWitness,
+        statement: ValidOrderCancellationStatement,
+    ) -> Result<ProofManagerResponse, ProofManagerError> {
+        let req = ValidOrderCancellationRequest { statement: statement.clone(), witness };
+        let res = self.send_request::<_, ProofResponse>(VALID_ORDER_CANCELLATION_PATH, req).await?;
+        let bundle = ProofBundle::new(res.proof, statement);
+        Ok(ProofManagerResponse::ValidOrderCancellation(bundle))
     }
 
-    /// Request a `VALID REBLIND` proof from the prover service
-    pub(crate) async fn prove_valid_reblind(
+    /// Request a `VALID WITHDRAWAL` proof from the prover service
+    pub(crate) async fn prove_valid_withdrawal(
         &self,
-        witness: SizedValidReblindWitness,
-        statement: ValidReblindStatement,
-    ) -> Result<ProofBundle, ProofManagerError> {
-        let req = ValidReblindRequest { statement: statement.clone(), witness };
-        let res = self.send_request::<_, ProofAndHintResponse>(VALID_REBLIND_PATH, req).await?;
-
-        let bundle = ProofBundle::new_valid_reblind(statement, res.proof, res.link_hint);
-        Ok(bundle)
+        witness: SizedValidWithdrawalWitness,
+        statement: ValidWithdrawalStatement,
+    ) -> Result<ProofManagerResponse, ProofManagerError> {
+        let req = ValidWithdrawalRequest { statement: statement.clone(), witness };
+        let res = self.send_request::<_, ProofResponse>(VALID_WITHDRAWAL_PATH, req).await?;
+        let bundle = ProofBundle::new(res.proof, statement);
+        Ok(ProofManagerResponse::ValidWithdrawal(bundle))
     }
 
-    /// Request a `VALID COMMITMENTS` <-> `VALID REBLIND` proof link from the
+    // Validity proofs
+    /// Request an `INTENT AND BALANCE VALIDITY` proof from the prover service
+    pub(crate) async fn prove_intent_and_balance_validity(
+        &self,
+        witness: SizedIntentAndBalanceValidityWitness,
+        statement: IntentAndBalanceValidityStatement,
+    ) -> Result<ProofManagerResponse, ProofManagerError> {
+        let req = IntentAndBalanceValidityRequest { statement: statement.clone(), witness };
+        let res = self
+            .send_request::<_, ProofAndHintResponse>(INTENT_AND_BALANCE_VALIDITY_PATH, req)
+            .await?;
+        let bundle = ProofAndHintBundle::new(res.proof, statement, res.link_hint);
+        Ok(ProofManagerResponse::IntentAndBalanceValidity(bundle))
+    }
+
+    /// Request an `INTENT AND BALANCE FIRST FILL VALIDITY` proof from the
     /// prover service
-    pub(crate) async fn prove_valid_commitments_reblind_link(
+    pub(crate) async fn prove_intent_and_balance_first_fill_validity(
         &self,
-        commitments_hint: ProofLinkingHint,
-        reblind_hint: ProofLinkingHint,
-    ) -> Result<ProofBundle, ProofManagerError> {
-        // Request the prover service
-        let req = LinkCommitmentsReblindRequest {
-            valid_commitments_hint: commitments_hint,
-            valid_reblind_hint: reblind_hint,
-        };
-        let res =
-            self.send_request::<_, ProofLinkResponse>(LINK_COMMITMENTS_REBLIND_PATH, req).await?;
-
-        // Build the proof bundle
-        let bundle = ProofBundle::new_valid_commitments_reblind_link(res.link_proof);
-        Ok(bundle)
-    }
-
-    /// Request a `VALID MATCH SETTLE` proof from the prover service
-    pub(crate) async fn prove_valid_match_settle(
-        &self,
-        witness: SizedValidMatchSettleWitness,
-        statement: SizedValidMatchSettleStatement,
-        commitment_link0: ProofLinkingHint,
-        commitment_link1: ProofLinkingHint,
-    ) -> Result<ProofBundle, ProofManagerError> {
-        let req = ValidMatchSettleRequest {
-            statement: statement.clone(),
-            witness,
-            valid_commitments_hint0: commitment_link0,
-            valid_commitments_hint1: commitment_link1,
-        };
-        let res =
-            self.send_request::<_, ValidMatchSettleResponse>(VALID_MATCH_SETTLE_PATH, req).await?;
-
-        let bundle = ProofBundle::new_valid_match_settle(
-            statement,
-            res.plonk_proof,
-            res.link_proof0,
-            res.link_proof1,
-        );
-        Ok(bundle)
-    }
-
-    /// Request a `VALID MATCH SETTLE ATOMIC` proof from the prover service
-    pub(crate) async fn prove_valid_match_settle_atomic(
-        &self,
-        witness: SizedValidMatchSettleAtomicWitness,
-        statement: SizedValidMatchSettleAtomicStatement,
-        commitments_link: ProofLinkingHint,
-    ) -> Result<ProofBundle, ProofManagerError> {
-        // Request the prover service
-        let req = ValidMatchSettleAtomicRequest {
-            statement: statement.clone(),
-            witness,
-            valid_commitments_hint: commitments_link,
-        };
+        witness: SizedIntentAndBalanceFirstFillValidityWitness,
+        statement: IntentAndBalanceFirstFillValidityStatement,
+    ) -> Result<ProofManagerResponse, ProofManagerError> {
+        let req =
+            IntentAndBalanceFirstFillValidityRequest { statement: statement.clone(), witness };
         let res = self
-            .send_request::<_, ProofAndLinkResponse>(VALID_MATCH_SETTLE_ATOMIC_PATH, req)
+            .send_request::<_, ProofAndHintResponse>(
+                INTENT_AND_BALANCE_FIRST_FILL_VALIDITY_PATH,
+                req,
+            )
             .await?;
-
-        // Build the proof bundle
-        let bundle =
-            ProofBundle::new_valid_match_settle_atomic(statement, res.plonk_proof, res.link_proof);
-        Ok(bundle)
+        let bundle = ProofAndHintBundle::new(res.proof, statement, res.link_hint);
+        Ok(ProofManagerResponse::IntentAndBalanceFirstFillValidity(bundle))
     }
 
-    /// Request a `VALID MALLEABLE MATCH SETTLE ATOMIC` proof from the prover
+    /// Request an `INTENT ONLY VALIDITY` proof from the prover service
+    pub(crate) async fn prove_intent_only_validity(
+        &self,
+        witness: SizedIntentOnlyValidityWitness,
+        statement: IntentOnlyValidityStatement,
+    ) -> Result<ProofManagerResponse, ProofManagerError> {
+        let req = IntentOnlyValidityRequest { statement: statement.clone(), witness };
+        let res =
+            self.send_request::<_, ProofAndHintResponse>(INTENT_ONLY_VALIDITY_PATH, req).await?;
+        let bundle = ProofAndHintBundle::new(res.proof, statement, res.link_hint);
+        Ok(ProofManagerResponse::IntentOnlyValidity(bundle))
+    }
+
+    /// Request an `INTENT ONLY FIRST FILL VALIDITY` proof from the prover
     /// service
-    pub(crate) async fn prove_valid_malleable_match_settle_atomic(
+    pub(crate) async fn prove_intent_only_first_fill_validity(
         &self,
-        witness: SizedValidMalleableMatchSettleAtomicWitness,
-        statement: SizedValidMalleableMatchSettleAtomicStatement,
-        commitments_link: ProofLinkingHint,
-    ) -> Result<ProofBundle, ProofManagerError> {
-        // Request the prover service
-        let req = ValidMalleableMatchSettleAtomicRequest {
-            statement: statement.clone(),
-            witness,
-            valid_commitments_hint: commitments_link,
-        };
+        witness: IntentOnlyFirstFillValidityWitness,
+        statement: IntentOnlyFirstFillValidityStatement,
+    ) -> Result<ProofManagerResponse, ProofManagerError> {
+        let req = IntentOnlyFirstFillValidityRequest { statement: statement.clone(), witness };
         let res = self
-            .send_request::<_, ProofAndLinkResponse>(VALID_MALLEABLE_MATCH_SETTLE_ATOMIC_PATH, req)
+            .send_request::<_, ProofAndHintResponse>(INTENT_ONLY_FIRST_FILL_VALIDITY_PATH, req)
             .await?;
-
-        // Build the proof bundle
-        let bundle = ProofBundle::new_valid_malleable_match_settle_atomic(
-            statement,
-            res.plonk_proof,
-            res.link_proof,
-        );
-        Ok(bundle)
+        let bundle = ProofAndHintBundle::new(res.proof, statement, res.link_hint);
+        Ok(ProofManagerResponse::IntentOnlyFirstFillValidity(bundle))
     }
 
-    /// Request a `VALID FEE REDEMPTION` proof from the prover service
-    pub(crate) async fn prove_valid_fee_redemption(
+    /// Request a `NEW OUTPUT BALANCE VALIDITY` proof from the prover service
+    pub(crate) async fn prove_new_output_balance_validity(
         &self,
-        witness: SizedValidFeeRedemptionWitness,
-        statement: SizedValidFeeRedemptionStatement,
-    ) -> Result<ProofBundle, ProofManagerError> {
-        let req = ValidFeeRedemptionRequest { statement: statement.clone(), witness };
-        let res = self.send_request::<_, ProofResponse>(VALID_FEE_REDEMPTION_PATH, req).await?;
-
-        let bundle = ProofBundle::new_valid_fee_redemption(statement, res.proof);
-        Ok(bundle)
+        witness: SizedNewOutputBalanceValidityWitness,
+        statement: NewOutputBalanceValidityStatement,
+    ) -> Result<ProofManagerResponse, ProofManagerError> {
+        let req = NewOutputBalanceValidityRequest { statement: statement.clone(), witness };
+        let res = self
+            .send_request::<_, ProofAndHintResponse>(NEW_OUTPUT_BALANCE_VALIDITY_PATH, req)
+            .await?;
+        let bundle = ProofAndHintBundle::new(res.proof, statement, res.link_hint);
+        Ok(ProofManagerResponse::NewOutputBalanceValidity(bundle))
     }
 
-    /// Request a `VALID OFFLINE FEE SETTLEMENT` proof from the prover service
-    pub(crate) async fn prove_valid_offline_fee_settlement(
+    /// Request an `OUTPUT BALANCE VALIDITY` proof from the prover service
+    pub(crate) async fn prove_output_balance_validity(
         &self,
-        witness: SizedValidOfflineFeeSettlementWitness,
-        statement: SizedValidOfflineFeeSettlementStatement,
-    ) -> Result<ProofBundle, ProofManagerError> {
-        let req = ValidOfflineFeeSettlementRequest { statement: statement.clone(), witness };
+        witness: SizedOutputBalanceValidityWitness,
+        statement: OutputBalanceValidityStatement,
+    ) -> Result<ProofManagerResponse, ProofManagerError> {
+        let req = OutputBalanceValidityRequest { statement: statement.clone(), witness };
         let res =
-            self.send_request::<_, ProofResponse>(VALID_OFFLINE_FEE_SETTLEMENT_PATH, req).await?;
+            self.send_request::<_, ProofAndHintResponse>(OUTPUT_BALANCE_VALIDITY_PATH, req).await?;
+        let bundle = ProofAndHintBundle::new(res.proof, statement, res.link_hint);
+        Ok(ProofManagerResponse::OutputBalanceValidity(bundle))
+    }
 
-        let bundle = ProofBundle::new_valid_offline_fee_settlement(statement, res.proof);
-        Ok(bundle)
+    // Settlement proofs
+    /// Request an `INTENT AND BALANCE BOUNDED SETTLEMENT` proof from the prover
+    /// service
+    pub(crate) async fn prove_intent_and_balance_bounded_settlement(
+        &self,
+        witness: IntentAndBalanceBoundedSettlementWitness,
+        statement: IntentAndBalanceBoundedSettlementStatement,
+    ) -> Result<ProofManagerResponse, ProofManagerError> {
+        let req =
+            IntentAndBalanceBoundedSettlementRequest { statement: statement.clone(), witness };
+        let res = self
+            .send_request::<_, ProofAndHintResponse>(
+                INTENT_AND_BALANCE_BOUNDED_SETTLEMENT_PATH,
+                req,
+            )
+            .await?;
+        let bundle = ProofAndHintBundle::new(res.proof, statement, res.link_hint);
+        Ok(ProofManagerResponse::IntentAndBalanceBoundedSettlement(bundle))
+    }
+
+    /// Request an `INTENT AND BALANCE PRIVATE SETTLEMENT` proof from the prover
+    /// service
+    pub(crate) async fn prove_intent_and_balance_private_settlement(
+        &self,
+        witness: IntentAndBalancePrivateSettlementWitness,
+        statement: IntentAndBalancePrivateSettlementStatement,
+    ) -> Result<ProofManagerResponse, ProofManagerError> {
+        let req =
+            IntentAndBalancePrivateSettlementRequest { statement: statement.clone(), witness };
+        let res = self
+            .send_request::<_, ProofAndHintResponse>(
+                INTENT_AND_BALANCE_PRIVATE_SETTLEMENT_PATH,
+                req,
+            )
+            .await?;
+        let bundle = ProofAndHintBundle::new(res.proof, statement, res.link_hint);
+        Ok(ProofManagerResponse::IntentAndBalancePrivateSettlement(bundle))
+    }
+
+    /// Request an `INTENT AND BALANCE PUBLIC SETTLEMENT` proof from the prover
+    /// service
+    pub(crate) async fn prove_intent_and_balance_public_settlement(
+        &self,
+        witness: IntentAndBalancePublicSettlementWitness,
+        statement: IntentAndBalancePublicSettlementStatement,
+    ) -> Result<ProofManagerResponse, ProofManagerError> {
+        let req = IntentAndBalancePublicSettlementRequest { statement: statement.clone(), witness };
+        let res = self
+            .send_request::<_, ProofAndHintResponse>(INTENT_AND_BALANCE_PUBLIC_SETTLEMENT_PATH, req)
+            .await?;
+        let bundle = ProofAndHintBundle::new(res.proof, statement, res.link_hint);
+        Ok(ProofManagerResponse::IntentAndBalancePublicSettlement(bundle))
+    }
+
+    /// Request an `INTENT ONLY BOUNDED SETTLEMENT` proof from the prover
+    /// service
+    pub(crate) async fn prove_intent_only_bounded_settlement(
+        &self,
+        witness: IntentOnlyBoundedSettlementWitness,
+        statement: IntentOnlyBoundedSettlementStatement,
+    ) -> Result<ProofManagerResponse, ProofManagerError> {
+        let req = IntentOnlyBoundedSettlementRequest { statement: statement.clone(), witness };
+        let res = self
+            .send_request::<_, ProofAndHintResponse>(INTENT_ONLY_BOUNDED_SETTLEMENT_PATH, req)
+            .await?;
+        let bundle = ProofAndHintBundle::new(res.proof, statement, res.link_hint);
+        Ok(ProofManagerResponse::IntentOnlyBoundedSettlement(bundle))
+    }
+
+    /// Request an `INTENT ONLY PUBLIC SETTLEMENT` proof from the prover service
+    pub(crate) async fn prove_intent_only_public_settlement(
+        &self,
+        witness: IntentOnlyPublicSettlementWitness,
+        statement: IntentOnlyPublicSettlementStatement,
+    ) -> Result<ProofManagerResponse, ProofManagerError> {
+        let req = IntentOnlyPublicSettlementRequest { statement: statement.clone(), witness };
+        let res = self
+            .send_request::<_, ProofAndHintResponse>(INTENT_ONLY_PUBLIC_SETTLEMENT_PATH, req)
+            .await?;
+        let bundle = ProofAndHintBundle::new(res.proof, statement, res.link_hint);
+        Ok(ProofManagerResponse::IntentOnlyPublicSettlement(bundle))
+    }
+
+    // Fee proofs
+    /// Request a `VALID NOTE REDEMPTION` proof from the prover service
+    pub(crate) async fn prove_valid_note_redemption(
+        &self,
+        witness: SizedValidNoteRedemptionWitness,
+        statement: ValidNoteRedemptionStatement,
+    ) -> Result<ProofManagerResponse, ProofManagerError> {
+        let req = ValidNoteRedemptionRequest { statement: statement.clone(), witness };
+        let res = self.send_request::<_, ProofResponse>(VALID_NOTE_REDEMPTION_PATH, req).await?;
+        let bundle = ProofBundle::new(res.proof, statement);
+        Ok(ProofManagerResponse::ValidNoteRedemption(bundle))
+    }
+
+    /// Request a `VALID PRIVATE PROTOCOL FEE PAYMENT` proof from the prover
+    /// service
+    pub(crate) async fn prove_valid_private_protocol_fee_payment(
+        &self,
+        witness: SizedValidPrivateProtocolFeePaymentWitness,
+        statement: ValidPrivateProtocolFeePaymentStatement,
+    ) -> Result<ProofManagerResponse, ProofManagerError> {
+        let req = ValidPrivateProtocolFeePaymentRequest { statement: statement.clone(), witness };
+        let res = self
+            .send_request::<_, ProofResponse>(VALID_PRIVATE_PROTOCOL_FEE_PAYMENT_PATH, req)
+            .await?;
+        let bundle = ProofBundle::new(res.proof, statement);
+        Ok(ProofManagerResponse::ValidPrivateProtocolFeePayment(bundle))
+    }
+
+    /// Request a `VALID PRIVATE RELAYER FEE PAYMENT` proof from the prover
+    /// service
+    pub(crate) async fn prove_valid_private_relayer_fee_payment(
+        &self,
+        witness: SizedValidPrivateRelayerFeePaymentWitness,
+        statement: ValidPrivateRelayerFeePaymentStatement,
+    ) -> Result<ProofManagerResponse, ProofManagerError> {
+        let req = ValidPrivateRelayerFeePaymentRequest { statement: statement.clone(), witness };
+        let res = self
+            .send_request::<_, ProofResponse>(VALID_PRIVATE_RELAYER_FEE_PAYMENT_PATH, req)
+            .await?;
+        let bundle = ProofBundle::new(res.proof, statement);
+        Ok(ProofManagerResponse::ValidPrivateRelayerFeePayment(bundle))
+    }
+
+    /// Request a `VALID PUBLIC PROTOCOL FEE PAYMENT` proof from the prover
+    /// service
+    pub(crate) async fn prove_valid_public_protocol_fee_payment(
+        &self,
+        witness: SizedValidPublicProtocolFeePaymentWitness,
+        statement: ValidPublicProtocolFeePaymentStatement,
+    ) -> Result<ProofManagerResponse, ProofManagerError> {
+        let req = ValidPublicProtocolFeePaymentRequest { statement: statement.clone(), witness };
+        let res = self
+            .send_request::<_, ProofResponse>(VALID_PUBLIC_PROTOCOL_FEE_PAYMENT_PATH, req)
+            .await?;
+        let bundle = ProofBundle::new(res.proof, statement);
+        Ok(ProofManagerResponse::ValidPublicProtocolFeePayment(bundle))
+    }
+
+    /// Request a `VALID PUBLIC RELAYER FEE PAYMENT` proof from the prover
+    /// service
+    pub(crate) async fn prove_valid_public_relayer_fee_payment(
+        &self,
+        witness: SizedValidPublicRelayerFeePaymentWitness,
+        statement: ValidPublicRelayerFeePaymentStatement,
+    ) -> Result<ProofManagerResponse, ProofManagerError> {
+        let req = ValidPublicRelayerFeePaymentRequest { statement: statement.clone(), witness };
+        let res = self
+            .send_request::<_, ProofResponse>(VALID_PUBLIC_RELAYER_FEE_PAYMENT_PATH, req)
+            .await?;
+        let bundle = ProofBundle::new(res.proof, statement);
+        Ok(ProofManagerResponse::ValidPublicRelayerFeePayment(bundle))
     }
 }

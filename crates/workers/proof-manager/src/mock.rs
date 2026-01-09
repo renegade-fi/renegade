@@ -2,48 +2,97 @@
 //! instead immediately returns dummy proofs that will not verify
 
 use circuit_types::traits::SingleProverCircuit;
+use circuits_core::test_helpers::circuits::check_constraints_satisfied;
 use circuits_core::zk_circuits::{
-    check_constraint_satisfaction,
-    valid_commitments::{
-        SizedValidCommitments, SizedValidCommitmentsWitness, ValidCommitmentsStatement,
+    fees::{
+        valid_note_redemption::{
+            SizedValidNoteRedemption, SizedValidNoteRedemptionWitness, ValidNoteRedemptionStatement,
+        },
+        valid_private_protocol_fee_payment::{
+            SizedValidPrivateProtocolFeePayment, SizedValidPrivateProtocolFeePaymentWitness,
+            ValidPrivateProtocolFeePaymentStatement,
+        },
+        valid_private_relayer_fee_payment::{
+            SizedValidPrivateRelayerFeePayment, SizedValidPrivateRelayerFeePaymentWitness,
+            ValidPrivateRelayerFeePaymentStatement,
+        },
+        valid_public_protocol_fee_payment::{
+            SizedValidPublicProtocolFeePayment, SizedValidPublicProtocolFeePaymentWitness,
+            ValidPublicProtocolFeePaymentStatement,
+        },
+        valid_public_relayer_fee_payment::{
+            SizedValidPublicRelayerFeePayment, SizedValidPublicRelayerFeePaymentWitness,
+            ValidPublicRelayerFeePaymentStatement,
+        },
     },
-    valid_fee_redemption::{
-        SizedValidFeeRedemption, SizedValidFeeRedemptionStatement, SizedValidFeeRedemptionWitness,
+    settlement::{
+        intent_and_balance_bounded_settlement::{
+            IntentAndBalanceBoundedSettlementCircuit, IntentAndBalanceBoundedSettlementStatement,
+            IntentAndBalanceBoundedSettlementWitness,
+        },
+        intent_and_balance_private_settlement::{
+            IntentAndBalancePrivateSettlementCircuit, IntentAndBalancePrivateSettlementStatement,
+            IntentAndBalancePrivateSettlementWitness,
+        },
+        intent_and_balance_public_settlement::{
+            IntentAndBalancePublicSettlementCircuit, IntentAndBalancePublicSettlementStatement,
+            IntentAndBalancePublicSettlementWitness,
+        },
+        intent_only_bounded_settlement::{
+            IntentOnlyBoundedSettlementCircuit, IntentOnlyBoundedSettlementStatement,
+            IntentOnlyBoundedSettlementWitness,
+        },
+        intent_only_public_settlement::{
+            IntentOnlyPublicSettlementCircuit, IntentOnlyPublicSettlementStatement,
+            IntentOnlyPublicSettlementWitness,
+        },
     },
-    valid_malleable_match_settle_atomic::{
-        SizedValidMalleableMatchSettleAtomic, SizedValidMalleableMatchSettleAtomicStatement,
-        SizedValidMalleableMatchSettleAtomicWitness,
+    valid_balance_create::{
+        ValidBalanceCreate, ValidBalanceCreateStatement, ValidBalanceCreateWitness,
     },
-    valid_match_settle::{
-        SizedValidMatchSettle, SizedValidMatchSettleStatement, SizedValidMatchSettleWitness,
+    valid_deposit::{SizedValidDeposit, SizedValidDepositWitness, ValidDepositStatement},
+    valid_order_cancellation::{
+        SizedValidOrderCancellationCircuit, SizedValidOrderCancellationWitness,
+        ValidOrderCancellationStatement,
     },
-    valid_match_settle_atomic::{
-        SizedValidMatchSettleAtomic, SizedValidMatchSettleAtomicStatement,
-        SizedValidMatchSettleAtomicWitness,
+    valid_withdrawal::{
+        SizedValidWithdrawal, SizedValidWithdrawalWitness, ValidWithdrawalStatement,
     },
-    valid_offline_fee_settlement::{
-        SizedValidOfflineFeeSettlement, SizedValidOfflineFeeSettlementStatement,
-        SizedValidOfflineFeeSettlementWitness,
-    },
-    valid_reblind::{SizedValidReblind, SizedValidReblindWitness, ValidReblindStatement},
-    valid_relayer_fee_settlement::{
-        SizedValidRelayerFeeSettlement, SizedValidRelayerFeeSettlementStatement,
-        SizedValidRelayerFeeSettlementWitness,
-    },
-    valid_wallet_create::{
-        SizedValidWalletCreate, SizedValidWalletCreateStatement, SizedValidWalletCreateWitness,
-    },
-    valid_wallet_update::{
-        SizedValidWalletUpdate, SizedValidWalletUpdateStatement, SizedValidWalletUpdateWitness,
+    validity_proofs::{
+        intent_and_balance::{
+            IntentAndBalanceValidityStatement, SizedIntentAndBalanceValidityCircuit,
+            SizedIntentAndBalanceValidityWitness,
+        },
+        intent_and_balance_first_fill::{
+            IntentAndBalanceFirstFillValidityStatement,
+            SizedIntentAndBalanceFirstFillValidityCircuit,
+            SizedIntentAndBalanceFirstFillValidityWitness,
+        },
+        intent_only::{
+            IntentOnlyValidityStatement, SizedIntentOnlyValidityCircuit,
+            SizedIntentOnlyValidityWitness,
+        },
+        intent_only_first_fill::{
+            IntentOnlyFirstFillValidityCircuit, IntentOnlyFirstFillValidityStatement,
+            IntentOnlyFirstFillValidityWitness,
+        },
+        new_output_balance::{
+            NewOutputBalanceValidityStatement, SizedNewOutputBalanceValidityCircuit,
+            SizedNewOutputBalanceValidityWitness,
+        },
+        output_balance::{
+            OutputBalanceValidityStatement, SizedOutputBalanceValidityCircuit,
+            SizedOutputBalanceValidityWitness,
+        },
     },
 };
-use common::types::proof_bundles::{
-    ProofBundle,
-    mocks::{dummy_link_hint, dummy_link_proof, dummy_proof},
+use job_types::proof_manager::{
+    ProofJob, ProofManagerJob, ProofManagerReceiver, ProofManagerResponse,
 };
-use job_types::proof_manager::{ProofJob, ProofManagerJob, ProofManagerReceiver};
 use tokio::runtime::Handle;
 use tracing::{error, instrument};
+use types_proofs::mocks::{dummy_link_hint, dummy_proof};
+use types_proofs::{ProofAndHintBundle, ProofBundle};
 use util::channels::TracedMessage;
 
 use crate::error::ProofManagerError;
@@ -91,195 +140,378 @@ impl MockProofManager {
         skip_constraints: bool,
     ) -> Result<(), ProofManagerError> {
         let ProofManagerJob { type_, response_channel } = job.consume();
-        let bundle = match type_ {
-            ProofJob::ValidWalletCreate { witness, statement } => {
-                Self::valid_wallet_create(witness, statement, skip_constraints)
+        let response = match type_ {
+            // Update proofs
+            ProofJob::ValidBalanceCreate { witness, statement } => {
+                Self::valid_balance_create(witness, statement, skip_constraints)
             },
-            ProofJob::ValidWalletUpdate { witness, statement } => {
-                Self::valid_wallet_update(witness, statement, skip_constraints)
+            ProofJob::ValidDeposit { witness, statement } => {
+                Self::valid_deposit(witness, statement, skip_constraints)
             },
-            ProofJob::ValidReblind { witness, statement } => {
-                Self::valid_reblind(witness, statement, skip_constraints)
+            ProofJob::ValidOrderCancellation { witness, statement } => {
+                Self::valid_order_cancellation(witness, statement, skip_constraints)
             },
-            ProofJob::ValidCommitments { witness, statement } => {
-                Self::valid_commitments(witness, statement, skip_constraints)
+            ProofJob::ValidWithdrawal { witness, statement } => {
+                Self::valid_withdrawal(witness, statement, skip_constraints)
             },
-            ProofJob::ValidCommitmentsReblindLink { .. } => Self::valid_commitments_reblind_link(),
-            ProofJob::ValidMatchSettleSingleprover { witness, statement, .. } => {
-                Self::valid_match_settle(witness, statement, skip_constraints)
+            // Validity proofs
+            ProofJob::IntentAndBalanceValidity { witness, statement } => {
+                Self::intent_and_balance_validity(witness, statement, skip_constraints)
             },
-            ProofJob::ValidMatchSettleAtomic { witness, statement, .. } => {
-                Self::valid_match_settle_atomic(witness, statement, skip_constraints)
+            ProofJob::IntentAndBalanceFirstFillValidity { witness, statement } => {
+                Self::intent_and_balance_first_fill_validity(witness, statement, skip_constraints)
             },
-            ProofJob::ValidMalleableMatchSettleAtomic { witness, statement, .. } => {
-                Self::valid_malleable_match_settle_atomic(witness, statement, skip_constraints)
+            ProofJob::IntentOnlyValidity { witness, statement } => {
+                Self::intent_only_validity(witness, statement, skip_constraints)
             },
-            ProofJob::ValidRelayerFeeSettlement { witness, statement } => {
-                Self::valid_relayer_fee_settlement(witness, statement, skip_constraints)
+            ProofJob::IntentOnlyFirstFillValidity { witness, statement } => {
+                Self::intent_only_first_fill_validity(witness, statement, skip_constraints)
             },
-            ProofJob::ValidOfflineFeeSettlement { witness, statement } => {
-                Self::valid_offline_fee_settlement(witness, statement, skip_constraints)
+            ProofJob::NewOutputBalanceValidity { witness, statement } => {
+                Self::new_output_balance_validity(witness, statement, skip_constraints)
             },
-            ProofJob::ValidFeeRedemption { witness, statement } => {
-                Self::valid_fee_redemption(witness, statement, skip_constraints)
+            ProofJob::OutputBalanceValidity { witness, statement } => {
+                Self::output_balance_validity(witness, statement, skip_constraints)
+            },
+            // Settlement proofs
+            ProofJob::IntentAndBalanceBoundedSettlement { witness, statement } => {
+                Self::intent_and_balance_bounded_settlement(witness, statement, skip_constraints)
+            },
+            ProofJob::IntentAndBalancePrivateSettlement { witness, statement } => {
+                Self::intent_and_balance_private_settlement(witness, statement, skip_constraints)
+            },
+            ProofJob::IntentAndBalancePublicSettlement { witness, statement } => {
+                Self::intent_and_balance_public_settlement(witness, statement, skip_constraints)
+            },
+            ProofJob::IntentOnlyBoundedSettlement { witness, statement } => {
+                Self::intent_only_bounded_settlement(witness, statement, skip_constraints)
+            },
+            ProofJob::IntentOnlyPublicSettlement { witness, statement } => {
+                Self::intent_only_public_settlement(witness, statement, skip_constraints)
+            },
+            // Fee proofs
+            ProofJob::ValidNoteRedemption { witness, statement } => {
+                Self::valid_note_redemption(witness, statement, skip_constraints)
+            },
+            ProofJob::ValidPrivateProtocolFeePayment { witness, statement } => {
+                Self::valid_private_protocol_fee_payment(witness, statement, skip_constraints)
+            },
+            ProofJob::ValidPrivateRelayerFeePayment { witness, statement } => {
+                Self::valid_private_relayer_fee_payment(witness, statement, skip_constraints)
+            },
+            ProofJob::ValidPublicProtocolFeePayment { witness, statement } => {
+                Self::valid_public_protocol_fee_payment(witness, statement, skip_constraints)
+            },
+            ProofJob::ValidPublicRelayerFeePayment { witness, statement } => {
+                Self::valid_public_relayer_fee_payment(witness, statement, skip_constraints)
             },
         }?;
 
-        response_channel.send(bundle).expect(ERR_RESPONSE_CHANNEL_CLOSED);
+        response_channel.send(response).expect(ERR_RESPONSE_CHANNEL_CLOSED);
         Ok(())
     }
 
-    /// Generate a dummy proof of `VALID WALLET CREATE`
-    fn valid_wallet_create(
-        witness: SizedValidWalletCreateWitness,
-        statement: SizedValidWalletCreateStatement,
+    // Update proofs
+    /// Generate a dummy proof of `VALID BALANCE CREATE`
+    fn valid_balance_create(
+        witness: ValidBalanceCreateWitness,
+        statement: ValidBalanceCreateStatement,
         skip_constraints: bool,
-    ) -> Result<ProofBundle, ProofManagerError> {
+    ) -> Result<ProofManagerResponse, ProofManagerError> {
         if !skip_constraints {
-            Self::check_constraints::<SizedValidWalletCreate>(&witness, &statement)?;
+            Self::check_constraints::<ValidBalanceCreate>(&witness, &statement)?;
         }
-
         let proof = dummy_proof();
-        Ok(ProofBundle::new_valid_wallet_create(statement, proof))
+        let bundle = ProofBundle::new(proof, statement);
+        Ok(ProofManagerResponse::ValidBalanceCreate(bundle))
     }
 
-    /// Generate a dummy proof of `VALID WALLET UPDATE`
-    fn valid_wallet_update(
-        witness: SizedValidWalletUpdateWitness,
-        statement: SizedValidWalletUpdateStatement,
+    /// Generate a dummy proof of `VALID DEPOSIT`
+    fn valid_deposit(
+        witness: SizedValidDepositWitness,
+        statement: ValidDepositStatement,
         skip_constraints: bool,
-    ) -> Result<ProofBundle, ProofManagerError> {
+    ) -> Result<ProofManagerResponse, ProofManagerError> {
         if !skip_constraints {
-            Self::check_constraints::<SizedValidWalletUpdate>(&witness, &statement)?;
+            Self::check_constraints::<SizedValidDeposit>(&witness, &statement)?;
         }
-
         let proof = dummy_proof();
-        Ok(ProofBundle::new_valid_wallet_update(statement, proof))
+        let bundle = ProofBundle::new(proof, statement);
+        Ok(ProofManagerResponse::ValidDeposit(bundle))
     }
 
-    /// Generate a dummy proof of `VALID REBLIND`
-    fn valid_reblind(
-        witness: SizedValidReblindWitness,
-        statement: ValidReblindStatement,
+    /// Generate a dummy proof of `VALID ORDER CANCELLATION`
+    fn valid_order_cancellation(
+        witness: SizedValidOrderCancellationWitness,
+        statement: ValidOrderCancellationStatement,
         skip_constraints: bool,
-    ) -> Result<ProofBundle, ProofManagerError> {
+    ) -> Result<ProofManagerResponse, ProofManagerError> {
         if !skip_constraints {
-            Self::check_constraints::<SizedValidReblind>(&witness, &statement)?;
+            Self::check_constraints::<SizedValidOrderCancellationCircuit>(&witness, &statement)?;
         }
+        let proof = dummy_proof();
+        let bundle = ProofBundle::new(proof, statement);
+        Ok(ProofManagerResponse::ValidOrderCancellation(bundle))
+    }
 
+    /// Generate a dummy proof of `VALID WITHDRAWAL`
+    fn valid_withdrawal(
+        witness: SizedValidWithdrawalWitness,
+        statement: ValidWithdrawalStatement,
+        skip_constraints: bool,
+    ) -> Result<ProofManagerResponse, ProofManagerError> {
+        if !skip_constraints {
+            Self::check_constraints::<SizedValidWithdrawal>(&witness, &statement)?;
+        }
+        let proof = dummy_proof();
+        let bundle = ProofBundle::new(proof, statement);
+        Ok(ProofManagerResponse::ValidWithdrawal(bundle))
+    }
+
+    // Validity proofs
+    /// Generate a dummy proof of `INTENT AND BALANCE VALIDITY`
+    fn intent_and_balance_validity(
+        witness: SizedIntentAndBalanceValidityWitness,
+        statement: IntentAndBalanceValidityStatement,
+        skip_constraints: bool,
+    ) -> Result<ProofManagerResponse, ProofManagerError> {
+        if !skip_constraints {
+            Self::check_constraints::<SizedIntentAndBalanceValidityCircuit>(&witness, &statement)?;
+        }
         let proof = dummy_proof();
         let link_hint = dummy_link_hint();
-        Ok(ProofBundle::new_valid_reblind(statement, proof, link_hint))
+        let bundle = ProofAndHintBundle::new(proof, statement, link_hint);
+        Ok(ProofManagerResponse::IntentAndBalanceValidity(bundle))
     }
 
-    /// Create a dummy proof of `VALID COMMITMENTS`
-    fn valid_commitments(
-        witness: SizedValidCommitmentsWitness,
-        statement: ValidCommitmentsStatement,
+    /// Generate a dummy proof of `INTENT AND BALANCE FIRST FILL VALIDITY`
+    fn intent_and_balance_first_fill_validity(
+        witness: SizedIntentAndBalanceFirstFillValidityWitness,
+        statement: IntentAndBalanceFirstFillValidityStatement,
         skip_constraints: bool,
-    ) -> Result<ProofBundle, ProofManagerError> {
+    ) -> Result<ProofManagerResponse, ProofManagerError> {
         if !skip_constraints {
-            Self::check_constraints::<SizedValidCommitments>(&witness, &statement)?;
+            Self::check_constraints::<SizedIntentAndBalanceFirstFillValidityCircuit>(
+                &witness, &statement,
+            )?;
         }
-
         let proof = dummy_proof();
         let link_hint = dummy_link_hint();
-        Ok(ProofBundle::new_valid_commitments(statement, proof, link_hint))
+        let bundle = ProofAndHintBundle::new(proof, statement, link_hint);
+        Ok(ProofManagerResponse::IntentAndBalanceFirstFillValidity(bundle))
     }
 
-    /// Create a dummy link proof of `VALID COMMITMENTS` <-> `VALID REBLIND`
-    fn valid_commitments_reblind_link() -> Result<ProofBundle, ProofManagerError> {
-        let link_proof = dummy_link_proof();
-        let bundle = ProofBundle::new_valid_commitments_reblind_link(link_proof);
-        Ok(bundle)
-    }
-
-    /// Create a dummy proof of `VALID MATCH SETTLE`
-    fn valid_match_settle(
-        witness: SizedValidMatchSettleWitness,
-        statement: SizedValidMatchSettleStatement,
+    /// Generate a dummy proof of `INTENT ONLY VALIDITY`
+    fn intent_only_validity(
+        witness: SizedIntentOnlyValidityWitness,
+        statement: IntentOnlyValidityStatement,
         skip_constraints: bool,
-    ) -> Result<ProofBundle, ProofManagerError> {
+    ) -> Result<ProofManagerResponse, ProofManagerError> {
         if !skip_constraints {
-            Self::check_constraints::<SizedValidMatchSettle>(&witness, &statement)?;
+            Self::check_constraints::<SizedIntentOnlyValidityCircuit>(&witness, &statement)?;
         }
-
         let proof = dummy_proof();
-        let link_proof0 = dummy_link_proof();
-        let link_proof1 = dummy_link_proof();
-        Ok(ProofBundle::new_valid_match_settle(statement, proof, link_proof0, link_proof1))
+        let link_hint = dummy_link_hint();
+        let bundle = ProofAndHintBundle::new(proof, statement, link_hint);
+        Ok(ProofManagerResponse::IntentOnlyValidity(bundle))
     }
 
-    /// Create a dummy proof of `VALID MATCH SETTLE ATOMIC`
-    fn valid_match_settle_atomic(
-        witness: SizedValidMatchSettleAtomicWitness,
-        statement: SizedValidMatchSettleAtomicStatement,
+    /// Generate a dummy proof of `INTENT ONLY FIRST FILL VALIDITY`
+    fn intent_only_first_fill_validity(
+        witness: IntentOnlyFirstFillValidityWitness,
+        statement: IntentOnlyFirstFillValidityStatement,
         skip_constraints: bool,
-    ) -> Result<ProofBundle, ProofManagerError> {
+    ) -> Result<ProofManagerResponse, ProofManagerError> {
         if !skip_constraints {
-            Self::check_constraints::<SizedValidMatchSettleAtomic>(&witness, &statement)?;
+            Self::check_constraints::<IntentOnlyFirstFillValidityCircuit>(&witness, &statement)?;
         }
-
         let proof = dummy_proof();
-        let link_proof = dummy_link_proof();
-        Ok(ProofBundle::new_valid_match_settle_atomic(statement, proof, link_proof))
+        let link_hint = dummy_link_hint();
+        let bundle = ProofAndHintBundle::new(proof, statement, link_hint);
+        Ok(ProofManagerResponse::IntentOnlyFirstFillValidity(bundle))
     }
 
-    /// Create a dummy proof of `VALID MALLEABLE MATCH SETTLE ATOMIC`
-    fn valid_malleable_match_settle_atomic(
-        witness: SizedValidMalleableMatchSettleAtomicWitness,
-        statement: SizedValidMalleableMatchSettleAtomicStatement,
+    /// Generate a dummy proof of `NEW OUTPUT BALANCE VALIDITY`
+    fn new_output_balance_validity(
+        witness: SizedNewOutputBalanceValidityWitness,
+        statement: NewOutputBalanceValidityStatement,
         skip_constraints: bool,
-    ) -> Result<ProofBundle, ProofManagerError> {
+    ) -> Result<ProofManagerResponse, ProofManagerError> {
         if !skip_constraints {
-            Self::check_constraints::<SizedValidMalleableMatchSettleAtomic>(&witness, &statement)?;
+            Self::check_constraints::<SizedNewOutputBalanceValidityCircuit>(&witness, &statement)?;
         }
-
         let proof = dummy_proof();
-        let link_proof = dummy_link_proof();
-        Ok(ProofBundle::new_valid_malleable_match_settle_atomic(statement, proof, link_proof))
+        let link_hint = dummy_link_hint();
+        let bundle = ProofAndHintBundle::new(proof, statement, link_hint);
+        Ok(ProofManagerResponse::NewOutputBalanceValidity(bundle))
     }
 
-    /// Generate a dummy proof of `VALID RELAYER FEE SETTLEMENT`
-    fn valid_relayer_fee_settlement(
-        witness: SizedValidRelayerFeeSettlementWitness,
-        statement: SizedValidRelayerFeeSettlementStatement,
+    /// Generate a dummy proof of `OUTPUT BALANCE VALIDITY`
+    fn output_balance_validity(
+        witness: SizedOutputBalanceValidityWitness,
+        statement: OutputBalanceValidityStatement,
         skip_constraints: bool,
-    ) -> Result<ProofBundle, ProofManagerError> {
+    ) -> Result<ProofManagerResponse, ProofManagerError> {
         if !skip_constraints {
-            Self::check_constraints::<SizedValidRelayerFeeSettlement>(&witness, &statement)?;
+            Self::check_constraints::<SizedOutputBalanceValidityCircuit>(&witness, &statement)?;
         }
-
         let proof = dummy_proof();
-        Ok(ProofBundle::new_valid_relayer_fee_settlement(statement, proof))
+        let link_hint = dummy_link_hint();
+        let bundle = ProofAndHintBundle::new(proof, statement, link_hint);
+        Ok(ProofManagerResponse::OutputBalanceValidity(bundle))
     }
 
-    /// Generate a dummy proof of `VALID OFFLINE FEE SETTLEMENT`
-    fn valid_offline_fee_settlement(
-        witness: SizedValidOfflineFeeSettlementWitness,
-        statement: SizedValidOfflineFeeSettlementStatement,
+    // Settlement proofs
+    /// Generate a dummy proof of `INTENT AND BALANCE BOUNDED SETTLEMENT`
+    fn intent_and_balance_bounded_settlement(
+        witness: IntentAndBalanceBoundedSettlementWitness,
+        statement: IntentAndBalanceBoundedSettlementStatement,
         skip_constraints: bool,
-    ) -> Result<ProofBundle, ProofManagerError> {
+    ) -> Result<ProofManagerResponse, ProofManagerError> {
         if !skip_constraints {
-            Self::check_constraints::<SizedValidOfflineFeeSettlement>(&witness, &statement)?;
+            Self::check_constraints::<IntentAndBalanceBoundedSettlementCircuit>(
+                &witness, &statement,
+            )?;
         }
-
         let proof = dummy_proof();
-        Ok(ProofBundle::new_valid_offline_fee_settlement(statement, proof))
+        let link_hint = dummy_link_hint();
+        let bundle = ProofAndHintBundle::new(proof, statement, link_hint);
+        Ok(ProofManagerResponse::IntentAndBalanceBoundedSettlement(bundle))
     }
 
-    /// Generate a dummy proof of `VALID FEE REDEMPTION`
-    fn valid_fee_redemption(
-        witness: SizedValidFeeRedemptionWitness,
-        statement: SizedValidFeeRedemptionStatement,
+    /// Generate a dummy proof of `INTENT AND BALANCE PRIVATE SETTLEMENT`
+    fn intent_and_balance_private_settlement(
+        witness: IntentAndBalancePrivateSettlementWitness,
+        statement: IntentAndBalancePrivateSettlementStatement,
         skip_constraints: bool,
-    ) -> Result<ProofBundle, ProofManagerError> {
+    ) -> Result<ProofManagerResponse, ProofManagerError> {
         if !skip_constraints {
-            Self::check_constraints::<SizedValidFeeRedemption>(&witness, &statement)?;
+            Self::check_constraints::<IntentAndBalancePrivateSettlementCircuit>(
+                &witness, &statement,
+            )?;
         }
-
         let proof = dummy_proof();
-        Ok(ProofBundle::new_valid_fee_redemption(statement, proof))
+        let link_hint = dummy_link_hint();
+        let bundle = ProofAndHintBundle::new(proof, statement, link_hint);
+        Ok(ProofManagerResponse::IntentAndBalancePrivateSettlement(bundle))
+    }
+
+    /// Generate a dummy proof of `INTENT AND BALANCE PUBLIC SETTLEMENT`
+    fn intent_and_balance_public_settlement(
+        witness: IntentAndBalancePublicSettlementWitness,
+        statement: IntentAndBalancePublicSettlementStatement,
+        skip_constraints: bool,
+    ) -> Result<ProofManagerResponse, ProofManagerError> {
+        if !skip_constraints {
+            Self::check_constraints::<IntentAndBalancePublicSettlementCircuit>(
+                &witness, &statement,
+            )?;
+        }
+        let proof = dummy_proof();
+        let link_hint = dummy_link_hint();
+        let bundle = ProofAndHintBundle::new(proof, statement, link_hint);
+        Ok(ProofManagerResponse::IntentAndBalancePublicSettlement(bundle))
+    }
+
+    /// Generate a dummy proof of `INTENT ONLY BOUNDED SETTLEMENT`
+    fn intent_only_bounded_settlement(
+        witness: IntentOnlyBoundedSettlementWitness,
+        statement: IntentOnlyBoundedSettlementStatement,
+        skip_constraints: bool,
+    ) -> Result<ProofManagerResponse, ProofManagerError> {
+        if !skip_constraints {
+            Self::check_constraints::<IntentOnlyBoundedSettlementCircuit>(&witness, &statement)?;
+        }
+        let proof = dummy_proof();
+        let link_hint = dummy_link_hint();
+        let bundle = ProofAndHintBundle::new(proof, statement, link_hint);
+        Ok(ProofManagerResponse::IntentOnlyBoundedSettlement(bundle))
+    }
+
+    /// Generate a dummy proof of `INTENT ONLY PUBLIC SETTLEMENT`
+    fn intent_only_public_settlement(
+        witness: IntentOnlyPublicSettlementWitness,
+        statement: IntentOnlyPublicSettlementStatement,
+        skip_constraints: bool,
+    ) -> Result<ProofManagerResponse, ProofManagerError> {
+        if !skip_constraints {
+            Self::check_constraints::<IntentOnlyPublicSettlementCircuit>(&witness, &statement)?;
+        }
+        let proof = dummy_proof();
+        let link_hint = dummy_link_hint();
+        let bundle = ProofAndHintBundle::new(proof, statement, link_hint);
+        Ok(ProofManagerResponse::IntentOnlyPublicSettlement(bundle))
+    }
+
+    // Fee proofs
+    /// Generate a dummy proof of `VALID NOTE REDEMPTION`
+    fn valid_note_redemption(
+        witness: SizedValidNoteRedemptionWitness,
+        statement: ValidNoteRedemptionStatement,
+        skip_constraints: bool,
+    ) -> Result<ProofManagerResponse, ProofManagerError> {
+        if !skip_constraints {
+            Self::check_constraints::<SizedValidNoteRedemption>(&witness, &statement)?;
+        }
+        let proof = dummy_proof();
+        let bundle = ProofBundle::new(proof, statement);
+        Ok(ProofManagerResponse::ValidNoteRedemption(bundle))
+    }
+
+    /// Generate a dummy proof of `VALID PRIVATE PROTOCOL FEE PAYMENT`
+    fn valid_private_protocol_fee_payment(
+        witness: SizedValidPrivateProtocolFeePaymentWitness,
+        statement: ValidPrivateProtocolFeePaymentStatement,
+        skip_constraints: bool,
+    ) -> Result<ProofManagerResponse, ProofManagerError> {
+        if !skip_constraints {
+            Self::check_constraints::<SizedValidPrivateProtocolFeePayment>(&witness, &statement)?;
+        }
+        let proof = dummy_proof();
+        let bundle = ProofBundle::new(proof, statement);
+        Ok(ProofManagerResponse::ValidPrivateProtocolFeePayment(bundle))
+    }
+
+    /// Generate a dummy proof of `VALID PRIVATE RELAYER FEE PAYMENT`
+    fn valid_private_relayer_fee_payment(
+        witness: SizedValidPrivateRelayerFeePaymentWitness,
+        statement: ValidPrivateRelayerFeePaymentStatement,
+        skip_constraints: bool,
+    ) -> Result<ProofManagerResponse, ProofManagerError> {
+        if !skip_constraints {
+            Self::check_constraints::<SizedValidPrivateRelayerFeePayment>(&witness, &statement)?;
+        }
+        let proof = dummy_proof();
+        let bundle = ProofBundle::new(proof, statement);
+        Ok(ProofManagerResponse::ValidPrivateRelayerFeePayment(bundle))
+    }
+
+    /// Generate a dummy proof of `VALID PUBLIC PROTOCOL FEE PAYMENT`
+    fn valid_public_protocol_fee_payment(
+        witness: SizedValidPublicProtocolFeePaymentWitness,
+        statement: ValidPublicProtocolFeePaymentStatement,
+        skip_constraints: bool,
+    ) -> Result<ProofManagerResponse, ProofManagerError> {
+        if !skip_constraints {
+            Self::check_constraints::<SizedValidPublicProtocolFeePayment>(&witness, &statement)?;
+        }
+        let proof = dummy_proof();
+        let bundle = ProofBundle::new(proof, statement);
+        Ok(ProofManagerResponse::ValidPublicProtocolFeePayment(bundle))
+    }
+
+    /// Generate a dummy proof of `VALID PUBLIC RELAYER FEE PAYMENT`
+    fn valid_public_relayer_fee_payment(
+        witness: SizedValidPublicRelayerFeePaymentWitness,
+        statement: ValidPublicRelayerFeePaymentStatement,
+        skip_constraints: bool,
+    ) -> Result<ProofManagerResponse, ProofManagerError> {
+        if !skip_constraints {
+            Self::check_constraints::<SizedValidPublicRelayerFeePayment>(&witness, &statement)?;
+        }
+        let proof = dummy_proof();
+        let bundle = ProofBundle::new(proof, statement);
+        Ok(ProofManagerResponse::ValidPublicRelayerFeePayment(bundle))
     }
 
     /// Check constraint satisfaction for a witness and statement
@@ -290,7 +522,7 @@ impl MockProofManager {
         witness: &C::Witness,
         statement: &C::Statement,
     ) -> Result<(), ProofManagerError> {
-        if !check_constraint_satisfaction::<C>(witness, statement) {
+        if !check_constraints_satisfied::<C>(witness, statement) {
             let err = format!("invalid witness and statement for {}", C::name());
             Err(ProofManagerError::Prover(err))
         } else {

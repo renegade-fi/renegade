@@ -13,25 +13,61 @@
 #![deny(clippy::unused_async)]
 
 use circuit_types::{PlonkLinkProof, PlonkProof, ProofLinkingHint};
-use circuits_core::{
-    self,
-    zk_circuits::{
-        valid_commitments::{SizedValidCommitmentsWitness, ValidCommitmentsStatement},
-        valid_fee_redemption::{SizedValidFeeRedemptionStatement, SizedValidFeeRedemptionWitness},
-        valid_malleable_match_settle_atomic::{
-            SizedValidMalleableMatchSettleAtomicStatement,
-            SizedValidMalleableMatchSettleAtomicWitness,
+use circuits_core::zk_circuits::{
+    fees::{
+        valid_note_redemption::{SizedValidNoteRedemptionWitness, ValidNoteRedemptionStatement},
+        valid_private_protocol_fee_payment::{
+            SizedValidPrivateProtocolFeePaymentWitness, ValidPrivateProtocolFeePaymentStatement,
         },
-        valid_match_settle::{SizedValidMatchSettleStatement, SizedValidMatchSettleWitness},
-        valid_match_settle_atomic::{
-            SizedValidMatchSettleAtomicStatement, SizedValidMatchSettleAtomicWitness,
+        valid_private_relayer_fee_payment::{
+            SizedValidPrivateRelayerFeePaymentWitness, ValidPrivateRelayerFeePaymentStatement,
         },
-        valid_offline_fee_settlement::{
-            SizedValidOfflineFeeSettlementStatement, SizedValidOfflineFeeSettlementWitness,
+        valid_public_protocol_fee_payment::{
+            SizedValidPublicProtocolFeePaymentWitness, ValidPublicProtocolFeePaymentStatement,
         },
-        valid_reblind::{SizedValidReblindWitness, ValidReblindStatement},
-        valid_wallet_create::{SizedValidWalletCreateStatement, SizedValidWalletCreateWitness},
-        valid_wallet_update::{SizedValidWalletUpdateStatement, SizedValidWalletUpdateWitness},
+        valid_public_relayer_fee_payment::{
+            SizedValidPublicRelayerFeePaymentWitness, ValidPublicRelayerFeePaymentStatement,
+        },
+    },
+    settlement::{
+        intent_and_balance_bounded_settlement::{
+            IntentAndBalanceBoundedSettlementStatement, IntentAndBalanceBoundedSettlementWitness,
+        },
+        intent_and_balance_private_settlement::{
+            IntentAndBalancePrivateSettlementStatement, IntentAndBalancePrivateSettlementWitness,
+        },
+        intent_and_balance_public_settlement::{
+            IntentAndBalancePublicSettlementStatement, IntentAndBalancePublicSettlementWitness,
+        },
+        intent_only_bounded_settlement::{
+            IntentOnlyBoundedSettlementStatement, IntentOnlyBoundedSettlementWitness,
+        },
+        intent_only_public_settlement::{
+            IntentOnlyPublicSettlementStatement, IntentOnlyPublicSettlementWitness,
+        },
+    },
+    valid_balance_create::{ValidBalanceCreateStatement, ValidBalanceCreateWitness},
+    valid_deposit::{SizedValidDepositWitness, ValidDepositStatement},
+    valid_order_cancellation::{
+        SizedValidOrderCancellationWitness, ValidOrderCancellationStatement,
+    },
+    valid_withdrawal::{SizedValidWithdrawalWitness, ValidWithdrawalStatement},
+    validity_proofs::{
+        intent_and_balance::{
+            IntentAndBalanceValidityStatement, SizedIntentAndBalanceValidityWitness,
+        },
+        intent_and_balance_first_fill::{
+            IntentAndBalanceFirstFillValidityStatement,
+            SizedIntentAndBalanceFirstFillValidityWitness,
+        },
+        intent_only::{IntentOnlyValidityStatement, SizedIntentOnlyValidityWitness},
+        intent_only_first_fill::{
+            IntentOnlyFirstFillValidityStatement, IntentOnlyFirstFillValidityWitness,
+        },
+        new_output_balance::{
+            NewOutputBalanceValidityStatement, SizedNewOutputBalanceValidityWitness,
+        },
+        output_balance::{OutputBalanceValidityStatement, SizedOutputBalanceValidityWitness},
     },
 };
 use serde::{Deserialize, Serialize};
@@ -81,114 +117,186 @@ pub struct ProofAndLinkResponse {
 // | Request Types |
 // -----------------
 
-/// A request to prove `VALID WALLET CREATE`
+// Update proofs
+/// A request to prove `VALID BALANCE CREATE`
 #[derive(Serialize, Deserialize)]
-pub struct ValidWalletCreateRequest {
+pub struct ValidBalanceCreateRequest {
     /// The statement (public variables)
-    pub statement: SizedValidWalletCreateStatement,
+    pub statement: ValidBalanceCreateStatement,
     /// The witness
-    pub witness: SizedValidWalletCreateWitness,
+    pub witness: ValidBalanceCreateWitness,
 }
 
-/// A request to prove `VALID WALLET UPDATE`
+/// A request to prove `VALID DEPOSIT`
 #[derive(Serialize, Deserialize)]
-pub struct ValidWalletUpdateRequest {
+pub struct ValidDepositRequest {
     /// The statement (public variables)
-    pub statement: SizedValidWalletUpdateStatement,
+    pub statement: ValidDepositStatement,
     /// The witness
-    pub witness: SizedValidWalletUpdateWitness,
+    pub witness: SizedValidDepositWitness,
 }
 
-/// A request to prove `VALID COMMITMENTS`
+/// A request to prove `VALID ORDER CANCELLATION`
 #[derive(Serialize, Deserialize)]
-pub struct ValidCommitmentsRequest {
+pub struct ValidOrderCancellationRequest {
     /// The statement (public variables)
-    pub statement: ValidCommitmentsStatement,
+    pub statement: ValidOrderCancellationStatement,
     /// The witness
-    pub witness: SizedValidCommitmentsWitness,
+    pub witness: SizedValidOrderCancellationWitness,
 }
 
-/// A request to generate a proof-link of `VALID COMMITMENTS` <-> `VALID
-/// REBLIND`
+/// A request to prove `VALID WITHDRAWAL`
 #[derive(Serialize, Deserialize)]
-pub struct LinkCommitmentsReblindRequest {
-    /// The link hint for `VALID COMMITMENTS`
-    pub valid_commitments_hint: ProofLinkingHint,
-    /// The link hint for `VALID REBLIND`
-    pub valid_reblind_hint: ProofLinkingHint,
-}
-
-/// A request to prove `VALID REBLIND`
-#[derive(Serialize, Deserialize)]
-pub struct ValidReblindRequest {
+pub struct ValidWithdrawalRequest {
     /// The statement (public variables)
-    pub statement: ValidReblindStatement,
+    pub statement: ValidWithdrawalStatement,
     /// The witness
-    pub witness: SizedValidReblindWitness,
+    pub witness: SizedValidWithdrawalWitness,
 }
 
-/// A request to prove `VALID MATCH SETTLE`
+// Validity proofs
+/// A request to prove `INTENT AND BALANCE VALIDITY`
 #[derive(Serialize, Deserialize)]
-pub struct ValidMatchSettleRequest {
+pub struct IntentAndBalanceValidityRequest {
     /// The statement (public variables)
-    pub statement: SizedValidMatchSettleStatement,
+    pub statement: IntentAndBalanceValidityStatement,
     /// The witness
-    pub witness: SizedValidMatchSettleWitness,
-    /// The link hint for `VALID COMMITMENTS` for party 0
-    pub valid_commitments_hint0: ProofLinkingHint,
-    /// The link hint for `VALID COMMITMENTS` for party 1
-    pub valid_commitments_hint1: ProofLinkingHint,
+    pub witness: SizedIntentAndBalanceValidityWitness,
 }
 
-/// A response to a request to prove `VALID MATCH SETTLE`
-///
-/// This type includes two link proofs, so it warrants its own type
+/// A request to prove `INTENT AND BALANCE FIRST FILL VALIDITY`
 #[derive(Serialize, Deserialize)]
-pub struct ValidMatchSettleResponse {
-    /// The plonk proof
-    pub plonk_proof: PlonkProof,
-    /// The proof-linking proof for party 0
-    pub link_proof0: PlonkLinkProof,
-    /// The proof-linking proof for party 1
-    pub link_proof1: PlonkLinkProof,
-}
-
-/// A request to prove `VALID MATCH SETTLE ATOMIC`
-#[derive(Serialize, Deserialize)]
-pub struct ValidMatchSettleAtomicRequest {
+pub struct IntentAndBalanceFirstFillValidityRequest {
     /// The statement (public variables)
-    pub statement: SizedValidMatchSettleAtomicStatement,
+    pub statement: IntentAndBalanceFirstFillValidityStatement,
     /// The witness
-    pub witness: SizedValidMatchSettleAtomicWitness,
-    /// The link hint for `VALID COMMITMENTS`
-    pub valid_commitments_hint: ProofLinkingHint,
+    pub witness: SizedIntentAndBalanceFirstFillValidityWitness,
 }
 
-/// A request to prove `VALID MALLEABLE MATCH SETTLE ATOMIC`
+/// A request to prove `INTENT ONLY VALIDITY`
 #[derive(Serialize, Deserialize)]
-pub struct ValidMalleableMatchSettleAtomicRequest {
+pub struct IntentOnlyValidityRequest {
     /// The statement (public variables)
-    pub statement: SizedValidMalleableMatchSettleAtomicStatement,
+    pub statement: IntentOnlyValidityStatement,
     /// The witness
-    pub witness: SizedValidMalleableMatchSettleAtomicWitness,
-    /// The link hint for `VALID COMMITMENTS`
-    pub valid_commitments_hint: ProofLinkingHint,
+    pub witness: SizedIntentOnlyValidityWitness,
 }
 
-/// A request to prove `VALID FEE REDEMPTION`
+/// A request to prove `INTENT ONLY FIRST FILL VALIDITY`
 #[derive(Serialize, Deserialize)]
-pub struct ValidFeeRedemptionRequest {
+pub struct IntentOnlyFirstFillValidityRequest {
     /// The statement (public variables)
-    pub statement: SizedValidFeeRedemptionStatement,
+    pub statement: IntentOnlyFirstFillValidityStatement,
     /// The witness
-    pub witness: SizedValidFeeRedemptionWitness,
+    pub witness: IntentOnlyFirstFillValidityWitness,
 }
 
-/// A request to prove `VALID OFFLINE FEE SETTLEMENT`
+/// A request to prove `NEW OUTPUT BALANCE VALIDITY`
 #[derive(Serialize, Deserialize)]
-pub struct ValidOfflineFeeSettlementRequest {
+pub struct NewOutputBalanceValidityRequest {
     /// The statement (public variables)
-    pub statement: SizedValidOfflineFeeSettlementStatement,
+    pub statement: NewOutputBalanceValidityStatement,
     /// The witness
-    pub witness: SizedValidOfflineFeeSettlementWitness,
+    pub witness: SizedNewOutputBalanceValidityWitness,
+}
+
+/// A request to prove `OUTPUT BALANCE VALIDITY`
+#[derive(Serialize, Deserialize)]
+pub struct OutputBalanceValidityRequest {
+    /// The statement (public variables)
+    pub statement: OutputBalanceValidityStatement,
+    /// The witness
+    pub witness: SizedOutputBalanceValidityWitness,
+}
+
+// Settlement proofs
+/// A request to prove `INTENT AND BALANCE BOUNDED SETTLEMENT`
+#[derive(Serialize, Deserialize)]
+pub struct IntentAndBalanceBoundedSettlementRequest {
+    /// The statement (public variables)
+    pub statement: IntentAndBalanceBoundedSettlementStatement,
+    /// The witness
+    pub witness: IntentAndBalanceBoundedSettlementWitness,
+}
+
+/// A request to prove `INTENT AND BALANCE PRIVATE SETTLEMENT`
+#[derive(Serialize, Deserialize)]
+pub struct IntentAndBalancePrivateSettlementRequest {
+    /// The statement (public variables)
+    pub statement: IntentAndBalancePrivateSettlementStatement,
+    /// The witness
+    pub witness: IntentAndBalancePrivateSettlementWitness,
+}
+
+/// A request to prove `INTENT AND BALANCE PUBLIC SETTLEMENT`
+#[derive(Serialize, Deserialize)]
+pub struct IntentAndBalancePublicSettlementRequest {
+    /// The statement (public variables)
+    pub statement: IntentAndBalancePublicSettlementStatement,
+    /// The witness
+    pub witness: IntentAndBalancePublicSettlementWitness,
+}
+
+/// A request to prove `INTENT ONLY BOUNDED SETTLEMENT`
+#[derive(Serialize, Deserialize)]
+pub struct IntentOnlyBoundedSettlementRequest {
+    /// The statement (public variables)
+    pub statement: IntentOnlyBoundedSettlementStatement,
+    /// The witness
+    pub witness: IntentOnlyBoundedSettlementWitness,
+}
+
+/// A request to prove `INTENT ONLY PUBLIC SETTLEMENT`
+#[derive(Serialize, Deserialize)]
+pub struct IntentOnlyPublicSettlementRequest {
+    /// The statement (public variables)
+    pub statement: IntentOnlyPublicSettlementStatement,
+    /// The witness
+    pub witness: IntentOnlyPublicSettlementWitness,
+}
+
+// Fee proofs
+/// A request to prove `VALID NOTE REDEMPTION`
+#[derive(Serialize, Deserialize)]
+pub struct ValidNoteRedemptionRequest {
+    /// The statement (public variables)
+    pub statement: ValidNoteRedemptionStatement,
+    /// The witness
+    pub witness: SizedValidNoteRedemptionWitness,
+}
+
+/// A request to prove `VALID PRIVATE PROTOCOL FEE PAYMENT`
+#[derive(Serialize, Deserialize)]
+pub struct ValidPrivateProtocolFeePaymentRequest {
+    /// The statement (public variables)
+    pub statement: ValidPrivateProtocolFeePaymentStatement,
+    /// The witness
+    pub witness: SizedValidPrivateProtocolFeePaymentWitness,
+}
+
+/// A request to prove `VALID PRIVATE RELAYER FEE PAYMENT`
+#[derive(Serialize, Deserialize)]
+pub struct ValidPrivateRelayerFeePaymentRequest {
+    /// The statement (public variables)
+    pub statement: ValidPrivateRelayerFeePaymentStatement,
+    /// The witness
+    pub witness: SizedValidPrivateRelayerFeePaymentWitness,
+}
+
+/// A request to prove `VALID PUBLIC PROTOCOL FEE PAYMENT`
+#[derive(Serialize, Deserialize)]
+pub struct ValidPublicProtocolFeePaymentRequest {
+    /// The statement (public variables)
+    pub statement: ValidPublicProtocolFeePaymentStatement,
+    /// The witness
+    pub witness: SizedValidPublicProtocolFeePaymentWitness,
+}
+
+/// A request to prove `VALID PUBLIC RELAYER FEE PAYMENT`
+#[derive(Serialize, Deserialize)]
+pub struct ValidPublicRelayerFeePaymentRequest {
+    /// The statement (public variables)
+    pub statement: ValidPublicRelayerFeePaymentStatement,
+    /// The witness
+    pub witness: SizedValidPublicRelayerFeePaymentWitness,
 }

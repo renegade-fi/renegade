@@ -1,9 +1,9 @@
 //! An implementation of the proof manager which uses an external prover service
 
-use types_runtime::CancelChannel;
 use constants::in_bootstrap_mode;
 use job_types::proof_manager::{ProofJob, ProofManagerJob, ProofManagerReceiver};
 use tracing::{error, info, instrument};
+use types_runtime::CancelChannel;
 use util::{channels::TracedMessage, concurrency::runtime::sleep_forever_blocking};
 
 use crate::{
@@ -94,66 +94,75 @@ impl ExternalProofManager {
         traced_job: TracedMessage<ProofManagerJob>,
     ) -> Result<(), ProofManagerError> {
         let job = traced_job.consume();
-        let bundle = match job.type_ {
-            ProofJob::ValidWalletCreate { witness, statement } => {
-                // Prove `VALID WALLET CREATE`
-                client.prove_valid_wallet_create(witness, statement).await
+        let response = match job.type_ {
+            // Update proofs
+            ProofJob::ValidBalanceCreate { witness, statement } => {
+                client.prove_valid_balance_create(witness, statement).await
             },
-            ProofJob::ValidWalletUpdate { witness, statement } => {
-                // Prove `VALID WALLET UPDATE`
-                client.prove_valid_wallet_update(witness, statement).await
+            ProofJob::ValidDeposit { witness, statement } => {
+                client.prove_valid_deposit(witness, statement).await
             },
-            ProofJob::ValidCommitments { witness, statement } => {
-                // Prove `VALID COMMITMENTS`
-                client.prove_valid_commitments(witness, statement).await
+            ProofJob::ValidOrderCancellation { witness, statement } => {
+                client.prove_valid_order_cancellation(witness, statement).await
             },
-            ProofJob::ValidReblind { witness, statement } => {
-                // Prove `VALID REBLIND`
-                client.prove_valid_reblind(witness, statement).await
+            ProofJob::ValidWithdrawal { witness, statement } => {
+                client.prove_valid_withdrawal(witness, statement).await
             },
-            ProofJob::ValidCommitmentsReblindLink { commitments_hint, reblind_hint } => {
-                // Link a proof of `VALID COMMITMENTS` with a proof of `VALID REBLIND`
-                client.prove_valid_commitments_reblind_link(commitments_hint, reblind_hint).await
+            // Validity proofs
+            ProofJob::IntentAndBalanceValidity { witness, statement } => {
+                client.prove_intent_and_balance_validity(witness, statement).await
             },
-            ProofJob::ValidMatchSettleSingleprover {
-                witness,
-                statement,
-                commitment_link0,
-                commitment_link1,
-            } => {
-                // Prove `VALID MATCH SETTLE`
-                client
-                    .prove_valid_match_settle(
-                        witness,
-                        statement,
-                        commitment_link0,
-                        commitment_link1,
-                    )
-                    .await
+            ProofJob::IntentAndBalanceFirstFillValidity { witness, statement } => {
+                client.prove_intent_and_balance_first_fill_validity(witness, statement).await
             },
-            ProofJob::ValidMatchSettleAtomic { witness, statement, commitments_link } => {
-                // Prove `VALID MATCH SETTLE ATOMIC`
-                client.prove_valid_match_settle_atomic(witness, statement, commitments_link).await
+            ProofJob::IntentOnlyValidity { witness, statement } => {
+                client.prove_intent_only_validity(witness, statement).await
             },
-            ProofJob::ValidMalleableMatchSettleAtomic { witness, statement, commitments_link } => {
-                // Prove `VALID MALLEABLE MATCH SETTLE ATOMIC`
-                client
-                    .prove_valid_malleable_match_settle_atomic(witness, statement, commitments_link)
-                    .await
+            ProofJob::IntentOnlyFirstFillValidity { witness, statement } => {
+                client.prove_intent_only_first_fill_validity(witness, statement).await
             },
-            ProofJob::ValidFeeRedemption { witness, statement } => {
-                // Prove `VALID FEE REDEMPTION`
-                client.prove_valid_fee_redemption(witness, statement).await
+            ProofJob::NewOutputBalanceValidity { witness, statement } => {
+                client.prove_new_output_balance_validity(witness, statement).await
             },
-            ProofJob::ValidOfflineFeeSettlement { witness, statement } => {
-                // Prove `VALID OFFLINE FEE SETTLEMENT`
-                client.prove_valid_offline_fee_settlement(witness, statement).await
+            ProofJob::OutputBalanceValidity { witness, statement } => {
+                client.prove_output_balance_validity(witness, statement).await
             },
-            _ => return Err(ProofManagerError::prover("unsupported proof type")),
+            // Settlement proofs
+            ProofJob::IntentAndBalanceBoundedSettlement { witness, statement } => {
+                client.prove_intent_and_balance_bounded_settlement(witness, statement).await
+            },
+            ProofJob::IntentAndBalancePrivateSettlement { witness, statement } => {
+                client.prove_intent_and_balance_private_settlement(witness, statement).await
+            },
+            ProofJob::IntentAndBalancePublicSettlement { witness, statement } => {
+                client.prove_intent_and_balance_public_settlement(witness, statement).await
+            },
+            ProofJob::IntentOnlyBoundedSettlement { witness, statement } => {
+                client.prove_intent_only_bounded_settlement(witness, statement).await
+            },
+            ProofJob::IntentOnlyPublicSettlement { witness, statement } => {
+                client.prove_intent_only_public_settlement(witness, statement).await
+            },
+            // Fee proofs
+            ProofJob::ValidNoteRedemption { witness, statement } => {
+                client.prove_valid_note_redemption(witness, statement).await
+            },
+            ProofJob::ValidPrivateProtocolFeePayment { witness, statement } => {
+                client.prove_valid_private_protocol_fee_payment(witness, statement).await
+            },
+            ProofJob::ValidPrivateRelayerFeePayment { witness, statement } => {
+                client.prove_valid_private_relayer_fee_payment(witness, statement).await
+            },
+            ProofJob::ValidPublicProtocolFeePayment { witness, statement } => {
+                client.prove_valid_public_protocol_fee_payment(witness, statement).await
+            },
+            ProofJob::ValidPublicRelayerFeePayment { witness, statement } => {
+                client.prove_valid_public_relayer_fee_payment(witness, statement).await
+            },
         }?;
 
         // Ignore send errors
-        let _err = job.response_channel.send(bundle);
+        let _err = job.response_channel.send(response);
         Ok(())
     }
 }

@@ -96,6 +96,7 @@ impl Book {
     }
 
     /// Get the matchable amount for an order
+    #[cfg(test)]
     pub fn get_matchable_amount(&self, order_id: OrderId) -> Option<Amount> {
         self.order_map.get(&order_id).map(|order| order.matchable_amount)
     }

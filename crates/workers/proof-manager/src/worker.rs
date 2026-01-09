@@ -4,10 +4,10 @@
 use std::thread::{Builder, JoinHandle};
 
 use async_trait::async_trait;
-use util::default_wrapper::DefaultOption;
-use types_runtime::{CancelChannel, worker::Worker};
 use job_types::proof_manager::ProofManagerReceiver;
 use reqwest::Url;
+use types_runtime::{CancelChannel, Worker};
+use util::DefaultOption;
 
 use crate::implementations::{
     external_proof_manager::ExternalProofManager, native_proof_manager::NativeProofManager,
@@ -64,7 +64,7 @@ impl Worker for ProofManager {
     type WorkerConfig = ProofManagerConfig;
     type Error = ProofManagerError;
 
-    async fn new(config: Self::WorkerConfig) -> Result<Self, Self::Error>
+    async fn new(config: <Self as Worker>::WorkerConfig) -> Result<Self, <Self as Worker>::Error>
     where
         Self: Sized,
     {
@@ -79,7 +79,7 @@ impl Worker for ProofManager {
         false
     }
 
-    fn start(&mut self) -> Result<(), Self::Error> {
+    fn start(&mut self) -> Result<(), <Self as Worker>::Error> {
         // Take ownership of the thread pool and job queue
         let handle = if self.config.use_external_prover() {
             self.start_external_proof_manager()?
@@ -91,11 +91,11 @@ impl Worker for ProofManager {
         Ok(())
     }
 
-    fn cleanup(&mut self) -> Result<(), Self::Error> {
+    fn cleanup(&mut self) -> Result<(), <Self as Worker>::Error> {
         unimplemented!("")
     }
 
-    fn join(&mut self) -> Vec<JoinHandle<Self::Error>> {
+    fn join(&mut self) -> Vec<JoinHandle<<Self as Worker>::Error>> {
         vec![self.join_handle.take().unwrap()]
     }
 }

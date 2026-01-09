@@ -1,7 +1,6 @@
 //! Cluster communications broadcast via Pubsub
 
 use serde::{Deserialize, Serialize};
-use types_account::account::OrderId;
 use types_gossip::{ClusterId, WrappedPeerId};
 
 /// A message from one cluster peer to the rest indicating cluster management
@@ -17,20 +16,6 @@ pub struct ClusterManagementMessage {
 /// Represents a message containing cluster management information
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ClusterManagementMessageType {
-    /// A message to cluster peers indicating that the publisher has begun a
-    /// handshake on the given order pair
-    ///
-    /// Recipients should place this order pair in an invisibility window and
-    /// not schedule it for handshake until the invisibility period has
-    /// elapsed and either resulted in a match or an error
-    MatchInProgress(OrderId, OrderId),
-    /// A cache synchronization update wherein the sender informs its cluster
-    /// peers that it has run the match computation on a given pair of
-    /// orders
-    ///
-    /// The peers should cache this order pair as completed, and not initiate
-    /// handshakes with other peers on this order
-    CacheSync(OrderId, OrderId),
     /// Propose a peer expiry to the cluster
     ///
     /// Peers will check the last heartbeat they received from the expiry

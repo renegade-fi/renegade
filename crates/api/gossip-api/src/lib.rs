@@ -41,27 +41,25 @@ pub fn check_hmac<M: Serialize>(req: &M, mac: &[u8], key: &HmacKey) -> bool {
 pub enum GossipDestination {
     /// To the gossip server
     GossipServer,
-    /// To the handshake manager
-    HandshakeManager,
     /// Directly handled in the network layer
     NetworkManager,
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use crate::request_response::{GossipRequest, GossipRequestType};
+#[cfg(test)]
+mod tests {
+    use crate::request_response::{GossipRequest, GossipRequestType};
 
-//     use super::*;
+    use super::*;
 
-//     #[test]
-//     fn test_hmac() {
-//         const SIZE: usize = 10_000;
-//         let key = HmacKey([20u8; 32]);
+    #[test]
+    fn test_hmac() {
+        const SIZE: usize = 10_000;
+        let key = HmacKey([20u8; 32]);
 
-//         let body = vec![0u8; SIZE];
-//         let message = GossipRequest::new(GossipRequestType::Raft(body));
-//         let hmac = create_hmac(&message, &key);
+        let body = vec![0u8; SIZE];
+        let message = GossipRequest::new(GossipRequestType::Raft(body));
+        let hmac = create_hmac(&message, &key);
 
-//         assert!(check_hmac(&message, &hmac, &key));
-//     }
-// }
+        assert!(check_hmac(&message, &hmac, &key));
+    }
+}

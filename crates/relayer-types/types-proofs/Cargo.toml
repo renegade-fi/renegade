@@ -1,0 +1,33 @@
+[package]
+name = "types-proofs"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = []
+mocks = [
+    "circuit-types/proof-system-types",
+    "dep:ark-ec",
+    "dep:ark-poly",
+    "dep:jf-primitives",
+    "dep:mpc-plonk",
+    "dep:mpc-relation",
+]
+rkyv = ["dep:rkyv"]
+
+[dependencies]
+serde = { workspace = true }
+
+# === Optional === #
+rkyv = { workspace = true, optional = true, features = ["std", "alloc"] }
+ark-ec = { version = "0.4", optional = true }
+ark-poly = { version = "0.4", optional = true }
+jf-primitives = { workspace = true, optional = true }
+mpc-plonk = { workspace = true, optional = true }
+mpc-relation = { workspace = true, optional = true }
+
+# === Workspace Dependencies === #
+circuit-types = { workspace = true }
+circuits-core = { workspace = true, default-features = false }
+constants = { workspace = true }
+types-core = { workspace = true, default-features = false }

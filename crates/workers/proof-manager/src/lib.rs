@@ -8,8 +8,8 @@
 #![deny(clippy::needless_pass_by_ref_mut)]
 #![allow(incomplete_features)]
 
-// pub mod error;
-// pub mod implementations;
-// #[cfg(feature = "mocks")]
-// pub mod mock;
-// pub mod worker;
+pub mod error;
+pub mod implementations;
+#[cfg(feature = "mocks")]
+pub mod mock;
+pub mod worker;

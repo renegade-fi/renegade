@@ -19,8 +19,8 @@ impl NetworkManagerExecutor {
     ) -> Result<(), NetworkManagerError> {
         // Update the local peer's public IP address if it has not already been
         // discovered
-        if let IdentifyEvent::Received { info, .. } = event {
-            if !self.discovered_identity.load(Ordering::Relaxed) {
+        if let IdentifyEvent::Received { info, .. } = event
+            && !self.discovered_identity.load(Ordering::Relaxed) {
                 // Replace the port if the discovered NAT port is incorrect
                 let mut local_addr = info.observed_addr;
                 replace_port(&mut local_addr, self.p2p_port);
@@ -43,7 +43,6 @@ impl NetworkManagerExecutor {
                     }
                 }
             }
-        }
 
         Ok(())
     }
