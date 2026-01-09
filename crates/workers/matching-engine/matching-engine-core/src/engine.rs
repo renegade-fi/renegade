@@ -1,6 +1,6 @@
 //! The matching engine
 
-use std::sync::Arc;
+use std::{ops::RangeInclusive, sync::Arc};
 
 use circuit_types::{Amount, fixed_point::FixedPoint};
 use crypto::fields::scalar_to_u128;
@@ -15,6 +15,12 @@ use crate::book::Book;
 pub struct MatchingEngine {
     /// A mapping from asset pair and matching pool to the book
     book_map: Arc<DashMap<(Pair, MatchingPoolName), Book>>,
+}
+
+impl Default for MatchingEngine {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl MatchingEngine {
@@ -93,11 +99,11 @@ impl MatchingEngine {
     pub fn find_match(
         &self,
         input_pair: Pair,
-        max_input: Amount,
+        input_range: RangeInclusive<Amount>,
         matching_pool: MatchingPoolName,
         price: FixedPoint,
     ) -> Option<(OrderId, MatchResult)> {
-        self.find_match_helper(input_pair, max_input, matching_pool, price, false)
+        self.find_match_helper(input_pair, input_range, matching_pool, price, false)
     }
 
     /// Find an external match for an order
@@ -115,11 +121,11 @@ impl MatchingEngine {
     pub fn find_match_external(
         &self,
         input_pair: Pair,
-        max_input: Amount,
+        input_range: RangeInclusive<Amount>,
         matching_pool: MatchingPoolName,
         price: FixedPoint,
     ) -> Option<(OrderId, MatchResult)> {
-        self.find_match_helper(input_pair, max_input, matching_pool, price, true)
+        self.find_match_helper(input_pair, input_range, matching_pool, price, true)
     }
 
     /// Common helper for finding matches
@@ -138,18 +144,18 @@ impl MatchingEngine {
     fn find_match_helper(
         &self,
         input_pair: Pair,
-        max_input: Amount,
+        input_range: RangeInclusive<Amount>,
         matching_pool: MatchingPoolName,
         price: FixedPoint,
         require_externally_matchable: bool,
     ) -> Option<(OrderId, MatchResult)> {
         let counterparty_pair = input_pair.reverse(); // Reverse the pair to get the counterparty's book
         let counterparty_price = price.inverse()?;
-        let max_output = scalar_to_u128(&price.floor_mul_int(max_input));
+        let output_range = input_range_to_output_range(input_range, price);
 
         let book = self.book_map.get(&(counterparty_pair, matching_pool))?;
         let (counterparty_oid, counterparty_input_amount) =
-            book.find_match(counterparty_price, max_output, require_externally_matchable)?;
+            book.find_match(counterparty_price, output_range, require_externally_matchable)?;
         drop(book); // Release the borrow
 
         // Build the match result
@@ -177,10 +183,19 @@ impl MatchingEngine {
     }
 }
 
-impl Default for MatchingEngine {
-    fn default() -> Self {
-        Self::new()
-    }
+// -----------
+// | Helpers |
+// -----------
+
+/// Convert an input range to an output range
+#[inline]
+fn input_range_to_output_range(
+    input_range: RangeInclusive<Amount>,
+    price: FixedPoint,
+) -> RangeInclusive<Amount> {
+    let start = price.floor_mul_int(*input_range.start());
+    let end = price.floor_mul_int(*input_range.end());
+    scalar_to_u128(&start)..=scalar_to_u128(&end)
 }
 
 #[cfg(test)]
@@ -280,7 +295,7 @@ mod tests {
         // Input order wants to trade token A -> token B
         let input_pair = test_pair();
         let price = FixedPoint::from_integer(2); // 2 B per A
-        let max_input = 100; // Can provide up to 100 A
+        let input_range = 0..=100; // Can provide up to 100 A
 
         // Counterparty order wants to trade token B -> token A
         // Their min_price is in units of A/B = 1/2 = 0.5
@@ -288,7 +303,7 @@ mod tests {
             create_counterparty_order(500, FixedPoint::from_f64_round_down(0.5));
         engine.add_order(&counterparty_order, 500, pool.clone());
 
-        let result = engine.find_match(input_pair, max_input, pool, price);
+        let result = engine.find_match(input_pair, input_range, pool, price);
         assert!(result.is_some(), "Should find a match");
 
         let (matched_oid, match_result) = result.unwrap();
@@ -319,9 +334,9 @@ mod tests {
 
         let input_pair = test_pair();
         let price = FixedPoint::from_integer(2);
-        let max_input = 100;
+        let input_range = 0..=100;
 
-        let result = engine.find_match(input_pair, max_input, pool, price);
+        let result = engine.find_match(input_pair, input_range, pool, price);
         assert!(result.is_none(), "Should not find match when no counterparty orders exist");
     }
 
@@ -332,7 +347,7 @@ mod tests {
 
         let input_pair = test_pair();
         let price = FixedPoint::from_integer(2); // 2 B per A
-        let max_input = 100;
+        let input_range = 0..=100;
 
         // Counterparty wants at least 0.6 A per B (min_price = 0.6)
         // But at price 2.0, counterparty gets 0.5 A per B (inverse = 0.5)
@@ -341,7 +356,7 @@ mod tests {
             create_counterparty_order(500, FixedPoint::from_f64_round_down(0.6));
         engine.add_order(&counterparty_order, 500, pool.clone());
 
-        let result = engine.find_match(input_pair, max_input, pool, price);
+        let result = engine.find_match(input_pair, input_range, pool, price);
         assert!(result.is_none(), "Should not match when price is below counterparty's min");
     }
 
@@ -352,19 +367,19 @@ mod tests {
 
         let input_pair = test_pair();
         let price = FixedPoint::from_integer(2); // 2 B per A
-        let max_input = 50; // Limited to 50 A
+        let input_range = 0..=50; // Limited to 50 A
 
         let counterparty_order =
             create_counterparty_order(500, FixedPoint::from_f64_round_down(0.4));
         engine.add_order(&counterparty_order, 500, pool.clone());
 
-        let result = engine.find_match(input_pair, max_input, pool, price);
+        let result = engine.find_match(input_pair, input_range, pool, price);
         assert!(result.is_some());
 
         let (_, match_result) = result.unwrap();
         let ob1 = match_result.party0_obligation();
 
-        // Should be limited by max_input: 50 A -> 100 B
+        // Should be limited by input_range max: 50 A -> 100 B
         assert_eq!(ob1.amount_in, 50);
         assert_eq!(ob1.amount_out, 100);
     }
@@ -376,14 +391,14 @@ mod tests {
 
         let input_pair = test_pair();
         let price = FixedPoint::from_integer(2); // 2 B per A
-        let max_input = 1000; // Can provide up to 1000 A
+        let input_range = 0..=1000; // Can provide up to 1000 A
 
         // Counterparty only has 100 B available
         let counterparty_order =
             create_counterparty_order(100, FixedPoint::from_f64_round_down(0.4));
         engine.add_order(&counterparty_order, 100, pool.clone());
 
-        let result = engine.find_match(input_pair, max_input, pool, price);
+        let result = engine.find_match(input_pair, input_range, pool, price);
         assert!(result.is_some());
 
         let (_, match_result) = result.unwrap();
@@ -401,7 +416,7 @@ mod tests {
 
         let input_pair = test_pair();
         let price = FixedPoint::from_integer(2);
-        let max_input = 1000;
+        let input_range = 0..=1000;
 
         // Add multiple counterparty orders with different matchable amounts
         let order1 = create_counterparty_order(100, FixedPoint::from_f64_round_down(0.4));
@@ -412,7 +427,7 @@ mod tests {
         engine.add_order(&order2, 500, pool.clone());
         engine.add_order(&order3, 200, pool.clone());
 
-        let result = engine.find_match(input_pair, max_input, pool, price);
+        let result = engine.find_match(input_pair, input_range, pool, price);
         assert!(result.is_some());
 
         // Should match with order2 (largest matchable amount = 500)
@@ -433,20 +448,20 @@ mod tests {
 
         let input_pair = test_pair();
         let price = FixedPoint::from_integer(2);
-        let max_input = 100;
+        let input_range = 0..=100;
 
         // Add order to pool1
         let order1 = create_counterparty_order(500, FixedPoint::from_f64_round_down(0.4));
         engine.add_order(&order1, 500, pool1.clone());
 
         // Should find match in pool1
-        let result1 = engine.find_match(input_pair, max_input, pool1.clone(), price);
+        let result1 = engine.find_match(input_pair, input_range.clone(), pool1.clone(), price);
         assert!(result1.is_some());
         let (oid, _) = result1.unwrap();
         assert_eq!(oid, order1.id);
 
         // Should not find match in pool2
-        let result2 = engine.find_match(input_pair, max_input, pool2, price);
+        let result2 = engine.find_match(input_pair, input_range, pool2, price);
         assert!(result2.is_none());
     }
 
@@ -457,7 +472,7 @@ mod tests {
 
         let input_pair = test_pair();
         let price = FixedPoint::from_integer(2);
-        let max_input = 10; // Small amount
+        let input_range = 0..=10; // Small amount
 
         // Counterparty has large min_fill_size
         let mut counterparty_order =
@@ -465,8 +480,8 @@ mod tests {
         counterparty_order.metadata.min_fill_size = 100; // Requires at least 100 B
         engine.add_order(&counterparty_order, 500, pool.clone());
 
-        // max_input of 10 A -> 20 B, but counterparty needs at least 100 B
-        let result = engine.find_match(input_pair, max_input, pool, price);
+        // input_range max of 10 A -> 20 B, but counterparty needs at least 100 B
+        let result = engine.find_match(input_pair, input_range, pool, price);
         assert!(result.is_none(), "Should not match when min_fill_size not met");
     }
 
@@ -477,13 +492,13 @@ mod tests {
 
         let input_pair = test_pair();
         let price = FixedPoint::from_f64_round_down(1.5); // 1.5 B per A
-        let max_input = 100;
+        let input_range = 0..=100;
 
         let counterparty_order =
             create_counterparty_order(500, FixedPoint::from_f64_round_down(0.5));
         engine.add_order(&counterparty_order, 500, pool.clone());
 
-        let result = engine.find_match(input_pair, max_input, pool, price);
+        let result = engine.find_match(input_pair, input_range, pool, price);
         assert!(result.is_some());
 
         let (_, match_result) = result.unwrap();
@@ -502,7 +517,7 @@ mod tests {
 
         let input_pair = test_pair();
         let price = FixedPoint::from_integer(2); // 2 B per A
-        let max_input = 100;
+        let input_range = 0..=100;
 
         // Create two counterparty orders:
         // order1: externally matchable (default)
@@ -516,15 +531,16 @@ mod tests {
         engine.add_order(&order1, 300, pool.clone());
         engine.add_order(&order2, 500, pool.clone());
 
-        // find_match (internal) should match with order1 (largest, 500)
-        let result_internal = engine.find_match(input_pair, max_input, pool.clone(), price);
+        // find_match (internal) should match with order2 (largest, 500)
+        let result_internal =
+            engine.find_match(input_pair, input_range.clone(), pool.clone(), price);
         assert!(result_internal.is_some());
         let (matched_oid_internal, _) = result_internal.unwrap();
         assert_eq!(matched_oid_internal, order2.id, "Internal match should find order2 (largest)");
 
-        // find_match_external should also match with order1 (only externally matchable)
+        // find_match_external should match with order1 (only externally matchable)
         let result_external =
-            engine.find_match_external(input_pair, max_input, pool.clone(), price);
+            engine.find_match_external(input_pair, input_range, pool.clone(), price);
         assert!(result_external.is_some());
         let (matched_oid_external, _) = result_external.unwrap();
         assert_eq!(
@@ -540,7 +556,7 @@ mod tests {
 
         let input_pair = test_pair();
         let price = FixedPoint::from_integer(2); // 2 B per A
-        let max_input = 100;
+        let input_range = 0..=100;
 
         // Create a counterparty order that is NOT externally matchable
         let mut order = create_counterparty_order(500, FixedPoint::from_f64_round_down(0.4));
@@ -548,17 +564,225 @@ mod tests {
         engine.add_order(&order, 500, pool.clone());
 
         // find_match (internal) should still match
-        let result_internal = engine.find_match(input_pair, max_input, pool.clone(), price);
+        let result_internal =
+            engine.find_match(input_pair, input_range.clone(), pool.clone(), price);
         assert!(
             result_internal.is_some(),
             "Internal match should work regardless of externally_matchable"
         );
 
         // find_match_external should NOT match
-        let result_external = engine.find_match_external(input_pair, max_input, pool, price);
+        let result_external = engine.find_match_external(input_pair, input_range, pool, price);
         assert!(
             result_external.is_none(),
             "External match should not find non-externally-matchable orders"
         );
+    }
+
+    // ------------------------------
+    // | Range-Based Matching Tests |
+    // ------------------------------
+
+    #[test]
+    fn test_find_match_with_nonzero_minimum() {
+        let engine = MatchingEngine::new();
+        let pool = test_matching_pool();
+
+        let input_pair = test_pair();
+        let price = FixedPoint::from_integer(2); // 2 B per A
+        let input_range = 50..=100; // Must provide at least 50 A
+
+        // Counterparty has 500 B available
+        let counterparty_order =
+            create_counterparty_order(500, FixedPoint::from_f64_round_down(0.4));
+        engine.add_order(&counterparty_order, 500, pool.clone());
+
+        let result = engine.find_match(input_pair, input_range, pool, price);
+        assert!(result.is_some());
+
+        let (_, match_result) = result.unwrap();
+        let ob1 = match_result.party0_obligation();
+
+        // Should match: 100 A -> 200 B (limited by input_range max)
+        assert_eq!(ob1.amount_in, 100);
+        assert_eq!(ob1.amount_out, 200);
+    }
+
+    #[test]
+    fn test_find_match_no_intersection_input_min_too_high() {
+        let engine = MatchingEngine::new();
+        let pool = test_matching_pool();
+
+        let input_pair = test_pair();
+        let price = FixedPoint::from_integer(2); // 2 B per A
+        // Input party requires at least 200 A (-> 400 B output)
+        let input_range = 200..=500;
+
+        // Counterparty only has 100 B available
+        // At price 2, 100 B corresponds to 50 A input
+        // Implied output range: 400..=1000 B
+        // Counterparty's range: min_fill_size..=100 = 1..=100 B
+        let counterparty_order =
+            create_counterparty_order(100, FixedPoint::from_f64_round_down(0.4));
+        engine.add_order(&counterparty_order, 100, pool.clone());
+
+        let result = engine.find_match(input_pair, input_range, pool, price);
+        assert!(result.is_none(), "Should not match when ranges don't intersect");
+    }
+
+    #[test]
+    fn test_find_match_no_intersection_counterparty_min_fill_too_high() {
+        let engine = MatchingEngine::new();
+        let pool = test_matching_pool();
+
+        let input_pair = test_pair();
+        let price = FixedPoint::from_integer(2); // 2 B per A
+        // Input party can provide up to 20 A (-> 40 B output)
+        let input_range = 0..=20;
+
+        // Counterparty requires at least 100 B min_fill_size
+        // Input's output range: 0..=40 B
+        // Counterparty's range: 100..=500 B
+        // These ranges don't intersect (40 < 100)
+        let mut counterparty_order =
+            create_counterparty_order(500, FixedPoint::from_f64_round_down(0.4));
+        counterparty_order.metadata.min_fill_size = 100;
+        engine.add_order(&counterparty_order, 500, pool.clone());
+
+        let result = engine.find_match(input_pair, input_range, pool, price);
+        assert!(
+            result.is_none(),
+            "Should not match when counterparty min_fill_size exceeds output"
+        );
+    }
+
+    #[test]
+    fn test_find_match_partial_range_intersection() {
+        let engine = MatchingEngine::new();
+        let pool = test_matching_pool();
+
+        let input_pair = test_pair();
+        let price = FixedPoint::from_integer(2); // 2 B per A
+        // Input party can provide 30-100 A (-> 60-200 B output)
+        let input_range = 30..=100;
+
+        // Counterparty has min_fill_size=50, matchable_amount=80
+        // Counterparty's range: 50..=80 B
+        // Input's output range: 60..=200 B
+        // Intersection: 60..=80 B
+        let mut counterparty_order =
+            create_counterparty_order(80, FixedPoint::from_f64_round_down(0.4));
+        counterparty_order.metadata.min_fill_size = 50;
+        engine.add_order(&counterparty_order, 80, pool.clone());
+
+        let result = engine.find_match(input_pair, input_range, pool, price);
+        assert!(result.is_some(), "Should match when ranges partially intersect");
+
+        let (_, match_result) = result.unwrap();
+        let ob1 = match_result.party0_obligation();
+
+        // Match amount should be min(counterparty.matchable_amount, output_range.end)
+        // = min(80, 200) = 80 B
+        assert_eq!(ob1.amount_out, 80);
+        // 80 B / 2 = 40 A
+        assert_eq!(ob1.amount_in, 40);
+    }
+
+    #[test]
+    fn test_find_match_exact_boundary_intersection() {
+        let engine = MatchingEngine::new();
+        let pool = test_matching_pool();
+
+        let input_pair = test_pair();
+        let price = FixedPoint::from_integer(2); // 2 B per A
+        // Input party can provide 25-50 A (-> 50-100 B output)
+        let input_range = 25..=50;
+
+        // Counterparty has min_fill_size=100, matchable_amount=200
+        // Counterparty's range: 100..=200 B
+        // Input's output range: 50..=100 B
+        // Intersection: exactly at 100 B (boundary)
+        let mut counterparty_order =
+            create_counterparty_order(200, FixedPoint::from_f64_round_down(0.4));
+        counterparty_order.metadata.min_fill_size = 100;
+        engine.add_order(&counterparty_order, 200, pool.clone());
+
+        let result = engine.find_match(input_pair, input_range, pool, price);
+        assert!(result.is_some(), "Should match when ranges touch at boundary");
+
+        let (_, match_result) = result.unwrap();
+        let ob1 = match_result.party0_obligation();
+
+        // Match at the boundary: 100 B
+        assert_eq!(ob1.amount_out, 100);
+        assert_eq!(ob1.amount_in, 50);
+    }
+
+    #[test]
+    fn test_find_match_skips_non_intersecting_finds_intersecting() {
+        let engine = MatchingEngine::new();
+        let pool = test_matching_pool();
+
+        let input_pair = test_pair();
+        let price = FixedPoint::from_integer(2); // 2 B per A
+        // Input party can provide 40-60 A (-> 80-120 B output)
+        let input_range = 40..=60;
+
+        // Order 1: Large but min_fill_size too high (doesn't intersect)
+        // range: 200..=500 B, but input's output range is 80..=120
+        let mut order1 = create_counterparty_order(500, FixedPoint::from_f64_round_down(0.4));
+        order1.metadata.min_fill_size = 200;
+
+        // Order 2: Smaller but intersects
+        // range: 50..=100 B, intersects with 80..=120 at 80..=100
+        let mut order2 = create_counterparty_order(100, FixedPoint::from_f64_round_down(0.4));
+        order2.metadata.min_fill_size = 50;
+
+        engine.add_order(&order1, 500, pool.clone());
+        engine.add_order(&order2, 100, pool.clone());
+
+        let result = engine.find_match(input_pair, input_range, pool, price);
+        assert!(result.is_some());
+
+        // Should skip order1 (no intersection) and match with order2
+        let (matched_oid, match_result) = result.unwrap();
+        assert_eq!(matched_oid, order2.id, "Should match order2, not order1");
+
+        let ob1 = match_result.party0_obligation();
+        // Match amount: min(100, 120) = 100 B
+        assert_eq!(ob1.amount_out, 100);
+        assert_eq!(ob1.amount_in, 50);
+    }
+
+    #[test]
+    fn test_find_match_range_with_fractional_price() {
+        let engine = MatchingEngine::new();
+        let pool = test_matching_pool();
+
+        let input_pair = test_pair();
+        let price = FixedPoint::from_f64_round_down(1.5); // 1.5 B per A
+        // Input party can provide 40-80 A (-> 60-120 B output at price 1.5)
+        let input_range = 40..=80;
+
+        // Counterparty has min_fill_size=50, matchable_amount=100
+        // Counterparty's range: 50..=100 B
+        // Input's output range: 60..=120 B
+        // Intersection: 60..=100 B
+        let mut counterparty_order =
+            create_counterparty_order(100, FixedPoint::from_f64_round_down(0.5));
+        counterparty_order.metadata.min_fill_size = 50;
+        engine.add_order(&counterparty_order, 100, pool.clone());
+
+        let result = engine.find_match(input_pair, input_range, pool, price);
+        assert!(result.is_some(), "Should match with fractional price");
+
+        let (_, match_result) = result.unwrap();
+        let ob1 = match_result.party0_obligation();
+
+        // Match amount: min(counterparty.matchable_amount, output_range.end)
+        // = min(100, 120) = 100 B
+        assert_eq!(ob1.amount_out, 100);
+        // input_amount = 100 / 1.5 = 66.67, but due to floor rounding ≈ 66
+        assert_eq!(ob1.amount_in, 66);
     }
 }
