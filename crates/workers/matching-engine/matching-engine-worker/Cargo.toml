@@ -17,6 +17,7 @@ tokio = { workspace = true }
 
 #=== Workspace Dependencies === #
 darkpool-client = { workspace = true }
+darkpool-types = { workspace = true }
 circuit-types = { workspace = true }
 types-core = { workspace = true }
 types-tasks = { workspace = true }

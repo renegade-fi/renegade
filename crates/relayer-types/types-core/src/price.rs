@@ -2,6 +2,7 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use circuit_types::fixed_point::FixedPoint;
 use serde::{Deserialize, Serialize};
 
 use crate::exchange::PriceReport;
@@ -56,5 +57,34 @@ impl TimestampedPrice {
 impl From<&PriceReport> for TimestampedPrice {
     fn from(value: &PriceReport) -> Self {
         Self { price: value.price, timestamp: value.local_timestamp }
+    }
+}
+
+/// A price along with the time it was sampled represented as a fixed point
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct TimestampedPriceFp {
+    /// The price
+    pub price: FixedPoint,
+    /// The time the price was sampled, in milliseconds since the epoch
+    pub timestamp: u64,
+}
+
+impl From<TimestampedPrice> for TimestampedPriceFp {
+    fn from(value: TimestampedPrice) -> Self {
+        let price = FixedPoint::from_f64_round_down(value.price);
+        Self { price, timestamp: value.timestamp }
+    }
+}
+
+impl From<TimestampedPriceFp> for TimestampedPrice {
+    fn from(value: TimestampedPriceFp) -> Self {
+        Self { price: value.price.to_f64(), timestamp: value.timestamp }
+    }
+}
+
+impl From<FixedPoint> for TimestampedPriceFp {
+    fn from(price: FixedPoint) -> Self {
+        let timestamp = get_current_time_millis();
+        Self { price, timestamp }
     }
 }

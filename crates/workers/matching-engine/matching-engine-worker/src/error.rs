@@ -11,6 +11,9 @@ pub enum MatchingEngineError {
     /// Necessary price data was not available for a token pair
     #[error("no price data: {0}")]
     NoPriceData(String),
+    /// No valid bounds could be crated for a bounded match
+    #[error("no valid bounds could be created for a bounded match")]
+    NoValidBounds,
     /// Error interacting with the price reporter
     #[error("price reporter error: {0}")]
     PriceReporter(String),

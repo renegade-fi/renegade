@@ -131,12 +131,15 @@ impl Book {
     /// If `require_externally_matchable` is `true`, only matches against
     /// orders that have `externally_matchable` set to `true`. If `false`, does
     /// not filter on externally matchable status.
+    ///
+    /// Returns the order id, the match amount, and the matchable amount bounds
+    /// (min and max) of the counterparty.
     pub fn find_match(
         &self,
         price: FixedPoint,
         amount_range: RangeInclusive<Amount>,
         require_externally_matchable: bool,
-    ) -> Option<(OrderId, Amount)> {
+    ) -> Option<(OrderId, Amount, RangeInclusive<Amount>)> {
         // Build an iterator over orders sorted by descending matchable amount
         let orders = self.iter();
         for (oid, order) in orders {
@@ -154,7 +157,8 @@ impl Book {
 
             // Compute the match amount
             let match_amount = Amount::min(order.matchable_amount, *amount_range.end());
-            return Some((*oid, match_amount));
+            let matchable_amount_bounds = order.min_fill_size..=order.matchable_amount;
+            return Some((*oid, match_amount, matchable_amount_bounds));
         }
 
         None

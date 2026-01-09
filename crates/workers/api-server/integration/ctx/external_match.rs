@@ -1,5 +1,6 @@
 //! Helpers for interacting with the external match API
 
+use constants::GLOBAL_MATCHING_POOL;
 use external_api::http::external_match::{
     ASSEMBLE_EXTERNAL_MATCH_ROUTE, AssembleExternalMatchRequest, ExternalMatchResponse,
     ExternalOrder, ExternalQuoteRequest, ExternalQuoteResponse, REQUEST_EXTERNAL_QUOTE_ROUTE,
@@ -8,7 +9,6 @@ use external_api::http::external_match::{
 use eyre::Result;
 use hyper::StatusCode;
 use reqwest::{Method, Response, header::HeaderMap};
-use state::storage::tx::matching_pools::GLOBAL_MATCHING_POOL;
 use types_runtime::MatchingPoolName;
 
 use crate::ctx::IntegrationTestCtx;

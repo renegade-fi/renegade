@@ -122,12 +122,15 @@ impl MatchingEngineExecutor {
             // An order has been updated, the executor should run the internal engine on the
             // new order to check for matches
             MatchingEngineWorkerJob::InternalMatchingEngine { order } => {
-                self.run_internal_matching_engine(order).await
+                todo!()
+                // self.run_internal_matching_engine(order).await
             },
 
             // A request to run the external matching engine
             MatchingEngineWorkerJob::ExternalMatchingEngine { order, response_topic, options } => {
-                self.run_external_matching_engine(order, response_topic, options).await
+                todo!()
+                // self.run_external_matching_engine(order, response_topic,
+                // options).await
             },
         }
     }

@@ -17,6 +17,7 @@ serde = { workspace = true }
 uuid = { version = "1.1.2", features = ["v4", "serde"] }
 
 # === Workspace Dependencies === #
+circuit-types = { workspace = true }
 constants = { workspace = true, default-features = false }
 util = { workspace = true, features = ["hex-core", "serde", "concurrency"] }
 

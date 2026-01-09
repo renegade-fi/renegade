@@ -1,28 +1,12 @@
 //! Defines logic for running the internal matching engine on a given order
 
-use std::collections::HashSet;
-
-use circuit_types::r#match::MatchResult;
-use common::types::network_order::NetworkOrder;
-use common::types::proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle};
+use circuit_types::Amount;
+use matching_engine_core::SuccessfulMatch;
 use tracing::{error, info, instrument};
-use types_account::account::{Order, OrderId, Wallet, WalletIdentifier};
-use types_core::price::TimestampedPriceFp;
-use types_tasks::{SettleMatchInternalTaskDescriptor, TaskDescriptor};
+use types_account::{MatchingPoolName, OrderId, order::Order};
+use types_core::AccountId;
 
-use crate::executor::MatchingEngineExecutor;
-use crate::{
-    error::HandshakeManagerError,
-    executor::{
-        HandshakeExecutor,
-        handshake::{ERR_NO_ORDER, ERR_NO_WALLET},
-    },
-};
-
-use super::matching_order_filter;
-
-/// Error emitted when proofs of validity cannot be found for an order
-const ERR_MISSING_PROOFS: &str = "validity proofs not found in global state";
+use crate::{error::MatchingEngineError, executor::MatchingEngineExecutor};
 
 // ------------------------
 // | Matching Engine Impl |
@@ -41,176 +25,93 @@ impl MatchingEngineExecutor {
     pub async fn run_internal_matching_engine(
         &self,
         order_id: OrderId,
-    ) -> Result<(), HandshakeManagerError> {
+    ) -> Result<(), MatchingEngineError> {
         info!("Running internal matching engine on order {order_id}");
-        // Lookup the order and its wallet
-        let (network_order, wallet) = self.fetch_order_and_wallet(&order_id).await?;
-        let my_order = wallet
-            .orders
-            .get(&network_order.id)
-            .cloned()
-            .ok_or_else(|| HandshakeManagerError::State(ERR_NO_ORDER.to_string()))?;
-        let sell_mint = my_order.send_mint();
-        let my_balance = wallet.get_balance_or_default(sell_mint);
+        // Lookup the order, matchable amount, and matching pool
+        let (order, matchable_amount) = self.fetch_order_and_matchable_amount(&order_id).await?;
+        let matching_pool = self.fetch_matching_pool(&order_id).await?;
 
-        // Sample a price to match the order at
-        let ts_price = self.get_execution_price_for_order(&network_order.id).await?;
+        // Find a match
+        let res = self.find_internal_match(&order, matchable_amount, matching_pool)?;
+        let successful_match = match res {
+            Some(match_res) => match_res,
+            None => {
+                info!("No internal matches found for {order_id:?}");
+                return Ok(());
+            },
+        };
 
-        // Try to find a match iteratively, we wrap this in a retry loop in case
-        // settlement fails on a match
-        let mut match_candidates =
-            self.get_internal_match_candidates(order_id, &my_order, &wallet).await?;
-        while !match_candidates.is_empty() {
-            let (other_order_id, match_res) = match self
-                .find_match(&my_order, &my_balance, ts_price.price(), match_candidates.iter())
-                .await?
-            {
-                Some(match_res) => match_res,
-                None => {
-                    info!("No internal matches found for {order_id:?}");
+        // TODO: maybe iteratively attempt to find a match and blacklist an order if
+        // settlement fails?
+        let other_id = successful_match.other_order_id;
+        match self.try_settle_match(order_id, successful_match).await {
+            Ok(()) => {
+                // Stop matching if a match was found
+                return Ok(());
+            },
+            Err(e) => {
+                error!("internal match settlement failed for {} x {}: {e}", other_id, order_id,);
+
+                // Check whether matching should continue
+                if !self.order_still_valid(&order_id).await? {
+                    info!("account has changed, stopping internal matching engine...");
                     return Ok(());
-                },
-            };
-
-            // Try to settle the match
-            match self.try_settle_match(order_id, other_order_id, ts_price, match_res).await {
-                Ok(()) => {
-                    // Stop matching if a match was found
-                    return Ok(());
-                },
-                Err(e) => {
-                    error!(
-                        "internal match settlement failed for {} x {}: {e}",
-                        other_order_id, order_id,
-                    );
-
-                    // Check whether matching should continue
-                    if !self.wallet_still_valid(&wallet).await? {
-                        info!("wallet has changed, stopping internal matching engine...");
-                        return Ok(());
-                    }
-                },
-            }
-
-            // If matching failed, remove the other order from the candidate set
-            match_candidates.remove(&other_order_id);
+                }
+            },
         }
 
         Ok(())
     }
 
-    /// Get the set of match candidates for an order
-    ///
-    /// Shuffles the ordering of the other orders for fairness
-    async fn get_internal_match_candidates(
-        &self,
-        order_id: OrderId,
-        order: &Order,
-        wallet: &Wallet,
-    ) -> Result<HashSet<OrderId>, HandshakeManagerError> {
-        // Filter by matching pool
-        let my_pool_name = self.state.get_matching_pool_for_order(&order_id).await?;
-        let filter = matching_order_filter(order, false /* external */);
-        let other_orders =
-            self.state.get_matchable_orders_in_matching_pool(my_pool_name, filter).await?;
-        let mut orders_set = HashSet::from_iter(other_orders);
-
-        // Filter out orders from the same wallet
-        let wallet_order_ids = wallet.orders.keys();
-        for order_id in wallet_order_ids {
-            orders_set.remove(order_id);
-        }
-
-        Ok(orders_set)
-    }
-
     /// Try a match and settle it if the two orders cross
     async fn try_settle_match(
         &self,
-        order_id1: OrderId,
-        order_id2: OrderId,
-        price: TimestampedPriceFp,
-        match_result: MatchResult,
-    ) -> Result<(), HandshakeManagerError> {
-        // Fetch state elements needed for settlement
-        let wallet_id1 = self.get_wallet_id_for_order(&order_id1).await?;
-        let wallet_id2 = self.get_wallet_id_for_order(&order_id2).await?;
-        let (validity_proof1, validity_witness1) =
-            self.get_validity_proof_and_witness(&order_id1).await?;
-        let (validity_proof2, validity_witness2) =
-            self.get_validity_proof_and_witness(&order_id2).await?;
-
-        // Submit the match to the task driver
-        let task: TaskDescriptor = SettleMatchInternalTaskDescriptor::new(
-            price,
-            order_id1,
-            order_id2,
-            wallet_id1,
-            wallet_id2,
-            validity_proof1,
-            validity_witness1,
-            validity_proof2,
-            validity_witness2,
-            match_result,
-        )
-        .unwrap()
-        .into();
-
-        self.forward_queued_task(task).await
+        user_order: OrderId,
+        match_result: SuccessfulMatch,
+    ) -> Result<(), MatchingEngineError> {
+        todo!("Add settlement task")
     }
 
     // -----------
     // | Helpers |
     // -----------
 
-    /// Get the validity proof and witness for a given order
-    async fn get_validity_proof_and_witness(
-        &self,
-        order_id: &OrderId,
-    ) -> Result<(OrderValidityProofBundle, OrderValidityWitnessBundle), HandshakeManagerError> {
-        let state = &self.state;
-        let proof = state
-            .get_validity_proofs(order_id)
-            .await?
-            .ok_or_else(|| HandshakeManagerError::state(ERR_MISSING_PROOFS))?;
-        let witness = state
-            .get_validity_proof_witness(order_id)
-            .await?
-            .ok_or_else(|| HandshakeManagerError::state(ERR_MISSING_PROOFS))?;
-
-        Ok((proof, witness))
-    }
-
     /// Get the wallet for an order
-    pub(crate) async fn get_wallet_id_for_order(
+    pub(crate) async fn get_account_id_for_order(
         &self,
         order_id: &OrderId,
-    ) -> Result<WalletIdentifier, HandshakeManagerError> {
-        self.state
-            .get_wallet_id_for_order(order_id)
-            .await?
-            .ok_or_else(|| HandshakeManagerError::state(ERR_NO_WALLET))
+    ) -> Result<AccountId, MatchingEngineError> {
+        self.state.get_account_id_for_order(order_id).await?.ok_or_else(|| {
+            MatchingEngineError::state(format!("no account id found for order {order_id:?}"))
+        })
     }
 
     /// Fetch the order and wallet for the given order identifier
-    async fn fetch_order_and_wallet(
+    async fn fetch_order_and_matchable_amount(
         &self,
-        order: &OrderId,
-    ) -> Result<(NetworkOrder, Wallet), HandshakeManagerError> {
-        let state = &self.state;
-        let order = state
-            .get_order(order)
-            .await?
-            .ok_or_else(|| HandshakeManagerError::State(ERR_NO_ORDER.to_string()))?;
+        id: &OrderId,
+    ) -> Result<(Order, Amount), MatchingEngineError> {
+        let (order, matchable_amount) =
+            self.state.get_managed_order_and_matchable_amount(id).await?.ok_or_else(|| {
+                MatchingEngineError::state(format!("failed to fetch order and balance for {id:?}"))
+            })?;
 
-        let wallet = match state.get_wallet_for_order(&order.id).await? {
-            Some(wallet) => wallet,
-            None => return Err(HandshakeManagerError::State(ERR_NO_WALLET.to_string())),
-        };
-
-        Ok((order, wallet))
+        Ok((order, matchable_amount))
     }
 
+    /// Fetch the matching pool for an order
+    async fn fetch_matching_pool(
+        &self,
+        order_id: &OrderId,
+    ) -> Result<MatchingPoolName, MatchingEngineError> {
+        self.state.get_matching_pool_for_order(order_id).await.map_err(|e| {
+            MatchingEngineError::state(format!(
+                "failed to fetch matching pool for {order_id:?}: {e}"
+            ))
+        })
+    }
+
+    /// TODO: Update this comment when we re-implement
     /// Check whether a wallet is still valid. This amounts to checking:
     ///     1. Whether the wallet's known nullifier is still valid. This may be
     ///        false if the wallet has been updated since a match was attempted
@@ -219,20 +120,7 @@ impl MatchingEngineExecutor {
     ///        second condition to be false
     ///
     /// This check may be executed after a match settlement fails
-    async fn wallet_still_valid(&self, wallet: &Wallet) -> Result<bool, HandshakeManagerError> {
-        // Check the nullifier
-        let new_wallet = self.state.get_wallet(&wallet.wallet_id).await?;
-        let nullifier = new_wallet.map(|w| w.get_wallet_nullifier()).unwrap_or_default();
-        if wallet.get_wallet_nullifier() != nullifier {
-            return Ok(false);
-        }
-
-        // Check the length of the wallet's serial task queue
-        let queue_len = self.state.serial_tasks_queue_len(&wallet.wallet_id).await?;
-        if queue_len > 0 {
-            return Ok(false);
-        }
-
-        Ok(true)
+    async fn order_still_valid(&self, order_id: &OrderId) -> Result<bool, MatchingEngineError> {
+        todo!("Re-implement order still valid check")
     }
 }

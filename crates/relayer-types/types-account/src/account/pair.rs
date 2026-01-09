@@ -3,6 +3,7 @@
 use alloy::primitives::Address;
 use darkpool_types::intent::Intent;
 use serde::{Deserialize, Serialize};
+use types_core::Token;
 
 /// The pair of an order
 ///
@@ -29,5 +30,30 @@ impl Pair {
     /// Get the pair of an intent
     pub fn from_intent(intent: &Intent) -> Self {
         Self { in_token: intent.in_token, out_token: intent.out_token }
+    }
+
+    /// Get the input token for the pair
+    pub fn in_token(&self) -> Token {
+        Token::from_alloy_address(&self.in_token)
+    }
+
+    /// Get the output token for the pair
+    pub fn out_token(&self) -> Token {
+        Token::from_alloy_address(&self.out_token)
+    }
+
+    /// Get a usdc quoted pair wherein input token is the base and output token
+    /// is the USDC quote
+    pub fn to_usdc_quoted(&self) -> Result<Self, String> {
+        let usdc = Token::usdc().get_alloy_address();
+        let new_pair = if self.in_token == usdc {
+            self.reverse()
+        } else if self.out_token == usdc {
+            *self
+        } else {
+            return Err("Pair does not contain USDC".to_string());
+        };
+
+        Ok(new_pair)
     }
 }

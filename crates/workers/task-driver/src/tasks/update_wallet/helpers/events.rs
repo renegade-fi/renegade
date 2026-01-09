@@ -1,13 +1,13 @@
 //! Helpers for emitting events after a wallet update
 
-use types_runtime::MatchingPoolName;
-use types_tasks::WalletUpdateType;
-use types_account::account::{Order, OrderId};
+use constants::GLOBAL_MATCHING_POOL;
 use job_types::event_manager::{
     ExternalTransferEvent, OrderCancellationEvent, OrderPlacementEvent, OrderUpdateEvent,
     RelayerEventType, try_send_event,
 };
-use state::storage::tx::matching_pools::GLOBAL_MATCHING_POOL;
+use types_account::account::{Order, OrderId};
+use types_runtime::MatchingPoolName;
+use types_tasks::WalletUpdateType;
 use util::err_str;
 
 use crate::tasks::update_wallet::{UpdateWalletTask, UpdateWalletTaskError};
