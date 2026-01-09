@@ -73,9 +73,9 @@ http = "1"
 
 # === Metrics === #
 metrics = { workspace = true }
-metrics-util = "0.16"
-metrics-exporter-statsd = "0.7"
-metrics-tracing-context = "0.15"
+metrics-util = "0.20"
+metrics-exporter-statsd = "0.9"
+metrics-tracing-context = "0.18"
 
 [[bench]]
 name = "matching_engine"
