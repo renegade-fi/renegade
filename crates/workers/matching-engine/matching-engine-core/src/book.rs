@@ -2,8 +2,8 @@
 //!
 //! Each pair has a book, sorted by decreasing matchable amount
 
-use std::cmp::Ordering;
 use std::collections::BTreeSet;
+use std::{cmp::Ordering, ops::RangeInclusive};
 
 use circuit_types::{Amount, fixed_point::FixedPoint};
 use rustc_hash::FxHashMap;
@@ -134,14 +134,16 @@ impl Book {
     pub fn find_match(
         &self,
         price: FixedPoint,
-        max_amount: Amount,
+        amount_range: RangeInclusive<Amount>,
         require_externally_matchable: bool,
     ) -> Option<(OrderId, Amount)> {
         // Build an iterator over orders sorted by descending matchable amount
         let orders = self.iter();
         for (oid, order) in orders {
             // Skip orders whose validation conditions are not met
-            if order.min_price > price || order.min_fill_size > max_amount {
+            let order_range = order.min_fill_size..=order.matchable_amount;
+            let ranges_intersect = ranges_intersect(&order_range, &amount_range);
+            if order.min_price > price || !ranges_intersect {
                 continue;
             }
 
@@ -151,7 +153,7 @@ impl Book {
             }
 
             // Compute the match amount
-            let match_amount = Amount::min(order.matchable_amount, max_amount);
+            let match_amount = Amount::min(order.matchable_amount, *amount_range.end());
             return Some((*oid, match_amount));
         }
 
@@ -168,6 +170,18 @@ impl Book {
             .iter()
             .map(|key| (&key.order_id, self.order_map.get(&key.order_id).unwrap()))
     }
+}
+
+// -----------
+// | Helpers |
+// -----------
+
+/// Whether two ranges intersect
+#[inline]
+fn ranges_intersect(range1: &RangeInclusive<Amount>, range2: &RangeInclusive<Amount>) -> bool {
+    let intersect_min = Amount::max(*range1.start(), *range2.start());
+    let intersect_max = Amount::min(*range1.end(), *range2.end());
+    intersect_min <= intersect_max
 }
 
 #[cfg(test)]
