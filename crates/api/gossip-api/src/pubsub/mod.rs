@@ -97,7 +97,6 @@ impl PubsubMessage {
                     | ClusterManagementMessageType::RejectExpiry { .. } => {
                         GossipDestination::GossipServer
                     },
-                    _ => GossipDestination::HandshakeManager,
                 }
             },
             PubsubMessage::Orderbook(..) => GossipDestination::GossipServer,

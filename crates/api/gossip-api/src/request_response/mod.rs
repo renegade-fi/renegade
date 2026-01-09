@@ -8,12 +8,10 @@ use util::telemetry::propagation::{TraceContext, trace_context};
 use crate::{GossipDestination, check_hmac, create_hmac};
 
 use self::{
-    handshake::HandshakeMessage,
     heartbeat::{BootstrapRequest, HeartbeatMessage, PeerInfoRequest, PeerInfoResponse},
     // orderbook::{OrderInfoRequest, OrderInfoResponse},
 };
 
-pub mod handshake;
 pub mod heartbeat;
 // pub mod orderbook;
 
@@ -97,10 +95,6 @@ pub enum GossipRequestType {
     /// A request for peer info
     PeerInfo(PeerInfoRequest),
 
-    // --- Handshakes --- //
-    /// A request from a peer communicating about a potential handshake
-    Handshake(HandshakeMessage),
-
     // --- Raft Consensus --- //
     /// A raft message from a peer
     ///
@@ -126,7 +120,6 @@ impl GossipRequest {
             GossipRequestType::Bootstrap(..) => false,
             GossipRequestType::Heartbeat(..) => false,
             GossipRequestType::PeerInfo(..) => false,
-            GossipRequestType::Handshake { .. } => false,
             // GossipRequestType::OrderInfo(..) => false,
         }
     }
@@ -141,7 +134,6 @@ impl GossipRequest {
             GossipRequestType::Heartbeat(..) => GossipDestination::GossipServer,
             GossipRequestType::PeerInfo(..) => GossipDestination::GossipServer,
             // GossipRequestType::OrderInfo(..) => GossipDestination::GossipServer,
-            GossipRequestType::Handshake { .. } => GossipDestination::HandshakeManager,
         }
     }
 }
@@ -230,8 +222,6 @@ pub enum GossipResponseType {
     Ack,
     /// A response from a peer to a sender's heartbeat request
     Heartbeat(HeartbeatMessage),
-    /// A response from a peer communicating about a potential handshake
-    Handshake(HandshakeMessage),
     /// A response from a peer to a sender's request for peer info
     PeerInfo(PeerInfoResponse),
     // /// A response to a request for order information
@@ -253,7 +243,6 @@ impl GossipResponse {
         match self.body {
             GossipResponseType::Ack => false,
             GossipResponseType::Heartbeat(..) => false,
-            GossipResponseType::Handshake { .. } => false,
             // GossipResponseType::OrderInfo(..) => false,
             GossipResponseType::PeerInfo(..) => false,
             GossipResponseType::Raft(..) => true,
@@ -267,7 +256,6 @@ impl GossipResponse {
             GossipResponseType::Heartbeat(..) => GossipDestination::GossipServer,
             GossipResponseType::PeerInfo(..) => GossipDestination::GossipServer,
             // GossipResponseType::OrderInfo(..) => GossipDestination::GossipServer,
-            GossipResponseType::Handshake { .. } => GossipDestination::HandshakeManager,
             GossipResponseType::Raft(..) => GossipDestination::NetworkManager,
         }
     }

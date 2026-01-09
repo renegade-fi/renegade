@@ -4359,6 +4359,7 @@ dependencies = [
  "types-account",
  "types-core",
  "types-gossip",
+ "types-proofs",
  "types-tasks",
  "util",
  "uuid",
@@ -6449,6 +6450,7 @@ dependencies = [
  "tracing",
  "types-account",
  "types-core",
+ "types-proofs",
  "types-runtime",
  "types-tasks",
  "util",
@@ -8924,6 +8926,23 @@ dependencies = [
  "types-account",
  "util",
  "uuid",
+]
+
+[[package]]
+name = "types-proofs"
+version = "0.1.0"
+dependencies = [
+ "ark-ec",
+ "ark-poly",
+ "circuit-types",
+ "circuits-core",
+ "constants",
+ "jf-primitives",
+ "mpc-plonk",
+ "mpc-relation",
+ "rkyv",
+ "serde",
+ "types-core",
 ]
 
 [[package]]

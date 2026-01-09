@@ -7,21 +7,16 @@ use gossip_api::{
 };
 use job_types::network_manager::NetworkResponseChannel;
 use libp2p::{Multiaddr, PeerId, Swarm, gossipsub::Sha256Topic, request_response::ResponseChannel};
-use libp2p_core::Endpoint;
-use libp2p_swarm::{ConnectionId, NetworkBehaviour};
-use tokio::sync::{
-    mpsc::{UnboundedReceiver as TokioReceiver, UnboundedSender as TokioSender, unbounded_channel},
-    oneshot,
+use tokio::sync::mpsc::{
+    UnboundedReceiver as TokioReceiver, UnboundedSender as TokioSender, unbounded_channel,
 };
 use tracing::instrument;
 use util::{err_str, telemetry::propagation::set_parent_span_from_context};
 
 use crate::{composed_protocol::ComposedNetworkBehavior, error::NetworkManagerError};
 
-use super::{ERR_NO_KNOWN_ADDR, NetworkManagerExecutor};
+use super::NetworkManagerExecutor;
 
-/// Error message emitted when a response fails to be sent
-const ERR_SEND_INTERNAL: &str = "Failed to send internal worker response";
 /// Error sending a response to a peer on the network
 const ERR_SEND_RESPONSE: &str = "Failed to send response";
 
@@ -49,12 +44,6 @@ pub enum BehaviorJob {
     AddAddress(PeerId, Multiaddr),
     /// Expire a peer
     RemovePeer(PeerId),
-
-    // --- Address Lookup --- //
-    /// Lookup known addresses for a peer and return on a channel
-    ///
-    /// Used when brokering an MPC network
-    LookupAddr(PeerId, oneshot::Sender<Vec<Multiaddr>>),
 }
 
 impl NetworkManagerExecutor {
@@ -103,21 +92,6 @@ impl NetworkManagerExecutor {
             BehaviorJob::RemovePeer(peer_id) => {
                 swarm.behaviour_mut().kademlia_dht.remove_peer(&peer_id);
                 Ok(())
-            },
-            BehaviorJob::LookupAddr(peer_id, sender) => {
-                let addr = swarm
-                    .behaviour_mut()
-                    .handle_pending_outbound_connection(
-                        ConnectionId::new_unchecked(0),
-                        Some(peer_id),
-                        &[],
-                        Endpoint::Dialer,
-                    )
-                    .map_err(|_| NetworkManagerError::Network(ERR_NO_KNOWN_ADDR.to_string()))?;
-
-                sender
-                    .send(addr)
-                    .map_err(|_| NetworkManagerError::SendInternal(ERR_SEND_INTERNAL.to_string()))
             },
         }
     }

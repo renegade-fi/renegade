@@ -18,6 +18,7 @@ darkpool-types = { workspace = true }
 system-bus = { workspace = true }
 types-core = { workspace = true }
 types-gossip = { workspace = true }
+types-proofs = { workspace = true }
 types-tasks = { workspace = true }
 types-account = { workspace = true }
 constants = { workspace = true }

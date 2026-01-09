@@ -69,7 +69,6 @@ impl NetworkManagerExecutor {
                             .send(job)
                             .map_err(err_str!(NetworkManagerError::EnqueueJob))
                     },
-                    GossipDestination::HandshakeManager => todo!(),
                 }
             },
 
@@ -92,10 +91,11 @@ impl NetworkManagerExecutor {
                 .unwrap()?;
 
                 let body = response.inner;
-                if let Some(chan) = self.response_waiters.pop(request_id).await {
-                    if !chan.is_closed() && chan.send(body.clone()).is_err() {
-                        error!("error sending response notification for request: {request_id}");
-                    }
+                if let Some(chan) = self.response_waiters.pop(request_id).await
+                    && !chan.is_closed()
+                    && chan.send(body.clone()).is_err()
+                {
+                    error!("error sending response notification for request: {request_id}");
                 }
 
                 match body.destination() {
@@ -106,7 +106,6 @@ impl NetworkManagerExecutor {
                             .send(job)
                             .map_err(err_str!(NetworkManagerError::EnqueueJob))
                     },
-                    GossipDestination::HandshakeManager => todo!(),
                 }
             },
         }

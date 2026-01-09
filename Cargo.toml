@@ -10,6 +10,7 @@ members = [
 	"crates/relayer-types/types-gossip",
 	"crates/relayer-types/types-tasks",
 	"crates/relayer-types/types-account",
+	"crates/relayer-types/types-proofs",
 	"crates/config",
 	# "crates/core",
 	"crates/darkpool-client",
@@ -35,7 +36,7 @@ members = [
 	"crates/workers/network-manager",
 	"crates/workers/price-reporter/worker",
 	"crates/workers/price-reporter/price-state",
-	# "crates/workers/proof-manager",
+	"crates/workers/proof-manager",
 	"crates/workers/task-driver",
 	"crates/metrics/renegade-metrics",
 	"crates/system-primitives/system-clock",
@@ -121,6 +122,7 @@ types-gossip = { path = "crates/relayer-types/types-gossip", default-features = 
 types-runtime = { path = "crates/relayer-types/types-runtime", default-features = false }
 types-tasks = { path = "crates/relayer-types/types-tasks", default-features = false }
 types-account = { path = "crates/relayer-types/types-account", default-features = false }
+types-proofs = { path = "crates/relayer-types/types-proofs", default-features = false }
 util = { path = "crates/util", default-features = false }
 
 # === Misc === #

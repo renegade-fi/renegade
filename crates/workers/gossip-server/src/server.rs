@@ -28,7 +28,7 @@ use std::{
 use tracing::{error, info, instrument, warn};
 use types_gossip::WrappedPeerId;
 use types_runtime::CancelChannel;
-use util::default_wrapper::DefaultWrapper;
+use util::DefaultWrapper;
 use util::{channels::TracedMessage, err_str};
 
 use crate::peer_discovery::{

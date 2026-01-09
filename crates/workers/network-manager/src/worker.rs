@@ -7,7 +7,6 @@ use async_trait::async_trait;
 use futures::executor::block_on;
 use gossip_api::pubsub::orderbook::ORDER_BOOK_TOPIC;
 use job_types::gossip_server::GossipServerQueue;
-use job_types::matching_engine_worker::MatchingEngineWorkerQueue;
 use job_types::network_manager::NetworkManagerReceiver;
 use libp2p::Swarm;
 use libp2p::gossipsub::Sha256Topic;
@@ -64,8 +63,6 @@ pub struct NetworkManagerConfig {
     pub send_channel: DefaultOption<NetworkManagerReceiver>,
     /// The work queue to forward inbound heartbeat requests to
     pub gossip_work_queue: GossipServerQueue,
-    /// The work queue to forward inbound handshake requests to
-    pub handshake_work_queue: MatchingEngineWorkerQueue,
     /// The system bus, used to stream internal pubsub messages
     pub system_bus: SystemBus,
     /// The global shared state of the local relayer
@@ -249,7 +246,6 @@ impl Worker for NetworkManager {
             self.config.cluster_symmetric_key,
             self.config.send_channel.take().unwrap(),
             self.config.gossip_work_queue.clone(),
-            self.config.handshake_work_queue.clone(),
             self.config.global_state.clone(),
             self.config.cancel_channel.clone(),
         );

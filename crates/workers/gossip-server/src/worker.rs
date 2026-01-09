@@ -11,8 +11,8 @@ use std::thread::{Builder, JoinHandle};
 use tokio::runtime::Builder as RuntimeBuilder;
 use types_gossip::{ClusterId, WrappedPeerId};
 use types_runtime::CancelChannel;
-use types_runtime::worker::Worker;
-use util::default_wrapper::DefaultWrapper;
+use types_runtime::Worker;
+use util::DefaultWrapper;
 
 use super::server::{GOSSIP_EXECUTOR_N_BLOCKING_THREADS, GOSSIP_EXECUTOR_N_THREADS};
 use super::{

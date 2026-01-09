@@ -4,12 +4,9 @@ use std::sync::atomic::Ordering;
 
 use gossip_api::{
     GossipDestination,
-    pubsub::{
-        AuthenticatedPubsubMessage, PubsubMessage,
-        cluster::{ClusterManagementMessage, ClusterManagementMessageType},
-    },
+    pubsub::{AuthenticatedPubsubMessage, PubsubMessage},
 };
-use job_types::{gossip_server::GossipServerJob, matching_engine_worker::MatchingEngineWorkerJob};
+use job_types::gossip_server::GossipServerJob;
 use libp2p::gossipsub::{Message as GossipsubMessage, Sha256Topic};
 use types_gossip::WrappedPeerId;
 use util::err_str;
@@ -78,23 +75,6 @@ impl NetworkManagerExecutor {
                 .gossip_work_queue
                 .send(GossipServerJob::Pubsub(sender, event.body))
                 .map_err(err_str!(NetworkManagerError::EnqueueJob)),
-
-            GossipDestination::HandshakeManager => match event.body {
-                PubsubMessage::Cluster(ClusterManagementMessage { message_type, .. }) => {
-                    match message_type {
-                        ClusterManagementMessageType::CacheSync(order1, order2) => self
-                            .handshake_work_queue
-                            .send(MatchingEngineWorkerJob::CacheEntry { order1, order2 })
-                            .map_err(err_str!(NetworkManagerError::EnqueueJob)),
-                        ClusterManagementMessageType::MatchInProgress(order1, order2) => self
-                            .handshake_work_queue
-                            .send(MatchingEngineWorkerJob::PeerMatchInProgress { order1, order2 })
-                            .map_err(err_str!(NetworkManagerError::EnqueueJob)),
-                        _ => unreachable!("handshake manager should not receive other messages"),
-                    }
-                },
-                _ => unreachable!("handshake manager should not receive other messages"),
-            },
 
             GossipDestination::NetworkManager => {
                 unreachable!("network manager should not receive pubsub messages")

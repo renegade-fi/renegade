@@ -88,20 +88,6 @@ impl NetworkManagerJob {
 /// explicitly control or signal information
 #[derive(Clone, Debug)]
 pub enum NetworkManagerControlSignal {
-    /// A command signalling to the network manager to open up a QUIC connection
-    /// and build an MPC network instance to handshake over
-    BrokerMpcNet {
-        /// The ID of the ongoing handshake
-        request_id: Uuid,
-        /// The ID of the peer to dial
-        peer_id: WrappedPeerId,
-        /// The port that the peer has exposed to dial on
-        peer_port: u16,
-        /// The local port that should be used to accept the stream
-        local_port: u16,
-        /// The role of the local node in the connection setup
-        local_role: ConnectionRole,
-    },
     /// A command signalling to the network manager that a new node has been
     /// discovered at the application level. The network manager should register
     /// this node with the KDHT and propagate this change
