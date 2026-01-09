@@ -12,14 +12,12 @@ use rand::{
     distributions::{Distribution, WeightedIndex},
     thread_rng,
 };
-use tracing::instrument;
-use types_account::{MatchingPoolName, OrderId, pair::Pair};
+use types_account::{OrderId, order::Order, pair::Pair};
 use types_gossip::{ClusterId, WrappedPeerId, network_order::NetworkOrder};
-use util::{res_some, telemetry::helpers::backfill_trace_field};
+use util::res_some;
 
 use crate::{
     StateInner,
-    caching::order_cache::OrderBookFilter,
     error::StateError,
     storage::{
         error::StorageError,
@@ -131,7 +129,7 @@ impl StateInner {
     /// Returns (buy_amount, sell_amount) where buy amount is denominated in the
     /// quote token, sell amount is denominated in the base token
     pub async fn get_liquidity_for_pair(&self, pair: &Pair) -> (Amount, Amount) {
-        self.order_cache.get_matchable_amount(pair)
+        self.matching_engine.get_liquidity_for_pair(pair)
     }
 
     // --- Heartbeat --- //
@@ -180,85 +178,6 @@ impl StateInner {
             Ok(Some(WrappedPeerId::from_archived(peer)?))
         })
         .await
-    }
-
-    /// Get a list of matchable orders matching the given filter
-    ///
-    /// If `requires_serial` is true, then the returned orders will all be
-    /// serial-preemptable, otherwise they only require concurrent preemption
-    #[instrument(name = "get_matchable_orders", skip_all, fields(filter = ?filter, num_candidates, num_available))]
-    pub fn get_matchable_orders(
-        &self,
-        filter: &OrderBookFilter,
-    ) -> Result<Vec<OrderId>, StateError> {
-        let candidates = self.order_cache.get_orders(filter);
-        backfill_trace_field("num_candidates", candidates.len());
-        let filtered = self.filter_matchable_orders(candidates, None /* matching_pool */)?;
-        backfill_trace_field("num_available", filtered.len());
-
-        Ok(filtered)
-    }
-
-    /// Get a list of order IDs that are locally managed and ready for match
-    #[instrument(name = "get_locally_matchable_orders", skip_all)]
-    pub fn get_all_matchable_orders(&self) -> Result<Vec<OrderId>, StateError> {
-        let candidates = self.order_cache.get_all_orders();
-        self.filter_matchable_orders(candidates, None /* matching_pool */)
-    }
-
-    /// Get a list of order IDs that are locally managed and ready for match in
-    /// the given matching pool
-    #[instrument(name = "get_matchable_orders_in_matching_pool", skip_all, fields(matching_pool = ?matching_pool, num_candidates, num_available))]
-    pub fn get_matchable_orders_in_matching_pool(
-        &self,
-        matching_pool: MatchingPoolName,
-        filter: &OrderBookFilter,
-    ) -> Result<Vec<OrderId>, StateError> {
-        let candidates = self.order_cache.get_orders(filter);
-        backfill_trace_field("num_candidates", candidates.len());
-        let filtered = self.filter_matchable_orders(candidates, Some(matching_pool))?;
-        backfill_trace_field("num_available", filtered.len());
-
-        Ok(filtered)
-    }
-
-    /// Get all order IDs in a given matching pool
-    #[instrument(name = "get_all_orders_in_matching_pool", skip_all, fields(matching_pool = ?matching_pool))]
-    pub async fn get_all_orders_in_matching_pool(
-        &self,
-        matching_pool: MatchingPoolName,
-    ) -> Result<Vec<OrderId>, StateError> {
-        let candidates = self.order_cache.get_all_orders();
-        self.filter_matchable_orders(candidates, Some(matching_pool))
-    }
-
-    /// Filter a set of matchable orders candidates
-    ///
-    /// Provides two checks:
-    /// - Filters out orders with non-empty task queues
-    /// - Filters out orders in incorrect matching pools
-    fn filter_matchable_orders(
-        &self,
-        orders: Vec<OrderId>,
-        matching_pool: Option<MatchingPoolName>,
-    ) -> Result<Vec<OrderId>, StateError> {
-        self.with_blocking_read_tx(move |tx| {
-            let mut res = Vec::new();
-            for id in orders.into_iter() {
-                if let Some(ref pool) = matching_pool {
-                    let order_matching_pool = tx.get_matching_pool_for_order(&id)?;
-                    if order_matching_pool != *pool {
-                        continue;
-                    }
-                }
-
-                // Check if the task queue for the order is free
-                if Self::is_serial_queue_free(&id, tx)? {
-                    res.push(id);
-                }
-            }
-            Ok(res)
-        })
     }
 
     /// Choose an order to handshake with according to their priorities
@@ -321,16 +240,27 @@ impl StateInner {
 
     /// Nullify all orders on the given nullifier
     pub async fn nullify_orders(&self, nullifier: Nullifier) -> Result<(), StateError> {
-        let order_id = self
+        // Nullify the order and pull its details from the db if they exist
+        let result = self
             .with_write_tx(move |tx| {
-                let order_id = tx.nullify_order(nullifier)?;
-                Ok(order_id)
+                // Get order info before nullifying
+                let order_id = match tx.get_order_by_nullifier(nullifier)? {
+                    Some(id) => id.deserialize()?,
+                    None => return Ok(None),
+                };
+                tx.nullify_order(nullifier)?;
+
+                let matching_pool = tx.get_matching_pool_for_order(&order_id)?;
+                let account = res_some!(tx.get_account_for_order(&order_id)?);
+                let archived_order = res_some!(account.orders.get(&order_id));
+                let order = Order::from_archived(archived_order)?;
+                Ok(Some((order, matching_pool)))
             })
             .await?;
 
-        // Remove the orders from the order cache
-        if let Some(order_id) = order_id {
-            self.order_cache.remove_order(order_id);
+        // Remove the order from the matching engine
+        if let Some((order, matching_pool)) = result {
+            self.matching_engine.cancel_order(&order, matching_pool);
         }
 
         Ok(())

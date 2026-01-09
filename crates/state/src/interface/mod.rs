@@ -29,7 +29,6 @@ use util::{err_str, raw_err_str, telemetry::propagation::set_parent_span};
 use crate::state_transition::{Proposal, StateTransition};
 use crate::{
     applicator::{StateApplicator, StateApplicatorConfig},
-    caching::order_cache::OrderBookCache,
     notifications::{OpenNotifications, ProposalWaiter},
     replication::{
         RaftNode, get_raft_id,
@@ -42,6 +41,7 @@ use crate::{
         tx::StateTxn,
     },
 };
+use matching_engine_core::MatchingEngine;
 
 use crate::error::StateError;
 
@@ -73,6 +73,7 @@ pub type State = Arc<StateInner>;
 pub async fn create_global_state(
     config: &RelayerConfig,
     network_queue: NetworkManagerQueue,
+    matching_engine: MatchingEngine,
     task_queue: TaskDriverQueue,
     handshake_manager_queue: MatchingEngineWorkerQueue,
     event_queue: EventManagerQueue,
@@ -83,6 +84,7 @@ pub async fn create_global_state(
     let state = StateInner::new(
         config,
         network_queue,
+        matching_engine,
         task_queue,
         handshake_manager_queue,
         event_queue,
@@ -116,8 +118,8 @@ impl StateConfig {
 pub struct StateInner {
     /// The runtime config of the state
     pub(crate) config: StateConfig,
-    /// The order book cache
-    pub(crate) order_cache: Arc<OrderBookCache>,
+    /// The matching engine
+    pub(crate) matching_engine: MatchingEngine,
     /// A handle on the database
     pub(crate) db: Arc<DB>,
     /// The system bus for sending notifications to other workers
@@ -137,8 +139,8 @@ pub struct StateInner {
 pub struct StateInner {
     /// The runtime config of the state
     pub config: StateConfig,
-    /// The order book cache
-    pub order_cache: Arc<OrderBookCache>,
+    /// The matching engine
+    pub matching_engine: MatchingEngine,
     /// A handle on the database
     pub db: Arc<DB>,
     /// The system bus for sending notifications to other workers
@@ -159,6 +161,7 @@ impl StateInner {
     pub async fn new(
         config: &RelayerConfig,
         network_queue: NetworkManagerQueue,
+        matching_engine: MatchingEngine,
         task_queue: TaskDriverQueue,
         handshake_manager_queue: MatchingEngineWorkerQueue,
         event_queue: EventManagerQueue,
@@ -172,6 +175,7 @@ impl StateInner {
             config,
             raft_config,
             net,
+            matching_engine,
             task_queue,
             handshake_manager_queue,
             event_queue,
@@ -188,6 +192,7 @@ impl StateInner {
         relayer_config: &RelayerConfig,
         raft_config: RaftClientConfig,
         network: N,
+        matching_engine: MatchingEngine,
         task_queue: TaskDriverQueue,
         handshake_manager_queue: MatchingEngineWorkerQueue,
         event_queue: EventManagerQueue,
@@ -206,14 +211,13 @@ impl StateInner {
         tx.commit()?;
 
         // Setup the state machine
-        let order_cache = Arc::new(OrderBookCache::new());
         let applicator_config = StateApplicatorConfig {
             allow_local: relayer_config.allow_local,
             cluster_id: relayer_config.cluster_id.clone(),
             task_queue,
             handshake_manager_queue,
             event_queue,
-            order_cache: order_cache.clone(),
+            matching_engine: matching_engine.clone(),
             db: db.clone(),
             system_bus: system_bus.clone(),
         };
@@ -231,12 +235,17 @@ impl StateInner {
         // Setup the node metadata from the config
         let mut config = StateConfig::new(relayer_config);
         config.recovered_from_snapshot = recovered_from_snapshot;
-        let this = Self { config, order_cache, db, bus: system_bus, notifications, raft };
+        let this = Self { config, matching_engine, db, bus: system_bus, notifications, raft };
         this.setup_node_metadata(relayer_config).await?;
         this.setup_core_panic_timer(system_clock, failure_send).await?;
         this.setup_membership_sync_timer(system_clock).await?;
 
         Ok(this)
+    }
+
+    /// Get a reference to the matching engine
+    pub fn matching_engine(&self) -> &MatchingEngine {
+        &self.matching_engine
     }
 
     /// Build the raft config for the node

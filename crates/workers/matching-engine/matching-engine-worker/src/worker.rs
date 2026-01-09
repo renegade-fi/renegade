@@ -4,7 +4,12 @@ use std::thread::{Builder, JoinHandle};
 
 use async_trait::async_trait;
 use circuit_types::Amount;
-use job_types::{matching_engine::MatchingEngineWorkerReceiver, task_driver::TaskDriverQueue};
+use job_types::{
+    matching_engine::{MatchingEngineWorkerQueue, MatchingEngineWorkerReceiver},
+    network_manager::NetworkManagerQueue,
+    task_driver::TaskDriverQueue,
+};
+use matching_engine_core::MatchingEngine;
 use price_state::PriceStreamStates;
 use state::State;
 use system_bus::SystemBus;
@@ -27,6 +32,8 @@ pub struct MatchingEngineConfig {
     pub min_fill_size: Amount,
     /// The relayer-global state
     pub state: State,
+    /// The matching engine instance
+    pub matching_engine: MatchingEngine,
     /// The price streams from the price reporter
     pub price_streams: PriceStreamStates,
     /// The job queue on which to receive matching engine requests
@@ -63,6 +70,7 @@ impl Worker for MatchingEngineManager {
             config.job_receiver.take().unwrap(),
             config.price_streams.clone(),
             config.state.clone(),
+            config.matching_engine.clone(),
             config.task_queue.clone(),
             config.system_bus.clone(),
             config.cancel_channel.clone(),

@@ -110,9 +110,11 @@ async fn main() -> Result<(), CoordinatorError> {
 
     // Construct a global state
     let (state_failure_send, mut state_failure_recv) = new_worker_failure_channel();
+    let matching_engine = MatchingEngine::new();
     let global_state = create_global_state(
         &args,
         network_sender.clone(),
+        matching_engine.clone(),
         task_sender.clone(),
         handshake_worker_sender.clone(),
         event_manager_sender.clone(),
@@ -293,6 +295,7 @@ async fn main() -> Result<(), CoordinatorError> {
     let mut handshake_manager = HandshakeManager::new(HandshakeManagerConfig {
         min_fill_size: args.min_fill_size,
         state: global_state.clone(),
+        matching_engine: matching_engine.clone(),
         network_channel: network_sender.clone(),
         price_streams: price_streams.clone(),
         job_receiver: Some(handshake_worker_receiver),

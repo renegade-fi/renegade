@@ -7923,6 +7923,7 @@ dependencies = [
  "job-types",
  "libmdbx",
  "libp2p",
+ "matching-engine-core",
  "metrics",
  "multiaddr",
  "num-bigint",

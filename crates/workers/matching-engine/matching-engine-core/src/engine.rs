@@ -69,6 +69,14 @@ impl MatchingEngine {
         }
     }
 
+    /// Get the matchable amount for both sides of a pair
+    ///
+    /// Returns (buy_amount, sell_amount) where buy amount is denominated in the
+    /// quote token, sell amount is denominated in the base token
+    pub fn get_liquidity_for_pair(&self, _pair: &Pair) -> (Amount, Amount) {
+        todo!("Implement get_liquidity_for_pair")
+    }
+
     // --- Matching Operations --- //
 
     /// Find an internal match for an order

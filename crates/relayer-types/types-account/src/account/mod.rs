@@ -88,9 +88,11 @@ impl Account {
 mod rkyv_order_impls {
     //! Implementations for accound orders on the rkyv-derived type
     use circuit_types::Amount;
+    use rkyv::rancor;
     use rkyv::rend::unaligned::u128_ule;
 
     use crate::OrderId;
+    use crate::order::Order;
 
     use super::ArchivedAccount;
     use super::order::ArchivedOrder;
@@ -99,6 +101,12 @@ mod rkyv_order_impls {
         /// Get an order by its ID
         pub fn get_order(&self, id: &OrderId) -> Option<&ArchivedOrder> {
             self.orders.get(id)
+        }
+
+        /// Get an order and deserialize it
+        pub fn get_order_deserialized(&self, id: &OrderId) -> Option<Order> {
+            let order = self.get_order(id)?;
+            rkyv::deserialize::<_, rancor::Error>(order).ok()
         }
 
         /// Get the matchable amount for an order

@@ -17,7 +17,6 @@
 use crate::error::StateError;
 
 pub mod applicator;
-pub mod caching;
 pub mod error;
 mod interface;
 pub mod notifications;
@@ -142,9 +141,10 @@ pub mod test_helpers {
     use tempfile::tempdir;
     use types_runtime::new_worker_failure_channel;
 
+    use matching_engine_core::MatchingEngine;
+
     use crate::{
         State, StateConfig, StateInner,
-        caching::order_cache::OrderBookCache,
         notifications::OpenNotifications,
         replication::{
             RaftNode, get_raft_id,
@@ -246,10 +246,12 @@ pub mod test_helpers {
 
         // Add a client to the mock raft as leader
         let raft_config = raft_config_from_relayer_config(config, network_delay_ms);
+        let matching_engine = MatchingEngine::new();
         let state = StateInner::new_with_network(
             config,
             raft_config,
             net,
+            matching_engine,
             task_queue,
             handshake_manager_queue,
             event_queue,
@@ -293,10 +295,10 @@ pub mod test_helpers {
         let client = node.get_client().clone();
         let db = node.clone_db();
         let config = StateConfig { allow_local: true, ..Default::default() };
-        let order_cache = Arc::new(OrderBookCache::new());
+        let matching_engine = MatchingEngine::new();
         let state = StateInner {
             config,
-            order_cache,
+            matching_engine,
             db,
             raft: client,
             bus: SystemBus::new(),

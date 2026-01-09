@@ -23,10 +23,6 @@ name = "interface"
 harness = false
 required-features = ["mocks"]
 
-[[bench]]
-name = "caching"
-harness = false
-required-features = ["mocks"]
 
 [dependencies]
 
@@ -58,6 +54,7 @@ constants = { workspace = true }
 external-api = { workspace = true, features = ["task-api"] }
 gossip-api = { workspace = true }
 job-types = { workspace = true }
+matching-engine-core = { workspace = true }
 system-bus = { workspace = true }
 system-clock = { workspace = true }
 test-helpers = { workspace = true, optional = true, features = ["mocks"] }

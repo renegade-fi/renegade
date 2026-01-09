@@ -8,10 +8,13 @@ use job_types::{
     task_driver::TaskDriverQueue,
 };
 use system_bus::SystemBus;
+use types_account::OrderId;
+use types_core::AccountId;
 use types_gossip::ClusterId;
 
+use crate::state_transition::StateTransition;
 use crate::storage::db::DB;
-use crate::{caching::order_cache::OrderBookCache, state_transition::StateTransition};
+use matching_engine_core::MatchingEngine;
 
 use self::{error::StateApplicatorError, return_type::ApplicatorReturnType};
 
@@ -28,6 +31,20 @@ pub mod task_queue;
 
 /// A type alias for the result type given by the applicator
 pub(crate) type Result<T> = std::result::Result<T, StateApplicatorError>;
+
+// ----------
+// | Errors |
+// ----------
+
+/// Create an account missing rejection error
+fn reject_account_missing(order_id: OrderId) -> StateApplicatorError {
+    StateApplicatorError::reject(format!("account not found for order {order_id}"))
+}
+
+/// Create an order missing rejection error
+fn reject_order_missing(order_id: OrderId, account_id: AccountId) -> StateApplicatorError {
+    StateApplicatorError::reject(format!("order {order_id} not found in account {account_id}"))
+}
 
 // --------------
 // | Applicator |
@@ -46,8 +63,8 @@ pub struct StateApplicatorConfig {
     pub handshake_manager_queue: MatchingEngineWorkerQueue,
     /// The event manager's work queue
     pub event_queue: EventManagerQueue,
-    /// The order book cache
-    pub order_cache: Arc<OrderBookCache>,
+    /// The matching engine
+    pub matching_engine: MatchingEngine,
     /// A handle to the database underlying the storage layer
     pub db: Arc<DB>,
     /// A handle to the system bus used for internal pubsub
@@ -91,7 +108,7 @@ impl StateApplicator {
                 self.destroy_matching_pool(&pool_name)
             },
             StateTransition::AssignOrderToMatchingPool { order_id, pool_name } => {
-                self.assign_order_to_matching_pool(&order_id, &pool_name)
+                self.assign_order_to_matching_pool(order_id, &pool_name)
             },
             StateTransition::AppendTask { task, executor } => self.append_task(&task, &executor),
             StateTransition::PopTask { task_id, success } => self.pop_task(task_id, success),
@@ -117,9 +134,9 @@ impl StateApplicator {
         &self.config.system_bus
     }
 
-    /// Get a reference to the order cache
-    pub(crate) fn order_cache(&self) -> &OrderBookCache {
-        &self.config.order_cache
+    /// Get a reference to the matching engine
+    pub(crate) fn matching_engine(&self) -> &MatchingEngine {
+        &self.config.matching_engine
     }
 }
 
@@ -133,10 +150,11 @@ pub mod test_helpers {
         matching_engine::new_matching_engine_worker_queue,
         task_driver::{TaskDriverQueue, new_task_driver_queue},
     };
+    use matching_engine_core::MatchingEngine;
     use system_bus::SystemBus;
     use types_gossip::ClusterId;
 
-    use crate::{caching::order_cache::OrderBookCache, test_helpers::mock_db};
+    use crate::test_helpers::mock_db;
 
     use super::{StateApplicator, StateApplicatorConfig};
 
@@ -159,7 +177,7 @@ pub mod test_helpers {
         let config = StateApplicatorConfig {
             allow_local: true,
             task_queue,
-            order_cache: Arc::new(OrderBookCache::new()),
+            matching_engine: MatchingEngine::new(),
             db: Arc::new(mock_db()),
             handshake_manager_queue,
             event_queue,
