@@ -7,4 +7,22 @@
 
 pub(crate) mod book;
 pub(crate) mod engine;
+use std::ops::RangeInclusive;
+
+use circuit_types::Amount;
+use darkpool_types::settlement_obligation::MatchResult;
 pub use engine::MatchingEngine;
+use types_account::OrderId;
+use types_core::TimestampedPriceFp;
+
+/// A successful match between two orders
+pub struct SuccessfulMatch {
+    /// The ID of the other order that matched
+    pub other_order_id: OrderId,
+    /// The price at which the match was executed
+    pub price: TimestampedPriceFp,
+    /// The match result
+    pub match_result: MatchResult,
+    /// The matchable amount bounds (min and max) for the counterparty order
+    pub matchable_amount_bounds: RangeInclusive<Amount>,
+}

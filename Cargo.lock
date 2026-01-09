@@ -4985,6 +4985,7 @@ dependencies = [
  "rand 0.8.5",
  "rustc-hash 2.1.1",
  "types-account",
+ "types-core",
  "util",
 ]
 
@@ -5002,6 +5003,7 @@ dependencies = [
  "crossbeam",
  "crypto",
  "darkpool-client",
+ "darkpool-types",
  "eyre",
  "futures",
  "inventory",
@@ -8890,6 +8892,7 @@ dependencies = [
  "alloy",
  "base64 0.22.1",
  "bimap",
+ "circuit-types",
  "constants",
  "hmac",
  "num-bigint",

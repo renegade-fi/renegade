@@ -133,3 +133,6 @@ pub const NATIVE_ASSET_ADDRESS: &str = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEE
 
 /// The ticker of the native asset's wrapper token
 pub const NATIVE_ASSET_WRAPPER_TICKER: &str = "WETH";
+
+/// The name of the global matching pool
+pub const GLOBAL_MATCHING_POOL: &str = "global";

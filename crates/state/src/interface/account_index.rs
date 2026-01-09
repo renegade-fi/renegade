@@ -3,6 +3,7 @@
 //! Account index updates must go through raft consensus so that the leader may
 //! order them
 
+use circuit_types::Amount;
 use darkpool_types::balance::Balance;
 use types_account::{
     account::{Account, OrderId},
@@ -101,24 +102,18 @@ impl StateInner {
     }
 
     /// Get the order for a given order ID and the balance that capitalizes it
-    pub async fn get_managed_order_and_balance(
+    pub async fn get_managed_order_and_matchable_amount(
         &self,
         id: &OrderId,
-    ) -> Result<Option<(Order, Balance)>, StateError> {
+    ) -> Result<Option<(Order, Amount)>, StateError> {
         let id = *id;
         self.with_read_tx(move |tx| {
             let account = res_some!(tx.get_account_for_order(&id)?);
             let archived_order = res_some!(account.orders.get(&id));
+            let matchable_amount = account.get_matchable_amount_for_order(archived_order);
             let order = Order::from_archived(archived_order)?;
 
-            // Get the balance that capitalizes the order
-            let sell_mint = &archived_order.intent.in_token;
-            let balance = match account.balances.get(sell_mint) {
-                Some(b) => Balance::from_archived(b)?,
-                None => Balance::default(),
-            };
-
-            Ok(Some((order, balance)))
+            Ok(Some((order, matchable_amount.to_native())))
         })
         .await
     }

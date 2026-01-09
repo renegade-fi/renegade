@@ -1,10 +1,10 @@
 //! Integration tests for external matching in a matching pool
 
 use circuit_types::order::OrderSide;
+use constants::GLOBAL_MATCHING_POOL;
 use external_api::http::external_match::ExternalOrder;
 use eyre::Result;
 use hyper::StatusCode;
-use state::storage::tx::matching_pools::GLOBAL_MATCHING_POOL;
 use test_helpers::{assert_eq_result, integration_test_async};
 
 use crate::ctx::IntegrationTestCtx;

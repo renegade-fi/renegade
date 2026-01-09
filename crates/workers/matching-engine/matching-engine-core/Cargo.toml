@@ -10,6 +10,7 @@ circuit-types = { workspace = true }
 crypto = { workspace = true }
 darkpool-types = { workspace = true }
 types-account = { workspace = true }
+types-core = { workspace = true }
 util = { workspace = true, features = ["blockchain"] }
 
 # === Misc Dependencies === #

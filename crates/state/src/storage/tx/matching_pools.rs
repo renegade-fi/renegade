@@ -1,5 +1,6 @@
 //! Helpers for accessing information about matching pools in the database
 
+use constants::GLOBAL_MATCHING_POOL;
 use libmdbx::{RW, TransactionKind};
 use types_account::MatchingPoolName;
 use types_account::account::OrderId;
@@ -7,9 +8,6 @@ use types_account::account::OrderId;
 use crate::{POOL_TABLE, storage::error::StorageError};
 
 use super::StateTxn;
-
-/// The name of the global matching pool
-pub const GLOBAL_MATCHING_POOL: &str = "global";
 
 /// The prefix of all matching pool keys
 pub const POOL_KEY_PREFIX: &str = "matching-pool/";
