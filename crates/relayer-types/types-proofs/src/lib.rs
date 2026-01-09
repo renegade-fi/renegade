@@ -15,3 +15,7 @@ mod bundles;
 pub mod mocks;
 
 pub use bundles::*;
+
+// TODO: Redefine this as we add more order types
+/// A bundle of validity proofs for an order
+pub type OrderValidityProofBundle = bundles::IntentAndBalanceValidityBundle;

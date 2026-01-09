@@ -13,6 +13,7 @@ circuit-types = { workspace = true }
 types-core = { workspace = true, features = ["hmac"] }
 types-gossip = { workspace = true }
 types-account = { workspace = true }
+types-proofs = { workspace = true }
 util = { workspace = true, features = ["telemetry"] }
 
 # === Serialization === #

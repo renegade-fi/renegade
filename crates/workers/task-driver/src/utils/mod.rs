@@ -1,6 +1,6 @@
 //! Helpers for the task driver
 
-use job_types::proof_manager::{ProofBundle, ProofJob, ProofManagerJob};
+use job_types::proof_manager::{ProofJob, ProofManagerJob, ProofManagerResponse};
 use tokio::sync::oneshot::{self, Receiver as TokioReceiver};
 
 use crate::traits::TaskContext;
@@ -28,7 +28,7 @@ pub const ERR_WALLET_NOT_FOUND: &str = "wallet not found in wallet_last_updated 
 pub(crate) fn enqueue_proof_job(
     job: ProofJob,
     ctx: &TaskContext,
-) -> Result<TokioReceiver<ProofBundle>, String> {
+) -> Result<TokioReceiver<ProofManagerResponse>, String> {
     let (response_sender, response_receiver) = oneshot::channel();
     ctx.proof_queue
         .send(ProofManagerJob { type_: job, response_channel: response_sender })

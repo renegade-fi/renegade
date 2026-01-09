@@ -2,6 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 use types_account::account::OrderId;
+use types_gossip::network_order::NetworkOrder;
+use types_proofs::OrderValidityProofBundle;
 
 /// The message type used to request order information from a peer
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -24,4 +26,10 @@ pub struct NetworkOrderInfo {
     pub order: NetworkOrder,
     /// The validity proofs for the order
     pub validity_proofs: Option<OrderValidityProofBundle>,
+}
+
+impl From<NetworkOrder> for NetworkOrderInfo {
+    fn from(order: NetworkOrder) -> Self {
+        Self { order, validity_proofs: None }
+    }
 }

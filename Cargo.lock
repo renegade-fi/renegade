@@ -3481,6 +3481,7 @@ dependencies = [
  "types-account",
  "types-core",
  "types-gossip",
+ "types-proofs",
  "util",
  "uuid",
 ]
@@ -3505,8 +3506,10 @@ dependencies = [
  "state",
  "tokio",
  "tracing",
+ "types-account",
  "types-core",
  "types-gossip",
+ "types-proofs",
  "types-runtime",
  "util",
 ]
@@ -8206,6 +8209,7 @@ dependencies = [
  "types-account",
  "types-core",
  "types-gossip",
+ "types-proofs",
  "types-runtime",
  "types-tasks",
  "util",

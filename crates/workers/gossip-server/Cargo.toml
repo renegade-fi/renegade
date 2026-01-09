@@ -16,8 +16,10 @@ libp2p = { workspace = true }
 darkpool-client = { workspace = true }
 circuits-core = { workspace = true }
 circuit-types = { workspace = true }
+types-account = { workspace = true }
 types-core = { workspace = true }
 types-gossip = { workspace = true }
+types-proofs = { workspace = true }
 types-runtime = { workspace = true }
 constants = { workspace = true }
 gossip-api = { workspace = true }
