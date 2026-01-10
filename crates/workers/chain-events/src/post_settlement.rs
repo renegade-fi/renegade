@@ -6,16 +6,13 @@
 
 use crate::error::OnChainEventListenerError;
 use crate::listener::OnChainEventListenerExecutor;
-use circuit_types::{fees::FeeTake, fixed_point::FixedPoint, r#match::ExternalMatchResult};
+use circuit_types::fixed_point::FixedPoint;
 use constants::DEFAULT_EXTERNAL_MATCH_RELAYER_FEE;
-use job_types::event_manager::{ExternalFillEvent, RelayerEventType, try_send_event};
+use job_types::event_manager::{ExternalFillEvent, RelayerEventType};
 use renegade_metrics;
-use types_account::account::{OrderId, WalletIdentifier, order_metadata::OrderState};
-use types_core::price::TimestampedPrice;
-use util::{
-    matching_engine_core::compute_fee_obligation_with_protocol_fee,
-    on_chain::get_external_match_fee,
-};
+use types_account::account::OrderId;
+use types_core::{AccountId, TimestampedPrice};
+use util::on_chain::get_external_match_fee;
 
 /// The error message emitted when metadata for an order cannot be found
 const ERR_NO_ORDER_METADATA: &str = "order metadata not found";
@@ -23,7 +20,7 @@ const ERR_NO_ORDER_METADATA: &str = "order metadata not found";
 /// Bundle of data shared across post-settlement helpers
 pub(crate) struct PostSettlementCtx {
     /// Wallet containing the internal order
-    pub wallet_id: WalletIdentifier,
+    pub account_id: AccountId,
     /// The full external match result
     pub external_match_result: ExternalMatchResult,
     /// Execution price (quote/base)
@@ -32,9 +29,9 @@ pub(crate) struct PostSettlementCtx {
 
 impl PostSettlementCtx {
     /// Build a context from the external match
-    pub fn new(wallet_id: WalletIdentifier, external_match_result: ExternalMatchResult) -> Self {
+    pub fn new(account_id: AccountId, external_match_result: ExternalMatchResult) -> Self {
         let price = execution_price(&external_match_result);
-        Self { wallet_id, external_match_result, price }
+        Self { account_id, external_match_result, price }
     }
 }
 
@@ -49,7 +46,7 @@ impl OnChainEventListenerExecutor {
         renegade_metrics::record_match_volume(
             &match_result,
             true, // is_external_match
-            &[ctx.wallet_id],
+            &[ctx.account_id],
         );
     }
 
@@ -93,7 +90,7 @@ impl OnChainEventListenerExecutor {
     ) -> Result<(), OnChainEventListenerError> {
         let fee_take = internal_fee_take(&ctx.external_match_result);
         let event = RelayerEventType::ExternalFill(ExternalFillEvent::new(
-            ctx.wallet_id,
+            ctx.account_id,
             order_id,
             ctx.price,
             ctx.external_match_result.clone(),

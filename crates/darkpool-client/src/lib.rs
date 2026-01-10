@@ -20,8 +20,8 @@ pub type DarkpoolClient = ();
 // "all-chains")))] compile_error!("Only one of features 'arbitrum' or 'base'
 // should be enabled at a time");
 
-// pub mod client;
-// pub mod constants;
+pub mod client;
+pub mod constants;
 // pub mod conversion;
 pub mod errors;
 // pub mod traits;

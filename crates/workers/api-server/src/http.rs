@@ -79,7 +79,7 @@ use super::{
 };
 
 /// Health check
-pub const PING_ROUTE: &str = "/v0/ping";
+pub const PING_ROUTE: &str = "/v2/ping";
 
 /// A wrapper around the router and task management operations that
 /// the worker may delegate to
@@ -280,28 +280,28 @@ impl HttpServer {
 
         // --- Admin Routes --- //
 
-        // GET /v0/admin/is-leader (preserved)
+        // GET /v2/admin/is-leader (preserved)
         router.add_unauthenticated_route(
             &Method::GET,
             IS_LEADER_ROUTE.to_string(),
             IsLeaderHandler::new(state.clone()),
         );
 
-        // POST /v0/admin/trigger-snapshot (preserved)
+        // POST /v2/admin/trigger-snapshot (preserved)
         router.add_admin_authenticated_route(
             &Method::POST,
             ADMIN_TRIGGER_SNAPSHOT_ROUTE.to_string(),
             AdminTriggerSnapshotHandler::new(state.clone()),
         );
 
-        // POST /v0/admin/refresh-token-mapping (preserved)
+        // POST /v2/admin/refresh-token-mapping (preserved)
         router.add_admin_authenticated_route(
             &Method::POST,
             ADMIN_REFRESH_TOKEN_MAPPING_ROUTE.to_string(),
             AdminRefreshTokenMappingHandler::new(config.chain),
         );
 
-        // POST /v0/admin/refresh-match-fees (preserved)
+        // POST /v2/admin/refresh-match-fees (preserved)
         router.add_admin_authenticated_route(
             &Method::POST,
             ADMIN_REFRESH_MATCH_FEES_ROUTE.to_string(),

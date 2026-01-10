@@ -152,7 +152,6 @@ pub(crate) fn parse_config_from_args(cli_args: Cli) -> Result<RelayerConfig, Str
         private_key,
         fee_key,
         eth_websocket_addr: cli_args.eth_websocket_addr,
-        debug: cli_args.debug,
         otlp_enabled: cli_args.otlp_enabled,
         otlp_collector_url: cli_args.otlp_collector_url,
         datadog_enabled: cli_args.datadog_enabled,

@@ -69,7 +69,7 @@ pub fn maybe_record_transfer_metrics(transfer: &()) {
 }
 
 /// Record the volume of base/quote assets moved in a match
-pub fn record_match_volume(res: &(), is_external_match: bool, wallet_ids: &[AccountId]) {
+pub fn record_match_volume(res: &(), is_external_match: bool, account_ids: &[AccountId]) {
     todo!("re-implement record_match_volume")
     // // Tag with wallet IDs if provided
     // let mut labels: Vec<_> = wallet_ids
