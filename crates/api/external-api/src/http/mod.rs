@@ -2,22 +2,16 @@
 
 use serde::{Deserialize, Serialize};
 
+pub mod account;
 #[cfg(feature = "admin-api")]
 pub mod admin;
+pub mod balance;
 #[cfg(feature = "external-match-api")]
 pub mod external_match;
-#[cfg(feature = "network-api")]
-pub mod network;
-#[cfg(feature = "order-book-api")]
-pub mod order_book;
-#[cfg(feature = "full-api")]
-pub mod price_report;
-#[cfg(feature = "task-api")]
+pub mod market;
+pub mod metadata;
+pub mod order;
 pub mod task;
-#[cfg(feature = "task-api")]
-pub mod task_history;
-#[cfg(feature = "wallet-api")]
-pub mod wallet;
 
 // -------------
 // | API Types |

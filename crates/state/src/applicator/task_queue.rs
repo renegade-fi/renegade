@@ -1,12 +1,11 @@
 //! Task queue state transition applicator methods
 
-use external_api::{http::task::ApiTaskStatus, types::ApiHistoricalTask};
 use job_types::{
     event_manager::{RelayerEventType, TaskCompletionEvent},
     task_driver::TaskDriverJob,
 };
 use libmdbx::{RW, TransactionKind};
-use system_bus::{SystemBusMessage, task_history_topic, task_topic};
+use system_bus::{SystemBusMessage, TaskStatus, task_topic};
 use tracing::{error, info, instrument};
 use types_core::AccountId;
 use types_gossip::WrappedPeerId;
@@ -45,6 +44,18 @@ fn task_not_running(task_id: TaskIdentifier) -> String {
 /// Construct the running state for a newly started task
 fn new_running_state() -> QueuedTaskState {
     QueuedTaskState::Running { state: PENDING_STATE.to_string(), committed: false }
+}
+
+/// Convert a QueuedTask to a TaskStatus for system bus messages
+fn task_to_status(task: &QueuedTask) -> TaskStatus {
+    let (status, description) = match &task.state {
+        QueuedTaskState::Queued => ("queued".to_string(), None),
+        QueuedTaskState::Preemptive => ("preemptive".to_string(), None),
+        QueuedTaskState::Running { state, .. } => ("running".to_string(), Some(state.clone())),
+        QueuedTaskState::Completed => ("completed".to_string(), None),
+        QueuedTaskState::Failed => ("failed".to_string(), None),
+    };
+    TaskStatus { id: task.id, status, description }
 }
 
 impl StateApplicator {
@@ -220,23 +231,14 @@ impl StateApplicator {
     }
 
     /// Publish system bus messages indicating a task has been updated
-    fn publish_task_updates(&self, key: TaskQueueKey, task: &QueuedTask) {
+    fn publish_task_updates(&self, _key: TaskQueueKey, task: &QueuedTask) {
         let task_id = task.id;
 
         // Publish a message for the individual task
         let task_topic = task_topic(&task_id);
         if self.system_bus().has_listeners(&task_topic) {
-            let status: ApiTaskStatus = task.clone().into();
+            let status = task_to_status(task);
             self.system_bus().publish(task_topic, SystemBusMessage::TaskStatusUpdate { status });
-        }
-
-        // Publish a message for the key's task history
-        let history_topic = task_history_topic(&key);
-        if self.system_bus().has_listeners(&history_topic)
-            && let Some(t) = ApiHistoricalTask::from_queued_task(key, task)
-        {
-            self.system_bus()
-                .publish(history_topic, SystemBusMessage::TaskHistoryUpdate { task: t });
         }
     }
 

@@ -55,6 +55,12 @@ impl ExchangeConnectionError {
     pub fn save_state<T: ToString>(message: T) -> Self {
         Self::SaveState(message.to_string())
     }
+
+    /// Create a send error
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn send_error<T: ToString>(message: T) -> Self {
+        Self::SendError(message.to_string())
+    }
 }
 
 /// The core error type thrown by the PriceReporter worker.

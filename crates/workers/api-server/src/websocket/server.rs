@@ -2,43 +2,28 @@
 
 use std::{net::SocketAddr, sync::Arc};
 
-use constants::{HANDSHAKE_STATUS_TOPIC, ORDER_STATE_CHANGE_TOPIC, in_bootstrap_mode};
+use constants::in_bootstrap_mode;
 use external_api::websocket::{ClientWebsocketMessage, SubscriptionResponse, WebsocketMessage};
 use futures::{SinkExt, StreamExt, stream::SplitSink};
 use hyper::{HeaderMap, http::HeaderValue};
 use matchit::Router;
 use system_bus::TopicReader;
-use system_bus::{
-    ADMIN_WALLET_UPDATES_TOPIC, NETWORK_TOPOLOGY_TOPIC, SystemBusMessage, SystemBusMessageWithTopic,
-};
+use system_bus::{SystemBusMessage, SystemBusMessageWithTopic};
 use tokio::net::{TcpListener, TcpStream};
 use tokio_stream::StreamMap;
 use tokio_tungstenite::{WebSocketStream, accept_async};
 use tungstenite::Message;
 
+use crate::error::ApiServerError;
+use crate::param_parsing::parse_account_id_from_params;
+use crate::router::UrlParams;
+use crate::worker::ApiServerConfig;
 use crate::{
     auth::{AuthMiddleware, AuthType},
     error::{bad_request, not_found},
 };
 
-use self::{
-    handler::{DefaultHandler, WebsocketTopicHandler},
-    order_status::OrderStatusHandler,
-    price_report::PriceReporterHandler,
-    task::{TaskHistoryHandler, TaskStatusHandler},
-    wallet::WalletTopicHandler,
-};
-
-use super::{
-    error::ApiServerError, param_parsing::parse_wallet_id_from_params, router::UrlParams,
-    worker::ApiServerConfig,
-};
-
-mod handler;
-mod order_status;
-mod price_report;
-mod task;
-mod wallet;
+use super::handler::WebsocketTopicHandler;
 
 /// The matchit router with generics specified for websocket use
 type WebsocketRouter = Router<Box<dyn WebsocketTopicHandler>>;
@@ -98,97 +83,10 @@ impl WebsocketServer {
     }
 
     /// Setup the websocket routes for the server
-    fn setup_routes(config: &ApiServerConfig) -> WebsocketRouter {
+    /// TODO: implement websocket api
+    #[allow(unused_mut)]
+    fn setup_routes(_config: &ApiServerConfig) -> WebsocketRouter {
         let mut router = WebsocketRouter::new();
-
-        // The "/v0/handshake" route
-        router
-            .insert(
-                HANDSHAKE_ROUTE,
-                Box::new(DefaultHandler::new_with_remap(
-                    AuthType::None,
-                    HANDSHAKE_STATUS_TOPIC.to_string(),
-                    config.system_bus.clone(),
-                )),
-            )
-            .unwrap();
-
-        // The "/v0/wallet/:id" route
-        router
-            .insert(
-                WALLET_ROUTE,
-                Box::new(WalletTopicHandler::new(config.state.clone(), config.system_bus.clone())),
-            )
-            .unwrap();
-
-        // The "/v0/wallet/:id/order-status" route
-        router
-            .insert(
-                WALLET_ORDERS_ROUTE,
-                Box::new(OrderStatusHandler::new(config.state.clone(), config.system_bus.clone())),
-            )
-            .unwrap();
-
-        // The "/v0/price_report/:source/:base/:quote" route
-        router
-            .insert(
-                PRICE_REPORT_ROUTE,
-                Box::new(PriceReporterHandler::new(config.system_bus.clone())),
-            )
-            .unwrap();
-
-        // The "/v0/order_book" route
-        router
-            .insert(
-                ORDER_BOOK_ROUTE,
-                Box::new(DefaultHandler::new_with_remap(
-                    AuthType::None,
-                    ORDER_STATE_CHANGE_TOPIC.to_string(),
-                    config.system_bus.clone(),
-                )),
-            )
-            .unwrap();
-
-        // The "/v0/network" topic
-        router
-            .insert(
-                NETWORK_INFO_ROUTE,
-                Box::new(DefaultHandler::new_with_remap(
-                    AuthType::None,
-                    NETWORK_TOPOLOGY_TOPIC.to_string(),
-                    config.system_bus.clone(),
-                )),
-            )
-            .unwrap();
-
-        // The "/v0/task/:id" topic
-        router
-            .insert(
-                TASK_STATUS_ROUTE,
-                Box::new(TaskStatusHandler::new(config.state.clone(), config.system_bus.clone())),
-            )
-            .unwrap();
-
-        // The "/v0/task_history/:wallet_id" route
-        router
-            .insert(
-                TASK_HISTORY_ROUTE,
-                Box::new(TaskHistoryHandler::new(config.state.clone(), config.system_bus.clone())),
-            )
-            .unwrap();
-
-        // The "/v0/admin/wallet-updates" route
-        router
-            .insert(
-                ADMIN_WALLET_UPDATES_ROUTE,
-                Box::new(DefaultHandler::new_with_remap(
-                    AuthType::Admin,
-                    ADMIN_WALLET_UPDATES_TOPIC.to_string(),
-                    config.system_bus.clone(),
-                )),
-            )
-            .unwrap();
-
         router
     }
 
@@ -396,11 +294,11 @@ impl WebsocketServer {
             serde_json::to_vec(&message.body).expect("re-serialization should not fail");
 
         match auth_type {
-            AuthType::Wallet => {
-                // Parse the wallet ID from the params
-                let wallet_id = parse_wallet_id_from_params(params)?;
+            AuthType::Account => {
+                // Parse the account ID from the params
+                let account_id = parse_account_id_from_params(&params)?;
                 self.auth_middleware
-                    .authenticate_wallet_request(wallet_id, topic, &headers, &body_serialized)
+                    .authenticate_account_request(account_id, topic, &headers, &body_serialized)
                     .await
             },
             AuthType::Admin => {

@@ -16,8 +16,8 @@ const ERR_ADMIN_API_DISABLED: &str = "Admin API is disabled";
 /// Represents the auth type required for a request
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum AuthType {
-    /// A wallet request
-    Wallet,
+    /// An account request
+    Account,
     /// An admin request
     Admin,
     /// No authentication is required

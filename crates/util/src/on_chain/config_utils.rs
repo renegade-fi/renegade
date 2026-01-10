@@ -7,8 +7,7 @@ use std::{
     sync::{OnceLock, RwLock},
 };
 
-#[cfg(feature = "v1")]
-use circuit_types::Address;
+use alloy::primitives::Address;
 use circuit_types::{elgamal::EncryptionKey, fixed_point::FixedPoint};
 use eyre::{Result, eyre};
 
@@ -35,7 +34,6 @@ static PROTOCOL_FEE: RwStatic<FixedPoint> = RwStatic::new(|| RwLock::new(FixedPo
 /// The protocol fee overrides for an external match
 ///
 /// Maps a mint to the fee override if one exists
-#[cfg(feature = "v1")]
 pub static PROTOCOL_FEE_OVERRIDES: RwStatic<HashMap<Address, FixedPoint>> =
     RwStatic::new(|| RwLock::new(HashMap::new()));
 /// The protocol's public encryption key used for paying fees
@@ -89,7 +87,6 @@ pub fn set_protocol_fee(fee: FixedPoint) {
 /// Get the external match fee override for the given mint
 ///
 /// Defaults to the protocol base fee if no override exists
-#[cfg(feature = "v1")]
 pub fn get_external_match_fee(mint: &Address) -> FixedPoint {
     let fee_override =
         PROTOCOL_FEE_OVERRIDES.read().expect("fee override lock poisoned").get(mint).cloned();
@@ -97,9 +94,8 @@ pub fn get_external_match_fee(mint: &Address) -> FixedPoint {
 }
 
 /// Set the external match fee override for the given mint
-#[cfg(feature = "v1")]
 pub fn set_external_match_fee(mint: &Address, fee: FixedPoint) {
-    PROTOCOL_FEE_OVERRIDES.write().expect("fee override lock poisoned").insert(mint.clone(), fee);
+    PROTOCOL_FEE_OVERRIDES.write().expect("fee override lock poisoned").insert(*mint, fee);
 }
 
 /// Get the protocol encryption key from the static variable

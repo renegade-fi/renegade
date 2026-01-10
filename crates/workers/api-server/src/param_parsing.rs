@@ -6,9 +6,9 @@
 
 use num_bigint::BigUint;
 use num_traits::Num;
-use types_core::token::Token;
+use types_account::MatchingPoolName;
+use types_core::{AccountId, Token};
 use types_gossip::{ClusterId, WrappedPeerId};
-use types_runtime::MatchingPoolName;
 use types_tasks::TaskIdentifier;
 use uuid::Uuid;
 
@@ -47,7 +47,7 @@ const ERR_TICKERS_PARSE: &str = "could not parse tickers";
 /// The :mint param in a URL
 const MINT_URL_PARAM: &str = "mint";
 /// The :wallet_id param in a URL
-pub(super) const WALLET_ID_URL_PARAM: &str = "wallet_id";
+pub(super) const ACCOUNT_ID_URL_PARAM: &str = "account_id";
 /// The :order_id param in a URL
 const ORDER_ID_URL_PARAM: &str = "order_id";
 /// The :cluster_id param in a URL
@@ -89,9 +89,11 @@ pub(super) fn parse_token_from_params(params: &UrlParams) -> Result<Token, ApiSe
 }
 
 /// A helper to parse out a wallet ID from a URL param
-pub(super) fn parse_wallet_id_from_params(params: &UrlParams) -> Result<Uuid, ApiServerError> {
+pub(super) fn parse_account_id_from_params(
+    params: &UrlParams,
+) -> Result<AccountId, ApiServerError> {
     params
-        .get(WALLET_ID_URL_PARAM)
+        .get(ACCOUNT_ID_URL_PARAM)
         .ok_or_else(|| bad_request(ERR_WALLET_ID_PARSE))?
         .parse()
         .map_err(|_| bad_request(ERR_WALLET_ID_PARSE))
