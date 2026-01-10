@@ -1,6 +1,5 @@
 //! Helpers for setting up a gas wallet for the relayer
 
-use types_core::hmac::HmacKey;
 use external_api::auth::add_expiring_auth_to_headers;
 use reqwest::{
     Client,
@@ -8,6 +7,7 @@ use reqwest::{
 };
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, time::Duration};
+use types_core::hmac::HmacKey;
 
 use libp2p::PeerId;
 use toml::Value;
