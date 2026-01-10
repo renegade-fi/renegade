@@ -25,6 +25,7 @@ config = { workspace = true }
 external-api = { workspace = true }
 gossip-api = { workspace = true }
 gossip-server = { workspace = true }
+matching-engine-core = { workspace = true }
 matching-engine-worker = { workspace = true }
 job-types = { workspace = true }
 network-manager = { workspace = true }
@@ -36,7 +37,6 @@ system-bus = { workspace = true }
 system-clock = { workspace = true }
 task-driver = { workspace = true }
 util = { workspace = true }
-metrics-sampler = { workspace = true }
 
 # === Misc Dependencies === #
 clap = { version = "3.2.8", features = ["derive"] }

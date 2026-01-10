@@ -12,26 +12,25 @@ members = [
 	"crates/relayer-types/types-account",
 	"crates/relayer-types/types-proofs",
 	"crates/config",
-	# "crates/core",
+	"crates/core",
 	"crates/darkpool-client",
 	"crates/api/external-api",
 	"crates/api/gossip-api",
-	# "crates/testing/mock-node",
-	# "crates/node-support/snapshot-sidecar",
-	# "crates/node-support/event-export-sidecar",
-	# "crates/node-support/bootloader",
+	"crates/testing/mock-node",
+	"crates/node-support/snapshot-sidecar",
+	"crates/node-support/event-export-sidecar",
+	"crates/node-support/bootloader",
 	"crates/crypto",
 	"crates/darkpool-types",
 	"crates/state",
 	"crates/system-primitives/system-bus",
-	# "crates/testing/test-helpers",
+	"crates/testing/test-helpers",
 	"crates/util",
-	# "crates/workers/api-server",
-	# "crates/workers/api-server/benches/api-server-bench-util",
-	# "crates/workers/chain-events",
+	"crates/workers/api-server",
+	"crates/workers/api-server/benches/api-server-bench-util",
+	"crates/workers/chain-events",
 	"crates/workers/event-manager",
-	# "crates/workers/gossip-server",
-	# "crates/workers/handshake-manager",
+	"crates/workers/gossip-server",
 	"crates/workers/job-types",
 	"crates/workers/network-manager",
 	"crates/workers/price-reporter/worker",
@@ -40,7 +39,6 @@ members = [
 	"crates/workers/task-driver",
 	"crates/metrics/renegade-metrics",
 	"crates/system-primitives/system-clock",
-	# "crates/metrics/metrics-sampler",
 ]
 
 [profile.bench]
@@ -105,7 +103,6 @@ gossip-server = { path = "crates/workers/gossip-server", default-features = fals
 matching-engine-core = { path = "crates/workers/matching-engine/matching-engine-core", default-features = false }
 matching-engine-worker = { path = "crates/workers/matching-engine/matching-engine-worker", default-features = false }
 job-types = { path = "crates/workers/job-types", default-features = false }
-metrics-sampler = { path = "crates/metrics/metrics-sampler", default-features = false }
 mock-node = { path = "crates/testing/mock-node", default-features = false }
 network-manager = { path = "crates/workers/network-manager", default-features = false }
 price-reporter = { path = "crates/workers/price-reporter/worker", default-features = false }

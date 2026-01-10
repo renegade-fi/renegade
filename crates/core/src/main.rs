@@ -14,30 +14,30 @@ use std::{process::exit, thread, time::Duration};
 
 use api_server::worker::{ApiServer, ApiServerConfig};
 use chain_events::listener::{OnChainEventListener, OnChainEventListenerConfig};
-use types_runtime::worker::{new_worker_failure_channel, watch_worker, Worker};
-use util::default_wrapper::default_option;
-use types_runtime::new_cancel_channel;
 use constants::in_bootstrap_mode;
 use darkpool_client::constants::{BLOCK_POLLING_INTERVAL, EVENT_FILTER_POLLING_INTERVAL};
 use darkpool_client::{client::DarkpoolClientConfig, DarkpoolClient};
 use event_manager::{manager::EventManager, worker::EventManagerConfig};
-use system_bus::SystemBusMessage;
 use gossip_server::{server::GossipServer, worker::GossipServerConfig};
-use matching_engine_worker::{manager::HandshakeManager, worker::HandshakeManagerConfig};
-use job_types::matching_engine_worker::new_matching_engine_worker_queue;
+use job_types::matching_engine::new_matching_engine_worker_queue;
 use job_types::network_manager::new_network_manager_queue;
 use job_types::proof_manager::new_proof_manager_queue;
 use job_types::task_driver::new_task_driver_queue;
 use job_types::{event_manager::new_event_manager_queue, gossip_server::new_gossip_server_queue};
+use matching_engine_core::MatchingEngine;
+use matching_engine_worker::worker::{MatchingEngineConfig, MatchingEngineManager};
 use network_manager::{worker::NetworkManager, worker::NetworkManagerConfig};
 use price_reporter::worker::PriceReporterConfig;
 use price_reporter::worker::{ExchangeConnectionsConfig, PriceReporter};
 use proof_manager::worker::{ProofManager, ProofManagerConfig};
-use state::{create_global_state, tui::StateTuiApp};
+use state::create_global_state;
 use system_bus::SystemBus;
+use system_bus::SystemBusMessage;
+use types_runtime::new_cancel_channel;
+use types_runtime::{new_worker_failure_channel, watch_worker, Worker};
+use util::default_option;
 
 use error::CoordinatorError;
-use metrics_sampler::setup_metrics_samplers;
 use system_clock::SystemClock;
 use task_driver::worker::{TaskDriver, TaskDriverConfig};
 use tokio::select;
@@ -97,7 +97,7 @@ async fn main() -> Result<(), CoordinatorError> {
 
     // Build communication primitives
     // First, the global shared mpmc bus that all workers have access to
-    let system_bus = SystemBus::<SystemBusMessage>::new();
+    let system_bus = SystemBus::new();
     let system_clock = SystemClock::new().await;
     let (network_sender, network_receiver) = new_network_manager_queue();
     let (gossip_worker_sender, gossip_worker_receiver) = new_gossip_server_queue();
@@ -123,40 +123,30 @@ async fn main() -> Result<(), CoordinatorError> {
     )
     .await?;
 
-    if args.debug {
-        // Build the TUI
-        let tui = StateTuiApp::new(args.clone(), global_state.clone());
-
-        // Attach a watcher to the TUI and exit the process when the TUI quits
-        let join_handle = tui.run();
-        thread::spawn(move || {
-            #[allow(unused_must_use)]
-            {
-                join_handle.join();
-            }
-            exit(0);
-        });
-    }
-
     // Construct a darkpool client that workers will use for submitting txs
-    let darkpool_client = DarkpoolClient::new(DarkpoolClientConfig {
+    let darkpool_client_config = DarkpoolClientConfig {
         darkpool_addr: args.contract_address.clone(),
         chain: args.chain_id,
         rpc_url: args.rpc_url.clone().expect("rpc url not set"),
         private_key: args.private_key.clone(),
         block_polling_interval: BLOCK_POLLING_INTERVAL,
-    })
-    .map_err(err_str!(CoordinatorError::DarkpoolClient))?;
+    };
+    // let darkpool_client =
+    // DarkpoolClient::new(darkpool_client_config).map_err(err_str!
+    // (CoordinatorError::DarkpoolClient))?;
+    let darkpool_client = ();
 
     // Construct a darkpool client for the on-chain event listener worker
-    let chain_listener_darkpool_client = DarkpoolClient::new(DarkpoolClientConfig {
+    let chain_listener_darkpool_client_config = DarkpoolClientConfig {
         darkpool_addr: args.contract_address.clone(),
         chain: args.chain_id,
         rpc_url: args.rpc_url.unwrap(),
         private_key: args.private_key.clone(),
         block_polling_interval: EVENT_FILTER_POLLING_INTERVAL,
-    })
-    .map_err(err_str!(CoordinatorError::DarkpoolClient))?;
+    };
+    // let chain_listener_darkpool_client =
+    // DarkpoolClient::new(chain_listener_darkpool_client_config);
+    let chain_listener_darkpool_client = ();
 
     // ----------------
     // | Worker Setup |
@@ -183,9 +173,6 @@ async fn main() -> Result<(), CoordinatorError> {
     let (price_reporter_failure_sender, mut price_reporter_failure_receiver) =
         new_worker_failure_channel();
     watch_worker::<PriceReporter>(&mut price_reporter_manager, &price_reporter_failure_sender);
-
-    // Register metrics samplers
-    setup_metrics_samplers(global_state.clone(), &system_clock, price_streams.clone()).await?;
 
     // Build a task driver that may be used to spawn long-lived asynchronous tasks
     // that are common among workers
@@ -234,7 +221,6 @@ async fn main() -> Result<(), CoordinatorError> {
         cluster_symmetric_key: args.cluster_symmetric_key,
         send_channel: default_option(network_receiver),
         gossip_work_queue: gossip_worker_sender.clone(),
-        handshake_work_queue: handshake_worker_sender.clone(),
         global_state: global_state.clone(),
         system_bus: system_bus.clone(),
         cancel_channel: network_cancel_receiver,
@@ -291,14 +277,12 @@ async fn main() -> Result<(), CoordinatorError> {
 
     // Start the handshake manager
     let (handshake_cancel_sender, handshake_cancel_receiver) = new_cancel_channel();
-    let mut handshake_manager = HandshakeManager::new(HandshakeManagerConfig {
+    let mut handshake_manager = MatchingEngineManager::new(MatchingEngineConfig {
         min_fill_size: args.min_fill_size,
         state: global_state.clone(),
         matching_engine: matching_engine.clone(),
-        network_channel: network_sender.clone(),
         price_streams: price_streams.clone(),
         job_receiver: Some(handshake_worker_receiver),
-        job_sender: handshake_worker_sender.clone(),
         task_queue: task_sender.clone(),
         system_bus: system_bus.clone(),
         cancel_channel: handshake_cancel_receiver,
@@ -307,7 +291,7 @@ async fn main() -> Result<(), CoordinatorError> {
     .expect("failed to build handshake manager");
     handshake_manager.start().expect("failed to start handshake manager");
     let (handshake_failure_sender, mut handshake_failure_receiver) = new_worker_failure_channel();
-    watch_worker::<HandshakeManager>(&mut handshake_manager, &handshake_failure_sender);
+    watch_worker::<MatchingEngineManager>(&mut handshake_manager, &handshake_failure_sender);
 
     // Start the on-chain event listener
     let (chain_listener_cancel_sender, chain_listener_cancel_receiver) = new_cancel_channel();
@@ -315,7 +299,6 @@ async fn main() -> Result<(), CoordinatorError> {
         websocket_addr: args.eth_websocket_addr,
         darkpool_client: chain_listener_darkpool_client,
         global_state: global_state.clone(),
-        handshake_manager_job_queue: handshake_worker_sender.clone(),
         cancel_channel: chain_listener_cancel_receiver,
         event_queue: event_manager_sender.clone(),
     })

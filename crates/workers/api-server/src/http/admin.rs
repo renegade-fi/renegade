@@ -29,7 +29,7 @@ const ERR_NOT_IMPLEMENTED: &str = "not implemented";
 // | Preserved Handlers  |
 // -----------------------
 
-/// Handler for the GET /v0/admin/is-leader route
+/// Handler for the GET /v2/admin/is-leader route
 pub struct IsLeaderHandler {
     /// A handle to the relayer state
     state: State,
@@ -59,7 +59,7 @@ impl TypedHandler for IsLeaderHandler {
     }
 }
 
-/// Handler for the POST /v0/admin/trigger-snapshot route
+/// Handler for the POST /v2/admin/trigger-snapshot route
 pub struct AdminTriggerSnapshotHandler {
     /// A handle to the relayer state
     state: State,
@@ -89,7 +89,7 @@ impl TypedHandler for AdminTriggerSnapshotHandler {
     }
 }
 
-/// Handler for the POST /v0/admin/refresh-token-mapping route
+/// Handler for the POST /v2/admin/refresh-token-mapping route
 pub struct AdminRefreshTokenMappingHandler {
     /// The chain to fetch a token mapping for
     chain: Chain,
@@ -126,7 +126,7 @@ impl TypedHandler for AdminRefreshTokenMappingHandler {
     }
 }
 
-/// Handler for the POST /v0/admin/refresh-match-fees route
+/// Handler for the POST /v2/admin/refresh-match-fees route
 pub struct AdminRefreshMatchFeesHandler {
     /// A handle to the relayer state
     darkpool_client: DarkpoolClient,
