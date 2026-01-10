@@ -1,9 +1,9 @@
-//! Route handlers for task operations
+//! v2 Route handlers for external match operations
 
 use async_trait::async_trait;
-use external_api::{
-    EmptyRequestResponse,
-    http::task::{GetTaskByIdResponse, GetTasksResponse},
+use external_api::http::external_match::{
+    AssembleExternalMatchRequest, ExternalMatchResponse, ExternalQuoteRequest,
+    ExternalQuoteResponse,
 };
 use hyper::HeaderMap;
 
@@ -19,14 +19,14 @@ use crate::{
 /// Error message for not implemented
 const ERR_NOT_IMPLEMENTED: &str = "not implemented";
 
-// ------------------
-// | Task Handlers  |
-// ------------------
+// -----------------------------
+// | External Match Handlers   |
+// -----------------------------
 
-/// Handler for GET /v2/account/:account_id/tasks
-pub struct GetTasksHandler;
+/// Handler for POST /v2/external-matches/get-quote
+pub struct GetExternalMatchQuoteHandler;
 
-impl GetTasksHandler {
+impl GetExternalMatchQuoteHandler {
     /// Constructor
     pub fn new() -> Self {
         Self
@@ -34,9 +34,9 @@ impl GetTasksHandler {
 }
 
 #[async_trait]
-impl TypedHandler for GetTasksHandler {
-    type Request = EmptyRequestResponse;
-    type Response = GetTasksResponse;
+impl TypedHandler for GetExternalMatchQuoteHandler {
+    type Request = ExternalQuoteRequest;
+    type Response = ExternalQuoteResponse;
 
     async fn handle_typed(
         &self,
@@ -49,10 +49,10 @@ impl TypedHandler for GetTasksHandler {
     }
 }
 
-/// Handler for GET /v2/account/:account_id/tasks/:task_id
-pub struct GetTaskByIdHandler;
+/// Handler for POST /v2/external-matches/assemble-match-bundle
+pub struct AssembleMatchBundleHandler;
 
-impl GetTaskByIdHandler {
+impl AssembleMatchBundleHandler {
     /// Constructor
     pub fn new() -> Self {
         Self
@@ -60,9 +60,9 @@ impl GetTaskByIdHandler {
 }
 
 #[async_trait]
-impl TypedHandler for GetTaskByIdHandler {
-    type Request = EmptyRequestResponse;
-    type Response = GetTaskByIdResponse;
+impl TypedHandler for AssembleMatchBundleHandler {
+    type Request = AssembleExternalMatchRequest;
+    type Response = ExternalMatchResponse;
 
     async fn handle_typed(
         &self,

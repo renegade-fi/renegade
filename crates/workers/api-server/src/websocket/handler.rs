@@ -39,7 +39,7 @@ pub struct DefaultHandler {
     /// The type of authentication required by the endpoint
     auth_type: AuthType,
     /// A reference to the relayer-global system bus
-    system_bus: SystemBus<SystemBusMessage>,
+    system_bus: SystemBus,
     /// The bus topic to subscribe to on a subscription message
     ///
     /// Defaults to the topic subscribed to at the router layer
@@ -48,11 +48,7 @@ pub struct DefaultHandler {
 
 impl DefaultHandler {
     /// Constructor
-    pub fn new_with_remap(
-        auth_type: AuthType,
-        topic_remap: String,
-        system_bus: SystemBus<SystemBusMessage>,
-    ) -> Self {
+    pub fn new_with_remap(auth_type: AuthType, topic_remap: String, system_bus: SystemBus) -> Self {
         Self { auth_type, system_bus, topic_remap: Some(topic_remap) }
     }
 }

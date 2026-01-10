@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use darkpool_client::DarkpoolClient;
 use futures::executor::block_on;
 use job_types::{
-    matching_engine_worker::MatchingEngineWorkerQueue, network_manager::NetworkManagerQueue,
+    matching_engine::MatchingEngineWorkerQueue, network_manager::NetworkManagerQueue,
     proof_manager::ProofManagerQueue,
 };
 use price_state::PriceStreamStates;
@@ -12,13 +12,12 @@ use reqwest::Url;
 use state::State;
 use std::thread::{self, JoinHandle};
 use system_bus::SystemBus;
-use system_bus::SystemBusMessage;
 use tokio::{
     runtime::{Builder as TokioBuilder, Runtime},
     task::JoinHandle as TokioJoinHandle,
 };
-use types_core::{chain::Chain, hmac::HmacKey};
-use types_runtime::{CancelChannel, worker::Worker};
+use types_core::{Chain, HmacKey};
+use types_runtime::{CancelChannel, Worker};
 
 use super::{error::ApiServerError, http::HttpServer, websocket::WebsocketServer};
 
@@ -109,7 +108,7 @@ impl Worker for ApiServer {
             .map_err(|err| ApiServerError::Setup(err.to_string()))?;
 
         // Build the http server
-        let http_server = HttpServer::new(self.config.clone(), self.config.state.clone());
+        let http_server = HttpServer::new(self.config.clone(), &self.config.state);
         let http_thread_handle = tokio_runtime.spawn_blocking(move || {
             let err = block_on(http_server.execution_loop()).err().unwrap();
             ApiServerError::HttpServerFailure(err.to_string())

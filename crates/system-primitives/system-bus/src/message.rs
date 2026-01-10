@@ -1,16 +1,11 @@
 //! Defines types broadcast onto the system bus and thereby websockets
 
 use darkpool_types::bounded_match_result::BoundedMatchResult;
-use external_api::{http::task::ApiTaskStatus, types::ApiHistoricalTask};
 use types_account::account::{Account, OrderId};
 use types_core::AccountId;
 use types_gossip::{PeerInfo, WrappedPeerId};
 use types_tasks::TaskIdentifier;
-// TODO: Uncomment when external-api build issues are resolved
-// use external_api::{
-//     http::task::ApiTaskStatus,
-//     types::{ApiHistoricalTask, ApiWallet},
-// };
+
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -29,27 +24,32 @@ pub const ADMIN_WALLET_UPDATES_TOPIC: &str = "admin-wallet-updates";
 
 /// Get the topic name for a given wallet
 pub fn account_topic(account_id: &AccountId) -> String {
-    format!("account-updates-{}", account_id)
-}
-
-/// Get the topic name for a wallet's order history
-pub fn account_order_history_topic(account_id: &AccountId) -> String {
-    format!("account-order-history-{}", account_id)
+    format!("account-updates-{account_id}")
 }
 
 /// Get the topic name for a given task
 pub fn task_topic(task_id: &TaskIdentifier) -> String {
-    format!("task-updates-{}", task_id)
-}
-
-/// Get the task history topic name for a wallet
-pub fn task_history_topic(account_id: &AccountId) -> String {
-    format!("task-history-{}", account_id)
+    format!("task-updates-{task_id}")
 }
 
 /// Get a topic name for an atomic match response
 pub fn gen_atomic_match_response_topic() -> String {
     format!("atomic-match-{}", Uuid::new_v4())
+}
+
+// ----------------------
+// | Task Status Types  |
+// ----------------------
+
+/// Task status for system bus messages
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TaskStatus {
+    /// The task identifier
+    pub id: Uuid,
+    /// The task status
+    pub status: String,
+    /// The task description
+    pub description: Option<String>,
 }
 
 /// A message type for generic system bus messages, broadcast to all modules
@@ -89,16 +89,10 @@ pub enum SystemBusMessage {
     },
 
     // -- Tasks -- //
-    /// A message indicating that a task has
+    /// A message indicating that a task has been updated
     TaskStatusUpdate {
         /// The updated status of the task
-        status: ApiTaskStatus,
-    },
-
-    /// A message indicating an update to a task in the task history
-    TaskHistoryUpdate {
-        /// The new state of the task
-        task: ApiHistoricalTask,
+        status: TaskStatus,
     },
 
     // -- Account Updates -- //
@@ -127,18 +121,6 @@ pub enum SystemBusMessage {
         /// The quote
         quote: BoundedMatchResult,
     },
-    // /// A message indicating that a malleable atomic match was found for a
-    // /// request
-    // ///
-    // /// This message is published by a task enqueued by the external matching
-    // /// engine, and consumed by the API server which will forward the bundle
-    // /// to its client
-    // MalleableAtomicMatchFound {
-    //     /// The match bundle
-    //     match_bundle: ValidMalleableMatchSettleAtomicBundle,
-    //     /// The validity proofs for the internal party
-    //     validity_proofs: OrderValidityProofBundle,
-    // },
     /// A message indicating that no atomic match was found for a request
     NoAtomicMatchFound,
     // --- Admin -- //

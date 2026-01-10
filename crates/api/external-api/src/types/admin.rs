@@ -1,21 +1,38 @@
 //! API types for admin requests
 
-use circuit_types::Amount;
 use serde::{Deserialize, Serialize};
-use types_account::account::{WalletIdentifier, order_metadata::OrderMetadata};
-use types_core::price::Price;
+use uuid::Uuid;
 
-/// An order's metadata, augmented with the containing
-/// wallet's ID, and optionally the fillable amount
-/// of the order and the price used to calculate it
+use super::order::ApiOrder;
+
+// -------------------
+// | v2 Admin Types  |
+// -------------------
+
+/// An admin order with additional metadata
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct AdminOrderMetadata {
-    /// The order metadata
-    pub order: OrderMetadata,
-    /// The ID of the wallet containing the order
-    pub wallet_id: WalletIdentifier,
-    /// The fillable amount of the order, if calculated
-    pub fillable: Option<Amount>,
-    /// The price used to calculate the fillable amount
-    pub price: Option<Price>,
+pub struct ApiAdminOrder {
+    /// The order details
+    pub order: ApiOrder,
+    /// The account ID that owns the order
+    pub account_id: Uuid,
+    /// The matching pool the order is in
+    pub matching_pool: String,
+}
+
+/// Response for admin get orders request
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GetOrdersAdminResponse {
+    /// The orders
+    pub orders: Vec<ApiAdminOrder>,
+    /// The next page token for pagination
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_page_token: Option<i64>,
+}
+
+/// Response for admin get order by ID request
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GetOrderAdminResponse {
+    /// The order
+    pub order: ApiAdminOrder,
 }

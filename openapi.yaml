@@ -1,0 +1,1801 @@
+openapi: 3.1.0
+info:
+  title: Renegade v2 API
+  version: 2.0.0
+
+servers:
+  - url: https://api.renegade.fi
+
+tags:
+  - name: Account
+  - name: Orders
+  - name: Balances
+  - name: Tasks
+  - name: ExternalMatches
+  - name: Markets
+  - name: Metadata
+  - name: Admin
+
+paths:
+  # ==================
+  # Account API
+  # ==================
+
+  /v2/account:
+    post:
+      tags:
+        - Account
+      operationId: createAccount
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAccountRequest'
+      responses:
+        '200':
+          description: Account created successfully
+
+  /v2/account/{account_id}/seeds:
+    get:
+      tags:
+        - Account
+      operationId: getAccountSeeds
+      security:
+        - accountHmac: []
+      parameters:
+        - $ref: '#/components/parameters/AccountId'
+      responses:
+        '200':
+          description: Account seeds retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetAccountSeedsResponse'
+
+  /v2/account/{account_id}/sync:
+    post:
+      tags:
+        - Account
+      operationId: syncAccount
+      security:
+        - accountHmac: []
+      parameters:
+        - $ref: '#/components/parameters/AccountId'
+        - name: non_blocking
+          in: query
+          schema:
+            type: boolean
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SyncAccountRequest'
+      responses:
+        '200':
+          description: Account sync initiated/completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncAccountResponse'
+
+  # ==================
+  # Orders API
+  # ==================
+
+  /v2/account/{account_id}/orders:
+    get:
+      tags:
+        - Orders
+      operationId: getOrders
+      security:
+        - accountHmac: []
+      parameters:
+        - $ref: '#/components/parameters/AccountId'
+        - name: include_historic_orders
+          in: query
+          schema:
+            type: boolean
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+        - name: page_token
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Orders retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetOrdersResponse'
+
+    post:
+      tags:
+        - Orders
+      operationId: createOrder
+      security:
+        - accountHmac: []
+      parameters:
+        - $ref: '#/components/parameters/AccountId'
+        - name: non_blocking
+          in: query
+          schema:
+            type: boolean
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrderRequest'
+      responses:
+        '200':
+          description: Order created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateOrderResponse'
+
+  /v2/account/{account_id}/orders/{order_id}:
+    get:
+      tags:
+        - Orders
+      operationId: getOrderById
+      security:
+        - accountHmac: []
+      parameters:
+        - $ref: '#/components/parameters/AccountId'
+        - $ref: '#/components/parameters/OrderId'
+      responses:
+        '200':
+          description: Order retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetOrderByIdResponse'
+
+  /v2/account/{account_id}/orders/{order_id}/update:
+    post:
+      tags:
+        - Orders
+      operationId: updateOrder
+      security:
+        - accountHmac: []
+      parameters:
+        - $ref: '#/components/parameters/AccountId'
+        - $ref: '#/components/parameters/OrderId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateOrderRequest'
+      responses:
+        '200':
+          description: Order updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpdateOrderResponse'
+
+  /v2/account/{account_id}/orders/{order_id}/cancel:
+    post:
+      tags:
+        - Orders
+      operationId: cancelOrder
+      security:
+        - accountHmac: []
+      parameters:
+        - $ref: '#/components/parameters/AccountId'
+        - $ref: '#/components/parameters/OrderId'
+        - name: non_blocking
+          in: query
+          schema:
+            type: boolean
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelOrderRequest'
+      responses:
+        '200':
+          description: Order cancelled successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CancelOrderResponse'
+
+  # ==================
+  # Balances API
+  # ==================
+
+  /v2/account/{account_id}/balances:
+    get:
+      tags:
+        - Balances
+      operationId: getBalances
+      security:
+        - accountHmac: []
+      parameters:
+        - $ref: '#/components/parameters/AccountId'
+      responses:
+        '200':
+          description: Balances retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetBalancesResponse'
+
+  /v2/account/{account_id}/balances/{mint}:
+    get:
+      tags:
+        - Balances
+      operationId: getBalanceByMint
+      security:
+        - accountHmac: []
+      parameters:
+        - $ref: '#/components/parameters/AccountId'
+        - $ref: '#/components/parameters/Mint'
+      responses:
+        '200':
+          description: Balance retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetBalanceByMintResponse'
+
+  /v2/account/{account_id}/balances/{mint}/deposit:
+    post:
+      tags:
+        - Balances
+      operationId: depositBalance
+      security:
+        - accountHmac: []
+      parameters:
+        - $ref: '#/components/parameters/AccountId'
+        - $ref: '#/components/parameters/Mint'
+        - name: non_blocking
+          in: query
+          schema:
+            type: boolean
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DepositBalanceRequest'
+      responses:
+        '200':
+          description: Deposit initiated/completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DepositBalanceResponse'
+
+  /v2/account/{account_id}/balances/{mint}/withdraw:
+    post:
+      tags:
+        - Balances
+      operationId: withdrawBalance
+      security:
+        - accountHmac: []
+      parameters:
+        - $ref: '#/components/parameters/AccountId'
+        - $ref: '#/components/parameters/Mint'
+        - name: non_blocking
+          in: query
+          schema:
+            type: boolean
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WithdrawBalanceRequest'
+      responses:
+        '200':
+          description: Withdrawal initiated/completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WithdrawBalanceResponse'
+
+  # ==================
+  # Tasks API
+  # ==================
+
+  /v2/account/{account_id}/tasks:
+    get:
+      tags:
+        - Tasks
+      operationId: getTasks
+      security:
+        - accountHmac: []
+      parameters:
+        - $ref: '#/components/parameters/AccountId'
+        - name: include_historic_tasks
+          in: query
+          schema:
+            type: boolean
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+        - name: page_token
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Tasks retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetTasksResponse'
+
+  /v2/account/{account_id}/tasks/{task_id}:
+    get:
+      tags:
+        - Tasks
+      operationId: getTaskById
+      security:
+        - accountHmac: []
+      parameters:
+        - $ref: '#/components/parameters/AccountId'
+        - $ref: '#/components/parameters/TaskId'
+      responses:
+        '200':
+          description: Task retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetTaskByIdResponse'
+
+  # ==================
+  # External Matches API
+  # ==================
+
+  /v2/external-matches/get-quote:
+    post:
+      tags:
+        - ExternalMatches
+      operationId: getExternalMatchQuote
+      security:
+        - apiKeyHmac: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExternalQuoteRequest'
+      responses:
+        '200':
+          description: Quote retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExternalQuoteResponse'
+
+  /v2/external-matches/assemble-match-bundle:
+    post:
+      tags:
+        - ExternalMatches
+      operationId: assembleMatchBundle
+      security:
+        - apiKeyHmac: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssembleExternalMatchRequest'
+      responses:
+        '200':
+          description: Match bundle assembled successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExternalMatchResponse'
+
+  # ==================
+  # Markets API
+  # ==================
+
+  /v2/markets:
+    get:
+      tags:
+        - Markets
+      operationId: getMarkets
+      security: []
+      responses:
+        '200':
+          description: Markets retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetMarketsResponse'
+
+  /v2/markets/depth:
+    get:
+      tags:
+        - Markets
+      operationId: getMarketsDepth
+      security:
+        - apiKeyHmac: []
+      responses:
+        '200':
+          description: Market depths retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetMarketDepthsResponse'
+
+  /v2/markets/{mint}/depth:
+    get:
+      tags:
+        - Markets
+      operationId: getMarketDepthByMint
+      security:
+        - apiKeyHmac: []
+      parameters:
+        - $ref: '#/components/parameters/Mint'
+      responses:
+        '200':
+          description: Market depth retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetMarketDepthByMintResponse'
+
+  /v2/markets/{mint}/price:
+    get:
+      tags:
+        - Markets
+      operationId: getMarketPrice
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/Mint'
+        - name: exchange
+          in: query
+          schema:
+            type: string
+        - name: quote_mint
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Price retrieved successfully
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  # ==================
+  # Metadata API
+  # ==================
+
+  /v2/metadata/exchange:
+    get:
+      tags:
+        - Metadata
+      operationId: getExchangeMetadata
+      security: []
+      responses:
+        '200':
+          description: Exchange metadata retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExchangeMetadataResponse'
+
+  # ==================
+  # Admin API
+  # ==================
+
+  /v2/relayer-admin/orders:
+    get:
+      tags:
+        - Admin
+      operationId: adminGetOrders
+      security:
+        - adminHmac: []
+      parameters:
+        - name: matching_pool
+          in: query
+          schema:
+            type: string
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+        - name: page_token
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Orders retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetOrdersAdminResponse'
+
+  /v2/relayer-admin/orders/{order_id}:
+    get:
+      tags:
+        - Admin
+      operationId: adminGetOrderById
+      security:
+        - adminHmac: []
+      parameters:
+        - $ref: '#/components/parameters/OrderId'
+      responses:
+        '200':
+          description: Order retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetOrderAdminResponse'
+
+components:
+  securitySchemes:
+    accountHmac:
+      type: apiKey
+      in: header
+      name: X-Renegade-Auth
+    apiKeyHmac:
+      type: apiKey
+      in: header
+      name: X-Renegade-Auth
+    adminHmac:
+      type: apiKey
+      in: header
+      name: X-Renegade-Admin-Auth
+
+  parameters:
+    AccountId:
+      name: account_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+    OrderId:
+      name: order_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+    TaskId:
+      name: task_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+    Mint:
+      name: mint
+      in: path
+      required: true
+      schema:
+        type: string
+
+  schemas:
+    # ==================
+    # Account Types
+    # ==================
+
+    CreateAccountRequest:
+      type: object
+      required:
+        - account_id
+        - address
+        - master_view_seed
+        - auth_hmac_key
+      properties:
+        account_id:
+          type: string
+          format: uuid
+        address:
+          type: string
+        master_view_seed:
+          type: string
+        auth_hmac_key:
+          type: string
+          format: base64
+
+    GetAccountSeedsResponse:
+      type: object
+      required:
+        - recovery_seed_csprng
+        - share_seed_csprng
+      properties:
+        recovery_seed_csprng:
+          $ref: '#/components/schemas/ApiPoseidonCSPRNG'
+        share_seed_csprng:
+          $ref: '#/components/schemas/ApiPoseidonCSPRNG'
+
+    SyncAccountRequest:
+      type: object
+      required:
+        - account_id
+        - master_view_seed
+        - auth_hmac_key
+      properties:
+        account_id:
+          type: string
+          format: uuid
+        master_view_seed:
+          type: string
+        auth_hmac_key:
+          type: string
+          format: base64
+
+    SyncAccountResponse:
+      type: object
+      required:
+        - task_id
+        - completed
+      properties:
+        task_id:
+          type: string
+          format: uuid
+        completed:
+          type: boolean
+
+    ApiPoseidonCSPRNG:
+      type: object
+      required:
+        - seed
+        - index
+      properties:
+        seed:
+          type: string
+        index:
+          type: integer
+          format: uint64
+
+    ApiBabyJubJubPoint:
+      type: object
+      required:
+        - x
+        - y
+      properties:
+        x:
+          type: string
+        y:
+          type: string
+
+    ApiSchnorrSignature:
+      type: object
+      required:
+        - s
+        - r
+      properties:
+        s:
+          type: string
+        r:
+          $ref: '#/components/schemas/ApiBabyJubJubPoint'
+
+    # ==================
+    # Order Types
+    # ==================
+
+    GetOrdersResponse:
+      type: object
+      required:
+        - orders
+      properties:
+        orders:
+          type: array
+          items:
+            $ref: '#/components/schemas/ApiOrder'
+        next_page_token:
+          type: integer
+
+    GetOrderByIdResponse:
+      type: object
+      required:
+        - order
+      properties:
+        order:
+          $ref: '#/components/schemas/ApiOrder'
+
+    CreateOrderRequest:
+      type: object
+      required:
+        - order
+        - auth
+        - precompute_cancellation_proof
+      properties:
+        order:
+          $ref: '#/components/schemas/ApiOrderCore'
+        auth:
+          $ref: '#/components/schemas/OrderAuth'
+        precompute_cancellation_proof:
+          type: boolean
+
+    CreateOrderResponse:
+      type: object
+      required:
+        - task_id
+        - order
+        - completed
+      properties:
+        task_id:
+          type: string
+          format: uuid
+        order:
+          $ref: '#/components/schemas/ApiOrder'
+        completed:
+          type: boolean
+
+    UpdateOrderRequest:
+      type: object
+      required:
+        - order
+      properties:
+        order:
+          $ref: '#/components/schemas/ApiOrderCore'
+
+    UpdateOrderResponse:
+      type: object
+      required:
+        - order
+      properties:
+        order:
+          $ref: '#/components/schemas/ApiOrder'
+
+    CancelOrderRequest:
+      type: object
+      required:
+        - signature
+      properties:
+        signature:
+          type: string
+          format: base64
+
+    CancelOrderResponse:
+      type: object
+      required:
+        - task_id
+        - order
+        - completed
+      properties:
+        task_id:
+          type: string
+          format: uuid
+        order:
+          $ref: '#/components/schemas/ApiOrder'
+        completed:
+          type: boolean
+
+    ApiOrderCore:
+      type: object
+      required:
+        - id
+        - in_token
+        - out_token
+        - owner
+        - min_price
+        - amount_in
+        - min_fill_size
+        - order_type
+        - allow_external_matches
+      properties:
+        id:
+          type: string
+          format: uuid
+        in_token:
+          type: string
+        out_token:
+          type: string
+        owner:
+          type: string
+        min_price:
+          $ref: '#/components/schemas/FixedPoint'
+        amount_in:
+          type: string
+        min_fill_size:
+          type: string
+        order_type:
+          $ref: '#/components/schemas/OrderType'
+        allow_external_matches:
+          type: boolean
+
+    ApiOrder:
+      type: object
+      required:
+        - order
+        - recovery_stream
+        - share_stream
+        - public_shares
+        - state
+        - fills
+        - created
+      properties:
+        order:
+          $ref: '#/components/schemas/ApiOrderCore'
+        recovery_stream:
+          $ref: '#/components/schemas/ApiPoseidonCSPRNG'
+        share_stream:
+          $ref: '#/components/schemas/ApiPoseidonCSPRNG'
+        public_shares:
+          $ref: '#/components/schemas/ApiOrderShare'
+        state:
+          $ref: '#/components/schemas/OrderState'
+        fills:
+          type: array
+          items:
+            $ref: '#/components/schemas/ApiPartialOrderFill'
+        created:
+          type: integer
+          format: uint64
+
+    ApiOrderShare:
+      type: object
+      required:
+        - in_token
+        - out_token
+        - owner
+        - min_price
+        - amount_in
+      properties:
+        in_token:
+          type: string
+        out_token:
+          type: string
+        owner:
+          type: string
+        min_price:
+          type: string
+        amount_in:
+          type: string
+
+    OrderType:
+      type: string
+      enum:
+        - public_order
+        - natively_settled_private_order
+        - renegade_settled_public_fill_order
+        - renegade_settled_private_fill_order
+
+    OrderAuth:
+      oneOf:
+        - type: object
+          required:
+            - public_order
+          properties:
+            public_order:
+              type: object
+              required:
+                - intent_signature
+              properties:
+                intent_signature:
+                  $ref: '#/components/schemas/SignatureWithNonce'
+        - type: object
+          required:
+            - natively_settled_private_order
+          properties:
+            natively_settled_private_order:
+              type: object
+              required:
+                - intent_signature
+              properties:
+                intent_signature:
+                  $ref: '#/components/schemas/ApiSchnorrSignature'
+        - type: object
+          required:
+            - renegade_settled_order
+          properties:
+            renegade_settled_order:
+              type: object
+              required:
+                - intent_signature
+                - new_output_balance_signature
+              properties:
+                intent_signature:
+                  $ref: '#/components/schemas/ApiSchnorrSignature'
+                new_output_balance_signature:
+                  $ref: '#/components/schemas/ApiSchnorrSignature'
+
+    SignatureWithNonce:
+      type: object
+      required:
+        - nonce
+        - signature
+      properties:
+        nonce:
+          type: string
+        signature:
+          type: string
+          format: base64
+
+    OrderState:
+      type: string
+      enum:
+        - created
+        - matching
+        - settling_match
+        - filled
+        - cancelled
+
+    ApiPartialOrderFill:
+      type: object
+      required:
+        - amount
+        - price
+        - fees
+        - tx_hash
+      properties:
+        amount:
+          type: string
+        price:
+          $ref: '#/components/schemas/ApiTimestampedPriceFloat'
+        fees:
+          $ref: '#/components/schemas/FeeTake'
+        tx_hash:
+          type: string
+
+    ApiTimestampedPriceFloat:
+      type: object
+      required:
+        - price
+        - timestamp
+      properties:
+        price:
+          type: string
+        timestamp:
+          type: integer
+          format: uint64
+
+    FeeTake:
+      type: object
+      required:
+        - relayer_fee
+        - protocol_fee
+      properties:
+        relayer_fee:
+          type: string
+        protocol_fee:
+          type: string
+
+    # ==================
+    # Balance Types
+    # ==================
+
+    GetBalancesResponse:
+      type: object
+      required:
+        - balances
+      properties:
+        balances:
+          type: array
+          items:
+            $ref: '#/components/schemas/ApiBalance'
+
+    GetBalanceByMintResponse:
+      type: object
+      required:
+        - balance
+      properties:
+        balance:
+          $ref: '#/components/schemas/ApiBalance'
+
+    DepositBalanceRequest:
+      type: object
+      required:
+        - from_address
+        - amount
+        - authority
+        - permit
+      properties:
+        from_address:
+          type: string
+        amount:
+          type: string
+        authority:
+          $ref: '#/components/schemas/ApiSchnorrPublicKey'
+        permit:
+          $ref: '#/components/schemas/ApiDepositPermit'
+
+    DepositBalanceResponse:
+      type: object
+      required:
+        - task_id
+        - balance
+        - completed
+      properties:
+        task_id:
+          type: string
+          format: uuid
+        balance:
+          $ref: '#/components/schemas/ApiBalance'
+        completed:
+          type: boolean
+
+    WithdrawBalanceRequest:
+      type: object
+      required:
+        - amount
+        - signature
+      properties:
+        amount:
+          type: string
+        signature:
+          type: string
+          format: base64
+
+    WithdrawBalanceResponse:
+      type: object
+      required:
+        - task_id
+        - balance
+        - completed
+      properties:
+        task_id:
+          type: string
+          format: uuid
+        balance:
+          $ref: '#/components/schemas/ApiBalance'
+        completed:
+          type: boolean
+
+    ApiBalance:
+      type: object
+      required:
+        - mint
+        - owner
+        - relayer_fee_recipient
+        - authority
+        - relayer_fee_balance
+        - protocol_fee_balance
+        - amount
+        - recovery_stream
+        - share_stream
+        - public_shares
+      properties:
+        mint:
+          type: string
+        owner:
+          type: string
+        relayer_fee_recipient:
+          type: string
+        authority:
+          $ref: '#/components/schemas/ApiSchnorrPublicKey'
+        relayer_fee_balance:
+          type: string
+        protocol_fee_balance:
+          type: string
+        amount:
+          type: string
+        recovery_stream:
+          $ref: '#/components/schemas/ApiPoseidonCSPRNG'
+        share_stream:
+          $ref: '#/components/schemas/ApiPoseidonCSPRNG'
+        public_shares:
+          $ref: '#/components/schemas/ApiBalanceShare'
+
+    ApiBalanceShare:
+      type: object
+      required:
+        - mint
+        - owner
+        - relayer_fee_recipient
+        - authority
+        - relayer_fee_balance
+        - protocol_fee_balance
+        - amount
+      properties:
+        mint:
+          type: string
+        owner:
+          type: string
+        relayer_fee_recipient:
+          type: string
+        authority:
+          $ref: '#/components/schemas/ApiSchnorrPublicKeyShare'
+        relayer_fee_balance:
+          type: string
+        protocol_fee_balance:
+          type: string
+        amount:
+          type: string
+
+    ApiSchnorrPublicKey:
+      type: object
+      required:
+        - point
+      properties:
+        point:
+          $ref: '#/components/schemas/ApiBabyJubJubPoint'
+
+    ApiSchnorrPublicKeyShare:
+      type: object
+      required:
+        - x
+        - y
+      properties:
+        x:
+          type: string
+        y:
+          type: string
+
+    ApiDepositPermit:
+      type: object
+      required:
+        - nonce
+        - deadline
+        - signature
+      properties:
+        nonce:
+          type: string
+        deadline:
+          type: string
+        signature:
+          type: string
+          format: base64
+
+    # ==================
+    # Task Types
+    # ==================
+
+    GetTasksResponse:
+      type: object
+      required:
+        - tasks
+      properties:
+        tasks:
+          type: array
+          items:
+            $ref: '#/components/schemas/ApiTask'
+        next_page_token:
+          type: integer
+
+    GetTaskByIdResponse:
+      type: object
+      required:
+        - task
+      properties:
+        task:
+          $ref: '#/components/schemas/ApiTask'
+
+    ApiTask:
+      type: object
+      required:
+        - id
+        - state
+        - created_at
+        - task_info
+      properties:
+        id:
+          type: string
+          format: uuid
+        state:
+          type: string
+        created_at:
+          type: integer
+          format: uint64
+        task_info:
+          $ref: '#/components/schemas/ApiTaskDescription'
+
+    ApiTaskDescription:
+      type: string
+      enum:
+        - create_account
+        - sync_account
+        - deposit
+        - pay_fee
+        - withdraw
+        - create_order
+        - update_order
+        - cancel_order
+        - settle_match
+
+    # ==================
+    # External Match Types
+    # ==================
+
+    ExternalQuoteRequest:
+      type: object
+      required:
+        - external_order
+      properties:
+        external_order:
+          $ref: '#/components/schemas/ExternalOrder'
+
+    ExternalQuoteResponse:
+      type: object
+      required:
+        - signed_quote
+      properties:
+        signed_quote:
+          $ref: '#/components/schemas/ApiSignedQuote'
+        gas_sponsorship_info:
+          $ref: '#/components/schemas/GasSponsorshipInfo'
+
+    AssembleExternalMatchRequest:
+      type: object
+      required:
+        - assembly
+      properties:
+        do_gas_estimation:
+          type: boolean
+          default: false
+        receiver_address:
+          type: string
+        assembly:
+          $ref: '#/components/schemas/AssemblyType'
+
+    AssemblyType:
+      oneOf:
+        - type: object
+          required:
+            - QuotedOrder
+          properties:
+            QuotedOrder:
+              type: object
+              required:
+                - signed_quote
+              properties:
+                signed_quote:
+                  $ref: '#/components/schemas/ApiSignedQuote'
+                updated_order:
+                  $ref: '#/components/schemas/ExternalOrder'
+        - type: object
+          required:
+            - NewOrder
+          properties:
+            NewOrder:
+              type: object
+              required:
+                - external_order
+              properties:
+                external_order:
+                  $ref: '#/components/schemas/ExternalOrder'
+
+    ExternalMatchResponse:
+      type: object
+      required:
+        - match_bundle
+      properties:
+        match_bundle:
+          $ref: '#/components/schemas/MalleableAtomicMatchApiBundle'
+        gas_sponsorship_info:
+          $ref: '#/components/schemas/GasSponsorshipInfo'
+
+    ExternalOrder:
+      type: object
+      required:
+        - input_mint
+        - output_mint
+        - input_amount
+        - output_amount
+        - use_exact_output_amount
+        - min_fill_size
+      properties:
+        input_mint:
+          type: string
+        output_mint:
+          type: string
+        input_amount:
+          type: string
+        output_amount:
+          type: string
+        use_exact_output_amount:
+          type: boolean
+        min_fill_size:
+          type: string
+
+    ApiSignedQuote:
+      type: object
+      required:
+        - quote
+        - signature
+        - deadline
+      properties:
+        quote:
+          $ref: '#/components/schemas/ApiExternalQuote'
+        signature:
+          type: string
+        deadline:
+          type: integer
+          format: uint64
+
+    ApiExternalQuote:
+      type: object
+      required:
+        - order
+        - match_result
+        - fees
+        - send
+        - receive
+        - price
+        - timestamp
+      properties:
+        order:
+          $ref: '#/components/schemas/ExternalOrder'
+        match_result:
+          $ref: '#/components/schemas/ApiExternalMatchResult'
+        fees:
+          $ref: '#/components/schemas/FeeTake'
+        send:
+          $ref: '#/components/schemas/ApiExternalAssetTransfer'
+        receive:
+          $ref: '#/components/schemas/ApiExternalAssetTransfer'
+        price:
+          $ref: '#/components/schemas/ApiTimestampedPrice'
+        timestamp:
+          type: integer
+          format: uint64
+
+    ApiExternalMatchResult:
+      type: object
+      required:
+        - input_mint
+        - output_mint
+        - input_amount
+        - output_amount
+      properties:
+        input_mint:
+          type: string
+        output_mint:
+          type: string
+        input_amount:
+          type: string
+        output_amount:
+          type: string
+
+    ApiTimestampedPrice:
+      type: object
+      required:
+        - price
+        - timestamp
+      properties:
+        price:
+          type: string
+        timestamp:
+          type: integer
+          format: uint64
+
+    MalleableAtomicMatchApiBundle:
+      type: object
+      required:
+        - match_result
+        - fee_rates
+        - max_receive
+        - min_receive
+        - max_send
+        - min_send
+        - settlement_tx
+        - deadline
+      properties:
+        match_result:
+          $ref: '#/components/schemas/ApiBoundedMatchResult'
+        fee_rates:
+          $ref: '#/components/schemas/FeeTakeRate'
+        max_receive:
+          $ref: '#/components/schemas/ApiExternalAssetTransfer'
+        min_receive:
+          $ref: '#/components/schemas/ApiExternalAssetTransfer'
+        max_send:
+          $ref: '#/components/schemas/ApiExternalAssetTransfer'
+        min_send:
+          $ref: '#/components/schemas/ApiExternalAssetTransfer'
+        settlement_tx:
+          $ref: '#/components/schemas/TransactionRequest'
+        deadline:
+          type: integer
+          format: uint64
+
+    ApiBoundedMatchResult:
+      type: object
+      required:
+        - input_mint
+        - output_mint
+        - price_fp
+        - output_quoted_price_fp
+        - min_input_amount
+        - max_input_amount
+      properties:
+        input_mint:
+          type: string
+        output_mint:
+          type: string
+        price_fp:
+          $ref: '#/components/schemas/FixedPoint'
+        output_quoted_price_fp:
+          $ref: '#/components/schemas/FixedPoint'
+        min_input_amount:
+          type: string
+        max_input_amount:
+          type: string
+
+    FeeTakeRate:
+      type: object
+      required:
+        - relayer_fee_rate
+        - protocol_fee_rate
+      properties:
+        relayer_fee_rate:
+          $ref: '#/components/schemas/FixedPoint'
+        protocol_fee_rate:
+          $ref: '#/components/schemas/FixedPoint'
+
+    FixedPoint:
+      type: string
+
+    ApiExternalAssetTransfer:
+      type: object
+      required:
+        - mint
+        - amount
+      properties:
+        mint:
+          type: string
+        amount:
+          type: string
+
+    GasSponsorshipInfo:
+      type: object
+      required:
+        - refund_amount
+        - refund_native_eth
+      properties:
+        refund_amount:
+          type: integer
+          format: uint128
+        refund_native_eth:
+          type: boolean
+        refund_address:
+          type: string
+
+    TransactionRequest:
+      type: object
+      properties:
+        from:
+          type: string
+        to:
+          type: string
+        gas:
+          type: string
+        gasPrice:
+          type: string
+        value:
+          type: string
+        data:
+          type: string
+        nonce:
+          type: string
+        chainId:
+          type: string
+
+    # ==================
+    # Market Types
+    # ==================
+
+    GetMarketsResponse:
+      type: object
+      required:
+        - markets
+      properties:
+        markets:
+          type: array
+          items:
+            $ref: '#/components/schemas/MarketInfo'
+
+    GetMarketDepthsResponse:
+      type: object
+      required:
+        - market_depths
+      properties:
+        market_depths:
+          type: array
+          items:
+            $ref: '#/components/schemas/MarketDepth'
+
+    GetMarketDepthByMintResponse:
+      type: object
+      required:
+        - market_depth
+      properties:
+        market_depth:
+          $ref: '#/components/schemas/MarketDepth'
+
+    MarketInfo:
+      type: object
+      required:
+        - base
+        - quote
+        - price
+        - internal_match_fee_rates
+        - external_match_fee_rates
+      properties:
+        base:
+          $ref: '#/components/schemas/ApiToken'
+        quote:
+          $ref: '#/components/schemas/ApiToken'
+        price:
+          $ref: '#/components/schemas/ApiTimestampedPrice'
+        internal_match_fee_rates:
+          $ref: '#/components/schemas/FeeTakeRate'
+        external_match_fee_rates:
+          $ref: '#/components/schemas/FeeTakeRate'
+
+    MarketDepth:
+      type: object
+      required:
+        - market
+        - buy
+        - sell
+      properties:
+        market:
+          $ref: '#/components/schemas/MarketInfo'
+        buy:
+          $ref: '#/components/schemas/DepthSide'
+        sell:
+          $ref: '#/components/schemas/DepthSide'
+
+    DepthSide:
+      type: object
+      required:
+        - total_quantity
+        - total_quantity_usd
+      properties:
+        total_quantity:
+          type: string
+        total_quantity_usd:
+          type: string
+
+    ApiToken:
+      type: object
+      required:
+        - address
+        - symbol
+      properties:
+        address:
+          type: string
+        symbol:
+          type: string
+
+    # ==================
+    # Metadata Types
+    # ==================
+
+    ExchangeMetadataResponse:
+      type: object
+      required:
+        - chain_id
+        - settlement_contract_address
+        - executor_address
+        - relayer_fee_recipient
+        - supported_tokens
+      properties:
+        chain_id:
+          type: integer
+          format: uint64
+        settlement_contract_address:
+          type: string
+        executor_address:
+          type: string
+        relayer_fee_recipient:
+          type: string
+        supported_tokens:
+          type: array
+          items:
+            $ref: '#/components/schemas/ApiToken'
+
+    # ==================
+    # Admin Types
+    # ==================
+
+    GetOrdersAdminResponse:
+      type: object
+      required:
+        - orders
+      properties:
+        orders:
+          type: array
+          items:
+            $ref: '#/components/schemas/ApiAdminOrder'
+        next_page_token:
+          type: integer
+
+    GetOrderAdminResponse:
+      type: object
+      required:
+        - order
+      properties:
+        order:
+          $ref: '#/components/schemas/ApiAdminOrder'
+
+    ApiAdminOrder:
+      type: object
+      required:
+        - order
+        - account_id
+        - matching_pool
+      properties:
+        order:
+          $ref: '#/components/schemas/ApiOrder'
+        account_id:
+          type: string
+          format: uuid
+        matching_pool:
+          type: string
+
+    # ==================
+    # WebSocket Types
+    # ==================
+
+    ClientWebsocketMessage:
+      type: object
+      required:
+        - headers
+        - body
+      properties:
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+        body:
+          $ref: '#/components/schemas/ClientWebsocketMessageBody'
+
+    ClientWebsocketMessageBody:
+      oneOf:
+        - type: object
+          required:
+            - method
+            - topic
+          properties:
+            method:
+              type: string
+              enum:
+                - subscribe
+            topic:
+              type: string
+        - type: object
+          required:
+            - method
+            - topic
+          properties:
+            method:
+              type: string
+              enum:
+                - unsubscribe
+            topic:
+              type: string
+
+    ServerWebsocketMessage:
+      type: object
+      required:
+        - topic
+        - body
+      properties:
+        topic:
+          type: string
+        body:
+          $ref: '#/components/schemas/ServerWebsocketMessageBody'
+
+    ServerWebsocketMessageBody:
+      oneOf:
+        - type: object
+          required:
+            - event
+            - subscriptions
+          properties:
+            event:
+              type: string
+              enum:
+                - subscriptions
+            subscriptions:
+              type: array
+              items:
+                type: string
+        - type: object
+          required:
+            - event
+            - balance
+          properties:
+            event:
+              type: string
+              enum:
+                - balance_update
+            balance:
+              $ref: '#/components/schemas/ApiBalance'
+        - type: object
+          required:
+            - event
+            - order
+            - update_type
+          properties:
+            event:
+              type: string
+              enum:
+                - order_update
+            order:
+              $ref: '#/components/schemas/ApiOrder'
+            update_type:
+              $ref: '#/components/schemas/ApiOrderUpdateType'
+        - type: object
+          required:
+            - event
+            - fill
+            - order
+            - filled
+          properties:
+            event:
+              type: string
+              enum:
+                - fill
+            fill:
+              $ref: '#/components/schemas/ApiPartialOrderFill'
+            order:
+              $ref: '#/components/schemas/ApiOrderCore'
+            filled:
+              type: boolean
+        - type: object
+          required:
+            - event
+            - task
+          properties:
+            event:
+              type: string
+              enum:
+                - task_update
+            task:
+              $ref: '#/components/schemas/ApiTask'
+        - type: object
+          required:
+            - event
+            - account_id
+            - balance
+          properties:
+            event:
+              type: string
+              enum:
+                - admin_balance_update
+            account_id:
+              type: string
+              format: uuid
+            balance:
+              $ref: '#/components/schemas/ApiBalance'
+        - type: object
+          required:
+            - event
+            - account_id
+            - order
+            - update_type
+          properties:
+            event:
+              type: string
+              enum:
+                - admin_order_update
+            account_id:
+              type: string
+              format: uuid
+            order:
+              $ref: '#/components/schemas/ApiAdminOrder'
+            update_type:
+              $ref: '#/components/schemas/ApiOrderUpdateType'
+
+    ApiOrderUpdateType:
+      type: string
+      enum:
+        - created
+        - internal_fill
+        - external_fill
+        - min_fill_size_updated
+        - external_matches_toggled
+        - matching_pool_assigned
+        - cancelled

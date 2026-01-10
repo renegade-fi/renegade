@@ -1,63 +1,35 @@
-//! Defines API types for task status introspection
+//! HTTP route definitions and request/response types for task operations
 
 use serde::{Deserialize, Serialize};
-use types_tasks::{QueuedTask, TaskIdentifier};
+
+use crate::types::ApiTask;
 
 // ---------------
 // | HTTP Routes |
 // ---------------
 
-/// Get the status of a task
-pub const GET_TASK_STATUS_ROUTE: &str = "/v0/tasks/:task_id";
-/// Get the task queue of a given wallet
-pub const GET_TASK_QUEUE_ROUTE: &str = "/v0/task_queue/:wallet_id";
-/// Get whether or not a given wallet's task queue is paused
-pub const GET_TASK_QUEUE_PAUSED_ROUTE: &str = "/v0/task_queue/:wallet_id/is_paused";
+/// Route to get tasks for an account
+pub const GET_TASKS_ROUTE: &str = "/v2/account/:account_id/tasks";
+/// Route to get a task by ID
+pub const GET_TASK_BY_ID_ROUTE: &str = "/v2/account/:account_id/tasks/:task_id";
 
-// -------------
-// | API Types |
-// -------------
+// -------------------
+// | Request/Response |
+// -------------------
 
-/// The task status for a given task
+/// Response for get tasks
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ApiTaskStatus {
-    /// The ID of the task
-    pub id: TaskIdentifier,
-    /// The description of the task
-    pub description: String,
-    /// The status of the task
-    pub state: String,
-    /// Whether or not the task has already committed
-    pub committed: bool,
+pub struct GetTasksResponse {
+    /// The tasks
+    pub tasks: Vec<ApiTask>,
+    /// The next page token for pagination
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_page_token: Option<i64>,
 }
 
-/// The response type for a request to fetch task status
+/// Response for get task by ID
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct GetTaskStatusResponse {
-    /// The status of the requested task
-    pub status: ApiTaskStatus,
-}
-
-impl From<QueuedTask> for ApiTaskStatus {
-    fn from(task: QueuedTask) -> Self {
-        let state = task.state.display_description();
-        let committed = task.state.is_committed();
-        let description = task.descriptor.display_description();
-
-        ApiTaskStatus { id: task.id, description, state, committed }
-    }
-}
-
-/// The response type for a request to fetch all tasks on a wallet
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct TaskQueueListResponse {
-    /// The list of tasks on a wallet
-    pub tasks: Vec<ApiTaskStatus>,
-}
-
-/// The response type for a request to fetch whether a task queue is paused
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct TaskQueuePausedResponse {
-    /// Whether the task queue is paused
-    pub is_paused: bool,
+pub struct GetTaskByIdResponse {
+    /// The task
+    pub task: ApiTask,
 }

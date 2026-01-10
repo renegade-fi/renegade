@@ -7,22 +7,10 @@ edition = "2024"
 default = ["full-api"]
 auth = ["dep:http", "dep:thiserror", "types-core/hmac"]
 external-match-api = []
-admin-api = ["full-api"]
-network-api = []
-order-book-api = []
+admin-api = []
 task-api = []
-wallet-api = []
-websocket = []
-full-api = [
-    "circuit-types/default",
-    "external-match-api",
-    "admin-api",
-    "network-api",
-    "order-book-api",
-    "task-api",
-    "wallet-api",
-    "websocket",
-]
+websocket = ["admin-api"]
+full-api = ["external-match-api", "admin-api", "task-api", "websocket"]
 
 [dependencies]
 # === Arithmetic === #

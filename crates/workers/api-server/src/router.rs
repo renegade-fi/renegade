@@ -14,7 +14,7 @@ use matchit::{Params, Router as MatchRouter};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use state::State;
 use tracing::{debug, instrument, warn};
-use types_core::hmac::HmacKey;
+use types_core::HmacKey;
 use util::telemetry::propagation::set_parent_span_from_headers;
 
 use crate::{
@@ -22,7 +22,7 @@ use crate::{
     error::bad_request,
 };
 
-use super::{error::ApiServerError, param_parsing::parse_wallet_id_from_params};
+use super::{error::ApiServerError, param_parsing::parse_account_id_from_params};
 
 /// A type alias for URL generic params maps, i.e. /path/to/resource/:id
 pub(super) type UrlParams = HashMap<String, String>;
@@ -246,7 +246,7 @@ impl Router {
         route: String,
         handler: H,
     ) {
-        self.add_route(method, route, AuthType::Wallet, handler);
+        self.add_route(method, route, AuthType::Account, handler);
     }
 
     /// Add a route with admin authentication
@@ -377,11 +377,11 @@ impl Router {
         req_body: &[u8],
     ) -> Result<(), ApiServerError> {
         match auth_type {
-            AuthType::Wallet => {
-                // Parse the wallet ID from the URL params
-                let wallet_id = parse_wallet_id_from_params(url_params)?;
+            AuthType::Account => {
+                // Parse the account ID from the URL params
+                let account_id = parse_account_id_from_params(url_params)?;
                 self.auth_middleware
-                    .authenticate_wallet_request(wallet_id, path, headers, req_body)
+                    .authenticate_account_request(account_id, path, headers, req_body)
                     .await?;
             },
             AuthType::Admin => {

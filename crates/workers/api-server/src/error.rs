@@ -114,3 +114,11 @@ pub(crate) fn not_found<E: ToString>(e: E) -> ApiServerError {
 pub(crate) fn internal_error<E: ToString>(e: E) -> ApiServerError {
     ApiServerError::HttpStatusCode(StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
 }
+
+impl ApiServerError {
+    /// Create an `ApiServerError` with a 501 not implemented code
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn not_implemented<E: ToString>(e: E) -> ApiServerError {
+        ApiServerError::HttpStatusCode(StatusCode::NOT_IMPLEMENTED, e.to_string())
+    }
+}

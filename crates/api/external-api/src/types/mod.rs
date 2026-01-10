@@ -1,43 +1,27 @@
 //! API types for the relayer's websocket and HTTP APIs
-#[cfg(feature = "admin-api")]
-mod admin;
-#[cfg(feature = "network-api")]
-mod api_network_info;
-#[cfg(feature = "order-book-api")]
-mod api_order_book;
-#[cfg(feature = "task-api")]
-mod api_task_history;
-#[cfg(feature = "wallet-api")]
-mod api_wallet;
 
+pub mod account;
+#[cfg(feature = "admin-api")]
+pub mod admin;
+pub mod balance;
+pub mod crypto_primitives;
+pub mod external_match;
+pub mod market;
+pub mod metadata;
+pub mod order;
+pub mod task;
+#[cfg(feature = "websocket")]
+pub mod websocket;
+
+pub use account::*;
 #[cfg(feature = "admin-api")]
 pub use admin::*;
-#[cfg(feature = "network-api")]
-pub use api_network_info::*;
-#[cfg(feature = "order-book-api")]
-pub use api_order_book::*;
-#[cfg(feature = "task-api")]
-pub use api_task_history::*;
-#[cfg(feature = "wallet-api")]
-pub use api_wallet::*;
-use serde::{Deserialize, Serialize};
-
-// -------------
-// | API Types |
-// -------------
-
-/// A token in the the supported token list
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ApiToken {
-    /// The token address
-    pub address: String,
-    /// The token symbol
-    pub symbol: String,
-}
-
-impl ApiToken {
-    /// Constructor
-    pub fn new(addr: String, sym: String) -> Self {
-        Self { address: addr, symbol: sym }
-    }
-}
+pub use balance::*;
+pub use crypto_primitives::*;
+pub use external_match::*;
+pub use market::*;
+pub use metadata::*;
+pub use order::*;
+pub use task::*;
+#[cfg(feature = "websocket")]
+pub use websocket::*;

@@ -8,7 +8,6 @@
 use std::{str::FromStr, time::Duration};
 
 use constants::in_bootstrap_mode;
-use external_api::websocket::WebsocketMessage;
 use futures::{
     SinkExt, StreamExt,
     stream::{SplitSink, SplitStream},
@@ -292,7 +291,7 @@ fn subscribe_to_price_stream(
     // Send subscription messages to WS connection
     let topic = format_topic(&exchange, base_token, quote_token);
     let message = WebsocketMessage::Subscribe { topic };
-    msg_out_tx.send(message).map_err(err_str!(ExchangeConnectionError::SendError))?;
+    msg_out_tx.send(message).map_err(ExchangeConnectionError::send_error)?;
 
     Ok(())
 }
