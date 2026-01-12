@@ -2,7 +2,7 @@
 
 use tracing::warn;
 use types_account::Account;
-use types_tasks::{NewAccountTaskDescriptor, QueuedTask, TaskDescriptor};
+use types_tasks::{DepositTaskDescriptor, NewAccountTaskDescriptor, QueuedTask, TaskDescriptor};
 
 use super::error::TaskSimulationError;
 
@@ -17,28 +17,29 @@ const ERR_INVALID_ACCOUNT_ID: &str = "Task does not apply to account";
 // | Simulation |
 // --------------
 
-/// Simulate the effect of tasks on a wallet, mutates the wallet in place
-pub fn simulate_wallet_tasks(
-    wallet: &mut Account,
+/// Simulate the effect of tasks on an account, mutates the account in place
+pub fn simulate_account_tasks(
+    account: &mut Account,
     tasks: Vec<QueuedTask>,
 ) -> Result<(), TaskSimulationError> {
     for task in tasks {
-        if !should_simulate(&task)? {
+        if !should_simulate(&task) {
             warn!("Skipping simulation for task {}", task.id);
             continue;
         }
 
-        simulate_single_wallet_task(wallet, task.descriptor)?;
+        simulate_single_account_task(account, task.descriptor)?;
     }
 
     Ok(())
 }
 
 /// Determine if the task should be simulated
-fn should_simulate(task: &QueuedTask) -> Result<bool, TaskSimulationError> {
+fn should_simulate(task: &QueuedTask) -> bool {
     match task.descriptor {
-        TaskDescriptor::NewAccount(_) => Ok(false),
-        TaskDescriptor::NodeStartup(_) => Ok(false),
+        TaskDescriptor::NewAccount(_) => false,
+        TaskDescriptor::Deposit(_) => true,
+        TaskDescriptor::NodeStartup(_) => false,
     }
 }
 
@@ -104,12 +105,13 @@ fn should_simulate(task: &QueuedTask) -> Result<bool, TaskSimulationError> {
 // }
 
 /// Simulate the effect of a single task on a wallet
-fn simulate_single_wallet_task(
-    wallet: &mut Account,
+fn simulate_single_account_task(
+    account: &mut Account,
     task: TaskDescriptor,
 ) -> Result<(), TaskSimulationError> {
     match task {
-        TaskDescriptor::NewAccount(t) => simulate_new_account(wallet, &t),
+        TaskDescriptor::NewAccount(t) => simulate_new_account(account, &t),
+        TaskDescriptor::Deposit(t) => simulate_deposit(account, &t),
         // Ignore all non-wallet tasks
         TaskDescriptor::NodeStartup(_) => Ok(()),
     }
@@ -126,6 +128,15 @@ fn simulate_new_account(
     }
 
     warn!("TODO: Implement new account simulation");
+    Ok(())
+}
+
+/// Simulate a `Deposit` task applied to a wallet
+fn simulate_deposit(
+    account: &mut Account,
+    desc: &DepositTaskDescriptor,
+) -> Result<(), TaskSimulationError> {
+    account.deposit_balance(desc.token, desc.amount)?;
     Ok(())
 }
 

@@ -138,12 +138,12 @@ pub fn bigint_to_scalar_bits<const D: usize>(a: &BigInt) -> Vec<Scalar> {
 // --------------------------------
 
 /// Convert an Address to a scalar
-pub fn address_to_scalar(a: &Address) -> Scalar {
+pub fn address_to_scalar(a: Address) -> Scalar {
     Scalar::from_be_bytes_mod_order(&a.0.0)
 }
 
 /// Convert a U256 to a scalar
-pub fn u256_to_scalar(a: &U256) -> Scalar {
+pub fn u256_to_scalar(a: U256) -> Scalar {
     let bytes: [u8; U256::BYTES] = a.to_be_bytes();
     Scalar::from_be_bytes_mod_order(&bytes)
 }
@@ -221,7 +221,7 @@ mod field_helper_test {
 
         // Convert scalar to address (only preserves lowest 20 bytes)
         let address = scalar_to_address(&original_scalar);
-        let round_trip_scalar = address_to_scalar(&address);
+        let round_trip_scalar = address_to_scalar(address);
 
         // Verify that the lowest 20 bytes match (we lose higher-order bytes)
         let original_bytes = original_scalar.to_bytes_be();
@@ -242,7 +242,7 @@ mod field_helper_test {
         let original_address = Address::from(address_bytes);
 
         // Convert address to scalar
-        let scalar = address_to_scalar(&original_address);
+        let scalar = address_to_scalar(original_address);
 
         // Convert scalar back to address
         let round_trip_address = scalar_to_address(&scalar);

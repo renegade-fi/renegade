@@ -9,6 +9,7 @@ use external_api::{
     },
 };
 use hyper::HeaderMap;
+use state::State;
 
 use crate::{
     error::ApiServerError,
@@ -79,12 +80,15 @@ impl TypedHandler for GetBalanceByMintHandler {
 }
 
 /// Handler for POST /v2/account/:account_id/balances/:mint/deposit
-pub struct DepositBalanceHandler;
+pub struct DepositBalanceHandler {
+    /// The global state
+    state: State,
+}
 
 impl DepositBalanceHandler {
     /// Constructor
-    pub fn new() -> Self {
-        Self
+    pub fn new(state: State) -> Self {
+        Self { state }
     }
 }
 
@@ -96,11 +100,11 @@ impl TypedHandler for DepositBalanceHandler {
     async fn handle_typed(
         &self,
         _headers: HeaderMap,
-        _req: Self::Request,
-        _params: UrlParams,
+        req: Self::Request,
+        params: UrlParams,
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
-        Err(ApiServerError::not_implemented(ERR_NOT_IMPLEMENTED))
+        unimplemented!("DepositBalanceHandler");
     }
 }
 

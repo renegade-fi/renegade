@@ -6,7 +6,7 @@ use serde::Serialize;
 use types_tasks::QueuedTaskState;
 
 use crate::{
-    tasks::{create_new_account::CreateNewAccountTaskState, node_startup::NodeStartupTaskState},
+    tasks::{create_new_account::CreateNewAccountTaskState, deposit::DepositTaskState, node_startup::NodeStartupTaskState},
     traits::TaskState,
 };
 
@@ -23,6 +23,8 @@ pub enum StateWrapper {
     CreateNewAccount(CreateNewAccountTaskState),
     /// The state of a node startup task
     NodeStartup(NodeStartupTaskState),
+    /// The state of a deposit task
+    Deposit(DepositTaskState),
 }
 
 impl StateWrapper {
@@ -35,6 +37,9 @@ impl StateWrapper {
             StateWrapper::NodeStartup(state) => {
                 <NodeStartupTaskState as TaskState>::committed(state)
             },
+            StateWrapper::Deposit(state) => {
+                <DepositTaskState as TaskState>::committed(state)
+            },
         }
     }
 
@@ -46,6 +51,7 @@ impl StateWrapper {
                 *state == CreateNewAccountTaskState::commit_point()
             },
             StateWrapper::NodeStartup(state) => *state == NodeStartupTaskState::commit_point(),
+            StateWrapper::Deposit(state) => *state == DepositTaskState::commit_point(),
         }
     }
 
@@ -58,6 +64,9 @@ impl StateWrapper {
             StateWrapper::NodeStartup(state) => {
                 <NodeStartupTaskState as TaskState>::completed(state)
             },
+            StateWrapper::Deposit(state) => {
+                <DepositTaskState as TaskState>::completed(state)
+            },
         }
     }
 }
@@ -67,6 +76,7 @@ impl Display for StateWrapper {
         match self {
             StateWrapper::CreateNewAccount(state) => write!(f, "{state}"),
             StateWrapper::NodeStartup(state) => write!(f, "{state}"),
+            StateWrapper::Deposit(state) => write!(f, "{state}"),
         }
     }
 }

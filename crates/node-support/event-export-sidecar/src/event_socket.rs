@@ -99,14 +99,14 @@ impl EventSocket {
     async fn handle_relayer_event(&self, msg: Vec<u8>) -> Result<(), Error> {
         let event: RelayerEvent = serde_json::from_slice(&msg)?;
         let event_id = event.meta.event_id;
-        let wallet_id = event.wallet_id();
+        let account_id = event.account_id();
 
         let msg = String::from_utf8(msg)?;
         self.sqs_client
             .send_message()
             .queue_url(&self.queue_url)
             .message_deduplication_id(event_id)
-            .message_group_id(wallet_id)
+            .message_group_id(account_id)
             .message_body(msg)
             .send()
             .await?;

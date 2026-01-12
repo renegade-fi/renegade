@@ -1,6 +1,6 @@
 //! Simulates the effect of tasks on the relayer state
 
+mod account_tasks;
 pub mod error;
-mod wallet_tasks;
 
-pub use wallet_tasks::simulate_wallet_tasks;
+pub use account_tasks::simulate_account_tasks;

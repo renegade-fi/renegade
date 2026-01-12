@@ -5,8 +5,8 @@ edition = "2024"
 
 [features]
 default = []
-arbitrum = ["dep:serde_with", "dep:postcard"]
-base = ["dep:renegade-solidity-abi"]
+arbitrum = []
+base = []
 all-chains = ["arbitrum", "base"]
 integration = [
     "dep:rand",
@@ -42,17 +42,16 @@ alloy-sol-types = { workspace = true }
 constants = { workspace = true }
 circuit-types = { workspace = true }
 circuits-core = { workspace = true }
-types-core = { workspace = true }
 types-account = { workspace = true }
+types-core = { workspace = true }
+types-proofs = { workspace = true }
 crypto = { workspace = true }
 matching-engine-core = { workspace = true }
-renegade-solidity-abi = { package = "abi", git = "https://github.com/renegade-fi/renegade-solidity-contracts", optional = true }
+renegade-solidity-abi = { workspace = true }
 util = { workspace = true, features = ["telemetry"] }
 
 # === Serde === #
 serde = { version = "1.0.197" }
-serde_with = { version = "3.4", optional = true }
-postcard = { version = "1", features = ["alloc"], optional = true }
 
 # === Misc === #
 async-trait = "0.1"

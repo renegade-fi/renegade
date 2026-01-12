@@ -9,24 +9,14 @@ use alloy_contract::CallDecoder;
 use alloy_primitives::Selector;
 use alloy_sol_types::SolEvent;
 use async_trait::async_trait;
-use circuit_types::r#match::ExternalMatchResult;
-use circuit_types::{
-    SizedWalletShare, elgamal::EncryptionKey, fixed_point::FixedPoint, merkle::MerkleRoot,
-    wallet::Nullifier,
-};
-use common::types::proof_bundles::{
-    ValidMalleableMatchSettleAtomicBundle, ValidMatchSettleAtomicBundle, ValidMatchSettleBundle,
-};
-use common::types::{
-    proof_bundles::{
-        OrderValidityProofBundle, SizedFeeRedemptionBundle, SizedOfflineFeeSettlementBundle,
-        SizedRelayerFeeSettlementBundle, SizedValidWalletCreateBundle,
-        SizedValidWalletUpdateBundle,
-    },
-    transfer_auth::TransferAuth,
-};
+use circuit_types::Nullifier;
+use circuit_types::{elgamal::EncryptionKey, fixed_point::FixedPoint, merkle::MerkleRoot};
 use constants::Scalar;
+use renegade_solidity_abi::v2::IDarkpoolV2::DepositAuth;
 use tracing::info;
+use types_proofs::{
+    IntentOnlyBoundedSettlementBundle, OrderValidityProofBundle, ValidDepositBundle,
+};
 
 use crate::client::{DarkpoolCallBuilder, RenegadeProvider};
 use crate::errors::DarkpoolClientError;
@@ -51,8 +41,6 @@ pub trait DarkpoolImpl: Clone {
     type MerkleOpening: MerkleOpeningNodeEvent;
     /// The nullifier spent event type
     type NullifierSpent: NullifierSpentEvent;
-    /// The wallet updated event type
-    type WalletUpdated: WalletUpdatedEvent;
 
     /// Create a new darkpool implementation
     fn new(darkpool_addr: Address, provider: RenegadeProvider) -> Self;
@@ -71,7 +59,11 @@ pub trait DarkpoolImpl: Clone {
     async fn get_merkle_root(&self) -> Result<Scalar, DarkpoolClientError>;
 
     /// Get the base fee charged by the contract
-    async fn get_protocol_fee(&self) -> Result<FixedPoint, DarkpoolClientError>;
+    async fn get_protocol_fee(
+        &self,
+        in_token: Address,
+        out_token: Address,
+    ) -> Result<FixedPoint, DarkpoolClientError>;
 
     /// Get the external match fee charged by the contract for the given mint
     async fn get_external_match_fee(
@@ -88,9 +80,6 @@ pub trait DarkpoolImpl: Clone {
     /// Check whether a given nullifier is used
     async fn is_nullifier_spent(&self, nullifier: Nullifier) -> Result<bool, DarkpoolClientError>;
 
-    /// Check whether a given blinder is used
-    async fn is_blinder_used(&self, blinder: Scalar) -> Result<bool, DarkpoolClientError>;
-
     /// Whether a given selector is known to the darkpool implementation
     ///
     /// This method is used in share recovery to decide whether a top level
@@ -102,50 +91,11 @@ pub trait DarkpoolImpl: Clone {
     // | Setters |
     // -----------
 
-    /// Create a new wallet in the darkpool contract
-    async fn new_wallet(
+    /// Deposit funds into an existing balance in the darkpool contract
+    async fn deposit(
         &self,
-        valid_wallet_create: &SizedValidWalletCreateBundle,
-    ) -> Result<TransactionReceipt, DarkpoolClientError>;
-
-    /// Update a wallet in the darkpool contract
-    async fn update_wallet(
-        &self,
-        valid_wallet_update: &SizedValidWalletUpdateBundle,
-        wallet_commitment_signature: Vec<u8>,
-        transfer_auth: Option<TransferAuth>,
-    ) -> Result<TransactionReceipt, DarkpoolClientError>;
-
-    /// Process a match settle in the darkpool contract
-    async fn process_match_settle(
-        &self,
-        party0_validity_proofs: &OrderValidityProofBundle,
-        party1_validity_proofs: &OrderValidityProofBundle,
-        match_bundle: ValidMatchSettleBundle,
-    ) -> Result<TransactionReceipt, DarkpoolClientError>;
-
-    /// Settle an fee online; i.e. wherein the receiving part directly receives
-    /// the note in their wallet.
-    ///
-    /// TODO: This method is unused currently, we may want to remove it
-    async fn settle_online_relayer_fee(
-        &self,
-        valid_relayer_fee_settlement: &SizedRelayerFeeSettlementBundle,
-        relayer_wallet_commitment_signature: Vec<u8>,
-    ) -> Result<TransactionReceipt, DarkpoolClientError>;
-
-    /// Settle an offline fee; committing a note to the Merkle state that can be
-    /// later redeemed
-    async fn settle_offline_fee(
-        &self,
-        valid_offline_fee_settlement: &SizedOfflineFeeSettlementBundle,
-    ) -> Result<TransactionReceipt, DarkpoolClientError>;
-
-    /// Redeem a fee note into a wallet
-    async fn redeem_fee(
-        &self,
-        valid_fee_redemption: &SizedFeeRedemptionBundle,
-        recipient_wallet_commitment_signature: Vec<u8>,
+        auth: DepositAuth,
+        proof_bundle: ValidDepositBundle,
     ) -> Result<TransactionReceipt, DarkpoolClientError>;
 
     // ----------------
@@ -156,33 +106,10 @@ pub trait DarkpoolImpl: Clone {
     fn gen_atomic_match_settle_calldata(
         &self,
         receiver_address: Option<Address>,
+        // TODO: Update these types
         internal_party_validity_proofs: &OrderValidityProofBundle,
-        match_atomic_bundle: ValidMatchSettleAtomicBundle,
+        match_atomic_bundle: IntentOnlyBoundedSettlementBundle,
     ) -> Result<TransactionRequest, DarkpoolClientError>;
-
-    /// Generate calldata for a `processMalleableAtomicMatchSettle` call
-    fn gen_malleable_atomic_match_settle_calldata(
-        &self,
-        receiver_address: Option<Address>,
-        internal_party_validity_proofs: &OrderValidityProofBundle,
-        match_atomic_bundle: ValidMalleableMatchSettleAtomicBundle,
-    ) -> Result<TransactionRequest, DarkpoolClientError>;
-
-    // ------------
-    // | Recovery |
-    // ------------
-
-    /// Parse wallet shares from a given transaction's calldata and selector
-    fn parse_shares(
-        selector: Selector,
-        calldata: &[u8],
-        public_blinder_share: Scalar,
-    ) -> Result<SizedWalletShare, DarkpoolClientError>;
-
-    /// Parse an external match from a given transaction's calldata
-    fn parse_external_match(
-        calldata: &[u8],
-    ) -> Result<Option<ExternalMatchResult>, DarkpoolClientError>;
 
     // -----------
     // | Testing |

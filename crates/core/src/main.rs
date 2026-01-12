@@ -17,6 +17,7 @@ use chain_events::listener::{OnChainEventListener, OnChainEventListenerConfig};
 use constants::in_bootstrap_mode;
 use darkpool_client::client::DarkpoolClientConfig;
 use darkpool_client::constants::{BLOCK_POLLING_INTERVAL, EVENT_FILTER_POLLING_INTERVAL};
+use darkpool_client::DarkpoolClient;
 use event_manager::{manager::EventManager, worker::EventManagerConfig};
 use gossip_server::{server::GossipServer, worker::GossipServerConfig};
 use job_types::matching_engine::new_matching_engine_worker_queue;
@@ -129,10 +130,8 @@ async fn main() -> Result<(), CoordinatorError> {
         private_key: args.private_key.clone(),
         block_polling_interval: BLOCK_POLLING_INTERVAL,
     };
-    // let darkpool_client =
-    // DarkpoolClient::new(darkpool_client_config).map_err(err_str!
-    // (CoordinatorError::DarkpoolClient))?;
-    let darkpool_client = ();
+    let darkpool_client =
+        DarkpoolClient::new(darkpool_client_config).map_err(CoordinatorError::darkpool_client)?;
 
     // Construct a darkpool client for the on-chain event listener worker
     let chain_listener_darkpool_client_config = DarkpoolClientConfig {
@@ -142,9 +141,8 @@ async fn main() -> Result<(), CoordinatorError> {
         private_key: args.private_key.clone(),
         block_polling_interval: EVENT_FILTER_POLLING_INTERVAL,
     };
-    // let chain_listener_darkpool_client =
-    // DarkpoolClient::new(chain_listener_darkpool_client_config);
-    let chain_listener_darkpool_client = ();
+    let chain_listener_darkpool_client = DarkpoolClient::new(chain_listener_darkpool_client_config)
+        .map_err(CoordinatorError::darkpool_client)?;
 
     // ----------------
     // | Worker Setup |
@@ -237,7 +235,7 @@ async fn main() -> Result<(), CoordinatorError> {
         local_addr: network_manager.local_addr.clone(),
         cluster_id: args.cluster_id,
         bootstrap_servers: args.bootstrap_servers,
-        darkpool_client,
+        darkpool_client: darkpool_client.clone(),
         global_state: global_state.clone(),
         job_sender: gossip_worker_sender.clone(),
         job_receiver: Some(gossip_worker_receiver).into(),

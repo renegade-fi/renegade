@@ -25,6 +25,12 @@ pub enum CoordinatorError {
 }
 
 impl CoordinatorError {
+    /// New darkpool client error
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn darkpool_client<T: ToString>(msg: T) -> Self {
+        CoordinatorError::DarkpoolClient(msg.to_string())
+    }
+
     /// New setup error
     #[allow(clippy::needless_pass_by_value)]
     pub fn setup<T: ToString>(msg: T) -> Self {

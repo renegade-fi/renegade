@@ -3,6 +3,8 @@
 //! Separated out to aid discoverability on implementations
 
 // pub mod derivation;
+pub mod deposit;
+pub mod error;
 pub mod keychain;
 #[cfg(feature = "mocks")]
 pub mod mocks;
@@ -12,7 +14,7 @@ pub mod pair;
 use std::collections::HashMap;
 
 use alloy::primitives::Address;
-use circuit_types::Amount;
+use circuit_types::{Amount, max_amount};
 use darkpool_types::balance::Balance;
 use serde::{Deserialize, Serialize};
 use types_core::AccountId;
@@ -24,6 +26,8 @@ use darkpool_types::rkyv_remotes::AddressDef;
 use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize, with};
 
 use crate::{MerkleAuthenticationPath, keychain::KeyChain, order::Order};
+
+pub use error::AccountError;
 
 /// An identifier of an order used for caching
 pub type OrderId = Uuid;
@@ -83,10 +87,34 @@ impl Account {
     }
 }
 
+// ------------
+// | Balances |
+// ------------
+
+impl Account {
+    /// Get a balance by its mint
+    pub fn get_balance(&self, mint: &Address) -> Option<&Balance> {
+        self.balances.get(mint)
+    }
+
+    /// Deposit a balance into the account
+    pub fn deposit_balance(&mut self, mint: Address, amount: Amount) -> Result<(), AccountError> {
+        let bal = self.balances.entry(mint).or_default();
+        if bal.amount + amount > max_amount() {
+            let curr_amt = bal.amount;
+            let err_msg = format!("Deposit would exceed max amount: {curr_amt} + {amount}");
+            return Err(AccountError::balance(err_msg));
+        }
+
+        bal.amount += amount;
+        Ok(())
+    }
+}
+
 // Implementations on the rkyv-derived type
 #[cfg(feature = "rkyv")]
 mod rkyv_order_impls {
-    //! Implementations for accound orders on the rkyv-derived type
+    //! Implementations for account orders on the rkyv-derived type
     use circuit_types::Amount;
     use rkyv::rancor;
     use rkyv::rend::unaligned::u128_ule;

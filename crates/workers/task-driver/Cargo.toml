@@ -53,6 +53,7 @@ state = { workspace = true }
 system-bus = { workspace = true }
 util = { workspace = true }
 renegade-metrics = { workspace = true }
+renegade-solidity-abi = { workspace = true }
 
 # === Misc Dependencies === #
 itertools = "0.11"
