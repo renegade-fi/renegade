@@ -4,12 +4,15 @@
 // | URL Captures |
 // ----------------
 
+use alloy::primitives::Address;
+use circuit_types::Amount;
 use num_bigint::BigUint;
 use num_traits::Num;
 use types_account::MatchingPoolName;
 use types_core::{AccountId, Token};
 use types_gossip::{ClusterId, WrappedPeerId};
 use types_tasks::TaskIdentifier;
+use util::hex::address_from_hex_string;
 use uuid::Uuid;
 
 use crate::{
@@ -65,16 +68,25 @@ const TICKERS_PARAM: &str = "tickers";
 // | Parsing |
 // -----------
 
+// --- Primitive Type Parsing --- //
+
+/// Parse an address from a hex string
+pub(crate) fn parse_address_from_hex_string(hex: &str) -> Result<Address, ApiServerError> {
+    address_from_hex_string(hex).map_err(|e| bad_request(format!("invalid address: {e}")))
+}
+
+/// Parse an amount from a string
+pub(crate) fn parse_amount_from_string(amount: &str) -> Result<Amount, ApiServerError> {
+    amount.parse().map_err(|e| bad_request(format!("invalid amount: {e}")))
+}
+
+// --- Url Params --- //
+
 /// A helper to parse out a mint from a URL param
-pub(super) fn parse_mint_from_params(params: &UrlParams) -> Result<BigUint, ApiServerError> {
+pub(super) fn parse_mint_from_params(params: &UrlParams) -> Result<Address, ApiServerError> {
     // Try to parse as a hex string, then fall back to decimal
     let mint_str = params.get(MINT_URL_PARAM).ok_or_else(|| not_found(ERR_MINT_PARSE))?;
-    let stripped_param = mint_str.strip_prefix("0x").unwrap_or(mint_str);
-    if let Ok(mint) = BigUint::from_str_radix(stripped_param, 16 /* radix */) {
-        return Ok(mint);
-    }
-
-    params.get(MINT_URL_PARAM).unwrap().parse().map_err(|_| bad_request(ERR_MINT_PARSE))
+    address_from_hex_string(mint_str).map_err(|e| bad_request(format!("invalid mint: {e}")))
 }
 
 /// A helper to parse a token (":mint") from a URL param
@@ -147,6 +159,8 @@ pub(super) fn parse_matching_pool_from_url_params(
 ) -> Result<MatchingPoolName, ApiServerError> {
     params.get(MATCHING_POOL_PARAM).ok_or_else(|| bad_request(ERR_MATCHING_POOL_PARSE)).cloned()
 }
+
+// --- Query Params --- //
 
 /// A helper to parse out a matching pool name from a query string
 pub(super) fn parse_matching_pool_from_query_params(

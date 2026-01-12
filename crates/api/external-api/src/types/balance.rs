@@ -1,6 +1,8 @@
 //! API types for balances
 
 use darkpool_types::balance::Balance;
+#[cfg(feature = "full-api")]
+use renegade_solidity_abi::v2::IDarkpoolV2::DepositAuth;
 use serde::{Deserialize, Serialize};
 use util::hex::address_to_hex_string;
 
@@ -94,4 +96,28 @@ pub struct ApiDepositPermit {
     pub deadline: String,
     /// The permit signature (base64 encoded)
     pub signature: String,
+}
+
+#[cfg(feature = "full-api")]
+impl TryFrom<ApiDepositPermit> for DepositAuth {
+    type Error = String;
+
+    fn try_from(permit: ApiDepositPermit) -> Result<Self, Self::Error> {
+        use std::str::FromStr;
+
+        use alloy::primitives::{Bytes, U256};
+        use base64::{Engine, engine::general_purpose::STANDARD as BASE64_ENGINE};
+
+        let permit_signature_bytes = BASE64_ENGINE
+            .decode(&permit.signature)
+            .map_err(|e| format!("invalid permit signature: {e}"))?;
+
+        Ok(DepositAuth {
+            permit2Nonce: U256::from_str(&permit.nonce)
+                .map_err(|e| format!("invalid permit nonce: {e}"))?,
+            permit2Deadline: U256::from_str(&permit.deadline)
+                .map_err(|e| format!("invalid permit deadline: {e}"))?,
+            permit2Signature: Bytes::from(permit_signature_bytes),
+        })
+    }
 }

@@ -833,6 +833,7 @@ checksum = "a23eb6b1614318a8071c9b2521f36b424b2c83db5eb3a0fead4a6c0809af6e61"
 name = "api-server"
 version = "0.1.0"
 dependencies = [
+ "abi",
  "alloy",
  "api-server-bench-util",
  "async-trait",
@@ -3738,6 +3739,7 @@ dependencies = [
 name = "external-api"
 version = "0.1.0"
 dependencies = [
+ "abi",
  "alloy",
  "base64 0.22.1",
  "circuit-types",

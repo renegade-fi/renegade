@@ -11,7 +11,9 @@ use state::error::StateError;
 use super::router::{ResponseBody, build_500_response, build_response_from_status_code};
 
 /// The error message for rate limit exceeded errors
-const ERR_RATE_LIMIT_EXCEEDED: &str = "Rate limit exceeded";
+pub(crate) const ERR_RATE_LIMIT_EXCEEDED: &str = "Rate limit exceeded";
+/// The error message for account not found
+pub(crate) const ERR_ACCOUNT_NOT_FOUND: &str = "account not found";
 
 /// The error type for errors that occur during ApiServer execution
 #[derive(Debug)]
