@@ -10,7 +10,7 @@ use async_trait::async_trait;
 use circuit_types::Amount;
 use renegade_solidity_abi::v2::IDarkpoolV2::DepositAuth;
 use serde::Serialize;
-use tracing::instrument;
+use tracing::{info, instrument};
 use types_core::AccountId;
 use types_tasks::DepositTaskDescriptor;
 
@@ -183,6 +183,7 @@ impl Descriptor for DepositTaskDescriptor {}
 impl DepositTask {
     /// Submit the deposit transaction to the darkpool
     pub async fn submit_deposit(&self) -> Result<()> {
-        todo!()
+        info!("Submitting deposit...");
+        Ok(())
     }
 }

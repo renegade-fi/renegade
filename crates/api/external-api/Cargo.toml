@@ -10,7 +10,13 @@ external-match-api = []
 admin-api = []
 task-api = []
 websocket = ["admin-api"]
-full-api = ["external-match-api", "admin-api", "task-api", "websocket"]
+full-api = [
+    "external-match-api",
+    "admin-api",
+    "task-api",
+    "websocket",
+    "dep:renegade-solidity-abi",
+]
 
 [dependencies]
 # === Arithmetic === #
@@ -31,6 +37,7 @@ types-runtime = { workspace = true }
 constants = { workspace = true }
 crypto = { workspace = true }
 util = { workspace = true }
+renegade-solidity-abi = { workspace = true, optional = true }
 
 # === Misc Dependencies === #
 alloy = { workspace = true }

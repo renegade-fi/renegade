@@ -9,10 +9,17 @@ use external_api::{
     },
 };
 use hyper::HeaderMap;
+use renegade_solidity_abi::v2::IDarkpoolV2::DepositAuth;
 use state::State;
+use types_tasks::DepositTaskDescriptor;
 
 use crate::{
-    error::ApiServerError,
+    error::{ApiServerError, ERR_ACCOUNT_NOT_FOUND, bad_request, not_found},
+    http::helpers::append_task,
+    param_parsing::{
+        parse_account_id_from_params, parse_address_from_hex_string, parse_amount_from_string,
+        parse_mint_from_params,
+    },
     router::{QueryParams, TypedHandler, UrlParams},
 };
 
@@ -104,7 +111,29 @@ impl TypedHandler for DepositBalanceHandler {
         params: UrlParams,
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
-        unimplemented!("DepositBalanceHandler");
+        // Parse parameters
+        let account_id = parse_account_id_from_params(&params)?;
+        let token = parse_mint_from_params(&params)?;
+        let from_address = parse_address_from_hex_string(&req.from_address)?;
+        let amount = parse_amount_from_string(&req.amount)?;
+        let auth = DepositAuth::try_from(req.permit).map_err(bad_request)?;
+
+        // Update the account
+        let mut account =
+            self.state.get_account(&account_id).await?.ok_or(not_found(ERR_ACCOUNT_NOT_FOUND))?;
+        account.deposit_balance(token, amount).map_err(bad_request)?;
+        let updated_balance = account.get_balance(&token).cloned().unwrap_or_default();
+
+        // Create task descriptor and append it to the state
+        let descriptor = DepositTaskDescriptor::new(account_id, from_address, token, amount, auth);
+        let task_id = append_task(descriptor.into(), &self.state).await?;
+
+        Ok(DepositBalanceResponse {
+            task_id,
+            balance: updated_balance.into(),
+            // TODO: Expose synchronous api
+            completed: false,
+        })
     }
 }
 
