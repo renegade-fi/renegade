@@ -7921,6 +7921,7 @@ dependencies = [
  "tokio",
  "tracing",
  "types-runtime",
+ "types-tasks",
  "util",
 ]
 

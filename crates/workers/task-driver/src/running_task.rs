@@ -125,11 +125,11 @@ impl<T: Task> RunnableTask<T> {
         // Pop the task from the state, unless this task bypasses the task queue
         // Do not propagate this error; otherwise we may skip the account refresh step
         let mut should_refresh = false;
-        if !self.bypass_task_queue() {
-            if let Err(e) = self.pop_task_or_clear_queue(success, &affected_accounts).await {
-                error!("error popping task: {e}");
-                should_refresh = true;
-            }
+        if !self.bypass_task_queue()
+            && let Err(e) = self.pop_task_or_clear_queue(success, &affected_accounts).await
+        {
+            error!("error popping task: {e}");
+            should_refresh = true;
         }
 
         // If the task failed at/after its commit point, we enqueue an account refresh

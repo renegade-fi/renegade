@@ -10,9 +10,13 @@ use external_api::{
 };
 use hyper::HeaderMap;
 use state::State;
+use types_account::keychain::{KeyChain, PrivateKeyChain};
+use types_core::HmacKey;
+use types_tasks::NewAccountTaskDescriptor;
 
 use crate::{
-    error::{ApiServerError, not_found},
+    error::{ApiServerError, bad_request, not_found},
+    http::helpers::append_task,
     param_parsing::parse_account_id_from_params,
     router::{QueryParams, TypedHandler, UrlParams},
 };
@@ -64,12 +68,15 @@ impl TypedHandler for GetAccountByIdHandler {
 }
 
 /// Handler for POST /v2/account
-pub struct CreateAccountHandler;
+pub struct CreateAccountHandler {
+    /// A handle to the state
+    state: State,
+}
 
 impl CreateAccountHandler {
     /// Constructor
-    pub fn new() -> Self {
-        Self
+    pub fn new(state: State) -> Self {
+        Self { state }
     }
 }
 
@@ -81,11 +88,16 @@ impl TypedHandler for CreateAccountHandler {
     async fn handle_typed(
         &self,
         _headers: HeaderMap,
-        _req: Self::Request,
+        req: Self::Request,
         _params: UrlParams,
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
-        Err(ApiServerError::not_implemented(ERR_NOT_IMPLEMENTED))
+        let auth_key = HmacKey::from_hex_string(&req.auth_hmac_key).map_err(bad_request)?;
+        let keychain = KeyChain::new(PrivateKeyChain::new(auth_key));
+        let task = NewAccountTaskDescriptor::new(req.account_id, keychain);
+        append_task(task.into(), &self.state).await?;
+
+        Ok(EmptyRequestResponse {})
     }
 }
 

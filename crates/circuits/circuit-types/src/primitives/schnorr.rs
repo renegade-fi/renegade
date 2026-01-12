@@ -2,6 +2,7 @@
 #![allow(missing_docs)]
 
 use ark_ec::Group;
+use ark_ff::UniformRand;
 use circuit_macros::circuit_type;
 use constants::{EmbeddedCurveConfig, EmbeddedCurveGroup, EmbeddedScalarField, Scalar};
 use itertools::Itertools;
@@ -25,7 +26,6 @@ use {
     crate::traits::{
         CircuitBaseType, CircuitVarType, SecretShareBaseType, SecretShareType, SecretShareVarType,
     },
-    ark_ff::UniformRand,
     constants::ScalarField,
     mpc_relation::gadgets::ecc::PointVariable,
     mpc_relation::{Variable, traits::Circuit},

@@ -10,13 +10,13 @@
 mod error;
 mod setup;
 
-use std::{process::exit, thread, time::Duration};
+use std::{thread, time::Duration};
 
 use api_server::worker::{ApiServer, ApiServerConfig};
 use chain_events::listener::{OnChainEventListener, OnChainEventListenerConfig};
 use constants::in_bootstrap_mode;
+use darkpool_client::client::DarkpoolClientConfig;
 use darkpool_client::constants::{BLOCK_POLLING_INTERVAL, EVENT_FILTER_POLLING_INTERVAL};
-use darkpool_client::{client::DarkpoolClientConfig, DarkpoolClient};
 use event_manager::{manager::EventManager, worker::EventManagerConfig};
 use gossip_server::{server::GossipServer, worker::GossipServerConfig};
 use job_types::matching_engine::new_matching_engine_worker_queue;
@@ -32,7 +32,6 @@ use price_reporter::worker::{ExchangeConnectionsConfig, PriceReporter};
 use proof_manager::worker::{ProofManager, ProofManagerConfig};
 use state::create_global_state;
 use system_bus::SystemBus;
-use system_bus::SystemBusMessage;
 use types_runtime::new_cancel_channel;
 use types_runtime::{new_worker_failure_channel, watch_worker, Worker};
 use util::default_option;
@@ -42,7 +41,6 @@ use system_clock::SystemClock;
 use task_driver::worker::{TaskDriver, TaskDriverConfig};
 use tokio::select;
 use tracing::info;
-use util::err_str;
 
 use crate::setup::node_setup;
 
@@ -239,7 +237,7 @@ async fn main() -> Result<(), CoordinatorError> {
         local_addr: network_manager.local_addr.clone(),
         cluster_id: args.cluster_id,
         bootstrap_servers: args.bootstrap_servers,
-        darkpool_client: darkpool_client.clone(),
+        darkpool_client,
         global_state: global_state.clone(),
         job_sender: gossip_worker_sender.clone(),
         job_receiver: Some(gossip_worker_receiver).into(),

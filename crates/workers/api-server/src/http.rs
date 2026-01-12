@@ -4,6 +4,7 @@ mod account;
 mod admin;
 mod balance;
 mod external_match;
+mod helpers;
 mod market;
 mod metadata;
 mod order;
@@ -116,7 +117,7 @@ impl HttpServer {
         router.add_unauthenticated_route(
             &Method::POST,
             CREATE_ACCOUNT_ROUTE.to_string(),
-            CreateAccountHandler::new(),
+            CreateAccountHandler::new(state.clone()),
         );
 
         // GET /v2/account/:account_id

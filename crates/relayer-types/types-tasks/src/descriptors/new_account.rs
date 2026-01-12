@@ -20,6 +20,13 @@ pub struct NewAccountTaskDescriptor {
     pub keychain: KeyChain,
 }
 
+impl NewAccountTaskDescriptor {
+    /// Create a new account task descriptor
+    pub fn new(account_id: AccountId, keychain: KeyChain) -> Self {
+        Self { account_id, keychain }
+    }
+}
+
 impl From<NewAccountTaskDescriptor> for TaskDescriptor {
     fn from(descriptor: NewAccountTaskDescriptor) -> Self {
         TaskDescriptor::NewAccount(descriptor)

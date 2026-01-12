@@ -52,6 +52,7 @@ impl HistoricalTaskDescription {
     pub fn from_task_descriptor(_key: TaskQueueKey, desc: &TaskDescriptor) -> Option<Self> {
         match desc {
             TaskDescriptor::NewAccount(_) => Some(Self::NewAccount),
+            TaskDescriptor::NodeStartup(_) => None,
         }
     }
 }
