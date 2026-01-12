@@ -39,5 +39,6 @@ circuit-types = { workspace = true, features = ["default"] }
 constants = { workspace = true, features = ["default"] }
 crypto = { workspace = true, features = ["default"] }
 darkpool-types = { workspace = true }
+renegade-solidity-abi = { workspace = true }
 types-core = { workspace = true, features = ["hmac"] }
 util = { workspace = true, features = ["hex-core", "errors"] }

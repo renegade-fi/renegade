@@ -11,9 +11,7 @@
 #![allow(incomplete_features)]
 #![feature(iterator_try_collect)]
 
-// TODO: Replace this with the real darkpool client
-/// A placeholder for the darkpool client
-pub type DarkpoolClient = ();
+// TODO: Do we need the arbitrum and base features still?
 
 // // Make sure we don't enable both features at the same time
 // #[cfg(all(feature = "arbitrum", feature = "base", not(feature =
@@ -24,10 +22,14 @@ pub mod client;
 pub mod constants;
 // pub mod conversion;
 pub mod errors;
-// pub mod traits;
+pub mod solidity;
+pub mod traits;
 
 // #[cfg(feature = "transfer-auth")]
 // pub mod transfer_auth;
+
+/// The darkpool client for the Solidity implementation
+pub type DarkpoolClient = client::DarkpoolClientInner<solidity::SolidityDarkpool>;
 
 // #[cfg(feature = "arbitrum")]
 // pub mod arbitrum;

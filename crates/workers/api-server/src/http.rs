@@ -198,7 +198,7 @@ impl HttpServer {
         router.add_unauthenticated_route(
             &Method::POST,
             DEPOSIT_BALANCE_ROUTE.to_string(),
-            DepositBalanceHandler::new(),
+            DepositBalanceHandler::new(state.clone()),
         );
 
         // POST /v2/account/:account_id/balances/:mint/withdraw
@@ -306,7 +306,7 @@ impl HttpServer {
         router.add_admin_authenticated_route(
             &Method::POST,
             ADMIN_REFRESH_MATCH_FEES_ROUTE.to_string(),
-            AdminRefreshMatchFeesHandler::new(config.darkpool_client),
+            AdminRefreshMatchFeesHandler::new(config.darkpool_client.clone()),
         );
 
         // GET /v2/relayer-admin/orders (v2)

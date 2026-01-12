@@ -5,7 +5,7 @@
 
 use std::{hash::Hash, marker::PhantomData};
 
-use alloy_primitives::Address;
+use alloy_primitives::{Address, Uint};
 use ark_bn254::FrConfig;
 use ark_ff::{BigInt, Fp, MontBackend};
 use circuit_types::{
@@ -194,6 +194,38 @@ impl PartialEq<FixedPoint> for ArchivedFixedPoint {
         self.repr == other.repr
     }
 }
+
+// --- U256 --- //
+
+/// Remote type shim for `alloy_primitives::Uint<256, 4>` (U256)
+#[derive(Archive, Deserialize, Serialize, Debug, PartialEq, Eq)]
+#[rkyv(derive(Debug), compare(PartialEq))]
+#[rkyv(remote = alloy_primitives::U256)]
+#[rkyv(archived = ArchivedU256)]
+pub struct U256Def {
+    /// The 4 u64 limbs representing the 256-bit integer
+    #[rkyv(getter = Uint::as_limbs)]
+    pub limbs: [u64; 4],
+}
+
+impl From<U256Def> for Uint<256, 4> {
+    fn from(value: U256Def) -> Self {
+        Uint::from_limbs(value.limbs)
+    }
+}
+
+impl PartialEq<Uint<256, 4>> for ArchivedU256 {
+    fn eq(&self, other: &Uint<256, 4>) -> bool {
+        self.limbs == *other.as_limbs()
+    }
+}
+
+impl PartialEq for ArchivedU256 {
+    fn eq(&self, other: &ArchivedU256) -> bool {
+        self.limbs == other.limbs
+    }
+}
+impl Eq for ArchivedU256 {}
 
 #[cfg(test)]
 mod tests {

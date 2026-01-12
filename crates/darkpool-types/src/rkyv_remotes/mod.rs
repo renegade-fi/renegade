@@ -13,5 +13,6 @@ mod remote_types;
 // Re-export remote types
 pub use remote_types::{
     AddressDef, ArchivedAddress, ArchivedBabyJubJubPoint, ArchivedFixedPoint, ArchivedScalar,
-    ArchivedSchnorrPublicKey, BabyJubJubPointDef, FixedPointDef, ScalarDef, SchnorrPublicKeyDef,
+    ArchivedSchnorrPublicKey, ArchivedU256, BabyJubJubPointDef, FixedPointDef, ScalarDef,
+    SchnorrPublicKeyDef, U256Def,
 };

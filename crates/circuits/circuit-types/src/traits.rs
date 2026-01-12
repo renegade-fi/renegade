@@ -449,7 +449,7 @@ impl BaseType for Address {
     const NUM_SCALARS: usize = 1;
 
     fn to_scalars(&self) -> Vec<Scalar> {
-        vec![address_to_scalar(self)]
+        vec![address_to_scalar(*self)]
     }
 
     fn from_scalars<I: Iterator<Item = Scalar>>(i: &mut I) -> Self {

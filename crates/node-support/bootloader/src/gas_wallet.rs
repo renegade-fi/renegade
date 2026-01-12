@@ -7,7 +7,7 @@ use reqwest::{
 };
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, time::Duration};
-use types_core::hmac::HmacKey;
+use types_core::HmacKey;
 
 use libp2p::PeerId;
 use toml::Value;

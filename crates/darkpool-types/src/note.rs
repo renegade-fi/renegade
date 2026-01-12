@@ -89,7 +89,7 @@ impl Note {
     /// Get the elements of the note that are encrypted when the note is created
     #[cfg(feature = "proof-system-types")]
     pub fn plaintext_elements(&self) -> [Scalar; NOTE_CIPHERTEXT_SIZE] {
-        let mint_scalar = address_to_scalar(&self.mint);
+        let mint_scalar = address_to_scalar(self.mint);
         [mint_scalar, Scalar::from(self.amount), self.blinder]
     }
 

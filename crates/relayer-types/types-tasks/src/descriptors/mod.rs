@@ -2,9 +2,11 @@
 // Allow missing docs on generated rkyv Archived types
 #![cfg_attr(feature = "rkyv", allow(missing_docs))]
 
+mod deposit;
 mod new_account;
 mod node_startup;
 
+pub use deposit::*;
 pub use new_account::*;
 pub use node_startup::*;
 
@@ -129,6 +131,8 @@ pub enum TaskDescriptor {
     NewAccount(NewAccountTaskDescriptor),
     /// The task descriptor for the `NodeStartup` task
     NodeStartup(NodeStartupTaskDescriptor),
+    /// The task descriptor for the `Deposit` task
+    Deposit(DepositTaskDescriptor),
 }
 
 impl TaskDescriptor {
@@ -137,6 +141,7 @@ impl TaskDescriptor {
         match self {
             TaskDescriptor::NewAccount(task) => task.account_id,
             TaskDescriptor::NodeStartup(task) => task.id,
+            TaskDescriptor::Deposit(task) => task.account_id,
         }
     }
 
@@ -145,6 +150,7 @@ impl TaskDescriptor {
         match self {
             TaskDescriptor::NewAccount(task) => vec![task.account_id],
             TaskDescriptor::NodeStartup(_) => vec![],
+            TaskDescriptor::Deposit(task) => vec![task.account_id],
         }
     }
 
@@ -153,6 +159,7 @@ impl TaskDescriptor {
         match self {
             TaskDescriptor::NewAccount(_) => true,
             TaskDescriptor::NodeStartup(_) => false,
+            TaskDescriptor::Deposit(_) => true,
         }
     }
 
@@ -161,6 +168,7 @@ impl TaskDescriptor {
         match self {
             TaskDescriptor::NewAccount(_) => "New Account".to_string(),
             TaskDescriptor::NodeStartup(_) => "Node Startup".to_string(),
+            TaskDescriptor::Deposit(_) => "Deposit".to_string(),
         }
     }
 }

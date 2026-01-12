@@ -122,6 +122,12 @@ types-account = { path = "crates/relayer-types/types-account", default-features 
 types-proofs = { path = "crates/relayer-types/types-proofs", default-features = false }
 util = { path = "crates/util", default-features = false }
 
+renegade-solidity-abi = { package = "abi", path = "/Users/joeykraut/work/renegade-contracts/abi", features = [
+	"v2",
+	"v2-relayer-types",
+	"transfer-auth",
+] }
+
 # === Misc === #
 async-trait = "0.1"
 eyre = "0.6"

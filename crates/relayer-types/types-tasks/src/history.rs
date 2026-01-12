@@ -1,8 +1,14 @@
 //! Types for task history storage
+#![cfg_attr(feature = "rkyv", allow(missing_docs))]
 
+use alloy::primitives::Address;
+use circuit_types::Amount;
+#[cfg(feature = "rkyv")]
+use darkpool_types::rkyv_remotes::AddressDef;
 #[cfg(feature = "rkyv")]
 use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
 use serde::{Deserialize, Serialize};
+use types_core::AccountId;
 
 use crate::descriptors::{
     QueuedTask, QueuedTaskState, TaskDescriptor, TaskIdentifier, TaskQueueKey,
@@ -45,6 +51,16 @@ impl HistoricalTask {
 pub enum HistoricalTaskDescription {
     /// A new account was created
     NewAccount,
+    /// A deposit was made
+    Deposit {
+        /// The account ID that deposited
+        account_id: AccountId,
+        /// The token that was deposited
+        #[cfg_attr(feature = "rkyv", rkyv(with = AddressDef))]
+        token: Address,
+        /// The amount that was deposited
+        amount: Amount,
+    },
 }
 
 impl HistoricalTaskDescription {
@@ -52,6 +68,11 @@ impl HistoricalTaskDescription {
     pub fn from_task_descriptor(_key: TaskQueueKey, desc: &TaskDescriptor) -> Option<Self> {
         match desc {
             TaskDescriptor::NewAccount(_) => Some(Self::NewAccount),
+            TaskDescriptor::Deposit(desc) => Some(Self::Deposit {
+                account_id: desc.account_id,
+                token: desc.token,
+                amount: desc.amount,
+            }),
             TaskDescriptor::NodeStartup(_) => None,
         }
     }
