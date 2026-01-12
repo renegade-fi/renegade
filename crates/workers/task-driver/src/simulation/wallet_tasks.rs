@@ -38,6 +38,7 @@ pub fn simulate_wallet_tasks(
 fn should_simulate(task: &QueuedTask) -> Result<bool, TaskSimulationError> {
     match task.descriptor {
         TaskDescriptor::NewAccount(_) => Ok(false),
+        TaskDescriptor::NodeStartup(_) => Ok(false),
     }
 }
 
@@ -109,7 +110,8 @@ fn simulate_single_wallet_task(
 ) -> Result<(), TaskSimulationError> {
     match task {
         TaskDescriptor::NewAccount(t) => simulate_new_account(wallet, &t),
-        // TODO: Ignore non-wallet tasks
+        // Ignore all non-wallet tasks
+        TaskDescriptor::NodeStartup(_) => Ok(()),
     }
 }
 

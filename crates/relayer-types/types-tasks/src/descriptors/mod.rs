@@ -3,8 +3,10 @@
 #![cfg_attr(feature = "rkyv", allow(missing_docs))]
 
 mod new_account;
+mod node_startup;
 
 pub use new_account::*;
+pub use node_startup::*;
 
 #[cfg(feature = "rkyv")]
 use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize, with::Skip};
@@ -125,6 +127,8 @@ impl ArchivedQueuedTaskState {
 pub enum TaskDescriptor {
     /// The task descriptor for the `NewAccount` task
     NewAccount(NewAccountTaskDescriptor),
+    /// The task descriptor for the `NodeStartup` task
+    NodeStartup(NodeStartupTaskDescriptor),
 }
 
 impl TaskDescriptor {
@@ -132,6 +136,7 @@ impl TaskDescriptor {
     pub fn queue_key(&self) -> TaskQueueKey {
         match self {
             TaskDescriptor::NewAccount(task) => task.account_id,
+            TaskDescriptor::NodeStartup(task) => task.id,
         }
     }
 
@@ -139,6 +144,7 @@ impl TaskDescriptor {
     pub fn affected_accounts(&self) -> Vec<AccountId> {
         match self {
             TaskDescriptor::NewAccount(task) => vec![task.account_id],
+            TaskDescriptor::NodeStartup(_) => vec![],
         }
     }
 
@@ -146,6 +152,7 @@ impl TaskDescriptor {
     pub fn is_wallet_task(&self) -> bool {
         match self {
             TaskDescriptor::NewAccount(_) => true,
+            TaskDescriptor::NodeStartup(_) => false,
         }
     }
 
@@ -153,6 +160,7 @@ impl TaskDescriptor {
     pub fn display_description(&self) -> String {
         match self {
             TaskDescriptor::NewAccount(_) => "New Account".to_string(),
+            TaskDescriptor::NodeStartup(_) => "Node Startup".to_string(),
         }
     }
 }

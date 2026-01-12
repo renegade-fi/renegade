@@ -5,7 +5,10 @@ use std::fmt::Display;
 use serde::Serialize;
 use types_tasks::QueuedTaskState;
 
-use crate::{tasks::create_new_account::CreateNewAccountTaskState, traits::TaskState};
+use crate::{
+    tasks::{create_new_account::CreateNewAccountTaskState, node_startup::NodeStartupTaskState},
+    traits::TaskState,
+};
 
 // --------------------
 // | State Management |
@@ -18,6 +21,8 @@ use crate::{tasks::create_new_account::CreateNewAccountTaskState, traits::TaskSt
 pub enum StateWrapper {
     /// The state of a create new account task
     CreateNewAccount(CreateNewAccountTaskState),
+    /// The state of a node startup task
+    NodeStartup(NodeStartupTaskState),
 }
 
 impl StateWrapper {
@@ -26,6 +31,9 @@ impl StateWrapper {
         match self {
             StateWrapper::CreateNewAccount(state) => {
                 <CreateNewAccountTaskState as TaskState>::committed(state)
+            },
+            StateWrapper::NodeStartup(state) => {
+                <NodeStartupTaskState as TaskState>::committed(state)
             },
         }
     }
@@ -37,6 +45,7 @@ impl StateWrapper {
             StateWrapper::CreateNewAccount(state) => {
                 *state == CreateNewAccountTaskState::commit_point()
             },
+            StateWrapper::NodeStartup(state) => *state == NodeStartupTaskState::commit_point(),
         }
     }
 
@@ -46,6 +55,9 @@ impl StateWrapper {
             StateWrapper::CreateNewAccount(state) => {
                 <CreateNewAccountTaskState as TaskState>::completed(state)
             },
+            StateWrapper::NodeStartup(state) => {
+                <NodeStartupTaskState as TaskState>::completed(state)
+            },
         }
     }
 }
@@ -54,6 +66,7 @@ impl Display for StateWrapper {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             StateWrapper::CreateNewAccount(state) => write!(f, "{state}"),
+            StateWrapper::NodeStartup(state) => write!(f, "{state}"),
         }
     }
 }

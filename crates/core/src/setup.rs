@@ -2,7 +2,7 @@
 
 use config::RelayerConfig;
 use job_types::task_driver::{TaskDriverJob, TaskDriverQueue};
-use util::err_str;
+use types_tasks::{NodeStartupTaskDescriptor, QueuedTask, TaskDescriptor};
 
 use crate::error::CoordinatorError;
 
@@ -14,21 +14,14 @@ pub async fn node_setup(
     config: &RelayerConfig,
     task_queue: TaskDriverQueue,
 ) -> Result<(), CoordinatorError> {
-    // TODO: Implement node setup
-    // // Start the node setup task and await its completion
-    // let desc: TaskDescriptor =
-    //     NodeStartupTaskDescriptor::new(config.gossip_warmup,
-    // config.relayer_wallet_key()).into();
+    // Start the node setup task and await its completion
+    let desc: TaskDescriptor = NodeStartupTaskDescriptor::new(config.gossip_warmup).into();
 
-    // // Send the task to the task driver
-    // let task = QueuedTask::new(desc);
-    // let (job, rx) = TaskDriverJob::run_with_notification(task);
-    // task_queue.send(job).map_err(|_|
-    // CoordinatorError::setup(ERR_SENDING_STARTUP_TASK))?;
+    // Send the task to the task driver
+    let task = QueuedTask::new(desc);
+    let (job, rx) = TaskDriverJob::run_with_notification(task);
+    task_queue.send(job).map_err(|_| CoordinatorError::setup(ERR_SENDING_STARTUP_TASK))?;
 
-    // // Await the task driver to complete the task
-    // rx.await.map_err(err_str!(CoordinatorError::Setup))?.map_err(err_str!
-    // (CoordinatorError::Setup))
-
-    Ok(())
+    // Await the task driver to complete the task
+    rx.await.map_err(CoordinatorError::setup)?.map_err(CoordinatorError::setup)
 }
