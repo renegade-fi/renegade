@@ -6,7 +6,10 @@ use serde::Serialize;
 use types_tasks::QueuedTaskState;
 
 use crate::{
-    tasks::{create_new_account::CreateNewAccountTaskState, deposit::DepositTaskState, node_startup::NodeStartupTaskState},
+    tasks::{
+        create_new_account::CreateNewAccountTaskState, deposit::DepositTaskState,
+        node_startup::NodeStartupTaskState,
+    },
     traits::TaskState,
 };
 
@@ -37,9 +40,7 @@ impl StateWrapper {
             StateWrapper::NodeStartup(state) => {
                 <NodeStartupTaskState as TaskState>::committed(state)
             },
-            StateWrapper::Deposit(state) => {
-                <DepositTaskState as TaskState>::committed(state)
-            },
+            StateWrapper::Deposit(state) => <DepositTaskState as TaskState>::committed(state),
         }
     }
 
@@ -64,9 +65,7 @@ impl StateWrapper {
             StateWrapper::NodeStartup(state) => {
                 <NodeStartupTaskState as TaskState>::completed(state)
             },
-            StateWrapper::Deposit(state) => {
-                <DepositTaskState as TaskState>::completed(state)
-            },
+            StateWrapper::Deposit(state) => <DepositTaskState as TaskState>::completed(state),
         }
     }
 }

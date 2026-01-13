@@ -10,7 +10,7 @@ use circuit_types::{
 };
 use constants::{MERKLE_HEIGHT, Scalar, ScalarField};
 use darkpool_types::{
-    balance::{BalanceShareVar, DarkpoolStateBalance, DarkpoolStateBalanceVar},
+    balance::{DarkpoolBalanceShareVar, DarkpoolStateBalance, DarkpoolStateBalanceVar},
     deposit::Deposit,
 };
 use mpc_plonk::errors::PlonkError;
@@ -95,11 +95,11 @@ impl<const MERKLE_HEIGHT: usize> ValidDeposit<MERKLE_HEIGHT> {
 
     /// Create a new balance from the deposit
     fn create_new_balance(
-        old_balance_private_shares: &BalanceShareVar,
+        old_balance_private_shares: &DarkpoolBalanceShareVar,
         statement: &ValidDepositStatementVar,
         witness: &ValidDepositWitnessVar<MERKLE_HEIGHT>,
         cs: &mut PlonkCircuit,
-    ) -> Result<(DarkpoolStateBalanceVar, BalanceShareVar), CircuitError> {
+    ) -> Result<(DarkpoolStateBalanceVar, DarkpoolBalanceShareVar), CircuitError> {
         // Update the balance
         let mut new_balance = witness.old_balance.clone();
         let mut new_balance_private_share = old_balance_private_shares.clone();
@@ -199,7 +199,7 @@ impl<const MERKLE_HEIGHT: usize> SingleProverCircuit for ValidDeposit<MERKLE_HEI
 pub mod test_helpers {
     use alloy_primitives::Address;
     use constants::Scalar;
-    use darkpool_types::{balance::Balance, deposit::Deposit};
+    use darkpool_types::{balance::DarkpoolBalance, deposit::Deposit};
 
     use crate::{
         test_helpers::{
@@ -238,7 +238,7 @@ pub mod test_helpers {
     pub fn create_dummy_witness_statement_with_deposit(
         deposit: Deposit,
     ) -> (SizedValidDepositWitness, ValidDepositStatement) {
-        let old_balance = create_random_state_wrapper(Balance {
+        let old_balance = create_random_state_wrapper(DarkpoolBalance {
             mint: deposit.token,
             relayer_fee_recipient: Address::ZERO,
             owner: deposit.from,

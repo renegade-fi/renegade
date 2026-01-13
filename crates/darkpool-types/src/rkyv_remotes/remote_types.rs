@@ -12,6 +12,13 @@ use circuit_types::{
     fixed_point::FixedPoint,
     primitives::{baby_jubjub::BabyJubJubPoint, schnorr::SchnorrPublicKey},
 };
+
+// Share types are only available when proof-system-types feature is enabled
+#[cfg(feature = "proof-system-types")]
+use circuit_types::{
+    fixed_point::FixedPointShare,
+    primitives::{baby_jubjub::BabyJubJubPointShare, schnorr::SchnorrPublicKeyShare},
+};
 use constants::Scalar;
 use rkyv::{Archive, Deserialize, Serialize};
 
@@ -170,6 +177,73 @@ impl PartialEq<SchnorrPublicKey> for ArchivedSchnorrPublicKey {
     }
 }
 
+// --- BabyJubJubPointShare --- //
+// Only available when proof-system-types feature is enabled
+
+/// Remote type shim for
+/// `circuit_types::primitives::baby_jubjub::BabyJubJubPointShare`
+///
+/// The share type has `x: Scalar, y: Scalar` fields.
+#[cfg(feature = "proof-system-types")]
+#[derive(Archive, Deserialize, Serialize)]
+#[rkyv(remote = BabyJubJubPointShare)]
+#[rkyv(derive(Debug))]
+#[rkyv(archived = ArchivedBabyJubJubPointShare)]
+pub struct BabyJubJubPointShareDef {
+    /// The x coordinate share
+    #[rkyv(with = ScalarDef)]
+    pub x: Scalar,
+    /// The y coordinate share
+    #[rkyv(with = ScalarDef)]
+    pub y: Scalar,
+}
+
+#[cfg(feature = "proof-system-types")]
+impl From<BabyJubJubPointShareDef> for BabyJubJubPointShare {
+    fn from(value: BabyJubJubPointShareDef) -> Self {
+        BabyJubJubPointShare { x: value.x, y: value.y }
+    }
+}
+
+#[cfg(feature = "proof-system-types")]
+impl PartialEq<BabyJubJubPointShare> for ArchivedBabyJubJubPointShare {
+    fn eq(&self, other: &BabyJubJubPointShare) -> bool {
+        self.x == other.x && self.y == other.y
+    }
+}
+
+// --- SchnorrPublicKeyShare --- //
+// Only available when proof-system-types feature is enabled
+
+/// Remote type shim for
+/// `circuit_types::primitives::schnorr::SchnorrPublicKeyShare`
+///
+/// The share type has a `point: BabyJubJubPointShare` field.
+#[cfg(feature = "proof-system-types")]
+#[derive(Archive, Deserialize, Serialize)]
+#[rkyv(remote = SchnorrPublicKeyShare)]
+#[rkyv(derive(Debug))]
+#[rkyv(archived = ArchivedSchnorrPublicKeyShare)]
+pub struct SchnorrPublicKeyShareDef {
+    /// The curve point share representing the public key
+    #[rkyv(with = BabyJubJubPointShareDef)]
+    pub point: BabyJubJubPointShare,
+}
+
+#[cfg(feature = "proof-system-types")]
+impl From<SchnorrPublicKeyShareDef> for SchnorrPublicKeyShare {
+    fn from(value: SchnorrPublicKeyShareDef) -> Self {
+        SchnorrPublicKeyShare { point: value.point }
+    }
+}
+
+#[cfg(feature = "proof-system-types")]
+impl PartialEq<SchnorrPublicKeyShare> for ArchivedSchnorrPublicKeyShare {
+    fn eq(&self, other: &SchnorrPublicKeyShare) -> bool {
+        self.point == other.point
+    }
+}
+
 // --- FixedPoint --- //
 
 /// Remote type shim for `circuit_types::fixed_point::FixedPoint`
@@ -191,6 +265,37 @@ impl From<FixedPointDef> for FixedPoint {
 
 impl PartialEq<FixedPoint> for ArchivedFixedPoint {
     fn eq(&self, other: &FixedPoint) -> bool {
+        self.repr == other.repr
+    }
+}
+
+// --- FixedPointShare --- //
+// Only available when proof-system-types feature is enabled
+
+/// Remote type shim for `circuit_types::fixed_point::FixedPointShare`
+///
+/// The share type has `repr: Scalar` field.
+#[cfg(feature = "proof-system-types")]
+#[derive(Archive, Deserialize, Serialize)]
+#[rkyv(derive(Debug))]
+#[rkyv(remote = FixedPointShare)]
+#[rkyv(archived = ArchivedFixedPointShare)]
+pub struct FixedPointShareDef {
+    /// The underlying scalar share
+    #[rkyv(with = ScalarDef)]
+    pub repr: Scalar,
+}
+
+#[cfg(feature = "proof-system-types")]
+impl From<FixedPointShareDef> for FixedPointShare {
+    fn from(value: FixedPointShareDef) -> Self {
+        FixedPointShare { repr: value.repr }
+    }
+}
+
+#[cfg(feature = "proof-system-types")]
+impl PartialEq<FixedPointShare> for ArchivedFixedPointShare {
+    fn eq(&self, other: &FixedPointShare) -> bool {
         self.repr == other.repr
     }
 }

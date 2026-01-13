@@ -6,7 +6,7 @@ use circuit_types::{
 };
 use darkpool_types::{
     balance::{
-        BalanceShareVar, BalanceVar, PostMatchBalanceShareVar, PostMatchBalanceVar,
+        DarkpoolBalanceShareVar, DarkpoolBalanceVar, PostMatchBalanceShareVar, PostMatchBalanceVar,
         PreMatchBalanceShareVar,
     },
     intent::{IntentShareVar, PreMatchIntentShareVar},
@@ -75,7 +75,7 @@ impl ShareGadget {
 
     /// Build a pre-match balance share from a balance share
     pub fn build_pre_match_balance_share(
-        balance_share: &BalanceShareVar,
+        balance_share: &DarkpoolBalanceShareVar,
     ) -> PreMatchBalanceShareVar {
         PreMatchBalanceShareVar {
             mint: balance_share.mint,
@@ -86,7 +86,7 @@ impl ShareGadget {
     }
 
     /// Build a post-match balance share from a balance
-    pub fn build_post_match_balance(pre_match_balance: &BalanceVar) -> PostMatchBalanceVar {
+    pub fn build_post_match_balance(pre_match_balance: &DarkpoolBalanceVar) -> PostMatchBalanceVar {
         PostMatchBalanceVar {
             amount: pre_match_balance.amount,
             relayer_fee_balance: pre_match_balance.relayer_fee_balance,
@@ -96,7 +96,7 @@ impl ShareGadget {
 
     /// Build a post-match balance share from a balance share
     pub fn build_post_match_balance_share(
-        balance_share: &BalanceShareVar,
+        balance_share: &DarkpoolBalanceShareVar,
     ) -> PostMatchBalanceShareVar {
         PostMatchBalanceShareVar {
             amount: balance_share.amount,
@@ -109,7 +109,7 @@ impl ShareGadget {
     ///
     /// Mutates the given balance share in place.
     pub fn update_balance_share_post_match(
-        balance_share: &mut BalanceShareVar,
+        balance_share: &mut DarkpoolBalanceShareVar,
         post_match_balance: &PostMatchBalanceShareVar,
     ) {
         balance_share.amount = post_match_balance.amount;

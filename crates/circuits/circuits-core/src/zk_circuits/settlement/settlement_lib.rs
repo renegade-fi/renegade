@@ -4,7 +4,7 @@
 
 use circuit_types::{AMOUNT_BITS, PRICE_BITS, PlonkCircuit};
 use darkpool_types::{
-    balance::{BalanceVar, PostMatchBalanceShareVar},
+    balance::{DarkpoolBalanceVar, PostMatchBalanceShareVar},
     bounded_match_result::BoundedMatchResultVar,
     fee::FeeRatesVar,
     intent::IntentVar,
@@ -28,8 +28,8 @@ impl SettlementGadget {
     /// Verify the intent and balance constraints on a settlement obligation
     pub fn verify_intent_and_balance_obligation_constraints(
         intent: &IntentVar,
-        in_balance: &BalanceVar,
-        out_balance: &BalanceVar,
+        in_balance: &DarkpoolBalanceVar,
+        out_balance: &DarkpoolBalanceVar,
         obligation: &SettlementObligationVar,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
@@ -80,7 +80,7 @@ impl SettlementGadget {
     /// of the balance matches the mint of the intent, and thereby the
     /// obligation.
     fn verify_in_balance_constraints(
-        in_balance: &BalanceVar,
+        in_balance: &DarkpoolBalanceVar,
         obligation: &SettlementObligationVar,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
@@ -96,7 +96,7 @@ impl SettlementGadget {
     /// Verify receive balance constraints
     fn verify_out_balance_constraints(
         intent: &IntentVar,
-        out_balance: &BalanceVar,
+        out_balance: &DarkpoolBalanceVar,
         obligation: &SettlementObligationVar,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
@@ -197,8 +197,8 @@ impl BoundedSettlementGadget {
     /// Verify the intent and balance constraints for a bounded match result
     pub fn verify_intent_and_balance_bounded_match_result_constraints(
         intent: &IntentVar,
-        in_balance: &BalanceVar,
-        out_balance: &BalanceVar,
+        in_balance: &DarkpoolBalanceVar,
+        out_balance: &DarkpoolBalanceVar,
         bounded_match_result: &BoundedMatchResultVar,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
@@ -263,7 +263,7 @@ impl BoundedSettlementGadget {
     /// Note: The balance.mint == intent.in_token constraint is enforced by
     /// the INTENT AND BALANCE VALIDITY proof via proof-linking.
     fn verify_in_balance_constraints(
-        in_balance: &BalanceVar,
+        in_balance: &DarkpoolBalanceVar,
         bounded_match_result: &BoundedMatchResultVar,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
@@ -281,7 +281,7 @@ impl BoundedSettlementGadget {
     /// The contract validates that min <= max <= amount_in, so we only need to
     /// check the upper bound here.
     fn verify_out_balance_constraints(
-        out_balance: &BalanceVar,
+        out_balance: &DarkpoolBalanceVar,
         intent: &IntentVar,
         bounded_match_result: &BoundedMatchResultVar,
         cs: &mut PlonkCircuit,

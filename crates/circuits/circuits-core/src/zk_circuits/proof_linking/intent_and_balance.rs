@@ -452,13 +452,13 @@ mod test {
     #[allow(non_snake_case)]
     fn test_intent_and_balance_exact_public_settlement_invalid_link__modified_balance() {
         use crate::test_helpers::{random_address, random_amount};
-        use darkpool_types::balance::Balance;
+        use darkpool_types::balance::DarkpoolBalance;
 
         let (validity_witness, validity_statement, mut settlement_witness, settlement_statement) =
             build_intent_and_balance_validity_exact_public_settlement_data();
 
         // Modify the balance in the settlement witness to break the link
-        settlement_witness.in_balance = Balance {
+        settlement_witness.in_balance = DarkpoolBalance {
             mint: random_address(),
             owner: random_address(),
             relayer_fee_recipient: random_address(),
@@ -1110,13 +1110,13 @@ mod test {
     #[allow(non_snake_case)]
     fn test_intent_and_balance_bounded_settlement_invalid_link__modified_balance() {
         use crate::test_helpers::{random_address, random_amount};
-        use darkpool_types::balance::Balance;
+        use darkpool_types::balance::DarkpoolBalance;
 
         let (validity_witness, validity_statement, mut settlement_witness, settlement_statement) =
             build_intent_and_balance_validity_bounded_settlement_data();
 
         // Modify the balance in the settlement witness to break the link
-        settlement_witness.in_balance = Balance {
+        settlement_witness.in_balance = DarkpoolBalance {
             mint: random_address(),
             owner: random_address(),
             relayer_fee_recipient: random_address(),

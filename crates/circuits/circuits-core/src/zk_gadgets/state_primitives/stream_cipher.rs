@@ -42,7 +42,7 @@ impl StreamCipherGadget {
 mod test {
     use circuit_types::{PlonkCircuit, traits::CircuitBaseType};
     use constants::Scalar;
-    use darkpool_types::balance::Balance;
+    use darkpool_types::balance::DarkpoolBalance;
     use eyre::Result;
     use mpc_relation::Variable;
     use mpc_relation::traits::Circuit;
@@ -58,7 +58,7 @@ mod test {
     fn test_encrypt() -> Result<()> {
         // Create a state wrapper, the inner type is unimportant for this test
         let mut cs = PlonkCircuit::new_turbo_plonk();
-        let mut state = create_random_state_wrapper(Balance::default());
+        let mut state = create_random_state_wrapper(DarkpoolBalance::default());
         let mut state_var = state.create_witness(&mut cs);
 
         // Generate test data to encrypt

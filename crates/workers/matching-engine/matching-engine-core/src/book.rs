@@ -201,8 +201,8 @@ mod tests {
     /// Create a test order with the given matchable amount
     fn create_test_order(matchable_amount: Amount) -> Order {
         let mut order = mock_order();
-        order.intent.amount_in = matchable_amount * 2;
-        order.intent.min_price = FixedPoint::from_integer(1);
+        order.intent.inner.amount_in = matchable_amount * 2;
+        order.intent.inner.min_price = FixedPoint::from_integer(1);
         order
     }
 

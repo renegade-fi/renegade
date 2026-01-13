@@ -3,12 +3,12 @@
 use std::cmp;
 
 use crate::{
-    balance::{Balance, PostMatchBalanceShare},
+    balance::{DarkpoolBalance, PostMatchBalanceShare},
     bounded_match_result::BoundedMatchResult,
     deposit::Deposit,
     intent::Intent,
     settlement_obligation::SettlementObligation,
-    state_wrapper::StateWrapper,
+    state_wrapper::{StateWrapper, StateWrapperBound, StateWrapperShareBound},
     withdrawal::Withdrawal,
 };
 use alloy_primitives::Address;
@@ -18,7 +18,7 @@ use circuit_types::{
     fixed_point::FixedPoint,
     max_amount,
     schnorr::{SchnorrPrivateKey, SchnorrPublicKey},
-    traits::{BaseType, CircuitBaseType, SecretShareBaseType},
+    traits::{BaseType, SecretShareBaseType},
 };
 
 use crate::csprng::PoseidonCSPRNG;
@@ -135,8 +135,8 @@ pub fn random_bounded_intent(max_amount_in: Amount) -> Intent {
 ///
 /// The balance will have the same owner and mint as the intent's in_token,
 /// with random values for other fields.
-pub fn create_matching_balance_for_intent(intent: &Intent) -> Balance {
-    Balance {
+pub fn create_matching_balance_for_intent(intent: &Intent) -> DarkpoolBalance {
+    DarkpoolBalance {
         mint: intent.in_token,
         owner: intent.owner,
         relayer_fee_recipient: random_address(),
@@ -148,20 +148,20 @@ pub fn create_matching_balance_for_intent(intent: &Intent) -> Balance {
 }
 
 /// Create a random balance with a small initial amount
-pub fn random_small_balance() -> Balance {
+pub fn random_small_balance() -> DarkpoolBalance {
     random_bounded_balance(BOUNDED_MAX_AMT)
 }
 
 /// Create a random balance
-pub fn random_balance() -> Balance {
+pub fn random_balance() -> DarkpoolBalance {
     random_bounded_balance(max_amount())
 }
 
 /// Create a random balance with a bounded initial amount
-pub fn random_bounded_balance(max_amount: Amount) -> Balance {
+pub fn random_bounded_balance(max_amount: Amount) -> DarkpoolBalance {
     let mut rng = thread_rng();
     let amount = rng.gen_range(0..=max_amount);
-    Balance {
+    DarkpoolBalance {
         mint: random_address(),
         owner: random_address(),
         relayer_fee_recipient: random_address(),
@@ -173,8 +173,8 @@ pub fn random_bounded_balance(max_amount: Amount) -> Balance {
 }
 
 /// Create a random zero'd balance
-pub fn random_zeroed_balance() -> Balance {
-    Balance {
+pub fn random_zeroed_balance() -> DarkpoolBalance {
+    DarkpoolBalance {
         mint: random_address(),
         owner: random_address(),
         relayer_fee_recipient: random_address(),
@@ -306,8 +306,8 @@ pub fn compute_implied_price(amount_out: Amount, amount_in: Amount) -> FixedPoin
 /// Create a state wrapper and initialize the share state
 pub fn create_state_wrapper<V>(state: V) -> StateWrapper<V>
 where
-    V: SecretShareBaseType + CircuitBaseType,
-    V::ShareType: CircuitBaseType,
+    V: StateWrapperBound,
+    V::ShareType: StateWrapperShareBound,
 {
     let share_seed = random_scalar();
     let recovery_seed = random_scalar();
@@ -317,8 +317,8 @@ where
 /// Create a state wrapper for a given state element
 pub fn create_random_state_wrapper<V>(state: V) -> StateWrapper<V>
 where
-    V: SecretShareBaseType + CircuitBaseType,
-    V::ShareType: CircuitBaseType,
+    V: StateWrapperBound,
+    V::ShareType: StateWrapperShareBound,
 {
     let mut rng = thread_rng();
     let (_, public_share) = create_random_shares::<V>(&state);

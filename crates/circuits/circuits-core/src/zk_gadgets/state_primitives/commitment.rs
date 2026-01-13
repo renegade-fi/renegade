@@ -30,7 +30,9 @@ use circuit_types::{
     PlonkCircuit,
     traits::{CircuitBaseType, CircuitVarType, SecretShareBaseType},
 };
-use darkpool_types::state_wrapper::{PartialCommitmentVar, StateWrapperVar};
+use darkpool_types::state_wrapper::{
+    PartialCommitmentVar, StateWrapperBound, StateWrapperShareBound, StateWrapperVar,
+};
 use mpc_relation::{Variable, errors::CircuitError, traits::Circuit};
 
 use crate::zk_gadgets::primitives::poseidon::PoseidonHashGadget;
@@ -73,8 +75,8 @@ impl CommitmentGadget {
         cs: &mut PlonkCircuit,
     ) -> Result<Variable, CircuitError>
     where
-        T: CircuitBaseType + SecretShareBaseType,
-        T::ShareType: CircuitBaseType,
+        T: StateWrapperBound,
+        T::ShareType: StateWrapperShareBound,
     {
         // Serialize the commitment input
         let private_commitment = Self::compute_private_commitment(private_share, element, cs)?;
@@ -88,8 +90,8 @@ impl CommitmentGadget {
         cs: &mut PlonkCircuit,
     ) -> Result<Variable, CircuitError>
     where
-        T: CircuitBaseType + SecretShareBaseType,
-        T::ShareType: CircuitBaseType,
+        T: StateWrapperBound,
+        T::ShareType: StateWrapperShareBound,
     {
         let mut hasher = PoseidonHashGadget::new(cs.zero());
         hasher.batch_absorb(&private_share.to_vars(), cs)?;
@@ -151,8 +153,8 @@ impl CommitmentGadget {
         cs: &mut PlonkCircuit,
     ) -> Result<PartialCommitmentVar, CircuitError>
     where
-        T: CircuitBaseType + SecretShareBaseType,
-        T::ShareType: CircuitBaseType,
+        T: StateWrapperBound,
+        T::ShareType: StateWrapperShareBound,
     {
         let private_commitment = Self::compute_private_commitment(private_share, element, cs)?;
         let partial_public_commitment = Self::compute_partial_public_commitment::<T>(
@@ -196,8 +198,8 @@ impl CommitmentGadget {
         cs: &mut PlonkCircuit,
     ) -> Result<(Variable, Variable), CircuitError>
     where
-        T: CircuitBaseType + SecretShareBaseType,
-        T::ShareType: CircuitBaseType,
+        T: StateWrapperBound,
+        T::ShareType: StateWrapperShareBound,
     {
         let (private_comm1, private_comm2) = Self::compute_private_commitments_with_shared_prefix(
             private_share1,
@@ -234,8 +236,8 @@ impl CommitmentGadget {
         cs: &mut PlonkCircuit,
     ) -> Result<(Variable, Variable), CircuitError>
     where
-        T: CircuitBaseType + SecretShareBaseType,
-        T::ShareType: CircuitBaseType,
+        T: StateWrapperBound,
+        T::ShareType: StateWrapperShareBound,
     {
         let prefix_length = determine_shared_prefix_length(private_share_1, private_share_2);
 
@@ -281,8 +283,8 @@ impl CommitmentGadget {
         cs: &mut PlonkCircuit,
     ) -> Result<(Variable, Variable), CircuitError>
     where
-        T: CircuitBaseType + SecretShareBaseType,
-        T::ShareType: CircuitBaseType,
+        T: StateWrapperBound,
+        T::ShareType: StateWrapperShareBound,
     {
         let prefix_length = determine_shared_prefix_length(public_share_1, public_share_2);
 
@@ -334,8 +336,8 @@ impl CommitmentGadget {
         cs: &mut PlonkCircuit,
     ) -> Result<(Variable, PartialCommitmentVar), CircuitError>
     where
-        T: CircuitBaseType + SecretShareBaseType,
-        T::ShareType: CircuitBaseType,
+        T: StateWrapperBound,
+        T::ShareType: StateWrapperShareBound,
     {
         let (private_comm1, private_comm2) = Self::compute_private_commitments_with_shared_prefix(
             private_share_1,
@@ -376,8 +378,8 @@ impl CommitmentGadget {
         cs: &mut PlonkCircuit,
     ) -> Result<(Variable, Variable), CircuitError>
     where
-        T: CircuitBaseType + SecretShareBaseType,
-        T::ShareType: CircuitBaseType,
+        T: StateWrapperBound,
+        T::ShareType: StateWrapperShareBound,
     {
         assert!(
             num_shares <= T::NUM_SCALARS,

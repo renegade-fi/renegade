@@ -12,7 +12,10 @@ use circuit_types::{
 use constants::{Scalar, ScalarField};
 use darkpool_types::csprng::PoseidonCSPRNG;
 use darkpool_types::{
-    balance::{Balance, BalanceShare, BalanceShareVar, BalanceVar, DarkpoolStateBalanceVar},
+    balance::{
+        DarkpoolBalance, DarkpoolBalanceShare, DarkpoolBalanceShareVar, DarkpoolBalanceVar,
+        DarkpoolStateBalanceVar,
+    },
     deposit::{Deposit, DepositVar},
 };
 use mpc_plonk::errors::PlonkError;
@@ -85,7 +88,7 @@ impl ValidBalanceCreate {
 
     /// Validate the new balance
     fn validate_new_balance(
-        balance: &BalanceVar,
+        balance: &DarkpoolBalanceVar,
         deposit: &DepositVar,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
@@ -108,7 +111,7 @@ impl ValidBalanceCreate {
         witness: &mut ValidBalanceCreateWitnessVar,
         statement: &ValidBalanceCreateStatementVar,
         cs: &mut PlonkCircuit,
-    ) -> Result<(DarkpoolStateBalanceVar, BalanceShareVar), CircuitError> {
+    ) -> Result<(DarkpoolStateBalanceVar, DarkpoolBalanceShareVar), CircuitError> {
         // 1. Encrypt the balance with the stream cipher
         let balance = &witness.balance;
         let (private_share, public_share) =
@@ -143,7 +146,7 @@ pub struct ValidBalanceCreateWitness {
     /// The initial recovery identifier CSPRNG
     pub initial_recovery_stream: PoseidonCSPRNG,
     /// The balance being created
-    pub balance: Balance,
+    pub balance: DarkpoolBalance,
 }
 
 // -----------------------------
@@ -163,7 +166,7 @@ pub struct ValidBalanceCreateStatement {
     /// The recovery identifier of the balance
     pub recovery_id: Scalar,
     /// The encrypted balance; i.e. the public shares of the balance
-    pub new_balance_share: BalanceShare,
+    pub new_balance_share: DarkpoolBalanceShare,
 }
 
 // ---------------------
@@ -193,7 +196,7 @@ impl SingleProverCircuit for ValidBalanceCreate {
 
 #[cfg(any(test, feature = "test_helpers"))]
 pub mod test_helpers {
-    use darkpool_types::{balance::Balance, deposit::Deposit};
+    use darkpool_types::{balance::DarkpoolBalance, deposit::Deposit};
 
     use crate::{
         test_helpers::{
@@ -230,7 +233,7 @@ pub mod test_helpers {
         deposit: Deposit,
     ) -> (ValidBalanceCreateWitness, ValidBalanceCreateStatement) {
         // Create a new balance matching the deposit
-        let balance_inner = Balance {
+        let balance_inner = DarkpoolBalance {
             mint: deposit.token,
             owner: deposit.from,
             relayer_fee_recipient: random_address(),
@@ -246,14 +249,15 @@ pub mod test_helpers {
     /// Create a witness and statement with the given deposit and balance
     pub fn create_witness_statement_with_deposit_and_balance(
         deposit: Deposit,
-        balance_inner: &Balance,
+        balance_inner: &DarkpoolBalance,
     ) -> (ValidBalanceCreateWitness, ValidBalanceCreateStatement) {
         // Create the witness balance with initial stream states
         let balance = create_random_state_wrapper(balance_inner.clone());
         let mut new_balance = balance.clone();
 
         // Encrypt the entire balance using the stream cipher
-        let balance_public_shares = new_balance.stream_cipher_encrypt::<Balance>(balance_inner);
+        let balance_public_shares =
+            new_balance.stream_cipher_encrypt::<DarkpoolBalance>(balance_inner);
         new_balance.public_share = balance_public_shares;
         let recovery_id = new_balance.compute_recovery_id();
 
@@ -287,7 +291,7 @@ mod test {
 
     use super::*;
     use circuit_types::traits::SingleProverCircuit;
-    use darkpool_types::balance::Balance;
+    use darkpool_types::balance::DarkpoolBalance;
     use rand::{Rng, thread_rng};
 
     /// A helper to print the number of constraints in the circuit
@@ -335,7 +339,7 @@ mod test {
     fn test_invalid_balance_fees() {
         let mut rng = thread_rng();
         let deposit = random_deposit();
-        let mut balance = Balance {
+        let mut balance = DarkpoolBalance {
             mint: deposit.token,
             owner: deposit.from,
             relayer_fee_recipient: random_address(),
@@ -388,7 +392,7 @@ mod test {
         let mut shares = statement.new_balance_share.to_scalars();
         let random_index = rng.gen_range(0..shares.len());
         shares[random_index] = random_scalar();
-        statement.new_balance_share = BalanceShare::from_scalars(&mut shares.into_iter());
+        statement.new_balance_share = DarkpoolBalanceShare::from_scalars(&mut shares.into_iter());
         assert!(!test_helpers::check_constraints(&witness, &statement));
     }
 

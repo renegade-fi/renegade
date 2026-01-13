@@ -106,8 +106,8 @@ impl Note {
     }
 
     /// Get the balance associated with the note
-    pub fn as_balance(&self) -> crate::balance::Balance {
-        crate::balance::Balance {
+    pub fn as_balance(&self) -> crate::balance::DarkpoolBalance {
+        crate::balance::DarkpoolBalance {
             mint: self.mint,
             relayer_fee_recipient: Address::ZERO,
             owner: Address::ZERO,                   // Default owner

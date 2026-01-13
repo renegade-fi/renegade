@@ -1,10 +1,7 @@
 //! Gadget for computing nullifiers of state elements
 
-use circuit_types::{
-    PlonkCircuit,
-    traits::{CircuitBaseType, SecretShareBaseType},
-};
-use darkpool_types::state_wrapper::StateWrapperVar;
+use circuit_types::PlonkCircuit;
+use darkpool_types::state_wrapper::{StateWrapperBound, StateWrapperShareBound, StateWrapperVar};
 use mpc_relation::{Variable, errors::CircuitError, traits::Circuit};
 
 use crate::zk_gadgets::primitives::poseidon::PoseidonHashGadget;
@@ -25,8 +22,8 @@ impl NullifierGadget {
         cs: &mut PlonkCircuit,
     ) -> Result<Variable, CircuitError>
     where
-        V: CircuitBaseType + SecretShareBaseType,
-        V::ShareType: CircuitBaseType,
+        V: StateWrapperBound,
+        V::ShareType: StateWrapperShareBound,
     {
         let last_idx = cs.sub(element.recovery_stream.index, cs.one())?;
         let recovery_id = CSPRNGGadget::get_ith(&element.recovery_stream, last_idx, cs)?;

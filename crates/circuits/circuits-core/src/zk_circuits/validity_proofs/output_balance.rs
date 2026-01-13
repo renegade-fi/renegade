@@ -12,7 +12,7 @@ use circuit_types::{
 use constants::{MERKLE_HEIGHT, Scalar, ScalarField};
 use darkpool_types::{
     balance::{
-        Balance, BalanceShareVar, DarkpoolStateBalance, DarkpoolStateBalanceVar,
+        DarkpoolBalance, DarkpoolBalanceShareVar, DarkpoolStateBalance, DarkpoolStateBalanceVar,
         PostMatchBalanceShare,
     },
     state_wrapper::PartialCommitment,
@@ -44,7 +44,7 @@ use crate::{
 
 /// The size of the partial commitment to the balance
 const BALANCE_PARTIAL_COMMITMENT_SIZE: usize =
-    Balance::NUM_SCALARS - PostMatchBalanceShare::NUM_SCALARS;
+    DarkpoolBalance::NUM_SCALARS - PostMatchBalanceShare::NUM_SCALARS;
 
 // ----------------------
 // | Circuit Definition |
@@ -101,10 +101,10 @@ impl<const MERKLE_HEIGHT: usize> OutputBalanceValidityCircuit<MERKLE_HEIGHT> {
     ///
     /// Returns the new balance and private shares.
     fn build_new_balance(
-        private_shares: &BalanceShareVar,
+        private_shares: &DarkpoolBalanceShareVar,
         witness: &OutputBalanceValidityWitnessVar<MERKLE_HEIGHT>,
         cs: &mut PlonkCircuit,
-    ) -> Result<(DarkpoolStateBalanceVar, BalanceShareVar), CircuitError> {
+    ) -> Result<(DarkpoolStateBalanceVar, DarkpoolBalanceShareVar), CircuitError> {
         let mut new_balance = witness.old_balance.clone();
         let mut new_balance_private_shares = private_shares.clone();
 
@@ -144,7 +144,7 @@ pub struct OutputBalanceValidityWitness<const MERKLE_HEIGHT: usize> {
     ///
     /// Places here to proof-link the circuit into the settlement circuit.
     #[link_groups = "output_balance_settlement_party0,output_balance_settlement_party1"]
-    pub balance: Balance,
+    pub balance: DarkpoolBalance,
     /// The balance public shares which are updated in the settlement circuit
     ///
     /// These values are proof-linked into the settlement circuit.
@@ -252,7 +252,7 @@ pub mod test_helpers {
     /// Construct a witness and statement with valid data using the provided
     /// balance
     pub fn create_witness_statement_with_balance<const MERKLE_HEIGHT: usize>(
-        balance_inner: Balance,
+        balance_inner: DarkpoolBalance,
     ) -> (OutputBalanceValidityWitness<MERKLE_HEIGHT>, OutputBalanceValidityStatement) {
         let old_balance = create_random_state_wrapper(balance_inner.clone());
 
@@ -338,7 +338,7 @@ mod test {
         let mut balance_scalars = witness.balance.to_scalars();
         let idx = rng.gen_range(0..balance_scalars.len());
         balance_scalars[idx] = random_scalar();
-        witness.balance = Balance::from_scalars(&mut balance_scalars.into_iter());
+        witness.balance = DarkpoolBalance::from_scalars(&mut balance_scalars.into_iter());
 
         assert!(!test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
     }

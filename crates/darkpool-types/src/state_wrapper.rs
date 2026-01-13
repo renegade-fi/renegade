@@ -20,6 +20,9 @@ use std::fmt::Debug;
 use circuit_macros::circuit_type;
 use circuit_types::traits::{BaseType, SecretShareBaseType, SecretShareType};
 
+#[cfg(feature = "rkyv")]
+use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
+
 use crate::csprng::PoseidonCSPRNG;
 use constants::Scalar;
 
@@ -37,7 +40,9 @@ use {
 /// A wrapper type for state elements allocated in the darkpool
 #[cfg_attr(feature = "proof-system-types", circuit_type(serde, singleprover_circuit))]
 #[cfg_attr(not(feature = "proof-system-types"), circuit_type(serde))]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "rkyv", derive(Archive, RkyvDeserialize, RkyvSerialize))]
+#[cfg_attr(feature = "rkyv", rkyv(derive(Debug)))]
 pub struct StateWrapper<T>
 where
     T: StateWrapperBound,
@@ -217,6 +222,16 @@ where
     }
 }
 
+impl<T> AsRef<T> for StateWrapper<T>
+where
+    T: StateWrapperBound,
+    T::ShareType: StateWrapperShareBound,
+{
+    fn as_ref(&self) -> &T {
+        &self.inner
+    }
+}
+
 // ----------------------
 // | Partial Commitment |
 // ----------------------
@@ -239,28 +254,37 @@ pub struct PartialCommitment {
 // | Helper Traits |
 // -----------------
 
+#[cfg(feature = "rkyv")]
+pub trait RkyvBound: Archive<Archived: Debug> + Debug + PartialEq + Eq {}
+#[cfg(feature = "rkyv")]
+impl<T> RkyvBound for T where T: Archive<Archived: Debug> + Debug + PartialEq + Eq {}
+#[cfg(not(feature = "rkyv"))]
+pub trait RkyvBound {}
+#[cfg(not(feature = "rkyv"))]
+impl<T> RkyvBound for T {}
+
 /// A helper trait that conditionally adds `CircuitBaseType` bound when
 /// `proof-system-types` feature is enabled
 #[cfg(feature = "proof-system-types")]
-trait StateWrapperBound: SecretShareBaseType + CircuitBaseType {}
+pub trait StateWrapperBound: SecretShareBaseType + CircuitBaseType + RkyvBound {}
 
 #[cfg(feature = "proof-system-types")]
-impl<T> StateWrapperBound for T where T: SecretShareBaseType + CircuitBaseType {}
+impl<T> StateWrapperBound for T where T: SecretShareBaseType + CircuitBaseType + RkyvBound {}
 
 #[cfg(not(feature = "proof-system-types"))]
-trait StateWrapperBound: SecretShareBaseType {}
+pub trait StateWrapperBound: SecretShareBaseType + RkyvBound {}
 
 #[cfg(not(feature = "proof-system-types"))]
-impl<T: SecretShareBaseType> StateWrapperBound for T {}
+impl<T: SecretShareBaseType + RkyvBound> StateWrapperBound for T {}
 
 #[cfg(feature = "proof-system-types")]
-trait StateWrapperShareBound: SecretShareType + CircuitBaseType {}
+pub trait StateWrapperShareBound: SecretShareType + CircuitBaseType + RkyvBound {}
 
 #[cfg(feature = "proof-system-types")]
-impl<T> StateWrapperShareBound for T where T: SecretShareType + CircuitBaseType {}
+impl<T> StateWrapperShareBound for T where T: SecretShareType + CircuitBaseType + RkyvBound {}
 
 #[cfg(not(feature = "proof-system-types"))]
-trait StateWrapperShareBound: SecretShareType {}
+pub trait StateWrapperShareBound: SecretShareType + RkyvBound {}
 
 #[cfg(not(feature = "proof-system-types"))]
-impl<T: SecretShareType> StateWrapperShareBound for T {}
+impl<T: SecretShareType + RkyvBound> StateWrapperShareBound for T {}

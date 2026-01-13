@@ -12,7 +12,7 @@ use circuit_types::{
 };
 use constants::{Scalar, ScalarField};
 use darkpool_types::{
-    balance::{Balance, PostMatchBalanceShare},
+    balance::{DarkpoolBalance, PostMatchBalanceShare},
     intent::Intent,
     settlement_obligation::SettlementObligation,
 };
@@ -109,7 +109,7 @@ pub struct IntentAndBalancePublicSettlementWitness {
     /// This value is proof-linked from the `INTENT AND BALANCE VALIDITY`
     /// circuit
     #[link_groups = "intent_and_balance_settlement_party0"]
-    pub in_balance: Balance,
+    pub in_balance: DarkpoolBalance,
     /// The balance public shares which are updated in the settlement circuit
     ///
     /// This value is proof-linked from the `INTENT AND BALANCE VALIDITY`
@@ -121,7 +121,7 @@ pub struct IntentAndBalancePublicSettlementWitness {
     /// This value is proof-linked from the `INTENT AND BALANCE VALIDITY`
     /// circuit
     #[link_groups = "output_balance_settlement_party0"]
-    pub out_balance: Balance,
+    pub out_balance: DarkpoolBalance,
     /// The balance public shares which are updated in the settlement circuit
     /// for the output balance
     ///
@@ -226,7 +226,7 @@ pub mod test_helpers {
     use alloy_primitives::Address;
     use circuit_types::max_amount;
     use darkpool_types::{
-        balance::Balance, intent::Intent, settlement_obligation::SettlementObligation,
+        balance::DarkpoolBalance, intent::Intent, settlement_obligation::SettlementObligation,
     };
     use rand::{Rng, thread_rng};
 
@@ -275,7 +275,7 @@ pub mod test_helpers {
     /// Create a witness and statement with the given intent and balance
     pub fn create_witness_statement_with_intent_and_balance<const MERKLE_HEIGHT: usize>(
         intent: &Intent,
-        balance: &Balance,
+        balance: &DarkpoolBalance,
     ) -> (IntentAndBalancePublicSettlementWitness, IntentAndBalancePublicSettlementStatement) {
         let settlement_obligation =
             create_settlement_obligation_with_balance(intent, balance.amount);
@@ -293,7 +293,7 @@ pub mod test_helpers {
         const MERKLE_HEIGHT: usize,
     >(
         intent: &Intent,
-        balance: &Balance,
+        balance: &DarkpoolBalance,
         settlement_obligation: SettlementObligation,
     ) -> (IntentAndBalancePublicSettlementWitness, IntentAndBalancePublicSettlementStatement) {
         // Create the intent amount public shares
@@ -326,12 +326,15 @@ pub mod test_helpers {
     }
 
     /// Create a receive balance for the given obligation
-    pub fn create_receive_balance(owner: Address, obligation: &SettlementObligation) -> Balance {
+    pub fn create_receive_balance(
+        owner: Address,
+        obligation: &SettlementObligation,
+    ) -> DarkpoolBalance {
         let mut rng = thread_rng();
         let max_existing_balance = max_amount() - obligation.amount_out;
         let amount = rng.gen_range(0..=max_existing_balance);
 
-        Balance {
+        DarkpoolBalance {
             mint: obligation.output_token,
             owner,
             relayer_fee_recipient: random_address(),

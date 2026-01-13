@@ -15,7 +15,7 @@ use circuit_types::{
 use constants::{MERKLE_HEIGHT, Scalar, ScalarField};
 use darkpool_types::{
     balance::{
-        Balance, BalanceShareVar, DarkpoolStateBalance, DarkpoolStateBalanceVar,
+        DarkpoolBalance, DarkpoolBalanceShareVar, DarkpoolStateBalance, DarkpoolStateBalanceVar,
         PostMatchBalanceShare, PostMatchBalanceShareVar,
     },
     intent::{DarkpoolStateIntent, DarkpoolStateIntentVar, Intent, IntentShare, IntentShareVar},
@@ -197,10 +197,10 @@ impl<const MERKLE_HEIGHT: usize> IntentAndBalanceValidityCircuit<MERKLE_HEIGHT> 
 
     /// Build the new balance
     fn build_new_balance(
-        private_shares: &BalanceShareVar,
+        private_shares: &DarkpoolBalanceShareVar,
         witness: &IntentAndBalanceValidityWitnessVar<MERKLE_HEIGHT>,
         cs: &mut PlonkCircuit,
-    ) -> Result<(DarkpoolStateBalanceVar, BalanceShareVar), CircuitError> {
+    ) -> Result<(DarkpoolStateBalanceVar, DarkpoolBalanceShareVar), CircuitError> {
         let mut new_balance = witness.old_balance.clone();
         let mut new_balance_private_shares = private_shares.clone();
 
@@ -264,7 +264,7 @@ pub struct IntentAndBalanceValidityWitness<const MERKLE_HEIGHT: usize> {
     pub old_balance_opening: MerkleOpening<MERKLE_HEIGHT>,
     /// The balance which capitalizes the intent
     #[link_groups = "intent_and_balance_settlement_party0,intent_and_balance_settlement_party1"]
-    pub balance: Balance,
+    pub balance: DarkpoolBalance,
     /// The updated public shares of the post-match balance
     #[link_groups = "intent_and_balance_settlement_party0,intent_and_balance_settlement_party1"]
     pub post_match_balance_shares: PostMatchBalanceShare,
@@ -549,7 +549,7 @@ mod test {
         let mut balance_scalars = witness.balance.to_scalars();
         let idx = rng.gen_range(0..balance_scalars.len());
         balance_scalars[idx] = random_scalar();
-        witness.balance = Balance::from_scalars(&mut balance_scalars.into_iter());
+        witness.balance = DarkpoolBalance::from_scalars(&mut balance_scalars.into_iter());
 
         assert!(!test_helpers::check_constraints::<MERKLE_HEIGHT>(&witness, &statement));
     }

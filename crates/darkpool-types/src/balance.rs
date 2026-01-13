@@ -10,6 +10,8 @@ use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "rkyv")]
 use crate::rkyv_remotes::{AddressDef, SchnorrPublicKeyDef};
+#[cfg(all(feature = "rkyv", feature = "proof-system-types"))]
+use crate::rkyv_remotes::{ScalarDef, SchnorrPublicKeyShareDef};
 #[cfg(feature = "rkyv")]
 use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
 
@@ -30,39 +32,53 @@ use {
 
 /// A balance wrapped in a state wrapper
 #[cfg(feature = "proof-system-types")]
-pub type DarkpoolStateBalance = StateWrapper<Balance>;
+pub type DarkpoolStateBalance = StateWrapper<DarkpoolBalance>;
 /// A balance wrapped in a state wrapper variable
 #[cfg(feature = "proof-system-types")]
-pub type DarkpoolStateBalanceVar = StateWrapperVar<Balance>;
+pub type DarkpoolStateBalanceVar = StateWrapperVar<DarkpoolBalance>;
 
 /// A balance in the V2 darkpool
-#[cfg_attr(feature = "proof-system-types", circuit_type(serde, singleprover_circuit, secret_share))]
+#[cfg_attr(
+    all(feature = "proof-system-types", feature = "rkyv"),
+    circuit_type(serde, singleprover_circuit, secret_share, rkyv)
+)]
+#[cfg_attr(
+    all(feature = "proof-system-types", not(feature = "rkyv")),
+    circuit_type(serde, singleprover_circuit, secret_share)
+)]
 #[cfg_attr(not(feature = "proof-system-types"), circuit_type(serde))]
 #[derive(Clone, Debug, Serialize, Deserialize, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "rkyv", derive(Archive, RkyvDeserialize, RkyvSerialize))]
 #[cfg_attr(feature = "rkyv", rkyv(derive(Debug)))]
-pub struct Balance {
+pub struct DarkpoolBalance {
     /// The mint of the token in the balance
     #[cfg_attr(feature = "rkyv", rkyv(with = AddressDef))]
+    #[share_rkyv(with = ScalarDef)]
     pub mint: Address,
     /// The owner of the balance
     #[cfg_attr(feature = "rkyv", rkyv(with = AddressDef))]
+    #[share_rkyv(with = ScalarDef)]
     pub owner: Address,
     /// The address to which the relayer fees are paid
     #[cfg_attr(feature = "rkyv", rkyv(with = AddressDef))]
+    #[share_rkyv(with = ScalarDef)]
     pub relayer_fee_recipient: Address,
     /// The public key which authorizes the creation of new state elements
     #[cfg_attr(feature = "rkyv", rkyv(with = SchnorrPublicKeyDef))]
+    #[share_rkyv(with = SchnorrPublicKeyShareDef)]
     pub authority: SchnorrPublicKey,
     /// The relayer fee balance of the balance
+    #[share_rkyv(with = ScalarDef)]
     pub relayer_fee_balance: Amount,
     /// The protocol fee balance of the balance
+    #[share_rkyv(with = ScalarDef)]
     pub protocol_fee_balance: Amount,
     /// The amount of the token in the balance
+    #[share_rkyv(with = ScalarDef)]
     pub amount: Amount,
 }
 
-impl Balance {
+impl DarkpoolBalance {
     /// Create a new balance with zero values
     pub fn new(
         mint: Address,
@@ -89,8 +105,8 @@ impl Balance {
 
 // Convenience helpers to update post-match fields on shares/state wrappers
 #[cfg(feature = "proof-system-types")]
-impl BalanceShare {
-    /// Update the post-match fields on a `BalanceShare` from a
+impl DarkpoolBalanceShare {
+    /// Update the post-match fields on a `DarkpoolBalanceShare` from a
     /// `PostMatchBalanceShare`
     pub fn update_from_post_match(&mut self, post: &PostMatchBalanceShare) {
         self.amount = post.amount;
@@ -135,8 +151,8 @@ pub struct PostMatchBalance {
     pub amount: Amount,
 }
 
-impl From<Balance> for PreMatchBalance {
-    fn from(balance: Balance) -> Self {
+impl From<DarkpoolBalance> for PreMatchBalance {
+    fn from(balance: DarkpoolBalance) -> Self {
         Self {
             mint: balance.mint,
             owner: balance.owner,
@@ -146,8 +162,8 @@ impl From<Balance> for PreMatchBalance {
     }
 }
 
-impl From<Balance> for PostMatchBalance {
-    fn from(balance: Balance) -> Self {
+impl From<DarkpoolBalance> for PostMatchBalance {
+    fn from(balance: DarkpoolBalance) -> Self {
         Self {
             amount: balance.amount,
             relayer_fee_balance: balance.relayer_fee_balance,
@@ -157,8 +173,8 @@ impl From<Balance> for PostMatchBalance {
 }
 
 #[cfg(feature = "proof-system-types")]
-impl From<BalanceShare> for PreMatchBalanceShare {
-    fn from(balance_share: BalanceShare) -> Self {
+impl From<DarkpoolBalanceShare> for PreMatchBalanceShare {
+    fn from(balance_share: DarkpoolBalanceShare) -> Self {
         Self {
             mint: balance_share.mint,
             owner: balance_share.owner,
@@ -169,8 +185,8 @@ impl From<BalanceShare> for PreMatchBalanceShare {
 }
 
 #[cfg(feature = "proof-system-types")]
-impl From<BalanceShare> for PostMatchBalanceShare {
-    fn from(balance_share: BalanceShare) -> Self {
+impl From<DarkpoolBalanceShare> for PostMatchBalanceShare {
+    fn from(balance_share: DarkpoolBalanceShare) -> Self {
         Self {
             amount: balance_share.amount,
             relayer_fee_balance: balance_share.relayer_fee_balance,
@@ -179,7 +195,7 @@ impl From<BalanceShare> for PostMatchBalanceShare {
     }
 }
 
-impl From<(PreMatchBalance, PostMatchBalance)> for Balance {
+impl From<(PreMatchBalance, PostMatchBalance)> for DarkpoolBalance {
     fn from((pre_match_balance, post_match_balance): (PreMatchBalance, PostMatchBalance)) -> Self {
         Self {
             mint: pre_match_balance.mint,
@@ -198,7 +214,7 @@ impl From<(PreMatchBalance, PostMatchBalance)> for Balance {
 // ---------------------------------
 
 #[cfg(feature = "proof-system-types")]
-impl StateWrapper<Balance> {
+impl StateWrapper<DarkpoolBalance> {
     // --- Obligation Helpers --- //
 
     /// Apply a settlement obligation to the balance assuming this was an input
@@ -347,10 +363,10 @@ mod rkyv_tests {
         SchnorrPublicKey { point: BabyJubJubPoint { x, y } }
     }
 
-    /// Generate a random Balance
-    fn random_balance() -> Balance {
+    /// Generate a random DarkpoolBalance
+    fn random_balance() -> DarkpoolBalance {
         let mut rng = thread_rng();
-        Balance {
+        DarkpoolBalance {
             mint: random_address(),
             owner: random_address(),
             relayer_fee_recipient: random_address(),
@@ -369,8 +385,8 @@ mod rkyv_tests {
         let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&original).expect("Failed to serialize");
 
         // Deserialize
-        let archived = unsafe { rkyv::access_unchecked::<ArchivedBalance>(&bytes) };
-        let deserialized: Balance =
+        let archived = unsafe { rkyv::access_unchecked::<ArchivedDarkpoolBalance>(&bytes) };
+        let deserialized: DarkpoolBalance =
             rkyv::deserialize::<_, rkyv::rancor::Error>(archived).expect("Failed to deserialize");
 
         assert_eq!(original, deserialized);

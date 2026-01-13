@@ -225,8 +225,8 @@ mod tests {
     /// Create a test order with the given matchable amount and min price
     fn create_test_order(matchable_amount: Amount, min_price: FixedPoint) -> Order {
         let mut order = mock_order_with_pair(test_pair());
-        order.intent.amount_in = matchable_amount * 2;
-        order.intent.min_price = min_price;
+        order.intent.inner.amount_in = matchable_amount * 2;
+        order.intent.inner.min_price = min_price;
         order.metadata.min_fill_size = 1;
         order
     }
@@ -236,8 +236,8 @@ mod tests {
     fn create_counterparty_order(matchable_amount: Amount, min_price: FixedPoint) -> Order {
         let pair = test_pair();
         let mut order = mock_order_with_pair(pair.reverse());
-        order.intent.amount_in = matchable_amount * 2;
-        order.intent.min_price = min_price;
+        order.intent.inner.amount_in = matchable_amount * 2;
+        order.intent.inner.min_price = min_price;
         order.metadata.min_fill_size = 1;
         order
     }

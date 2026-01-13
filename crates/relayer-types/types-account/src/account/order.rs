@@ -5,7 +5,7 @@
 
 use alloy::primitives::Address;
 use circuit_types::{Amount, fixed_point::FixedPoint};
-use darkpool_types::intent::Intent;
+use darkpool_types::{intent::Intent, state_wrapper::StateWrapper};
 #[cfg(feature = "rkyv")]
 use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
 use serde::{Deserialize, Serialize};
@@ -13,14 +13,14 @@ use serde::{Deserialize, Serialize};
 use crate::{OrderId, pair::Pair};
 
 /// The order type for an account
-#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "rkyv", derive(Archive, RkyvDeserialize, RkyvSerialize))]
 #[cfg_attr(feature = "rkyv", rkyv(derive(Debug)))]
 pub struct Order {
     /// The id of the order
     pub id: OrderId,
     /// The intent
-    pub intent: Intent,
+    pub intent: StateWrapper<Intent>,
     /// The metadata for the order
     pub metadata: OrderMetadata,
 }
@@ -38,14 +38,14 @@ pub struct OrderMetadata {
 
 impl Order {
     /// Create a new order from the given intent and metadata
-    pub fn new(intent: Intent, metadata: OrderMetadata) -> Self {
+    pub fn new(intent: StateWrapper<Intent>, metadata: OrderMetadata) -> Self {
         let id = OrderId::new_v4();
         Self { id, intent, metadata }
     }
 
     /// Get a reference to the intent
     pub fn intent(&self) -> &Intent {
-        &self.intent
+        self.intent.as_ref()
     }
 
     /// Get a reference to the metadata
@@ -55,12 +55,12 @@ impl Order {
 
     /// The input token for the order
     pub fn input_token(&self) -> Address {
-        self.intent.in_token
+        self.intent.inner.in_token
     }
 
     /// The output token for the order
     pub fn output_token(&self) -> Address {
-        self.intent.out_token
+        self.intent.inner.out_token
     }
 
     /// Whether the order is zero'd out
@@ -69,12 +69,12 @@ impl Order {
     /// the order shares are directly updated on-chain
     #[inline]
     pub fn is_zero(&self) -> bool {
-        self.intent.amount_in == 0
+        self.intent.inner.amount_in == 0
     }
 
     /// Get the pair for the order
     pub fn pair(&self) -> Pair {
-        Pair::new(self.intent.in_token, self.intent.out_token)
+        Pair::new(self.intent.inner.in_token, self.intent.inner.out_token)
     }
 
     /// Get the min fill size for the order
@@ -84,7 +84,7 @@ impl Order {
 
     /// The min price for the order
     pub fn min_price(&self) -> FixedPoint {
-        self.intent.min_price
+        self.intent.inner.min_price
     }
 
     /// Whether the order has external matches enabled
@@ -96,7 +96,7 @@ impl Order {
     pub fn validate_match_price(&self, input_amount: Amount, output_amount: Amount) -> bool {
         // Check the worst case price
         let implied_price = FixedPoint::from_integer_ratio(output_amount, input_amount);
-        implied_price >= self.intent.min_price
+        implied_price >= self.intent.inner.min_price
     }
 }
 
@@ -110,12 +110,12 @@ impl OrderMetadata {
 
 impl From<Order> for Intent {
     fn from(order: Order) -> Self {
-        order.intent
+        order.intent.inner
     }
 }
 
-impl From<Intent> for Order {
-    fn from(intent: Intent) -> Self {
+impl From<StateWrapper<Intent>> for Order {
+    fn from(intent: StateWrapper<Intent>) -> Self {
         Self::new(intent, OrderMetadata::default())
     }
 }
@@ -131,11 +131,18 @@ impl Default for OrderMetadata {
 pub mod mocks {
     use super::{Order, OrderMetadata};
     use crate::{account::mocks::mock_intent, pair::Pair};
+    use constants::Scalar;
+    use darkpool_types::state_wrapper::StateWrapper;
+    use rand::thread_rng;
 
     /// Create a mock order for testing
     pub fn mock_order() -> Order {
         let intent = mock_intent();
-        Order::new(intent, OrderMetadata::default())
+        let mut rng = thread_rng();
+        let share_stream_seed = Scalar::random(&mut rng);
+        let recovery_stream_seed = Scalar::random(&mut rng);
+        let state_wrapper = StateWrapper::new(intent, share_stream_seed, recovery_stream_seed);
+        Order::new(state_wrapper, OrderMetadata::default())
     }
 
     /// Create a mock order with the given pair
@@ -143,6 +150,10 @@ pub mod mocks {
         let mut intent = mock_intent();
         intent.in_token = pair.in_token;
         intent.out_token = pair.out_token;
-        Order::new(intent, OrderMetadata::default())
+        let mut rng = thread_rng();
+        let share_stream_seed = Scalar::random(&mut rng);
+        let recovery_stream_seed = Scalar::random(&mut rng);
+        let state_wrapper = StateWrapper::new(intent, share_stream_seed, recovery_stream_seed);
+        Order::new(state_wrapper, OrderMetadata::default())
     }
 }
