@@ -8,7 +8,9 @@ use circuit_types::merkle::{MerkleOpening, MerkleRoot};
 use circuit_types::traits::{BaseType, CircuitBaseType, CircuitVarType};
 use circuit_types::{Commitment, Nullifier, PlonkCircuit};
 use constants::{MERKLE_HEIGHT, Scalar, ScalarField};
-use darkpool_types::balance::{BalanceShareVar, DarkpoolStateBalance, DarkpoolStateBalanceVar};
+use darkpool_types::balance::{
+    DarkpoolBalanceShareVar, DarkpoolStateBalance, DarkpoolStateBalanceVar,
+};
 use darkpool_types::note::NoteVar;
 use mpc_plonk::errors::PlonkError;
 use mpc_relation::{Variable, errors::CircuitError, traits::Circuit};
@@ -103,11 +105,11 @@ impl<const MERKLE_HEIGHT: usize> ValidPrivateRelayerFeePayment<MERKLE_HEIGHT> {
     /// Returns the new balance, the new private shares, and the new public
     /// shares.
     pub fn compute_post_payment_balance(
-        old_balance_private_shares: &BalanceShareVar,
+        old_balance_private_shares: &DarkpoolBalanceShareVar,
         statement: &ValidPrivateRelayerFeePaymentStatementVar,
         witness: &ValidPrivateRelayerFeePaymentWitnessVar<MERKLE_HEIGHT>,
         cs: &mut PlonkCircuit,
-    ) -> Result<(DarkpoolStateBalanceVar, BalanceShareVar), CircuitError> {
+    ) -> Result<(DarkpoolStateBalanceVar, DarkpoolBalanceShareVar), CircuitError> {
         // Update the balance
         let mut new_balance = witness.old_balance.clone();
         let mut new_balance_private_shares = old_balance_private_shares.clone();
@@ -215,7 +217,7 @@ impl<const MERKLE_HEIGHT: usize> SingleProverCircuit
 pub mod test_helpers {
     use constants::Scalar;
     use darkpool_types::{
-        balance::{Balance, DarkpoolStateBalance},
+        balance::{DarkpoolBalance, DarkpoolStateBalance},
         note::Note,
     };
     use rand::thread_rng;
@@ -252,7 +254,7 @@ pub mod test_helpers {
     pub fn create_dummy_witness_statement()
     -> (SizedValidPrivateRelayerFeePaymentWitness, ValidPrivateRelayerFeePaymentStatement) {
         // The balance from which relayer fees are paid
-        let old_balance = create_random_state_wrapper(Balance {
+        let old_balance = create_random_state_wrapper(DarkpoolBalance {
             mint: random_address(),
             relayer_fee_recipient: random_address(),
             owner: random_address(),
@@ -305,7 +307,7 @@ pub mod test_helpers {
     }
 
     /// Create a note for the given balance's relayer fee payment
-    fn create_note(balance: &Balance) -> Note {
+    fn create_note(balance: &DarkpoolBalance) -> Note {
         let mut rng = thread_rng();
         let blinder = Scalar::random(&mut rng);
         Note {
@@ -342,7 +344,7 @@ mod test {
     use super::test_helpers::create_dummy_witness_statement_with_balance;
     use super::*;
     use circuit_types::traits::SingleProverCircuit;
-    use darkpool_types::{balance::Balance, note::Note};
+    use darkpool_types::{balance::DarkpoolBalance, note::Note};
 
     /// A helper to print the number of constraints in the circuit
     ///
@@ -370,7 +372,7 @@ mod test {
     #[test]
     #[allow(non_snake_case)]
     fn test_invalid__zero_relayer_fee_balance() {
-        let balance = create_random_state_wrapper(Balance {
+        let balance = create_random_state_wrapper(DarkpoolBalance {
             mint: random_address(),
             relayer_fee_recipient: random_address(),
             owner: random_address(),

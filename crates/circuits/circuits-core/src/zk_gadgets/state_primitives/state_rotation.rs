@@ -1,11 +1,9 @@
 //! Gadgets for rotating state elements
 
-use circuit_types::{
-    PlonkCircuit,
-    merkle::MerkleOpeningVar,
-    traits::{CircuitBaseType, SecretShareBaseType},
+use circuit_types::{PlonkCircuit, merkle::MerkleOpeningVar, traits::CircuitBaseType};
+use darkpool_types::state_wrapper::{
+    PartialCommitmentVar, StateWrapperBound, StateWrapperShareBound, StateWrapperVar,
 };
-use darkpool_types::state_wrapper::{PartialCommitmentVar, StateWrapperVar};
 use mpc_relation::{Variable, errors::CircuitError, traits::Circuit};
 
 use crate::zk_gadgets::{
@@ -16,8 +14,8 @@ use crate::zk_gadgets::{
 /// The arguments to a state element rotation gadget
 pub struct StateElementRotationArgs<V, const MERKLE_HEIGHT: usize>
 where
-    V: CircuitBaseType + SecretShareBaseType,
-    V::ShareType: CircuitBaseType,
+    V: StateWrapperBound,
+    V::ShareType: StateWrapperShareBound,
 {
     // --- Old Version --- //
     /// The old version of the state element
@@ -45,8 +43,8 @@ where
 /// The arguments to a state element rotation gadget with partial commitment
 pub struct StateElementRotationArgsWithPartialCommitment<V, const MERKLE_HEIGHT: usize>
 where
-    V: CircuitBaseType + SecretShareBaseType,
-    V::ShareType: CircuitBaseType,
+    V: StateWrapperBound,
+    V::ShareType: StateWrapperShareBound,
 {
     // --- Old Version --- //
     /// The old version of the state element
@@ -87,8 +85,8 @@ impl<const MERKLE_HEIGHT: usize> StateElementRotationGadget<MERKLE_HEIGHT> {
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError>
     where
-        V: CircuitBaseType + SecretShareBaseType,
-        V::ShareType: CircuitBaseType,
+        V: StateWrapperBound,
+        V::ShareType: StateWrapperShareBound,
     {
         // Compute the recovery identifier for the new version and constrain it to the
         // given value
@@ -135,8 +133,8 @@ impl<const MERKLE_HEIGHT: usize> StateElementRotationGadget<MERKLE_HEIGHT> {
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError>
     where
-        V: CircuitBaseType + SecretShareBaseType,
-        V::ShareType: CircuitBaseType,
+        V: StateWrapperBound,
+        V::ShareType: StateWrapperShareBound,
     {
         // Compute the recovery identifier for the new version and constrain it to the
         // given value
@@ -222,8 +220,8 @@ mod test {
     #[derive(Clone)]
     struct NativeStateElementRotationArgs<V, const MERKLE_HEIGHT: usize>
     where
-        V: CircuitBaseType + SecretShareBaseType,
-        V::ShareType: CircuitBaseType,
+        V: StateWrapperBound,
+        V::ShareType: StateWrapperShareBound,
     {
         /// The old version of the state element
         old_version: StateWrapper<V>,
@@ -250,8 +248,8 @@ mod test {
     #[derive(Clone)]
     struct NativeStateElementRotationArgsWithPartialCommitment<V, const MERKLE_HEIGHT: usize>
     where
-        V: CircuitBaseType + SecretShareBaseType,
-        V::ShareType: CircuitBaseType,
+        V: StateWrapperBound,
+        V::ShareType: StateWrapperShareBound,
     {
         /// The old version of the state element
         old_version: StateWrapper<V>,

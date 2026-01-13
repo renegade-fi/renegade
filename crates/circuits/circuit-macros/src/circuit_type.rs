@@ -21,8 +21,10 @@ use syn::{
 };
 
 use self::{
-    mpc_types::build_mpc_types, proof_linking::remove_link_group_attributes,
-    secret_share_types::build_secret_share_types, singleprover_circuit_types::build_circuit_types,
+    mpc_types::build_mpc_types,
+    proof_linking::remove_link_group_attributes,
+    secret_share_types::{build_secret_share_types, remove_share_rkyv_attributes},
+    singleprover_circuit_types::build_circuit_types,
 };
 
 /// The trait name for the base type that all other types are derived from
@@ -52,6 +54,9 @@ const ARG_MULTIPROVER_TYPE: &str = "multiprover_circuit";
 const ARG_SHARE_TYPE: &str = "secret_share";
 /// The flag indicating the expansion should include serde traits
 const ARG_SERDE: &str = "serde";
+/// The flag indicating the expansion should include rkyv traits for secret
+/// share types
+const ARG_RKYV: &str = "rkyv";
 
 /// The arguments to the `circuit_trace` macro
 #[derive(Default)]
@@ -66,6 +71,8 @@ pub(crate) struct MacroArgs {
     pub build_secret_share_types: bool,
     /// Whether or not to derive serde traits for the struct
     pub serde: bool,
+    /// Whether or not to derive rkyv traits for secret share types
+    pub rkyv: bool,
 }
 
 impl MacroArgs {
@@ -86,6 +93,11 @@ impl MacroArgs {
                 "secret share types require single-prover circuit types"
             )
         }
+
+        // rkyv derivations require secret share types
+        if self.rkyv {
+            assert!(self.build_secret_share_types, "rkyv derivations require secret share types")
+        }
     }
 }
 
@@ -102,6 +114,7 @@ pub(crate) fn parse_macro_args(args: TokenStream) -> Result<MacroArgs> {
             ARG_MULTIPROVER_TYPE => macro_args.build_multiprover_types = true,
             ARG_SHARE_TYPE => macro_args.build_secret_share_types = true,
             ARG_SERDE => macro_args.serde = true,
+            ARG_RKYV => macro_args.rkyv = true,
             unknown => panic!("received unexpected argument {unknown}"),
         }
     }
@@ -116,10 +129,11 @@ pub(crate) fn parse_macro_args(args: TokenStream) -> Result<MacroArgs> {
 
 /// Implementation of the type derivation macro
 pub(crate) fn circuit_type_impl(target_struct: &ItemStruct, macro_args: &MacroArgs) -> TokenStream {
-    // Copy the existing struct into the result after removing any #[link_groups =
-    // "..."] attributes
+    // Copy the existing struct into the result after removing any macro-specific
+    // field attributes (#[link_groups = "..."] and #[share_rkyv(...)])
     let mut out_tokens = TokenStream2::default();
     let cleaned_target = remove_link_group_attributes(target_struct);
+    let cleaned_target = remove_share_rkyv_attributes(&cleaned_target);
     out_tokens.extend(cleaned_target.to_token_stream());
 
     // Build the implementation of the `BaseType` trait
@@ -139,8 +153,12 @@ pub(crate) fn circuit_type_impl(target_struct: &ItemStruct, macro_args: &MacroAr
 
     // Build secret share types
     if macro_args.build_secret_share_types {
-        let secret_share_type_tokens =
-            build_secret_share_types(target_struct, macro_args.build_mpc_types, macro_args.serde);
+        let secret_share_type_tokens = build_secret_share_types(
+            target_struct,
+            macro_args.build_mpc_types,
+            macro_args.serde,
+            macro_args.rkyv,
+        );
         out_tokens.extend(secret_share_type_tokens);
     }
 

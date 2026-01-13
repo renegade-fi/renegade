@@ -1,6 +1,6 @@
 //! API types for balances
 
-use darkpool_types::balance::Balance;
+use darkpool_types::balance::DarkpoolBalance;
 #[cfg(feature = "full-api")]
 use renegade_solidity_abi::v2::IDarkpoolV2::DepositAuth;
 use serde::{Deserialize, Serialize};
@@ -37,8 +37,8 @@ pub struct ApiBalance {
     pub public_shares: ApiBalanceShare,
 }
 
-impl From<Balance> for ApiBalance {
-    fn from(bal: Balance) -> Self {
+impl From<DarkpoolBalance> for ApiBalance {
+    fn from(bal: DarkpoolBalance) -> Self {
         Self {
             mint: address_to_hex_string(&bal.mint),
             owner: address_to_hex_string(&bal.owner),

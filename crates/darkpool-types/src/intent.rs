@@ -10,6 +10,8 @@ use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "rkyv")]
 use crate::rkyv_remotes::{AddressDef, FixedPointDef};
+#[cfg(all(feature = "rkyv", feature = "proof-system-types"))]
+use crate::rkyv_remotes::{FixedPointShareDef, ScalarDef};
 #[cfg(feature = "rkyv")]
 use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
 
@@ -32,7 +34,14 @@ pub type DarkpoolStateIntent = StateWrapper<Intent>;
 pub type DarkpoolStateIntentVar = crate::state_wrapper::StateWrapperVar<Intent>;
 
 /// Intent is a struct that represents an intent to buy or sell a token
-#[cfg_attr(feature = "proof-system-types", circuit_type(serde, singleprover_circuit, secret_share))]
+#[cfg_attr(
+    all(feature = "proof-system-types", feature = "rkyv"),
+    circuit_type(serde, singleprover_circuit, secret_share, rkyv)
+)]
+#[cfg_attr(
+    all(feature = "proof-system-types", not(feature = "rkyv")),
+    circuit_type(serde, singleprover_circuit, secret_share)
+)]
 #[cfg_attr(not(feature = "proof-system-types"), circuit_type(serde))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(feature = "rkyv", derive(Archive, RkyvDeserialize, RkyvSerialize))]
@@ -40,18 +49,23 @@ pub type DarkpoolStateIntentVar = crate::state_wrapper::StateWrapperVar<Intent>;
 pub struct Intent {
     /// The token to buy
     #[cfg_attr(feature = "rkyv", rkyv(with = AddressDef))]
+    #[share_rkyv(with = ScalarDef)]
     pub in_token: Address,
     /// The token to sell
     #[cfg_attr(feature = "rkyv", rkyv(with = AddressDef))]
+    #[share_rkyv(with = ScalarDef)]
     pub out_token: Address,
     /// The owner of the intent, an EOA
     #[cfg_attr(feature = "rkyv", rkyv(with = AddressDef))]
+    #[share_rkyv(with = ScalarDef)]
     pub owner: Address,
     /// The minimum price at which a party may settle a partial fill
     /// This is in units of `out_token/in_token`
     #[cfg_attr(feature = "rkyv", rkyv(with = FixedPointDef))]
+    #[share_rkyv(with = FixedPointShareDef)]
     pub min_price: FixedPoint,
     /// The amount of the input token to trade
+    #[share_rkyv(with = ScalarDef)]
     pub amount_in: Amount,
 }
 

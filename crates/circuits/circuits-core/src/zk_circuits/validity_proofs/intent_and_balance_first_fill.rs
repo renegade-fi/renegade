@@ -14,12 +14,12 @@ use circuit_types::{
     merkle::{MerkleOpening, MerkleRoot},
     schnorr::SchnorrSignature,
 };
-use darkpool_types::csprng::PoseidonCSPRNG;
 use constants::{MERKLE_HEIGHT, Scalar, ScalarField};
+use darkpool_types::csprng::PoseidonCSPRNG;
 use darkpool_types::{
     balance::{
-        Balance, BalanceShareVar, DarkpoolStateBalance, DarkpoolStateBalanceVar, PostMatchBalance,
-        PostMatchBalanceShare, PostMatchBalanceShareVar,
+        DarkpoolBalance, DarkpoolBalanceShareVar, DarkpoolStateBalance, DarkpoolStateBalanceVar,
+        PostMatchBalance, PostMatchBalanceShare, PostMatchBalanceShareVar,
     },
     intent::{DarkpoolStateIntentVar, Intent, IntentShare, PreMatchIntentShare},
     state_wrapper::PartialCommitment,
@@ -51,7 +51,7 @@ use crate::{
 
 /// The size of the partial commitment to the balance
 pub const BALANCE_PARTIAL_COMMITMENT_SIZE: usize =
-    Balance::NUM_SCALARS - PostMatchBalance::NUM_SCALARS;
+    DarkpoolBalance::NUM_SCALARS - PostMatchBalance::NUM_SCALARS;
 
 // ----------------------
 // | Circuit Definition |
@@ -241,10 +241,10 @@ impl<const MERKLE_HEIGHT: usize> IntentAndBalanceFirstFillValidityCircuit<MERKLE
     ///
     /// Returns the new balance and the private shares of the new balance
     fn create_new_balance(
-        old_balance_private_shares: &BalanceShareVar,
+        old_balance_private_shares: &DarkpoolBalanceShareVar,
         witness: &IntentAndBalanceFirstFillValidityWitnessVar<MERKLE_HEIGHT>,
         cs: &mut PlonkCircuit,
-    ) -> Result<(DarkpoolStateBalanceVar, BalanceShareVar), CircuitError> {
+    ) -> Result<(DarkpoolStateBalanceVar, DarkpoolBalanceShareVar), CircuitError> {
         // Update the balance
         let mut new_balance = witness.old_balance.clone();
         let mut new_balance_private_shares = old_balance_private_shares.clone();
@@ -319,7 +319,7 @@ pub struct IntentAndBalanceFirstFillValidityWitness<const MERKLE_HEIGHT: usize> 
     /// element balance here so that it may be proof-linked into the settlement
     /// proof.
     #[link_groups = "intent_and_balance_settlement_party0,intent_and_balance_settlement_party1"]
-    pub balance: Balance,
+    pub balance: DarkpoolBalance,
     /// The updated public shares of the post-match balance
     #[link_groups = "intent_and_balance_settlement_party0,intent_and_balance_settlement_party1"]
     pub post_match_balance_shares: PostMatchBalanceShare,
@@ -421,7 +421,7 @@ impl<const MERKLE_HEIGHT: usize> SingleProverCircuit
 pub mod test_helpers {
     use circuit_types::schnorr::SchnorrPrivateKey;
     use darkpool_types::{
-        balance::{Balance, DarkpoolStateBalance, PostMatchBalance},
+        balance::{DarkpoolBalance, DarkpoolStateBalance, PostMatchBalance},
         intent::{Intent, PreMatchIntentShare},
     };
 
@@ -557,7 +557,7 @@ pub mod test_helpers {
         intent: &Intent,
     ) -> (DarkpoolStateBalance, SchnorrPrivateKey) {
         let (secret_key, authority) = random_schnorr_keypair();
-        let balance_inner = Balance {
+        let balance_inner = DarkpoolBalance {
             mint: intent.in_token,
             owner: intent.owner,
             relayer_fee_recipient: random_address(),

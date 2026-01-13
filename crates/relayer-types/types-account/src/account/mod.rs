@@ -2,6 +2,7 @@
 //!
 //! Separated out to aid discoverability on implementations
 
+pub mod balance;
 pub mod deposit;
 pub mod derivation;
 pub mod error;
@@ -15,7 +16,7 @@ use std::collections::HashMap;
 
 use alloy::primitives::Address;
 use circuit_types::{Amount, max_amount};
-use darkpool_types::{balance::Balance, csprng::PoseidonCSPRNG};
+use darkpool_types::csprng::PoseidonCSPRNG;
 use serde::{Deserialize, Serialize};
 use types_core::AccountId;
 use uuid::Uuid;
@@ -25,7 +26,7 @@ use darkpool_types::rkyv_remotes::AddressDef;
 #[cfg(feature = "rkyv")]
 use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize, with};
 
-use crate::{MerkleAuthenticationPath, keychain::KeyChain, order::Order};
+use crate::{MerkleAuthenticationPath, balance::Balance, keychain::KeyChain, order::Order};
 
 pub use error::AccountError;
 
@@ -58,13 +59,6 @@ impl Account {
     pub fn new_empty_account(id: AccountId, keychain: KeyChain) -> Self {
         Self { id, orders: HashMap::new(), balances: HashMap::new(), keychain }
     }
-
-    /// Remove default balances
-    pub fn remove_default_elements(&mut self) {
-        let default_balance = Balance::default();
-        self.balances.retain(|_mint, balance| *balance != default_balance);
-        self.orders.retain(|_id, order| *order != Order::default());
-    }
 }
 
 // ----------
@@ -82,8 +76,9 @@ impl Account {
     /// This is the amount specified by the order, capped at the amount backed
     /// by the account's balance.
     pub fn get_matchable_amount_for_order(&self, order: &Order) -> Amount {
-        let bal_amt = self.balances.get(&order.input_token()).map(|b| b.amount).unwrap_or_default();
-        Amount::min(bal_amt, order.intent.amount_in)
+        let bal_amt =
+            self.balances.get(&order.input_token()).map(|b| b.amount()).unwrap_or_default();
+        Amount::min(bal_amt, order.intent.inner.amount_in)
     }
 }
 
@@ -99,14 +94,20 @@ impl Account {
 
     /// Deposit a balance into the account
     pub fn deposit_balance(&mut self, mint: Address, amount: Amount) -> Result<(), AccountError> {
-        let bal = self.balances.entry(mint).or_default();
-        if bal.amount + amount > max_amount() {
-            let curr_amt = bal.amount;
+        // Get the balance
+        let bal = self
+            .balances
+            .get_mut(&mint)
+            .ok_or(AccountError::balance(format!("Balance not found for mint: {mint}")))?;
+
+        // Check its bounds
+        if bal.amount() + amount > max_amount() {
+            let curr_amt = bal.amount();
             let err_msg = format!("Deposit would exceed max amount: {curr_amt} + {amount}");
             return Err(AccountError::balance(err_msg));
         }
 
-        bal.amount += amount;
+        *bal.amount_mut() += amount;
         Ok(())
     }
 }
@@ -131,9 +132,10 @@ impl Account {
 #[cfg(feature = "rkyv")]
 mod rkyv_order_impls {
     //! Implementations for account orders on the rkyv-derived type
+    use std::cmp::min;
+
     use circuit_types::Amount;
     use rkyv::rancor;
-    use rkyv::rend::unaligned::u128_ule;
 
     use crate::OrderId;
     use crate::order::Order;
@@ -158,11 +160,12 @@ mod rkyv_order_impls {
             &self,
             order: &ArchivedOrder,
         ) -> <Amount as rkyv::Archive>::Archived {
-            let in_token = &order.intent.in_token;
-            let bal_amt = self.balances.get(in_token).map(|b| b.amount).unwrap_or_default();
-            let intent_amt = order.intent.amount_in;
+            let in_token = &order.intent.inner.in_token;
+            let bal_amt =
+                self.balances.get(in_token).map(|b| b.balance.inner.amount).unwrap_or_default();
+            let intent_amt = order.intent.inner.amount_in;
 
-            u128_ule::min(bal_amt, intent_amt)
+            min(bal_amt, intent_amt)
         }
     }
 }

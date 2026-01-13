@@ -4,7 +4,7 @@
 //! order them
 
 use circuit_types::Amount;
-use darkpool_types::balance::Balance;
+use darkpool_types::balance::DarkpoolBalance;
 use types_account::{
     account::{Account, OrderId},
     order::Order,

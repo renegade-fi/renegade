@@ -1,13 +1,15 @@
 //! Groups type derivations for secret share types
 
-use proc_macro2::TokenStream as TokenStream2;
+use itertools::Itertools;
+use proc_macro2::{Ident, Span, TokenStream as TokenStream2};
 use quote::ToTokens;
-use syn::{Attribute, ItemImpl, ItemStruct, Path, parse_quote};
-
-use crate::circuit_type::{
-    build_modified_struct_from_associated_types, ident_strip_suffix, ident_with_suffix, new_ident,
-    path_from_ident,
+use syn::{
+    Attribute, Field, Fields, FieldsNamed, ItemImpl, ItemStruct, Path, Type, TypePath, parse_quote,
+    punctuated::Punctuated,
+    token::{Brace, Comma},
 };
+
+use crate::circuit_type::{ident_strip_suffix, ident_with_suffix, new_ident, path_from_ident};
 
 use super::{
     FROM_SCALARS_METHOD_NAME, SCALAR_TYPE_IDENT, TO_SCALARS_METHOD_NAME, build_base_type_impl,
@@ -30,11 +32,23 @@ const SECRET_SHARE_VAR_TRAIT_NAME: &str = "SecretShareVarType";
 /// The suffix appended to secret share types
 const SHARE_SUFFIX: &str = "Share";
 
+/// The attribute name for share-type rkyv field attributes
+const SHARE_RKYV_ATTR: &str = "share_rkyv";
+
+// ----------------------
+// | Share Type Builder |
+// ----------------------
+
 /// Build the secret share types for the base type
-pub fn build_secret_share_types(base_type: &ItemStruct, mpc: bool, serde: bool) -> TokenStream2 {
+pub fn build_secret_share_types(
+    base_type: &ItemStruct,
+    mpc: bool,
+    serde: bool,
+    rkyv: bool,
+) -> TokenStream2 {
     // Implement `SecretShareBaseType`
     let mut res = build_secret_share_base_type_impl(base_type);
-    res.extend(build_secret_share_type(base_type, mpc, serde));
+    res.extend(build_secret_share_type(base_type, mpc, serde, rkyv));
 
     res
 }
@@ -64,21 +78,42 @@ fn build_secret_share_base_type_impl(base_type: &ItemStruct) -> TokenStream2 {
 }
 
 /// Build the secret share type
-fn build_secret_share_type(base_type: &ItemStruct, mpc: bool, serde: bool) -> TokenStream2 {
+fn build_secret_share_type(
+    base_type: &ItemStruct,
+    mpc: bool,
+    serde: bool,
+    rkyv: bool,
+) -> TokenStream2 {
     // Build the derived struct
     let new_name = ident_with_suffix(&base_type.ident.to_string(), SHARE_SUFFIX);
-    let derive: Attribute = parse_quote!(#[derive(Clone, Debug, Eq, PartialEq)]);
+
+    // Build struct-level attributes
+    let mut attributes = Vec::new();
+
+    // Derive attribute
+    let derive: Attribute = if rkyv {
+        parse_quote!(#[derive(Clone, Debug, Eq, PartialEq, rkyv::Archive, rkyv::Deserialize, rkyv::Serialize)])
+    } else {
+        parse_quote!(#[derive(Clone, Debug, Eq, PartialEq)])
+    };
+    attributes.push(derive);
+
+    // Add rkyv struct-level attribute if enabled
+    if rkyv {
+        attributes.push(parse_quote!(#[rkyv(derive(Debug))]));
+    }
 
     let base_type_trait = path_from_ident(&new_ident(SECRET_SHARE_BASE_TYPE_TRAIT_NAME));
     let associated_share_name = new_ident(SHARE_TYPE_ASSOCIATED_NAME);
 
-    let secret_share_type = build_modified_struct_from_associated_types(
+    let secret_share_type = build_share_struct_from_associated_types(
         base_type,
         new_name,
-        vec![derive],
+        attributes,
         base_type.generics.clone(),
         &base_type_trait,
         &path_from_ident(&associated_share_name),
+        rkyv,
     );
 
     // Implement addition between share types
@@ -202,4 +237,102 @@ fn build_share_var_impl(secret_share_type: &ItemStruct) -> TokenStream2 {
         }
     };
     impl_block.to_token_stream()
+}
+
+// ----------------------
+// | Share Rkyv Helpers |
+// ----------------------
+
+/// Returns whether an attribute is a `share_rkyv` attribute
+fn is_share_rkyv_attr(attr: &Attribute) -> bool {
+    attr.path.segments.iter().any(|seg| seg.ident == SHARE_RKYV_ATTR)
+}
+
+/// Extract `#[share_rkyv(...)]` attributes from a field and convert them to
+/// `#[rkyv(...)]` attributes for the share type
+fn extract_share_rkyv_attrs(field: &Field) -> Vec<Attribute> {
+    field
+        .attrs
+        .iter()
+        .filter(|attr| is_share_rkyv_attr(attr))
+        .map(|attr| {
+            // Convert share_rkyv(...) to rkyv(...)
+            let tokens = attr.tokens.clone();
+            parse_quote!(#[rkyv #tokens])
+        })
+        .collect()
+}
+
+/// Remove `#[share_rkyv(...)]` attributes from a struct
+///
+/// These attributes should not appear in the output base type
+pub fn remove_share_rkyv_attributes(base_type: &ItemStruct) -> ItemStruct {
+    let mut res = base_type.clone();
+    res.fields.iter_mut().for_each(|f| {
+        f.attrs.retain(|a| !is_share_rkyv_attr(a));
+    });
+    res
+}
+
+// -----------
+// | Helpers |
+// -----------
+
+/// Build a replica of the given struct with field types replaced by associated
+/// types, and optionally transform `#[share_rkyv(...)]` attributes to
+/// `#[rkyv(...)]`
+fn build_share_struct_from_associated_types(
+    base_type: &ItemStruct,
+    new_name: Ident,
+    attributes: Vec<Attribute>,
+    generics: syn::Generics,
+    type_derivation_trait_ident: &Path,
+    associated_type_ident: &Path,
+    include_share_rkyv_attrs: bool,
+) -> ItemStruct {
+    // Build the fields of the share struct
+    let new_fields = base_type
+        .fields
+        .iter()
+        .map(|f| {
+            let name = f.ident.clone();
+            let curr_type = f.ty.clone();
+
+            // Construct the fully-qualified path type expression
+            let base_trait = type_derivation_trait_ident.clone();
+            let associated = associated_type_ident.clone();
+            let type_path: TypePath = parse_quote!(
+                <#curr_type as #base_trait>::#associated
+            );
+
+            // Extract share_rkyv attributes and convert to rkyv attributes if enabled
+            let field_attrs =
+                if include_share_rkyv_attrs { extract_share_rkyv_attrs(f) } else { Vec::new() };
+
+            Field {
+                vis: f.vis.clone(),
+                attrs: field_attrs,
+                ident: name,
+                colon_token: f.colon_token,
+                ty: Type::Path(type_path),
+            }
+        })
+        .collect_vec();
+
+    let mut named = Punctuated::<Field, Comma>::new();
+    for field in new_fields.into_iter() {
+        named.push(field);
+    }
+
+    let named_fields = FieldsNamed { brace_token: Brace::default(), named };
+
+    ItemStruct {
+        attrs: attributes,
+        vis: base_type.vis.clone(),
+        struct_token: syn::Token![struct](Span::call_site()),
+        ident: new_name,
+        generics,
+        fields: Fields::Named(named_fields),
+        semi_token: None,
+    }
 }

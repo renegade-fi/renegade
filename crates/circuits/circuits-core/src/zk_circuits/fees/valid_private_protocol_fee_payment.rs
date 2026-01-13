@@ -10,7 +10,9 @@ use circuit_types::ser_embedded_scalar_field;
 use circuit_types::traits::{BaseType, CircuitBaseType, CircuitVarType};
 use circuit_types::{Commitment, Nullifier, PlonkCircuit};
 use constants::{EmbeddedScalarField, MERKLE_HEIGHT, Scalar, ScalarField};
-use darkpool_types::balance::{BalanceShareVar, DarkpoolStateBalance, DarkpoolStateBalanceVar};
+use darkpool_types::balance::{
+    DarkpoolBalanceShareVar, DarkpoolStateBalance, DarkpoolStateBalanceVar,
+};
 use darkpool_types::note::{NOTE_CIPHERTEXT_SIZE, NoteVar};
 use mpc_plonk::errors::PlonkError;
 use mpc_relation::{Variable, errors::CircuitError, traits::Circuit};
@@ -113,11 +115,11 @@ impl<const MERKLE_HEIGHT: usize> ValidPrivateProtocolFeePayment<MERKLE_HEIGHT> {
     /// Returns the new balance, the new private shares, and the new public
     /// shares.
     pub fn compute_post_payment_balance(
-        old_balance_private_shares: &BalanceShareVar,
+        old_balance_private_shares: &DarkpoolBalanceShareVar,
         statement: &ValidPrivateProtocolFeePaymentStatementVar,
         witness: &ValidPrivateProtocolFeePaymentWitnessVar<MERKLE_HEIGHT>,
         cs: &mut PlonkCircuit,
-    ) -> Result<(DarkpoolStateBalanceVar, BalanceShareVar), CircuitError> {
+    ) -> Result<(DarkpoolStateBalanceVar, DarkpoolBalanceShareVar), CircuitError> {
         // Update the balance
         let mut new_balance = witness.old_balance.clone();
         let mut new_balance_private_shares = old_balance_private_shares.clone();
@@ -230,7 +232,7 @@ pub mod test_helpers {
     use alloy_primitives::Address;
     use constants::Scalar;
     use darkpool_types::{
-        balance::{Balance, DarkpoolStateBalance},
+        balance::{DarkpoolBalance, DarkpoolStateBalance},
         note::Note,
     };
     use rand::thread_rng;
@@ -272,7 +274,7 @@ pub mod test_helpers {
         let protocol_encryption_key = random_elgamal_encryption_key();
 
         // The address to which protocol fees are paid
-        let old_balance = create_random_state_wrapper(Balance {
+        let old_balance = create_random_state_wrapper(DarkpoolBalance {
             mint: random_address(),
             relayer_fee_recipient: Address::ZERO,
             owner: random_address(),
@@ -323,7 +325,7 @@ pub mod test_helpers {
     }
 
     /// Create a note for the given balance's protocol fee payment
-    fn create_note(balance: &Balance, protocol_fee_receiver: Address) -> Note {
+    fn create_note(balance: &DarkpoolBalance, protocol_fee_receiver: Address) -> Note {
         let mut rng = thread_rng();
         let blinder = Scalar::random(&mut rng);
         Note {

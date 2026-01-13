@@ -11,7 +11,7 @@ use circuit_types::{
 };
 use constants::{Scalar, ScalarField};
 use darkpool_types::{
-    balance::{Balance, PostMatchBalanceShare},
+    balance::{DarkpoolBalance, PostMatchBalanceShare},
     fee::FeeRatesVar,
     intent::Intent,
     settlement_obligation::SettlementObligation,
@@ -151,13 +151,13 @@ pub struct IntentAndBalancePrivateSettlementWitness {
     pub pre_settlement_amount_public_share0: Scalar,
     /// The first party's input balance
     #[link_groups = "intent_and_balance_settlement_party0"]
-    pub input_balance0: Balance,
+    pub input_balance0: DarkpoolBalance,
     /// The pre-update public shares of the first party's input balance
     #[link_groups = "intent_and_balance_settlement_party0"]
     pub pre_settlement_in_balance_shares0: PostMatchBalanceShare,
     /// The first party's output balance
     #[link_groups = "output_balance_settlement_party0"]
-    pub output_balance0: Balance,
+    pub output_balance0: DarkpoolBalance,
     /// The pre-update public shares of the first party's output balance
     #[link_groups = "output_balance_settlement_party0"]
     pub pre_settlement_out_balance_shares0: PostMatchBalanceShare,
@@ -173,13 +173,13 @@ pub struct IntentAndBalancePrivateSettlementWitness {
     pub pre_settlement_amount_public_share1: Scalar,
     /// The second party's input balance
     #[link_groups = "intent_and_balance_settlement_party1"]
-    pub input_balance1: Balance,
+    pub input_balance1: DarkpoolBalance,
     /// The pre-update public shares of the second party's input balance
     #[link_groups = "intent_and_balance_settlement_party1"]
     pub pre_settlement_in_balance_shares1: PostMatchBalanceShare,
     /// The second party's output balance
     #[link_groups = "output_balance_settlement_party1"]
-    pub output_balance1: Balance,
+    pub output_balance1: DarkpoolBalance,
     /// The pre-update public shares of the second party's output balance
     #[link_groups = "output_balance_settlement_party1"]
     pub pre_settlement_out_balance_shares1: PostMatchBalanceShare,
@@ -275,7 +275,7 @@ pub mod test_helpers {
     use circuit_types::max_amount;
     use constants::Scalar;
     use darkpool_types::{
-        balance::{Balance, PostMatchBalanceShare},
+        balance::{DarkpoolBalance, PostMatchBalanceShare},
         fee::FeeRates,
         intent::Intent,
         settlement_obligation::SettlementObligation,
@@ -444,10 +444,10 @@ pub mod test_helpers {
     }
 
     /// Create a send balance for a given obligation
-    fn create_send_balance(owner: Address, obligation: &SettlementObligation) -> Balance {
+    fn create_send_balance(owner: Address, obligation: &SettlementObligation) -> DarkpoolBalance {
         let mut rng = thread_rng();
         let amount = rng.gen_range(obligation.amount_in..=max_amount());
-        Balance {
+        DarkpoolBalance {
             mint: obligation.input_token,
             owner,
             relayer_fee_recipient: random_address(),
@@ -459,11 +459,14 @@ pub mod test_helpers {
     }
 
     /// Create a receive balance for a given obligation
-    fn create_receive_balance(owner: Address, obligation: &SettlementObligation) -> Balance {
+    fn create_receive_balance(
+        owner: Address,
+        obligation: &SettlementObligation,
+    ) -> DarkpoolBalance {
         let mut rng = thread_rng();
         let max_existing_balance = max_amount() - obligation.amount_out;
         let amount = rng.gen_range(0..=max_existing_balance);
-        Balance {
+        DarkpoolBalance {
             mint: obligation.output_token,
             owner,
             relayer_fee_recipient: random_address(),

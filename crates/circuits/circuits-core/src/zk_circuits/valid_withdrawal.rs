@@ -9,7 +9,7 @@ use circuit_types::traits::{BaseType, CircuitBaseType, CircuitVarType};
 use circuit_types::{AMOUNT_BITS, Commitment, Nullifier, PlonkCircuit};
 use constants::{MERKLE_HEIGHT, Scalar, ScalarField};
 use darkpool_types::balance::{
-    BalanceShareVar, BalanceVar, DarkpoolStateBalance, DarkpoolStateBalanceVar,
+    DarkpoolBalanceShareVar, DarkpoolBalanceVar, DarkpoolStateBalance, DarkpoolStateBalanceVar,
 };
 use darkpool_types::withdrawal::Withdrawal;
 use mpc_plonk::errors::PlonkError;
@@ -104,7 +104,7 @@ impl<const MERKLE_HEIGHT: usize> ValidWithdrawal<MERKLE_HEIGHT> {
     ///
     /// We require that all fees be paid before a withdrawal is executed
     fn verify_no_outstanding_fees(
-        old_balance: &BalanceVar,
+        old_balance: &DarkpoolBalanceVar,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
         let zero = cs.zero();
@@ -116,11 +116,11 @@ impl<const MERKLE_HEIGHT: usize> ValidWithdrawal<MERKLE_HEIGHT> {
     ///
     /// Returns the new balance, private shares, and public shares
     fn build_and_verify_new_balance(
-        old_balance_private_shares: &BalanceShareVar,
+        old_balance_private_shares: &DarkpoolBalanceShareVar,
         statement: &ValidWithdrawalStatementVar,
         witness: &ValidWithdrawalWitnessVar<MERKLE_HEIGHT>,
         cs: &mut PlonkCircuit,
-    ) -> Result<(DarkpoolStateBalanceVar, BalanceShareVar), CircuitError> {
+    ) -> Result<(DarkpoolStateBalanceVar, DarkpoolBalanceShareVar), CircuitError> {
         let old_balance = &witness.old_balance;
         let mut new_balance = old_balance.clone();
 
@@ -211,7 +211,7 @@ impl<const MERKLE_HEIGHT: usize> SingleProverCircuit for ValidWithdrawal<MERKLE_
 pub mod test_helpers {
     use constants::Scalar;
     use darkpool_types::{
-        balance::{Balance, DarkpoolStateBalance},
+        balance::{DarkpoolBalance, DarkpoolStateBalance},
         withdrawal::Withdrawal,
     };
 
@@ -254,7 +254,7 @@ pub mod test_helpers {
     ) -> (SizedValidWithdrawalWitness, ValidWithdrawalStatement) {
         // Create an old balance matching the withdrawal's token and owner
         // Ensure the balance amount is at least as large as the withdrawal amount
-        let old_balance = create_random_state_wrapper(Balance {
+        let old_balance = create_random_state_wrapper(DarkpoolBalance {
             mint: withdrawal.token,
             owner: withdrawal.to,
             relayer_fee_recipient: random_address(),
@@ -317,7 +317,7 @@ mod test {
     use super::*;
     use circuit_types::{max_amount, traits::SingleProverCircuit};
     use constants::MERKLE_HEIGHT;
-    use darkpool_types::balance::Balance;
+    use darkpool_types::balance::DarkpoolBalance;
     use itertools::Itertools;
     use rand::{Rng, thread_rng};
 
@@ -347,7 +347,7 @@ mod test {
     fn test_valid_full_withdrawal() {
         // Create a balance with the exact withdrawal amount
         let withdrawal = random_withdrawal();
-        let balance = create_random_state_wrapper(Balance {
+        let balance = create_random_state_wrapper(DarkpoolBalance {
             mint: withdrawal.token,
             owner: withdrawal.to,
             relayer_fee_recipient: random_address(),
@@ -436,7 +436,7 @@ mod test {
     fn test_invalid_withdrawal_outstanding_fees() {
         let mut rng = thread_rng();
         let withdrawal = random_withdrawal();
-        let mut balance = create_random_state_wrapper(Balance {
+        let mut balance = create_random_state_wrapper(DarkpoolBalance {
             mint: withdrawal.token,
             owner: withdrawal.to,
             relayer_fee_recipient: random_address(),

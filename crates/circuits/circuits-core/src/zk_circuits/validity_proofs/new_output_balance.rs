@@ -19,7 +19,7 @@ use circuit_types::{
 use constants::{MERKLE_HEIGHT, Scalar, ScalarField};
 use darkpool_types::{
     balance::{
-        Balance, BalanceShareVar, DarkpoolStateBalance, DarkpoolStateBalanceVar,
+        DarkpoolBalance, DarkpoolBalanceShareVar, DarkpoolStateBalance, DarkpoolStateBalanceVar,
         PostMatchBalanceShare, PreMatchBalanceShare,
     },
     state_wrapper::PartialCommitment,
@@ -53,7 +53,7 @@ use crate::{
 ///
 /// This is the set of shares that will not change after the match.
 pub const NEW_BALANCE_PARTIAL_COMMITMENT_SIZE: usize =
-    Balance::NUM_SCALARS - PostMatchBalanceShare::NUM_SCALARS;
+    DarkpoolBalance::NUM_SCALARS - PostMatchBalanceShare::NUM_SCALARS;
 
 // ----------------------
 // | Circuit Definition |
@@ -117,7 +117,7 @@ impl<const MERKLE_HEIGHT: usize> NewOutputBalanceValidityCircuit<MERKLE_HEIGHT> 
         witness: &NewOutputBalanceValidityWitnessVar<MERKLE_HEIGHT>,
         statement: &NewOutputBalanceValidityStatementVar,
         cs: &mut PlonkCircuit,
-    ) -> Result<BalanceShareVar, CircuitError> {
+    ) -> Result<DarkpoolBalanceShareVar, CircuitError> {
         let balance = &witness.balance;
         let public_share = &witness.new_balance.public_share;
 
@@ -247,7 +247,7 @@ pub struct NewOutputBalanceValidityWitness<const MERKLE_HEIGHT: usize> {
     /// We duplicate this value here to proof-link the balance into the
     /// settlement circuit.
     #[link_groups = "output_balance_settlement_party0,output_balance_settlement_party1"]
-    pub balance: Balance,
+    pub balance: DarkpoolBalance,
     /// The balance public shares which are updated in the settlement circuit
     ///
     /// These values are proof-linked into the settlement circuit
@@ -382,7 +382,7 @@ pub mod test_helpers {
     /// The balance must be zeroed (amount = 0, fees = 0) to satisfy the circuit
     /// constraints
     pub fn create_witness_statement_with_balance<const MERKLE_HEIGHT: usize>(
-        mut balance_inner: Balance,
+        mut balance_inner: DarkpoolBalance,
     ) -> (NewOutputBalanceValidityWitness<MERKLE_HEIGHT>, NewOutputBalanceValidityStatement) {
         let (private_key, public_key) = random_schnorr_keypair();
 

@@ -17,5 +17,5 @@ pub mod withdrawal;
 #[cfg(feature = "rkyv")]
 pub mod rkyv_remotes;
 
-#[cfg(feature = "test_helpers")]
+#[cfg(any(test, feature = "test_helpers"))]
 pub mod fuzzing;

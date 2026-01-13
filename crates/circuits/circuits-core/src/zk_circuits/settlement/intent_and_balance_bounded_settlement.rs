@@ -17,7 +17,7 @@ use circuit_types::{
 };
 use constants::{Scalar, ScalarField};
 use darkpool_types::{
-    balance::{Balance, PostMatchBalanceShare},
+    balance::{DarkpoolBalance, PostMatchBalanceShare},
     bounded_match_result::BoundedMatchResult,
     intent::Intent,
 };
@@ -109,7 +109,7 @@ pub struct IntentAndBalanceBoundedSettlementWitness {
     /// This value is proof-linked from the `INTENT AND BALANCE VALIDITY`
     /// circuit
     #[link_groups = "intent_and_balance_settlement_party0"]
-    pub in_balance: Balance,
+    pub in_balance: DarkpoolBalance,
     /// The balance public shares which are updated in the settlement circuit
     ///
     /// This value is proof-linked from the `INTENT AND BALANCE VALIDITY`
@@ -121,7 +121,7 @@ pub struct IntentAndBalanceBoundedSettlementWitness {
     /// This value is proof-linked from the `INTENT AND BALANCE VALIDITY`
     /// circuit
     #[link_groups = "output_balance_settlement_party0"]
-    pub out_balance: Balance,
+    pub out_balance: DarkpoolBalance,
     /// The balance public shares which are updated in the settlement circuit
     /// for the output balance
     ///
@@ -227,7 +227,7 @@ pub mod test_helpers {
     use alloy_primitives::Address;
     use circuit_types::max_amount;
     use darkpool_types::{
-        balance::Balance, bounded_match_result::BoundedMatchResult, intent::Intent,
+        balance::DarkpoolBalance, bounded_match_result::BoundedMatchResult, intent::Intent,
     };
     use rand::{Rng, thread_rng};
 
@@ -278,7 +278,7 @@ pub mod test_helpers {
     /// Create a witness and statement with the given intent and balance
     pub fn create_witness_statement_with_intent_and_balance(
         intent: &Intent,
-        balance: &Balance,
+        balance: &DarkpoolBalance,
     ) -> (IntentAndBalanceBoundedSettlementWitness, IntentAndBalanceBoundedSettlementStatement)
     {
         let bounded_match_result = create_bounded_match_result_with_balance(intent, balance.amount);
@@ -294,7 +294,7 @@ pub mod test_helpers {
     /// match result
     pub fn create_witness_statement_with_intent_balance_and_bounded_match_result(
         intent: &Intent,
-        balance: &Balance,
+        balance: &DarkpoolBalance,
         bounded_match_result: BoundedMatchResult,
     ) -> (IntentAndBalanceBoundedSettlementWitness, IntentAndBalanceBoundedSettlementStatement)
     {
@@ -331,14 +331,14 @@ pub mod test_helpers {
     pub fn create_receive_balance(
         owner: Address,
         bounded_match_result: &BoundedMatchResult,
-    ) -> Balance {
+    ) -> DarkpoolBalance {
         let mut rng = thread_rng();
         // Compute the maximum output amount based on price and max input amount
         let max_output = compute_max_amount_out(bounded_match_result);
         let max_existing_balance = max_amount() - max_output;
         let amount = rng.gen_range(0..=max_existing_balance);
 
-        Balance {
+        DarkpoolBalance {
             mint: bounded_match_result.internal_party_output_token,
             owner,
             relayer_fee_recipient: random_address(),
@@ -362,7 +362,7 @@ mod test {
         zk_circuits::settlement::intent_and_balance_bounded_settlement::test_helpers,
     };
     use circuit_types::{max_amount, traits::SingleProverCircuit};
-    use darkpool_types::balance::PostMatchBalanceShare;
+    use darkpool_types::balance::{DarkpoolBalance, PostMatchBalanceShare};
     use rand::{Rng, thread_rng};
 
     /// A helper to print the number of constraints in the circuit

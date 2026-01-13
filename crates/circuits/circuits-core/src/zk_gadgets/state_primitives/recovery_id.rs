@@ -1,10 +1,7 @@
 //! Gadget for computing recovery identifiers of state elements
 
-use circuit_types::{
-    PlonkCircuit,
-    traits::{CircuitBaseType, SecretShareBaseType},
-};
-use darkpool_types::state_wrapper::StateWrapperVar;
+use circuit_types::PlonkCircuit;
+use darkpool_types::state_wrapper::{StateWrapperBound, StateWrapperShareBound, StateWrapperVar};
 use mpc_relation::{Variable, errors::CircuitError};
 
 use crate::zk_gadgets::state_primitives::csprng::CSPRNGGadget;
@@ -22,8 +19,8 @@ impl RecoveryIdGadget {
         cs: &mut PlonkCircuit,
     ) -> Result<Variable, CircuitError>
     where
-        V: CircuitBaseType + SecretShareBaseType,
-        V::ShareType: CircuitBaseType,
+        V: StateWrapperBound,
+        V::ShareType: StateWrapperShareBound,
     {
         CSPRNGGadget::next(&mut element.recovery_stream, cs)
     }
