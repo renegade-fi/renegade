@@ -8,9 +8,9 @@ use alloy_primitives::Address;
 use circuit_macros::circuit_type;
 use circuit_types::{
     Commitment, PlonkCircuit,
-    csprng::PoseidonCSPRNG,
     traits::{BaseType, CircuitBaseType, CircuitVarType},
 };
+use darkpool_types::csprng::PoseidonCSPRNG;
 use constants::{Scalar, ScalarField};
 use darkpool_types::intent::{DarkpoolStateIntentVar, Intent, IntentShare};
 use mpc_plonk::errors::PlonkError;

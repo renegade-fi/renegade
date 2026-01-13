@@ -2,9 +2,9 @@
 
 use circuit_types::{
     PlonkCircuit,
-    csprng::PoseidonCSPRNGVar,
     traits::{CircuitVarType, SecretShareVarType},
 };
+use darkpool_types::csprng::PoseidonCSPRNGVar;
 use itertools::Itertools;
 use mpc_relation::traits::Circuit;
 use mpc_relation::{Variable, errors::CircuitError};

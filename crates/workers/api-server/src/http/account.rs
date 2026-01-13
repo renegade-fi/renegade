@@ -17,7 +17,7 @@ use types_tasks::NewAccountTaskDescriptor;
 use crate::{
     error::{ApiServerError, bad_request, not_found},
     http::helpers::append_task,
-    param_parsing::parse_account_id_from_params,
+    param_parsing::{parse_account_id_from_params, parse_scalar_from_string},
     router::{QueryParams, TypedHandler, UrlParams},
 };
 
@@ -93,7 +93,8 @@ impl TypedHandler for CreateAccountHandler {
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
         let auth_key = HmacKey::from_hex_string(&req.auth_hmac_key).map_err(bad_request)?;
-        let keychain = KeyChain::new(PrivateKeyChain::new(auth_key));
+        let master_view_seed = parse_scalar_from_string(&req.master_view_seed)?;
+        let keychain = KeyChain::new(PrivateKeyChain::new(auth_key, master_view_seed));
         let task = NewAccountTaskDescriptor::new(req.account_id, keychain);
         append_task(task.into(), &self.state).await?;
 

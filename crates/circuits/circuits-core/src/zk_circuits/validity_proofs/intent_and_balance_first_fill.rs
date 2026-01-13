@@ -11,10 +11,10 @@ use circuit_macros::circuit_type;
 use circuit_types::traits::{BaseType, CircuitBaseType, CircuitVarType};
 use circuit_types::{
     Commitment, Nullifier, PlonkCircuit,
-    csprng::PoseidonCSPRNG,
     merkle::{MerkleOpening, MerkleRoot},
     schnorr::SchnorrSignature,
 };
+use darkpool_types::csprng::PoseidonCSPRNG;
 use constants::{MERKLE_HEIGHT, Scalar, ScalarField};
 use darkpool_types::{
     balance::{

@@ -7,10 +7,10 @@
 use circuit_macros::circuit_type;
 use circuit_types::{
     Commitment, PlonkCircuit,
-    csprng::PoseidonCSPRNG,
     traits::{BaseType, CircuitBaseType, CircuitVarType},
 };
 use constants::{Scalar, ScalarField};
+use darkpool_types::csprng::PoseidonCSPRNG;
 use darkpool_types::{
     balance::{Balance, BalanceShare, BalanceShareVar, BalanceVar, DarkpoolStateBalanceVar},
     deposit::{Deposit, DepositVar},

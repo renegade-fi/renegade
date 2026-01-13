@@ -6,15 +6,21 @@ use circuit_macros::circuit_type;
 use crypto::hash::compute_poseidon_hash;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "proof-system-types")]
 use std::ops::Add;
 
 use constants::Scalar;
 
-use crate::traits::{BaseType, SecretShareBaseType};
+use circuit_types::traits::{BaseType, SecretShareBaseType};
+
+#[cfg(feature = "rkyv")]
+use crate::rkyv_remotes::ScalarDef;
+#[cfg(feature = "rkyv")]
+use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
 
 #[cfg(feature = "proof-system-types")]
 use {
-    crate::traits::{CircuitBaseType, CircuitVarType, SecretShareType, SecretShareVarType},
+    circuit_types::traits::{CircuitBaseType, CircuitVarType, SecretShareType, SecretShareVarType},
     constants::ScalarField,
     mpc_relation::{Variable, traits::Circuit},
 };
@@ -22,9 +28,12 @@ use {
 /// A CSPRNG's state
 #[cfg_attr(feature = "proof-system-types", circuit_type(serde, singleprover_circuit, secret_share))]
 #[cfg_attr(not(feature = "proof-system-types"), circuit_type(serde))]
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "rkyv", derive(Archive, RkyvDeserialize, RkyvSerialize))]
+#[cfg_attr(feature = "rkyv", rkyv(derive(Debug)))]
 pub struct PoseidonCSPRNG {
     /// The seed of the CSPRNG
+    #[cfg_attr(feature = "rkyv", rkyv(with = ScalarDef))]
     pub seed: Scalar,
     /// The index into the CSPRNG's stream
     pub index: u64,
