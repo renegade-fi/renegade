@@ -2,8 +2,8 @@
 //!
 //! Separated out to aid discoverability on implementations
 
-// pub mod derivation;
 pub mod deposit;
+pub mod derivation;
 pub mod error;
 pub mod keychain;
 #[cfg(feature = "mocks")]
@@ -15,7 +15,7 @@ use std::collections::HashMap;
 
 use alloy::primitives::Address;
 use circuit_types::{Amount, max_amount};
-use darkpool_types::balance::Balance;
+use darkpool_types::{balance::Balance, csprng::PoseidonCSPRNG};
 use serde::{Deserialize, Serialize};
 use types_core::AccountId;
 use uuid::Uuid;
@@ -108,6 +108,22 @@ impl Account {
 
         bal.amount += amount;
         Ok(())
+    }
+}
+
+// ------------
+// | Keychain |
+// ------------
+
+impl Account {
+    /// Sample a new recovery id stream seed from the master keychain
+    pub fn sample_recovery_id_stream_seed(&mut self) -> PoseidonCSPRNG {
+        self.keychain.secret_keys.sample_recovery_id_stream_seed()
+    }
+
+    /// Sample a new share stream seed from the master keychain
+    pub fn sample_share_stream_seed(&mut self) -> PoseidonCSPRNG {
+        self.keychain.secret_keys.sample_share_stream_seed()
     }
 }
 

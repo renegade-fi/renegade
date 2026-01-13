@@ -5,6 +5,7 @@
 
 pub mod balance;
 pub mod bounded_match_result;
+pub mod csprng;
 pub mod deposit;
 pub mod fee;
 pub mod intent;

@@ -14,3 +14,10 @@ pub mod node_startup;
 // pub mod update_wallet;
 pub mod create_new_account;
 pub mod deposit;
+
+// ------------------
+// | Error Messages |
+// ------------------
+
+/// Error message emitted when an account cannot be found
+pub(crate) const ERR_ACCOUNT_NOT_FOUND: &str = "account not found";

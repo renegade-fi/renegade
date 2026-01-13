@@ -1,6 +1,7 @@
 //! Gadgets for operating on CSPRNGs
 
-use circuit_types::{PlonkCircuit, csprng::PoseidonCSPRNGVar};
+use circuit_types::PlonkCircuit;
+use darkpool_types::csprng::PoseidonCSPRNGVar;
 use mpc_relation::traits::Circuit;
 use mpc_relation::{Variable, errors::CircuitError};
 
@@ -50,7 +51,8 @@ impl CSPRNGGadget {
 
 #[cfg(test)]
 mod test {
-    use circuit_types::{PlonkCircuit, csprng::PoseidonCSPRNG, traits::CircuitBaseType};
+    use circuit_types::{PlonkCircuit, traits::CircuitBaseType};
+    use darkpool_types::csprng::PoseidonCSPRNG;
     use constants::Scalar;
     use eyre::Result;
     use mpc_relation::traits::Circuit;

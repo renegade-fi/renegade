@@ -18,10 +18,9 @@ use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 
 use circuit_macros::circuit_type;
-use circuit_types::{
-    primitives::csprng::PoseidonCSPRNG,
-    traits::{BaseType, SecretShareBaseType, SecretShareType},
-};
+use circuit_types::traits::{BaseType, SecretShareBaseType, SecretShareType};
+
+use crate::csprng::PoseidonCSPRNG;
 use constants::Scalar;
 
 #[cfg(feature = "proof-system-types")]

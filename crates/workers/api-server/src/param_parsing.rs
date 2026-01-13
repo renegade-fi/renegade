@@ -6,8 +6,7 @@
 
 use alloy::primitives::Address;
 use circuit_types::Amount;
-use num_bigint::BigUint;
-use num_traits::Num;
+use constants::Scalar;
 use types_account::MatchingPoolName;
 use types_core::{AccountId, Token};
 use types_gossip::{ClusterId, WrappedPeerId};
@@ -78,6 +77,11 @@ pub(crate) fn parse_address_from_hex_string(hex: &str) -> Result<Address, ApiSer
 /// Parse an amount from a string
 pub(crate) fn parse_amount_from_string(amount: &str) -> Result<Amount, ApiServerError> {
     amount.parse().map_err(|e| bad_request(format!("invalid amount: {e}")))
+}
+
+/// Parse a scalar from a string
+pub(crate) fn parse_scalar_from_string(scalar_str: &str) -> Result<Scalar, ApiServerError> {
+    Scalar::from_hex_string(scalar_str).map_err(|e| bad_request(format!("invalid scalar: {e}")))
 }
 
 // --- Url Params --- //

@@ -33,8 +33,10 @@ pub fn mock_intent() -> Intent {
 
 /// Create a mock keychain
 pub fn mock_keychain() -> KeyChain {
+    let mut rng = thread_rng();
     let hmac_key = HmacKey::random();
-    let private_keychain = PrivateKeyChain::new(hmac_key);
+    let master_view_seed = Scalar::random(&mut rng);
+    let private_keychain = PrivateKeyChain::new(hmac_key, master_view_seed);
     KeyChain::new(private_keychain)
 }
 

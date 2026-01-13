@@ -14,13 +14,14 @@ use crate::{
 use alloy_primitives::Address;
 use circuit_types::{
     AMOUNT_BITS, Amount,
-    csprng::PoseidonCSPRNG,
     elgamal::{DecryptionKey, EncryptionKey},
     fixed_point::FixedPoint,
     max_amount,
     schnorr::{SchnorrPrivateKey, SchnorrPublicKey},
     traits::{BaseType, CircuitBaseType, SecretShareBaseType},
 };
+
+use crate::csprng::PoseidonCSPRNG;
 use constants::{MAX_RELAYER_FEE_RATE, Scalar};
 use crypto::fields::scalar_to_u128;
 use itertools::Itertools;
