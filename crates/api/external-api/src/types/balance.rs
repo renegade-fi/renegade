@@ -1,9 +1,11 @@
 //! API types for balances
 
-use darkpool_types::balance::DarkpoolBalance;
+#[cfg(feature = "full-api")]
+use darkpool_types::balance::DarkpoolBalanceShare;
 #[cfg(feature = "full-api")]
 use renegade_solidity_abi::v2::IDarkpoolV2::DepositAuth;
 use serde::{Deserialize, Serialize};
+use types_account::balance::Balance;
 use util::hex::address_to_hex_string;
 
 use super::crypto_primitives::{ApiPoseidonCSPRNG, ApiSchnorrPublicKey, ApiSchnorrPublicKeyShare};
@@ -37,34 +39,36 @@ pub struct ApiBalance {
     pub public_shares: ApiBalanceShare,
 }
 
-impl From<DarkpoolBalance> for ApiBalance {
-    fn from(bal: DarkpoolBalance) -> Self {
+#[cfg(feature = "full-api")]
+impl From<Balance> for ApiBalance {
+    fn from(bal: Balance) -> Self {
+        let inner = bal.inner();
+        let elt = &bal.state_wrapper;
         Self {
-            mint: address_to_hex_string(&bal.mint),
-            owner: address_to_hex_string(&bal.owner),
-            relayer_fee_recipient: address_to_hex_string(&bal.relayer_fee_recipient),
-            authority: bal.authority.into(),
-            relayer_fee_balance: bal.relayer_fee_balance.to_string(),
-            protocol_fee_balance: bal.protocol_fee_balance.to_string(),
-            amount: bal.amount.to_string(),
-            // TODO: Add the correct CSPRNG state
-            recovery_stream: ApiPoseidonCSPRNG { seed: "".to_string(), index: 0 },
-            share_stream: ApiPoseidonCSPRNG { seed: "".to_string(), index: 0 },
-            public_shares: dummy_api_balance_share(),
+            mint: address_to_hex_string(&inner.mint),
+            owner: address_to_hex_string(&inner.owner),
+            relayer_fee_recipient: address_to_hex_string(&inner.relayer_fee_recipient),
+            authority: inner.authority.into(),
+            relayer_fee_balance: inner.relayer_fee_balance.to_string(),
+            protocol_fee_balance: inner.protocol_fee_balance.to_string(),
+            amount: inner.amount.to_string(),
+            recovery_stream: elt.recovery_stream.clone().into(),
+            share_stream: elt.share_stream.clone().into(),
+            public_shares: elt.public_share.clone().into(),
         }
     }
 }
 
-/// The public shares of a balance
+/// Public shares of a balance
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ApiBalanceShare {
-    /// The mint share
+    /// The token mint address share
     pub mint: String,
-    /// The owner share
+    /// The owner address share
     pub owner: String,
-    /// The relayer fee recipient share
+    /// The relayer fee recipient address share
     pub relayer_fee_recipient: String,
-    /// The authority share
+    /// The authority public key share
     pub authority: ApiSchnorrPublicKeyShare,
     /// The relayer fee balance share
     pub relayer_fee_balance: String,
@@ -74,16 +78,18 @@ pub struct ApiBalanceShare {
     pub amount: String,
 }
 
-// TODO: Remove this
-fn dummy_api_balance_share() -> ApiBalanceShare {
-    ApiBalanceShare {
-        mint: "".to_string(),
-        owner: "".to_string(),
-        relayer_fee_recipient: "".to_string(),
-        authority: ApiSchnorrPublicKeyShare { x: "".to_string(), y: "".to_string() },
-        relayer_fee_balance: "".to_string(),
-        protocol_fee_balance: "".to_string(),
-        amount: "".to_string(),
+#[cfg(feature = "full-api")]
+impl From<DarkpoolBalanceShare> for ApiBalanceShare {
+    fn from(share: DarkpoolBalanceShare) -> Self {
+        Self {
+            mint: share.mint.to_string(),
+            owner: share.owner.to_string(),
+            relayer_fee_recipient: share.relayer_fee_recipient.to_string(),
+            authority: share.authority.into(),
+            relayer_fee_balance: share.relayer_fee_balance.to_string(),
+            protocol_fee_balance: share.protocol_fee_balance.to_string(),
+            amount: share.amount.to_string(),
+        }
     }
 }
 

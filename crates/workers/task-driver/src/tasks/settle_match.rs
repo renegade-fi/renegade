@@ -25,7 +25,7 @@ use serde::Serialize;
 use state::error::StateError;
 use tracing::instrument;
 
-use crate::task_state::StateWrapper;
+use crate::task_state::TaskStateWrapper;
 use crate::traits::{Descriptor, Task, TaskContext, TaskError, TaskState};
 use crate::utils::order_states::{record_order_fill, transition_order_settling};
 use crate::utils::{
@@ -74,9 +74,9 @@ impl TaskState for SettleMatchTaskState {
     }
 }
 
-impl From<SettleMatchTaskState> for StateWrapper {
+impl From<SettleMatchTaskState> for TaskStateWrapper {
     fn from(state: SettleMatchTaskState) -> Self {
-        StateWrapper::SettleMatch(state)
+        TaskStateWrapper::SettleMatch(state)
     }
 }
 

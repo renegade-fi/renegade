@@ -25,7 +25,7 @@ use tracing::instrument;
 use util::{err_str, on_chain::get_protocol_pubkey};
 
 use crate::{
-    task_state::StateWrapper,
+    task_state::TaskStateWrapper,
     traits::{Descriptor, Task, TaskContext, TaskError, TaskState},
     utils::{enqueue_proof_job, merkle_path::find_merkle_path_with_tx, proofs::update_wallet_proofs},
 };
@@ -99,9 +99,9 @@ impl FromStr for PayOfflineFeeTaskState {
     }
 }
 
-impl From<PayOfflineFeeTaskState> for StateWrapper {
+impl From<PayOfflineFeeTaskState> for TaskStateWrapper {
     fn from(value: PayOfflineFeeTaskState) -> Self {
-        StateWrapper::PayOfflineFee(value)
+        TaskStateWrapper::PayOfflineFee(value)
     }
 }
 

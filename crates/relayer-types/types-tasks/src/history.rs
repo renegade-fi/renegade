@@ -61,6 +61,16 @@ pub enum HistoricalTaskDescription {
         /// The amount that was deposited
         amount: Amount,
     },
+    /// A balance was created
+    CreateBalance {
+        /// The account ID that created the balance
+        account_id: AccountId,
+        /// The token for the balance
+        #[cfg_attr(feature = "rkyv", rkyv(with = AddressDef))]
+        token: Address,
+        /// The amount for the balance
+        amount: Amount,
+    },
 }
 
 impl HistoricalTaskDescription {
@@ -69,6 +79,11 @@ impl HistoricalTaskDescription {
         match desc {
             TaskDescriptor::NewAccount(_) => Some(Self::NewAccount),
             TaskDescriptor::Deposit(desc) => Some(Self::Deposit {
+                account_id: desc.account_id,
+                token: desc.token,
+                amount: desc.amount,
+            }),
+            TaskDescriptor::CreateBalance(desc) => Some(Self::CreateBalance {
                 account_id: desc.account_id,
                 token: desc.token,
                 amount: desc.amount,

@@ -39,9 +39,8 @@ const LOCAL_RELAYER_FEE_KEY: &str = "local-relayer-fee-key";
 const MAX_RELAYER_FEE_KEY: &str = "max-relayer-fee";
 /// The key for the local relayer's default match fee in the node metadata table
 const DEFAULT_RELAYER_FEE_KEY: &str = "default-relayer-fee";
-/// The key for the local relayer's external fee address in the node metadata
-/// table
-const EXTERNAL_FEE_ADDR_KEY: &str = "external-fee-addr";
+/// The key for the local relayer's fee address in the node metadata table
+const RELAYER_FEE_ADDR_KEY: &str = "relayer-fee-addr";
 /// The key for the local relayer's historical state enabled flag in the node
 /// metadata table
 const HISTORICAL_STATE_ENABLED_KEY: &str = "historical-state-enabled";
@@ -144,10 +143,10 @@ impl<T: TransactionKind> StateTxn<'_, T> {
             .deserialize_with()
     }
 
-    /// Get the local relayer's external fee address
-    pub fn get_external_fee_addr(&self) -> Result<Option<Address>, StorageError> {
+    /// Get the local relayer's fee address
+    pub fn get_relayer_fee_addr(&self) -> Result<Option<Address>, StorageError> {
         self.inner()
-            .read::<_, WithAddress>(NODE_METADATA_TABLE, &EXTERNAL_FEE_ADDR_KEY.to_string())?
+            .read::<_, WithAddress>(NODE_METADATA_TABLE, &RELAYER_FEE_ADDR_KEY.to_string())?
             .map(|a| a.deserialize_with())
             .transpose()
     }
@@ -214,10 +213,10 @@ impl StateTxn<'_, RW> {
         self.inner().write(NODE_METADATA_TABLE, &DEFAULT_RELAYER_FEE_KEY.to_string(), wrapped)
     }
 
-    /// Set the local relayer's external fee address
-    pub fn set_external_fee_addr(&self, addr: &Address) -> Result<(), StorageError> {
+    /// Set the local relayer's fee address
+    pub fn set_relayer_fee_addr(&self, addr: &Address) -> Result<(), StorageError> {
         let wrapped = WithAddress::cast(addr);
-        self.inner().write(NODE_METADATA_TABLE, &EXTERNAL_FEE_ADDR_KEY.to_string(), wrapped)
+        self.inner().write(NODE_METADATA_TABLE, &RELAYER_FEE_ADDR_KEY.to_string(), wrapped)
     }
 
     /// Set the local relayer's historical state enabled flag

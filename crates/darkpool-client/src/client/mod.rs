@@ -27,7 +27,7 @@ use crate::{
     // traits::DarkpoolImpl,
 };
 
-// mod contract_interaction;
+mod contract_interaction;
 // mod event_indexing;
 
 /// A type alias for the RPC client, which is an alloy middleware stack that

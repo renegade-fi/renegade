@@ -1,6 +1,9 @@
 //! Cryptographic primitive types for the API
 
 use circuit_types::{baby_jubjub::BabyJubJubPoint, schnorr::SchnorrPublicKey};
+#[cfg(feature = "full-api")]
+use circuit_types::schnorr::SchnorrPublicKeyShare;
+use darkpool_types::csprng::PoseidonCSPRNG;
 use serde::{Deserialize, Serialize};
 
 // -----------------------
@@ -14,6 +17,12 @@ pub struct ApiPoseidonCSPRNG {
     pub seed: String,
     /// The current index of the CSPRNG
     pub index: u64,
+}
+
+impl From<PoseidonCSPRNG> for ApiPoseidonCSPRNG {
+    fn from(csprng: PoseidonCSPRNG) -> Self {
+        Self { seed: csprng.seed.to_string(), index: csprng.index }
+    }
 }
 
 /// A Baby JubJub curve point
@@ -60,4 +69,14 @@ pub struct ApiSchnorrPublicKeyShare {
     pub x: String,
     /// The y-coordinate share
     pub y: String,
+}
+
+#[cfg(feature = "full-api")]
+impl From<SchnorrPublicKeyShare> for ApiSchnorrPublicKeyShare {
+    fn from(share: SchnorrPublicKeyShare) -> Self {
+        Self {
+            x: share.point.x.to_string(),
+            y: share.point.y.to_string(),
+        }
+    }
 }

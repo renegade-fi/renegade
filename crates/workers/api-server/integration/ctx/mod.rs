@@ -39,7 +39,7 @@ impl IntegrationTestCtx {
         // Get two temp dirs for the DB and raft snapshots
         let raft_snapshot_path = tmp_db_path();
         let db_path = tmp_db_path();
-        let external_fee_addr = address_to_biguint(&Address::ZERO).unwrap();
+        let relayer_fee_addr = address_to_biguint(&Address::ZERO).unwrap();
 
         RelayerConfig {
             raft_snapshot_path,
@@ -47,7 +47,7 @@ impl IntegrationTestCtx {
             admin_api_key: Some(admin_key),
             rpc_url: Some(DUMMY_RPC_URL.to_string()),
             // External matches are disabled if this value is unset
-            external_fee_addr: Some(external_fee_addr),
+            relayer_fee_addr: Some(relayer_fee_addr),
             ..Default::default()
         }
     }

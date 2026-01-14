@@ -15,8 +15,10 @@ pub mod pair;
 use std::collections::HashMap;
 
 use alloy::primitives::Address;
-use circuit_types::{Amount, max_amount};
-use darkpool_types::csprng::PoseidonCSPRNG;
+use circuit_types::{Amount, max_amount, schnorr::SchnorrPublicKey};
+use darkpool_types::{
+    balance::DarkpoolBalance, csprng::PoseidonCSPRNG, state_wrapper::StateWrapper,
+};
 use serde::{Deserialize, Serialize};
 use types_core::AccountId;
 use uuid::Uuid;
@@ -87,6 +89,11 @@ impl Account {
 // ------------
 
 impl Account {
+    /// Whether the account has a balance for the given mint
+    pub fn has_balance(&self, mint: &Address) -> bool {
+        self.balances.contains_key(mint)
+    }
+
     /// Get a balance by its mint
     pub fn get_balance(&self, mint: &Address) -> Option<&Balance> {
         self.balances.get(mint)
@@ -109,6 +116,23 @@ impl Account {
 
         *bal.amount_mut() += amount;
         Ok(())
+    }
+
+    /// Create a new balance for the account
+    pub fn create_balance(
+        &mut self,
+        token: Address,
+        owner: Address,
+        fee_recipient: Address,
+        authority: SchnorrPublicKey,
+    ) {
+        let share_stream = self.sample_share_stream_seed();
+        let recovery_stream = self.sample_recovery_id_stream_seed();
+
+        let bal_inner = DarkpoolBalance::new(token, owner, fee_recipient, authority);
+        let state_wrapper = StateWrapper::new(bal_inner, share_stream.seed, recovery_stream.seed);
+        let bal = Balance::new(state_wrapper);
+        self.balances.insert(token, bal);
     }
 }
 
@@ -161,8 +185,11 @@ mod rkyv_order_impls {
             order: &ArchivedOrder,
         ) -> <Amount as rkyv::Archive>::Archived {
             let in_token = &order.intent.inner.in_token;
-            let bal_amt =
-                self.balances.get(in_token).map(|b| b.balance.inner.amount).unwrap_or_default();
+            let bal_amt = self
+                .balances
+                .get(in_token)
+                .map(|b| b.state_wrapper.inner.amount)
+                .unwrap_or_default();
             let intent_amt = order.intent.inner.amount_in;
 
             min(bal_amt, intent_amt)

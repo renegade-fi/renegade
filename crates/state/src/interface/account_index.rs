@@ -3,10 +3,11 @@
 //! Account index updates must go through raft consensus so that the leader may
 //! order them
 
+use alloy_primitives::Address;
 use circuit_types::Amount;
-use darkpool_types::balance::DarkpoolBalance;
 use types_account::{
     account::{Account, OrderId},
+    keychain::KeyChain,
     order::Order,
 };
 use types_core::{AccountId, HmacKey};
@@ -14,8 +15,14 @@ use types_tasks::QueuedTask;
 use util::res_some;
 
 use crate::{
-    StateInner, error::StateError, notifications::ProposalWaiter,
-    state_transition::StateTransition, storage::traits::RkyvValue,
+    StateInner,
+    error::StateError,
+    notifications::ProposalWaiter,
+    state_transition::StateTransition,
+    storage::{
+        error::StorageError,
+        traits::{RkyvValue, WithAddress},
+    },
 };
 
 impl StateInner {
@@ -33,6 +40,28 @@ impl StateInner {
         .await
     }
 
+    /// Check if an account has a balance for the given token without
+    /// deserializing the account
+    pub async fn account_has_balance(
+        &self,
+        account_id: &AccountId,
+        token: &Address,
+    ) -> Result<bool, StateError> {
+        let account_id = *account_id;
+        let token = *token;
+        self.with_read_tx(move |tx| {
+            let account_value = tx.get_account(&account_id)?.ok_or_else(|| {
+                StateError::Db(StorageError::NotFound("account not found".to_string()))
+            })?;
+
+            let with_token = WithAddress::new(token);
+            let archived_token = with_token.to_archived()?;
+            let has_balance = account_value.balances.get(&archived_token).is_some();
+            Ok(has_balance)
+        })
+        .await
+    }
+
     /// Get the symmetric key for an account
     pub async fn get_account_symmetric_key(
         &self,
@@ -45,6 +74,24 @@ impl StateInner {
             let key = HmacKey::from_archived(archived_key)?;
 
             Ok(Some(key))
+        })
+        .await
+    }
+
+    /// Get the keychain for an account without deserializing the full account
+    pub async fn get_account_keychain(
+        &self,
+        id: &AccountId,
+    ) -> Result<Option<KeyChain>, StateError> {
+        let id = *id;
+        self.with_read_tx(move |tx| {
+            let account_value = tx.get_account(&id)?.ok_or_else(|| {
+                StateError::Db(StorageError::NotFound("account not found".to_string()))
+            })?;
+            let archived_keychain = &account_value.keychain;
+            let keychain = KeyChain::from_archived(archived_keychain)?;
+
+            Ok(Some(keychain))
         })
         .await
     }

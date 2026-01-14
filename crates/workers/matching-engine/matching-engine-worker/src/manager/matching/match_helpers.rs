@@ -27,7 +27,7 @@ impl MatchingEngineExecutor {
     ) -> Result<Option<SuccessfulMatch>, MatchingEngineError> {
         // For an external match, no balance capitalizes the order, so the matchable
         // amount is the same as the intent amount
-        let matchable_amount = order.intent.amount_in;
+        let matchable_amount = order.intent().amount_in;
         self.find_match(order, matchable_amount, matching_pool, true /* external_match */)
     }
 

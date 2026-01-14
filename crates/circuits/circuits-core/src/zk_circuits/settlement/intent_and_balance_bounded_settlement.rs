@@ -362,7 +362,7 @@ mod test {
         zk_circuits::settlement::intent_and_balance_bounded_settlement::test_helpers,
     };
     use circuit_types::{max_amount, traits::SingleProverCircuit};
-    use darkpool_types::balance::{DarkpoolBalance, PostMatchBalanceShare};
+    use darkpool_types::balance::PostMatchBalanceShare;
     use rand::{Rng, thread_rng};
 
     /// A helper to print the number of constraints in the circuit

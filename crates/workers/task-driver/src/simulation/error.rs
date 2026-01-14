@@ -18,6 +18,9 @@ pub enum TaskSimulationError {
     /// Invalid task state on a task provided to the simulator
     #[error("invalid task state: {0}")]
     InvalidTaskState(String),
+    /// An error occurred while accessing the state
+    #[error("state error: {0}")]
+    State(String),
 }
 
 impl TaskSimulationError {
@@ -25,5 +28,11 @@ impl TaskSimulationError {
     #[allow(clippy::needless_pass_by_value)]
     pub fn invalid_task_state<T: ToString>(message: T) -> Self {
         Self::InvalidTaskState(message.to_string())
+    }
+
+    /// Create a new state error
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn state<T: ToString>(message: T) -> Self {
+        Self::State(message.to_string())
     }
 }

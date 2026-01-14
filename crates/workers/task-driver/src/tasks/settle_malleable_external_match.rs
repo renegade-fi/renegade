@@ -9,7 +9,7 @@ use std::error::Error;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 use std::time::Duration;
 
-use crate::task_state::StateWrapper;
+use crate::task_state::TaskStateWrapper;
 use crate::tasks::ERR_AWAITING_PROOF;
 use crate::traits::{Descriptor, Task, TaskContext, TaskError, TaskState};
 use crate::utils::enqueue_proof_job;
@@ -77,7 +77,7 @@ impl TaskState for SettleMalleableExternalMatchTaskState {
     }
 }
 
-impl From<SettleMalleableExternalMatchTaskState> for StateWrapper {
+impl From<SettleMalleableExternalMatchTaskState> for TaskStateWrapper {
     fn from(value: SettleMalleableExternalMatchTaskState) -> Self {
         Self::SettleMalleableExternalMatch(value)
     }
@@ -390,7 +390,7 @@ impl SettleMalleableExternalMatchTask {
     )> {
         let match_res = &self.match_res;
         let commitments_witness = &self.internal_order_validity_witness.commitment_witness;
-        let relayer_fee_address = self.ctx.state.get_external_fee_addr()?.unwrap();
+        let relayer_fee_address = self.ctx.state.get_relayer_fee_addr()?.unwrap();
 
         // Copy values from the witnesses and statements of the order validity proofs
         let internal_party_order = commitments_witness.order.clone();

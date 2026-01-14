@@ -33,7 +33,7 @@ use util::{
 use crate::{
     await_task,
     state_migration::run_state_migrations,
-    task_state::StateWrapper,
+    task_state::TaskStateWrapper,
     traits::{Descriptor, Task, TaskContext, TaskError, TaskState},
     utils::ERR_WALLET_NOT_FOUND,
 };
@@ -101,9 +101,9 @@ impl Serialize for NodeStartupTaskState {
     }
 }
 
-impl From<NodeStartupTaskState> for StateWrapper {
+impl From<NodeStartupTaskState> for TaskStateWrapper {
     fn from(state: NodeStartupTaskState) -> Self {
-        StateWrapper::NodeStartup(state)
+        TaskStateWrapper::NodeStartup(state)
     }
 }
 

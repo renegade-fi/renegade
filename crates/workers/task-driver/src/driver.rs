@@ -17,7 +17,10 @@ use util::{
 use crate::{
     error::TaskDriverError,
     running_task::RunnableTask,
-    tasks::{create_new_account::CreateNewAccountTask, deposit::DepositTask, node_startup::NodeStartupTask},
+    tasks::{
+        create_balance::CreateBalanceTask, create_new_account::CreateNewAccountTask,
+        deposit::DepositTask, node_startup::NodeStartupTask,
+    },
     traits::{Descriptor as _, Task, TaskContext},
     worker::TaskDriverConfig,
 };
@@ -221,6 +224,9 @@ impl TaskExecutor {
             },
             TaskDescriptor::Deposit(desc) => {
                 self.start_task_helper::<DepositTask>(id, desc, affected_accounts).await
+            },
+            TaskDescriptor::CreateBalance(desc) => {
+                self.start_task_helper::<CreateBalanceTask>(id, desc, affected_accounts).await
             },
         };
 

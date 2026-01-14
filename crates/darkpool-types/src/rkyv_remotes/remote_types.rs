@@ -41,6 +41,12 @@ impl From<AddressDef> for Address {
     }
 }
 
+impl From<Address> for AddressDef {
+    fn from(value: Address) -> Self {
+        AddressDef(value.0.0)
+    }
+}
+
 impl PartialEq<Address> for ArchivedAddress {
     fn eq(&self, other: &Address) -> bool {
         self.0 == other.0.0

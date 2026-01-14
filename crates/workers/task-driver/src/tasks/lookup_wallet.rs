@@ -17,7 +17,7 @@ use state::error::StateError;
 use tracing::instrument;
 
 use crate::{
-    task_state::StateWrapper,
+    task_state::TaskStateWrapper,
     traits::{Descriptor, Task, TaskContext, TaskError, TaskState},
     utils::{
         find_wallet::{find_latest_wallet_tx, gen_private_shares},
@@ -67,9 +67,9 @@ impl Display for LookupWalletTaskState {
     }
 }
 
-impl From<LookupWalletTaskState> for StateWrapper {
+impl From<LookupWalletTaskState> for TaskStateWrapper {
     fn from(state: LookupWalletTaskState) -> Self {
-        StateWrapper::LookupWallet(state)
+        TaskStateWrapper::LookupWallet(state)
     }
 }
 

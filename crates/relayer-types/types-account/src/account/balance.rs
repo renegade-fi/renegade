@@ -16,48 +16,48 @@ use serde::{Deserialize, Serialize};
 #[cfg_attr(feature = "rkyv", rkyv(derive(Debug)))]
 pub struct Balance {
     /// The balance data wrapped in a state wrapper
-    pub balance: StateWrapper<DarkpoolBalance>,
+    pub state_wrapper: StateWrapper<DarkpoolBalance>,
 }
 
 impl Balance {
     /// Create a new balance from a state wrapper
-    pub fn new(balance: StateWrapper<DarkpoolBalance>) -> Self {
-        Self { balance }
+    pub fn new(state_wrapper: StateWrapper<DarkpoolBalance>) -> Self {
+        Self { state_wrapper }
     }
 
     /// Get a reference to the inner balance
     pub fn inner(&self) -> &DarkpoolBalance {
-        self.balance.as_ref()
+        self.state_wrapper.as_ref()
     }
 
     /// Get the mint address
     pub fn mint(&self) -> Address {
-        self.balance.inner.mint
+        self.inner().mint
     }
 
     /// Get the owner address
     pub fn owner(&self) -> Address {
-        self.balance.inner.owner
+        self.inner().owner
     }
 
     /// Get the amount
     pub fn amount(&self) -> Amount {
-        self.balance.inner.amount
+        self.inner().amount
     }
 
     /// Get the relayer fee balance
     pub fn relayer_fee_balance(&self) -> Amount {
-        self.balance.inner.relayer_fee_balance
+        self.inner().relayer_fee_balance
     }
 
     /// Get the protocol fee balance
     pub fn protocol_fee_balance(&self) -> Amount {
-        self.balance.inner.protocol_fee_balance
+        self.inner().protocol_fee_balance
     }
 
     /// Get a mutable reference to the amount
     pub fn amount_mut(&mut self) -> &mut Amount {
-        &mut self.balance.inner.amount
+        &mut self.state_wrapper.inner.amount
     }
 }
 
@@ -69,7 +69,7 @@ impl From<StateWrapper<DarkpoolBalance>> for Balance {
 
 impl From<Balance> for DarkpoolBalance {
     fn from(balance: Balance) -> Self {
-        balance.balance.inner
+        balance.inner().clone()
     }
 }
 

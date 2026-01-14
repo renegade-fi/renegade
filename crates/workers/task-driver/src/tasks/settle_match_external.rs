@@ -4,7 +4,7 @@ use std::error::Error;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 use std::time::Duration;
 
-use crate::task_state::StateWrapper;
+use crate::task_state::TaskStateWrapper;
 use crate::tasks::ERR_AWAITING_PROOF;
 use crate::traits::{Descriptor, Task, TaskContext, TaskError, TaskState};
 use crate::utils::enqueue_proof_job;
@@ -73,7 +73,7 @@ impl TaskState for SettleMatchExternalTaskState {
     }
 }
 
-impl From<SettleMatchExternalTaskState> for StateWrapper {
+impl From<SettleMatchExternalTaskState> for TaskStateWrapper {
     fn from(value: SettleMatchExternalTaskState) -> Self {
         Self::SettleMatchExternal(value)
     }
@@ -412,7 +412,7 @@ impl SettleMatchExternalTask {
         );
 
         // Compute the fees due by the external party in the match
-        let relayer_fee_address = self.ctx.state.get_external_fee_addr()?.unwrap();
+        let relayer_fee_address = self.ctx.state.get_relayer_fee_addr()?.unwrap();
         let external_party_relayer_fee = self.relayer_fee_rate;
         let external_party_fees = compute_fee_obligation_with_protocol_fee(
             external_party_relayer_fee,
