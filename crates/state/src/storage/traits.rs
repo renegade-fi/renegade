@@ -1,9 +1,10 @@
 //! Defines traits for storage access
 
-use std::{fmt::Debug, marker::PhantomData};
+use std::{borrow::Cow, fmt::Debug, marker::PhantomData};
 
+use alloy_primitives::Address;
 use constants::Scalar;
-use darkpool_types::rkyv_remotes::ScalarDef;
+use darkpool_types::rkyv_remotes::{AddressDef, ScalarDef};
 use rkyv::{
     Archive, Deserialize, Portable, Serialize,
     api::high::{HighSerializer, HighValidator},
@@ -15,7 +16,7 @@ use rkyv::{
     with::{ArchiveWith, DeserializeWith, SerializeWith, With},
 };
 
-use crate::storage::error::StorageError;
+use crate::storage::{ArchivedValue, error::StorageError};
 
 // ---------------------
 // | Key Value Markers |
@@ -48,6 +49,8 @@ pub trait RkyvValue: Sized {
 
     /// Deserialize the value from its archived type
     fn from_archived(archived: &Self::ArchivedType) -> Result<Self, StorageError>;
+    /// Serialize the value to its archived type
+    fn to_archived(&self) -> Result<ArchivedValue<'_, Self>, StorageError>;
     /// Deserialize the value from bytes
     fn rkyv_deserialize_from_bytes(bytes: &[u8]) -> Result<Self, StorageError>;
     /// Serialize the value to bytes
@@ -72,7 +75,7 @@ impl<A, T> RkyvValue for T
 where
     T: Archive<Archived = A>,
     T: RkyvSerializable2,
-    A: ArchivedValue,
+    A: ArchivedValueBound,
     A: RkyvDeserializable2<T>,
 {
     type ArchivedType = A;
@@ -80,6 +83,14 @@ where
     #[inline]
     fn from_archived(archived: &Self::ArchivedType) -> Result<Self, StorageError> {
         rkyv::deserialize::<_, rancor::Error>(archived).map_err(StorageError::serialization)
+    }
+
+    #[inline]
+    fn to_archived(&self) -> Result<ArchivedValue<'_, Self>, StorageError> {
+        let bytes = rkyv::to_bytes::<rancor::Error>(self)
+            .map_err(StorageError::serialization)
+            .map(|v| v.into_vec())?;
+        Ok(ArchivedValue::new(Cow::Owned(bytes)))
     }
 
     #[inline]
@@ -151,7 +162,7 @@ impl<T: Sized, W> RkyvWith<T, W> {
 impl<T, W, A> RkyvValue for RkyvWith<T, W>
 where
     T: Sized,
-    A: ArchivedValue,
+    A: ArchivedValueBound,
     W: ArchiveWith<T, Archived = A>,
     W: RkyvSerializableWith<T>,
     W: RkyvDeserializableWith<A, T>,
@@ -166,6 +177,15 @@ where
             rkyv::deserialize::<_, rancor::Error>(with).map_err(StorageError::serialization)?;
 
         Ok(Self { inner, _phantom: PhantomData })
+    }
+
+    #[inline]
+    fn to_archived(&self) -> Result<ArchivedValue<'_, Self>, StorageError> {
+        let with = With::<T, W>::cast(&self.inner);
+        let bytes = rkyv::to_bytes::<rancor::Error>(with)
+            .map_err(StorageError::serialization)
+            .map(|v| v.into_vec())?;
+        Ok(ArchivedValue::new(Cow::Owned(bytes)))
     }
 
     #[inline]
@@ -198,8 +218,11 @@ where
 // --- Bound Traits --- //
 
 /// Bound trait for the bounds on an archived value
-trait ArchivedValue: Portable + for<'a> CheckBytes<HighValidator<'a, rancor::Error>> {}
-impl<A> ArchivedValue for A where A: Portable + for<'a> CheckBytes<HighValidator<'a, rancor::Error>> {}
+trait ArchivedValueBound: Portable + for<'a> CheckBytes<HighValidator<'a, rancor::Error>> {}
+impl<A> ArchivedValueBound for A where
+    A: Portable + for<'a> CheckBytes<HighValidator<'a, rancor::Error>>
+{
+}
 
 /// Bound trait for the bounds on a serializable type
 trait RkyvSerializable2:
@@ -235,5 +258,8 @@ impl<A, T, D: for<'a> DeserializeWith<A, T, Strategy<Pool, rancor::Error>>>
 {
 }
 
-/// Type aliases for RkyvWith wrappers
+// Type aliases for RkyvWith wrappers
+/// A wrapper for a scalar value
 pub type WithScalar = RkyvWith<Scalar, ScalarDef>;
+/// A wrapper for an address value
+pub type WithAddress = RkyvWith<Address, AddressDef>;

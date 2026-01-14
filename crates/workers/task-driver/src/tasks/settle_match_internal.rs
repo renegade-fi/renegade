@@ -4,7 +4,7 @@ use std::error::Error;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 use std::str::FromStr;
 
-use crate::task_state::StateWrapper;
+use crate::task_state::TaskStateWrapper;
 use crate::traits::{Descriptor, Task, TaskContext, TaskError, TaskState};
 use crate::utils::order_states::{record_order_fill, transition_order_settling};
 use crate::utils::{
@@ -78,7 +78,7 @@ impl TaskState for SettleMatchInternalTaskState {
     }
 }
 
-impl From<SettleMatchInternalTaskState> for StateWrapper {
+impl From<SettleMatchInternalTaskState> for TaskStateWrapper {
     fn from(value: SettleMatchInternalTaskState) -> Self {
         Self::SettleMatchInternal(value)
     }

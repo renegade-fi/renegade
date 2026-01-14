@@ -22,6 +22,7 @@ pub struct ApiAccount {
     pub balances: Vec<ApiBalance>,
 }
 
+#[cfg(feature = "full-api")]
 impl From<Account> for ApiAccount {
     fn from(acct: Account) -> Self {
         let balances = acct.balances.into_values().map(|balance| balance.into()).collect();

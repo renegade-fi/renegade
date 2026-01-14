@@ -1,8 +1,12 @@
 //! Simulates the effect of wallet tasks on the relayer state
 
+use state::State;
 use tracing::warn;
 use types_account::Account;
-use types_tasks::{DepositTaskDescriptor, NewAccountTaskDescriptor, QueuedTask, TaskDescriptor};
+use types_tasks::{
+    CreateBalanceTaskDescriptor, DepositTaskDescriptor, NewAccountTaskDescriptor, QueuedTask,
+    TaskDescriptor,
+};
 
 use super::error::TaskSimulationError;
 
@@ -21,6 +25,7 @@ const ERR_INVALID_ACCOUNT_ID: &str = "Task does not apply to account";
 pub fn simulate_account_tasks(
     account: &mut Account,
     tasks: Vec<QueuedTask>,
+    state: &State,
 ) -> Result<(), TaskSimulationError> {
     for task in tasks {
         if !should_simulate(&task) {
@@ -28,7 +33,7 @@ pub fn simulate_account_tasks(
             continue;
         }
 
-        simulate_single_account_task(account, task.descriptor)?;
+        simulate_single_account_task(account, task.descriptor, state)?;
     }
 
     Ok(())
@@ -39,6 +44,7 @@ fn should_simulate(task: &QueuedTask) -> bool {
     match task.descriptor {
         TaskDescriptor::NewAccount(_) => false,
         TaskDescriptor::Deposit(_) => true,
+        TaskDescriptor::CreateBalance(_) => true,
         TaskDescriptor::NodeStartup(_) => false,
     }
 }
@@ -108,10 +114,12 @@ fn should_simulate(task: &QueuedTask) -> bool {
 fn simulate_single_account_task(
     account: &mut Account,
     task: TaskDescriptor,
+    state: &State,
 ) -> Result<(), TaskSimulationError> {
     match task {
         TaskDescriptor::NewAccount(t) => simulate_new_account(account, &t),
         TaskDescriptor::Deposit(t) => simulate_deposit(account, &t),
+        TaskDescriptor::CreateBalance(t) => simulate_create_balance(account, &t, state),
         // Ignore all non-wallet tasks
         TaskDescriptor::NodeStartup(_) => Ok(()),
     }
@@ -137,6 +145,18 @@ fn simulate_deposit(
     desc: &DepositTaskDescriptor,
 ) -> Result<(), TaskSimulationError> {
     account.deposit_balance(desc.token, desc.amount)?;
+    Ok(())
+}
+
+/// Simulate a `CreateBalance` task applied to a wallet
+fn simulate_create_balance(
+    account: &mut Account,
+    desc: &CreateBalanceTaskDescriptor,
+    state: &State,
+) -> Result<(), TaskSimulationError> {
+    // CreateBalance creates a new balance, similar to deposit but for a new balance
+    let fee_recipient = state.get_relayer_fee_addr().map_err(TaskSimulationError::state)?.unwrap();
+    account.create_balance(desc.token, desc.from_address, fee_recipient, desc.authority);
     Ok(())
 }
 

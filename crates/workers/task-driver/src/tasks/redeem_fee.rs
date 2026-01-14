@@ -20,7 +20,7 @@ use tracing::instrument;
 use util::err_str;
 
 use crate::{
-    task_state::StateWrapper,
+    task_state::TaskStateWrapper,
     tasks::ERR_NO_MERKLE_PROOF,
     traits::{Descriptor, Task, TaskContext, TaskError, TaskState},
     utils::{enqueue_proof_job, merkle_path::find_merkle_path_with_tx},
@@ -76,9 +76,9 @@ impl Display for RedeemFeeTaskState {
     }
 }
 
-impl From<RedeemFeeTaskState> for StateWrapper {
+impl From<RedeemFeeTaskState> for TaskStateWrapper {
     fn from(value: RedeemFeeTaskState) -> Self {
-        StateWrapper::RedeemFee(value)
+        TaskStateWrapper::RedeemFee(value)
     }
 }
 

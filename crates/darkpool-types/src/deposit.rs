@@ -31,3 +31,10 @@ pub struct Deposit {
     /// The amount to deposit
     pub amount: Amount,
 }
+
+impl Deposit {
+    /// Create a new deposit
+    pub fn new(from: Address, token: Address, amount: Amount) -> Self {
+        Self { from, token, amount }
+    }
+}

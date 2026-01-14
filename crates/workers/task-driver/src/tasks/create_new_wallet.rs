@@ -32,7 +32,7 @@ use state::error::StateError;
 use tracing::instrument;
 use util::err_str;
 
-use crate::task_state::StateWrapper;
+use crate::task_state::TaskStateWrapper;
 use crate::traits::{Descriptor, Task, TaskContext, TaskError, TaskState};
 use crate::utils::enqueue_proof_job;
 use crate::utils::merkle_path::find_merkle_path_with_tx;
@@ -109,9 +109,9 @@ impl Serialize for NewWalletTaskState {
     }
 }
 
-impl From<NewWalletTaskState> for StateWrapper {
+impl From<NewWalletTaskState> for TaskStateWrapper {
     fn from(state: NewWalletTaskState) -> Self {
-        StateWrapper::NewWallet(state)
+        TaskStateWrapper::NewWallet(state)
     }
 }
 

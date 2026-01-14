@@ -66,9 +66,9 @@ pub(crate) fn parse_config_from_args(cli_args: Cli) -> Result<RelayerConfig, Str
     let private_key =
         PrivateKeySigner::from_str(&cli_args.private_key).map_err(|e| e.to_string())?;
     let fee_key = parse_fee_key(cli_args.fee_encryption_key)?;
-    let external_fee_addr = cli_args
-        .external_fee_addr
-        .map(|a| address_from_hex_string(&a).expect("could not parse external fee address"));
+    let relayer_fee_addr = cli_args
+        .relayer_fee_addr
+        .map(|a| address_from_hex_string(&a).expect("could not parse relayer fee address"));
 
     // Parse the p2p keypair or generate one
     let p2p_key = if let Some(keypair) = cli_args.p2p_key {
@@ -116,7 +116,7 @@ pub(crate) fn parse_config_from_args(cli_args: Cli) -> Result<RelayerConfig, Str
         max_match_fee,
         default_match_fee,
         per_asset_fees,
-        external_fee_addr,
+        relayer_fee_addr,
         price_reporter_url,
         chain_id: cli_args.chain_id,
         contract_address: cli_args.contract_address,

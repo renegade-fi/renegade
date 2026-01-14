@@ -7,21 +7,20 @@ use std::{
 
 use alloy::primitives::Address;
 use async_trait::async_trait;
-use circuit_types::Amount;
-use circuits_core::zk_circuits::valid_balance_create::{
-    ValidBalanceCreateStatement, ValidBalanceCreateWitness,
-};
+use circuit_types::{Amount, primitives::schnorr::SchnorrPublicKey};
+use circuits_core::zk_circuits::valid_deposit::{SizedValidDepositWitness, ValidDepositStatement};
+use darkpool_types::deposit::Deposit;
 use job_types::proof_manager::{ProofJob, ProofManagerResponse};
 use renegade_solidity_abi::v2::IDarkpoolV2::DepositAuth;
 use serde::Serialize;
 use state::error::StateError;
 use tracing::{info, instrument};
+use types_account::keychain::KeyChain;
 use types_core::AccountId;
 use types_tasks::DepositTaskDescriptor;
 
 use crate::{
-    task_state::StateWrapper,
-    tasks::ERR_ACCOUNT_NOT_FOUND,
+    task_state::TaskStateWrapper,
     traits::{Descriptor, Task, TaskContext, TaskError, TaskState},
     utils::enqueue_proof_job,
 };
@@ -70,9 +69,9 @@ impl Display for DepositTaskState {
     }
 }
 
-impl From<DepositTaskState> for StateWrapper {
+impl From<DepositTaskState> for TaskStateWrapper {
     fn from(state: DepositTaskState) -> Self {
-        StateWrapper::Deposit(state)
+        TaskStateWrapper::Deposit(state)
     }
 }
 
@@ -89,6 +88,14 @@ pub enum DepositTaskError {
     ProofGeneration(String),
     /// A state element was not found that is necessary for task execution
     Missing(String),
+}
+
+impl DepositTaskError {
+    /// Create a new missing error
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn missing<T: ToString>(msg: T) -> Self {
+        Self::Missing(msg.to_string())
+    }
 }
 
 impl TaskError for DepositTaskError {
@@ -136,8 +143,8 @@ pub struct DepositTask {
     pub amount: Amount,
     /// The deposit authorization
     pub auth: DepositAuth,
-    /// Whether or not the task must create a new balance
-    pub must_create_balance: bool,
+    /// The authority public key
+    pub authority: SchnorrPublicKey,
     /// A proof of `VALID DEPOSIT` created in the proving step
     pub proof_bundle: Option<ProofManagerResponse>,
     /// The state of the task's execution
@@ -153,23 +160,17 @@ impl Task for DepositTask {
     type Descriptor = DepositTaskDescriptor;
 
     async fn new(descriptor: Self::Descriptor, ctx: TaskContext) -> Result<Self> {
-        let mut this = Self {
+        Ok(Self {
             account_id: descriptor.account_id,
             from_address: descriptor.from_address,
             token: descriptor.token,
             amount: descriptor.amount,
             auth: descriptor.auth,
-            must_create_balance: false,
+            authority: descriptor.authority,
             proof_bundle: None,
             task_state: DepositTaskState::Pending,
             ctx,
-        };
-
-        // Check if the balance must be created in the darkpool for the first time
-        if this.should_create_balance().await? {
-            this.must_create_balance = true;
-        }
-        Ok(this)
+        })
     }
 
     #[allow(clippy::blocks_in_conditions)]
@@ -225,8 +226,8 @@ impl DepositTask {
     /// Generate a proof of `VALID DEPOSIT` for the deposit
     pub async fn generate_proof(&mut self) -> Result<()> {
         info!("Generating deposit proof...");
-        // Placeholder - actual implementation needed above
-        Err(DepositTaskError::ProofGeneration("Proof generation not yet implemented".to_string()))
+        self.existing_balance_proof().await?;
+        Ok(())
     }
 
     /// Submit the deposit transaction to the darkpool
@@ -250,10 +251,10 @@ impl DepositTask {
 
     // --- Helpers --- //
 
-    /// Generate a proof for a valid new balance statement
-    async fn new_balance_proof(&mut self) -> Result<()> {
-        let (witness, statement) = self.get_new_balance_witness_statement()?;
-        let job = ProofJob::ValidBalanceCreate { statement, witness };
+    /// Generate a proof for an existing balance deposit
+    async fn existing_balance_proof(&mut self) -> Result<()> {
+        let (witness, statement) = self.get_existing_balance_witness_statement().await?;
+        let job = ProofJob::ValidDeposit { statement, witness };
         let proof_recv =
             enqueue_proof_job(job, &self.ctx).map_err(DepositTaskError::ProofGeneration)?;
 
@@ -264,11 +265,11 @@ impl DepositTask {
         Ok(())
     }
 
-    /// Generate a witness and statement for a valid new balance
-    fn get_new_balance_witness_statement(
+    /// Generate a witness and statement for an existing balance deposit
+    async fn get_existing_balance_witness_statement(
         &self,
-    ) -> Result<(ValidBalanceCreateWitness, ValidBalanceCreateStatement)> {
-        todo!()
+    ) -> Result<(SizedValidDepositWitness, ValidDepositStatement)> {
+        todo!("Implement existing balance witness and statement generation")
     }
 }
 
@@ -277,16 +278,8 @@ impl DepositTask {
 // -----------
 
 impl DepositTask {
-    /// Whether or not this is a new balance
-    pub async fn should_create_balance(&self) -> Result<bool> {
-        let account = self
-            .ctx
-            .state
-            .get_account(&self.account_id)
-            .await?
-            .ok_or_else(|| DepositTaskError::Missing(ERR_ACCOUNT_NOT_FOUND.to_string()))?;
-
-        let has_balance = account.balances.contains_key(&self.token);
-        Ok(has_balance)
+    /// Create a deposit for the descriptor
+    fn create_deposit(&self) -> Deposit {
+        Deposit::new(self.from_address, self.token, self.amount)
     }
 }

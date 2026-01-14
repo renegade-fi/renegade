@@ -16,7 +16,7 @@ use state::error::StateError;
 use tracing::instrument;
 
 use crate::{
-    task_state::StateWrapper,
+    task_state::TaskStateWrapper,
     traits::{Descriptor, Task, TaskContext, TaskError, TaskState},
     utils::proofs::update_wallet_proofs,
 };
@@ -72,9 +72,9 @@ impl Serialize for UpdateMerkleProofTaskState {
     }
 }
 
-impl From<UpdateMerkleProofTaskState> for StateWrapper {
+impl From<UpdateMerkleProofTaskState> for TaskStateWrapper {
     fn from(state: UpdateMerkleProofTaskState) -> Self {
-        StateWrapper::UpdateMerkleProof(state)
+        TaskStateWrapper::UpdateMerkleProof(state)
     }
 }
 

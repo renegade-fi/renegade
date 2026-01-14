@@ -22,7 +22,7 @@ use serde::Serialize;
 use state::error::StateError;
 use tracing::{info, instrument};
 
-use crate::task_state::StateWrapper;
+use crate::task_state::TaskStateWrapper;
 use crate::traits::{Descriptor, Task, TaskContext, TaskError, TaskState};
 use crate::utils::proofs::update_wallet_proofs;
 use crate::utils::{enqueue_proof_job, merkle_path::find_merkle_path_with_tx};
@@ -111,9 +111,9 @@ impl Serialize for UpdateWalletTaskState {
     }
 }
 
-impl From<UpdateWalletTaskState> for StateWrapper {
+impl From<UpdateWalletTaskState> for TaskStateWrapper {
     fn from(state: UpdateWalletTaskState) -> Self {
-        StateWrapper::UpdateWallet(state)
+        TaskStateWrapper::UpdateWallet(state)
     }
 }
 

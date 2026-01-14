@@ -45,15 +45,9 @@ impl StateInner {
         self.with_blocking_read_tx(move |tx| tx.get_relayer_fee(&ticker).map_err(StateError::Db))
     }
 
-    /// Whether atomic matches are supported
-    pub fn get_atomic_matches_enabled(&self) -> Result<bool, StateError> {
-        let maybe_addr = self.get_external_fee_addr()?;
-        Ok(maybe_addr.is_some())
-    }
-
-    /// Get the local relayer's external fee address
-    pub fn get_external_fee_addr(&self) -> Result<Option<Address>, StateError> {
-        self.with_blocking_read_tx(|tx| tx.get_external_fee_addr().map_err(StateError::Db))
+    /// Get the local relayer's fee address
+    pub fn get_relayer_fee_addr(&self) -> Result<Option<Address>, StateError> {
+        self.with_blocking_read_tx(|tx| tx.get_relayer_fee_addr().map_err(StateError::Db))
     }
 
     /// Get the local relayer's historical state enabled flag
@@ -98,7 +92,7 @@ impl StateInner {
         let max_match_fee = config.max_match_fee;
         let default_relayer_fee = config.default_match_fee;
         let per_asset_fees = config.per_asset_fees.clone();
-        let external_fee_addr = config.external_fee_addr;
+        let relayer_fee_addr = config.relayer_fee_addr;
         let historical_state_enabled = config.record_historical_state;
 
         if !historical_state_enabled {
@@ -118,8 +112,8 @@ impl StateInner {
             }
 
             tx.set_historical_state_enabled(historical_state_enabled)?;
-            if let Some(addr) = external_fee_addr {
-                tx.set_external_fee_addr(&addr)?;
+            if let Some(addr) = relayer_fee_addr {
+                tx.set_relayer_fee_addr(&addr)?;
             }
 
             Ok(())

@@ -84,15 +84,11 @@ pub struct Cli {
     /// Mapping from ticker to fee rate
     #[clap(long, value_parser, value_parser = parse_cli_map::<f64>, default_value = "")]
     pub per_asset_fees: HashMap<String, f64>,
-    /// The address at which to collect externally paid fees
+    /// The address at which to collect relayer fees
     /// 
-    /// External fees are generated when an atomic match is settled. An atomic match is one between an 
-    /// internal party (one with state in the darkpool) and an external party (one without). 
-    /// The external party pays fees directly to this address.
-    /// 
-    /// If not set, atomic matches are not supported
-    #[clap(long, value_parser, env = "EXTERNAL_FEE_ADDR")]
-    pub external_fee_addr: Option<String>,
+    /// This is the address at which the relayer collects match fees.
+    #[clap(long, value_parser, env = "RELAYER_FEE_ADDR")]
+    pub relayer_fee_addr: Option<String>,
 
     // -----------------------
     // | Environment Configs |
@@ -282,8 +278,10 @@ pub struct RelayerConfig {
     pub default_match_fee: FixedPoint,
     /// The per-asset match fee that the relayer will charge
     pub per_asset_fees: HashMap<String, FixedPoint>,
-    /// The address at which to collect externally paid fees
-    pub external_fee_addr: Option<Address>,
+    /// The address at which the relayer collects match fees
+    ///
+    /// This is the address at which the relayer collects match fees.
+    pub relayer_fee_addr: Option<Address>,
 
     // ---------------------
     // | External Services |

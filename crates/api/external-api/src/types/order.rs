@@ -7,9 +7,9 @@ use uuid::Uuid;
 
 use super::crypto_primitives::{ApiPoseidonCSPRNG, ApiSchnorrSignature};
 
-// -----------------
-// | Core Types    |
-// -----------------
+// --------------
+// | Core Types |
+// --------------
 
 /// The core order data
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -38,11 +38,11 @@ impl From<Order> for ApiOrderCore {
     fn from(order: Order) -> Self {
         Self {
             id: order.id,
-            in_token: address_to_hex_string(&order.intent.in_token),
-            out_token: address_to_hex_string(&order.intent.out_token),
-            owner: address_to_hex_string(&order.intent.owner),
-            min_price: order.intent.min_price.repr.to_string(),
-            amount_in: order.intent.amount_in.to_string(),
+            in_token: address_to_hex_string(&order.intent().in_token),
+            out_token: address_to_hex_string(&order.intent().out_token),
+            owner: address_to_hex_string(&order.intent().owner),
+            min_price: order.intent().min_price.repr.to_string(),
+            amount_in: order.intent().amount_in.to_string(),
             min_fill_size: order.metadata.min_fill_size.to_string(),
             order_type: OrderType::PublicOrder,
             allow_external_matches: order.metadata.allow_external_matches,

@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use state::State;
 use system_bus::SystemBus;
 
-use crate::task_state::StateWrapper;
+use crate::task_state::TaskStateWrapper;
 
 // ------------------
 // | Task and State |
@@ -78,7 +78,7 @@ pub trait Descriptor: Debug + Serialize + for<'de> Deserialize<'de> {
 /// The state of a task
 ///
 /// Must implement methods determining whether a task has completed or committed
-pub trait TaskState: Debug + Display + Ord + Send + Serialize + Into<StateWrapper> {
+pub trait TaskState: Debug + Display + Ord + Send + Serialize + Into<TaskStateWrapper> {
     /// Whether or not the task is completed
     fn completed(&self) -> bool;
     /// The state in which the task may be considered (at least partially)

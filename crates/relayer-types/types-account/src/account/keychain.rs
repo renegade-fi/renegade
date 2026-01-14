@@ -81,4 +81,22 @@ impl KeyChain {
     pub fn symmetric_key(&self) -> HmacKey {
         self.secret_keys.symmetric_key
     }
+
+    /// Sample a new recovery id stream seed from the master keychain
+    ///
+    /// Mutates the underlying CSPRNG state.
+    pub fn sample_recovery_id_stream_seed(&mut self) -> PoseidonCSPRNG {
+        let master_seed = &mut self.secret_keys.master_recovery_seed_csprng;
+        let seed = master_seed.next().unwrap(); // CSPRNG is infallible
+        PoseidonCSPRNG::new(seed)
+    }
+
+    /// Sample a new share stream seed from the master keychain
+    ///
+    /// Mutates the underlying CSPRNG state.
+    pub fn sample_share_stream_seed(&mut self) -> PoseidonCSPRNG {
+        let master_seed = &mut self.secret_keys.master_share_seed_csprng;
+        let seed = master_seed.next().unwrap(); // CSPRNG is infallible
+        PoseidonCSPRNG::new(seed)
+    }
 }

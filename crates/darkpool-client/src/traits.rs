@@ -15,7 +15,8 @@ use constants::Scalar;
 use renegade_solidity_abi::v2::IDarkpoolV2::DepositAuth;
 use tracing::info;
 use types_proofs::{
-    IntentOnlyBoundedSettlementBundle, OrderValidityProofBundle, ValidDepositBundle,
+    IntentOnlyBoundedSettlementBundle, OrderValidityProofBundle, ValidBalanceCreateBundle,
+    ValidDepositBundle,
 };
 
 use crate::client::{DarkpoolCallBuilder, RenegadeProvider};
@@ -90,6 +91,13 @@ pub trait DarkpoolImpl: Clone {
     // -----------
     // | Setters |
     // -----------
+
+    /// Create a new balance in the darkpool contract
+    async fn create_balance(
+        &self,
+        auth: DepositAuth,
+        proof_bundle: ValidBalanceCreateBundle,
+    ) -> Result<TransactionReceipt, DarkpoolClientError>;
 
     /// Deposit funds into an existing balance in the darkpool contract
     async fn deposit(

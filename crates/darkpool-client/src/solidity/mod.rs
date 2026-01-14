@@ -18,7 +18,8 @@ use renegade_solidity_abi::v2::IDarkpoolV2::{
 };
 use types_core::Token;
 use types_proofs::{
-    IntentOnlyBoundedSettlementBundle, OrderValidityProofBundle, ValidDepositBundle,
+    IntentOnlyBoundedSettlementBundle, OrderValidityProofBundle, ValidBalanceCreateBundle,
+    ValidDepositBundle,
 };
 
 use crate::{
@@ -149,6 +150,24 @@ impl DarkpoolImpl for SolidityDarkpool {
     // -----------
     // | Setters |
     // -----------
+
+    async fn create_balance(
+        &self,
+        auth: DepositAuth,
+        proof_bundle: ValidBalanceCreateBundle,
+    ) -> Result<TransactionReceipt, DarkpoolClientError> {
+        let bundle = proof_bundle.into_inner();
+        let contract_statement: IDarkpoolV2::ValidBalanceCreateStatement = bundle.statement.into();
+        let proof = bundle.proof.into();
+
+        let calldata_bundle = IDarkpoolV2::NewBalanceDepositProofBundle {
+            merkleDepth: self.merkle_depth(),
+            statement: contract_statement,
+            proof,
+        };
+        let tx = self.darkpool().depositNewBalance(auth, calldata_bundle);
+        self.send_tx(tx).await
+    }
 
     async fn deposit(
         &self,

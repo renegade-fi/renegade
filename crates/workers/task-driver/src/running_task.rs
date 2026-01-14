@@ -8,7 +8,7 @@ use types_tasks::TaskIdentifier;
 
 use crate::{
     error::TaskDriverError,
-    task_state::StateWrapper,
+    task_state::TaskStateWrapper,
     traits::{Task, TaskContext, TaskError},
 };
 
@@ -57,7 +57,7 @@ impl<T: Task> RunnableTask<T> {
     }
 
     /// Returns the state of the underlying task
-    pub fn state(&self) -> StateWrapper {
+    pub fn state(&self) -> TaskStateWrapper {
         self.task.state().into()
     }
 

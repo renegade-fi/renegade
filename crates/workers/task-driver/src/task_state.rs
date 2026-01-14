@@ -7,8 +7,8 @@ use types_tasks::QueuedTaskState;
 
 use crate::{
     tasks::{
-        create_new_account::CreateNewAccountTaskState, deposit::DepositTaskState,
-        node_startup::NodeStartupTaskState,
+        create_balance::CreateBalanceTaskState, create_new_account::CreateNewAccountTaskState,
+        deposit::DepositTaskState, node_startup::NodeStartupTaskState,
     },
     traits::TaskState,
 };
@@ -21,26 +21,31 @@ use crate::{
 #[derive(Clone, Debug, Serialize)]
 #[allow(clippy::large_enum_variant)]
 #[serde(tag = "task_type", content = "state")]
-pub enum StateWrapper {
+pub enum TaskStateWrapper {
     /// The state of a create new account task
     CreateNewAccount(CreateNewAccountTaskState),
     /// The state of a node startup task
     NodeStartup(NodeStartupTaskState),
     /// The state of a deposit task
     Deposit(DepositTaskState),
+    /// The state of a create balance task
+    CreateBalance(CreateBalanceTaskState),
 }
 
-impl StateWrapper {
+impl TaskStateWrapper {
     /// Whether the underlying state is committed or not
     pub fn committed(&self) -> bool {
         match self {
-            StateWrapper::CreateNewAccount(state) => {
+            TaskStateWrapper::CreateNewAccount(state) => {
                 <CreateNewAccountTaskState as TaskState>::committed(state)
             },
-            StateWrapper::NodeStartup(state) => {
+            TaskStateWrapper::NodeStartup(state) => {
                 <NodeStartupTaskState as TaskState>::committed(state)
             },
-            StateWrapper::Deposit(state) => <DepositTaskState as TaskState>::committed(state),
+            TaskStateWrapper::Deposit(state) => <DepositTaskState as TaskState>::committed(state),
+            TaskStateWrapper::CreateBalance(state) => {
+                <CreateBalanceTaskState as TaskState>::committed(state)
+            },
         }
     }
 
@@ -48,40 +53,47 @@ impl StateWrapper {
     /// for which `committed` is true
     pub fn is_committing(&self) -> bool {
         match self {
-            StateWrapper::CreateNewAccount(state) => {
+            TaskStateWrapper::CreateNewAccount(state) => {
                 *state == CreateNewAccountTaskState::commit_point()
             },
-            StateWrapper::NodeStartup(state) => *state == NodeStartupTaskState::commit_point(),
-            StateWrapper::Deposit(state) => *state == DepositTaskState::commit_point(),
+            TaskStateWrapper::NodeStartup(state) => *state == NodeStartupTaskState::commit_point(),
+            TaskStateWrapper::Deposit(state) => *state == DepositTaskState::commit_point(),
+            TaskStateWrapper::CreateBalance(state) => {
+                *state == CreateBalanceTaskState::commit_point()
+            },
         }
     }
 
     /// Whether the underlying state is completed or not
     pub fn completed(&self) -> bool {
         match self {
-            StateWrapper::CreateNewAccount(state) => {
+            TaskStateWrapper::CreateNewAccount(state) => {
                 <CreateNewAccountTaskState as TaskState>::completed(state)
             },
-            StateWrapper::NodeStartup(state) => {
+            TaskStateWrapper::NodeStartup(state) => {
                 <NodeStartupTaskState as TaskState>::completed(state)
             },
-            StateWrapper::Deposit(state) => <DepositTaskState as TaskState>::completed(state),
+            TaskStateWrapper::Deposit(state) => <DepositTaskState as TaskState>::completed(state),
+            TaskStateWrapper::CreateBalance(state) => {
+                <CreateBalanceTaskState as TaskState>::completed(state)
+            },
         }
     }
 }
 
-impl Display for StateWrapper {
+impl Display for TaskStateWrapper {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            StateWrapper::CreateNewAccount(state) => write!(f, "{state}"),
-            StateWrapper::NodeStartup(state) => write!(f, "{state}"),
-            StateWrapper::Deposit(state) => write!(f, "{state}"),
+            TaskStateWrapper::CreateNewAccount(state) => write!(f, "{state}"),
+            TaskStateWrapper::NodeStartup(state) => write!(f, "{state}"),
+            TaskStateWrapper::Deposit(state) => write!(f, "{state}"),
+            TaskStateWrapper::CreateBalance(state) => write!(f, "{state}"),
         }
     }
 }
 
-impl From<StateWrapper> for QueuedTaskState {
-    fn from(value: StateWrapper) -> Self {
+impl From<TaskStateWrapper> for QueuedTaskState {
+    fn from(value: TaskStateWrapper) -> Self {
         // Serialize the state into a string
         let description = value.to_string();
         let committed = value.committed();

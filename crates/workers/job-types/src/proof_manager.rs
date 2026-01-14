@@ -86,9 +86,9 @@ pub fn new_proof_manager_queue() -> (ProofManagerQueue, ProofManagerReceiver) {
     new_traced_crossbeam_channel()
 }
 
-// -------------
-// | Job Types |
-// -------------
+// ------------
+// | Response |
+// ------------
 
 /// A response type representing any proof bundle that the proof manager can
 /// return
@@ -140,6 +140,190 @@ pub enum ProofManagerResponse {
     /// A proof bundle for `VALID PUBLIC RELAYER FEE PAYMENT`
     ValidPublicRelayerFeePayment(ValidPublicRelayerFeePaymentBundle),
 }
+
+impl From<ProofManagerResponse> for ValidBalanceCreateBundle {
+    fn from(value: ProofManagerResponse) -> Self {
+        match value {
+            ProofManagerResponse::ValidBalanceCreate(bundle) => bundle,
+            other => panic!("Expected ValidBalanceCreate, got {:?}", other),
+        }
+    }
+}
+
+impl From<ProofManagerResponse> for ValidDepositBundle {
+    fn from(value: ProofManagerResponse) -> Self {
+        match value {
+            ProofManagerResponse::ValidDeposit(bundle) => bundle,
+            other => panic!("Expected ValidDeposit, got {:?}", other),
+        }
+    }
+}
+
+impl From<ProofManagerResponse> for ValidOrderCancellationBundle {
+    fn from(value: ProofManagerResponse) -> Self {
+        match value {
+            ProofManagerResponse::ValidOrderCancellation(bundle) => bundle,
+            other => panic!("Expected ValidOrderCancellation, got {:?}", other),
+        }
+    }
+}
+
+impl From<ProofManagerResponse> for ValidWithdrawalBundle {
+    fn from(value: ProofManagerResponse) -> Self {
+        match value {
+            ProofManagerResponse::ValidWithdrawal(bundle) => bundle,
+            other => panic!("Expected ValidWithdrawal, got {:?}", other),
+        }
+    }
+}
+
+impl From<ProofManagerResponse> for IntentAndBalanceValidityBundle {
+    fn from(value: ProofManagerResponse) -> Self {
+        match value {
+            ProofManagerResponse::IntentAndBalanceValidity(bundle) => bundle,
+            other => panic!("Expected IntentAndBalanceValidity, got {:?}", other),
+        }
+    }
+}
+
+impl From<ProofManagerResponse> for IntentAndBalanceFirstFillValidityBundle {
+    fn from(value: ProofManagerResponse) -> Self {
+        match value {
+            ProofManagerResponse::IntentAndBalanceFirstFillValidity(bundle) => bundle,
+            other => panic!("Expected IntentAndBalanceFirstFillValidity, got {:?}", other),
+        }
+    }
+}
+
+impl From<ProofManagerResponse> for IntentOnlyValidityBundle {
+    fn from(value: ProofManagerResponse) -> Self {
+        match value {
+            ProofManagerResponse::IntentOnlyValidity(bundle) => bundle,
+            other => panic!("Expected IntentOnlyValidity, got {:?}", other),
+        }
+    }
+}
+
+impl From<ProofManagerResponse> for IntentOnlyFirstFillValidityBundle {
+    fn from(value: ProofManagerResponse) -> Self {
+        match value {
+            ProofManagerResponse::IntentOnlyFirstFillValidity(bundle) => bundle,
+            other => panic!("Expected IntentOnlyFirstFillValidity, got {:?}", other),
+        }
+    }
+}
+
+impl From<ProofManagerResponse> for NewOutputBalanceValidityBundle {
+    fn from(value: ProofManagerResponse) -> Self {
+        match value {
+            ProofManagerResponse::NewOutputBalanceValidity(bundle) => bundle,
+            other => panic!("Expected NewOutputBalanceValidity, got {:?}", other),
+        }
+    }
+}
+
+impl From<ProofManagerResponse> for OutputBalanceValidityBundle {
+    fn from(value: ProofManagerResponse) -> Self {
+        match value {
+            ProofManagerResponse::OutputBalanceValidity(bundle) => bundle,
+            other => panic!("Expected OutputBalanceValidity, got {:?}", other),
+        }
+    }
+}
+
+impl From<ProofManagerResponse> for IntentAndBalanceBoundedSettlementBundle {
+    fn from(value: ProofManagerResponse) -> Self {
+        match value {
+            ProofManagerResponse::IntentAndBalanceBoundedSettlement(bundle) => bundle,
+            other => panic!("Expected IntentAndBalanceBoundedSettlement, got {:?}", other),
+        }
+    }
+}
+
+impl From<ProofManagerResponse> for IntentAndBalancePrivateSettlementBundle {
+    fn from(value: ProofManagerResponse) -> Self {
+        match value {
+            ProofManagerResponse::IntentAndBalancePrivateSettlement(bundle) => bundle,
+            other => panic!("Expected IntentAndBalancePrivateSettlement, got {:?}", other),
+        }
+    }
+}
+
+impl From<ProofManagerResponse> for IntentAndBalancePublicSettlementBundle {
+    fn from(value: ProofManagerResponse) -> Self {
+        match value {
+            ProofManagerResponse::IntentAndBalancePublicSettlement(bundle) => bundle,
+            other => panic!("Expected IntentAndBalancePublicSettlement, got {:?}", other),
+        }
+    }
+}
+
+impl From<ProofManagerResponse> for IntentOnlyBoundedSettlementBundle {
+    fn from(value: ProofManagerResponse) -> Self {
+        match value {
+            ProofManagerResponse::IntentOnlyBoundedSettlement(bundle) => bundle,
+            other => panic!("Expected IntentOnlyBoundedSettlement, got {:?}", other),
+        }
+    }
+}
+
+impl From<ProofManagerResponse> for IntentOnlyPublicSettlementBundle {
+    fn from(value: ProofManagerResponse) -> Self {
+        match value {
+            ProofManagerResponse::IntentOnlyPublicSettlement(bundle) => bundle,
+            other => panic!("Expected IntentOnlyPublicSettlement, got {:?}", other),
+        }
+    }
+}
+
+impl From<ProofManagerResponse> for ValidNoteRedemptionBundle {
+    fn from(value: ProofManagerResponse) -> Self {
+        match value {
+            ProofManagerResponse::ValidNoteRedemption(bundle) => bundle,
+            other => panic!("Expected ValidNoteRedemption, got {:?}", other),
+        }
+    }
+}
+
+impl From<ProofManagerResponse> for ValidPrivateProtocolFeePaymentBundle {
+    fn from(value: ProofManagerResponse) -> Self {
+        match value {
+            ProofManagerResponse::ValidPrivateProtocolFeePayment(bundle) => bundle,
+            other => panic!("Expected ValidPrivateProtocolFeePayment, got {:?}", other),
+        }
+    }
+}
+
+impl From<ProofManagerResponse> for ValidPrivateRelayerFeePaymentBundle {
+    fn from(value: ProofManagerResponse) -> Self {
+        match value {
+            ProofManagerResponse::ValidPrivateRelayerFeePayment(bundle) => bundle,
+            other => panic!("Expected ValidPrivateRelayerFeePayment, got {:?}", other),
+        }
+    }
+}
+
+impl From<ProofManagerResponse> for ValidPublicProtocolFeePaymentBundle {
+    fn from(value: ProofManagerResponse) -> Self {
+        match value {
+            ProofManagerResponse::ValidPublicProtocolFeePayment(bundle) => bundle,
+            other => panic!("Expected ValidPublicProtocolFeePayment, got {:?}", other),
+        }
+    }
+}
+
+impl From<ProofManagerResponse> for ValidPublicRelayerFeePaymentBundle {
+    fn from(value: ProofManagerResponse) -> Self {
+        match value {
+            ProofManagerResponse::ValidPublicRelayerFeePayment(bundle) => bundle,
+            other => panic!("Expected ValidPublicRelayerFeePayment, got {:?}", other),
+        }
+    }
+}
+
+// ------------
+// | Job Type |
+// ------------
 
 /// Represents a job enqueued in the proof manager's work queue
 #[derive(Debug)]

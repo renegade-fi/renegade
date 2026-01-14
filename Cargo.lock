@@ -9164,6 +9164,7 @@ dependencies = [
  "crossbeam",
  "crypto",
  "darkpool-client",
+ "darkpool-types",
  "external-api",
  "eyre",
  "flate2",

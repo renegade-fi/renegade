@@ -1,5 +1,6 @@
 //! Error types emitted in the state interface
 
+use serde::{Deserialize, Serialize};
 use system_clock::SystemClockError;
 
 use crate::{

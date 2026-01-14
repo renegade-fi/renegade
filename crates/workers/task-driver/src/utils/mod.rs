@@ -1,5 +1,6 @@
 //! Helpers for the task driver
 
+use alloy::primitives::Address;
 use job_types::proof_manager::{ProofJob, ProofManagerJob, ProofManagerResponse};
 use tokio::sync::oneshot::{self, Receiver as TokioReceiver};
 
@@ -21,6 +22,18 @@ const ERR_PROVE_COMMITMENTS_FAILED: &str = "failed to prove valid commitments";
 const ERR_PROVE_REBLIND_FAILED: &str = "failed to prove valid reblind";
 /// The error thrown when the wallet cannot be found in tx history
 pub const ERR_WALLET_NOT_FOUND: &str = "wallet not found in wallet_last_updated map";
+/// Error message emitted when relayer fee address is not configured
+const ERR_RELAYER_FEE_ADDR_NOT_CONFIGURED: &str = "relayer fee address not configured";
+
+/// Get the relayer fee address from state
+///
+/// Returns an error if the relayer fee address is not configured
+pub(crate) fn get_relayer_fee_addr(ctx: &TaskContext) -> Result<Address, String> {
+    ctx.state
+        .get_relayer_fee_addr()
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| ERR_RELAYER_FEE_ADDR_NOT_CONFIGURED.to_string())
+}
 
 /// Enqueue a job with the proof manager
 ///

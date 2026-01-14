@@ -14,7 +14,7 @@ use types_core::AccountId;
 use types_tasks::NewAccountTaskDescriptor;
 
 use crate::{
-    task_state::StateWrapper,
+    task_state::TaskStateWrapper,
     traits::{Descriptor, Task, TaskContext, TaskError, TaskState},
 };
 
@@ -56,9 +56,9 @@ impl Display for CreateNewAccountTaskState {
     }
 }
 
-impl From<CreateNewAccountTaskState> for StateWrapper {
+impl From<CreateNewAccountTaskState> for TaskStateWrapper {
     fn from(state: CreateNewAccountTaskState) -> Self {
-        StateWrapper::CreateNewAccount(state)
+        TaskStateWrapper::CreateNewAccount(state)
     }
 }
 
