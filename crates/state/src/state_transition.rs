@@ -7,12 +7,15 @@
 use circuit_types::Nullifier;
 use darkpool_types::rkyv_remotes::ScalarDef;
 use serde::{Deserialize, Serialize};
-use types_account::{Account, MatchingPoolName, account::OrderId};
+use types_account::{Account, MatchingPoolName, MerkleAuthenticationPath, account::OrderId};
 use types_gossip::WrappedPeerId;
 use types_tasks::{QueuedTask, QueuedTaskState, TaskIdentifier, TaskQueueKey};
 use uuid::Uuid;
 
-use crate::replication::{NodeId, RaftNode};
+use crate::{
+    replication::{NodeId, RaftNode},
+    storage::tx::merkle_proofs::MerkleProofType,
+};
 
 // ---------------------
 // | State Transitions |
@@ -47,9 +50,20 @@ pub enum StateTransition {
     // --- Orders --- //
     /// Add a validity proof to an order
     AddOrderValidityProof { 
+        /// The ID of the order
         order_id: OrderId, 
+        /// The nullifier proof
         #[rkyv(with = ScalarDef)]
         proof: Nullifier },
+
+    // --- Merkle Proofs --- //
+    /// Add a Merkle authentication path (proof) for an intent or balance
+    AddMerkleProof {
+        /// The type of proof (contains the ID information)
+        proof_type: MerkleProofType,
+        /// The proof
+        proof: MerkleAuthenticationPath,
+    },
 
     // --- Matching Pools --- //
     /// Create a matching pool

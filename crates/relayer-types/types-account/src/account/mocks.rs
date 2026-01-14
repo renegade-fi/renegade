@@ -3,7 +3,6 @@
 use constants::{MERKLE_HEIGHT, Scalar};
 use darkpool_types::fuzzing::{random_address, random_amount, random_price};
 use darkpool_types::intent::Intent;
-use num_bigint::BigUint;
 use rand::thread_rng;
 
 use types_core::{AccountId, HmacKey};
@@ -45,7 +44,7 @@ pub fn mock_merkle_path() -> MerkleAuthenticationPath {
     let mut rng = thread_rng();
     MerkleAuthenticationPath::new(
         [Scalar::random(&mut rng); MERKLE_HEIGHT],
-        BigUint::from(0u8),
+        0u64,
         Scalar::random(&mut rng),
     )
 }

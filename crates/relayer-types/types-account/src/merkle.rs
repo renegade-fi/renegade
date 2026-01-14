@@ -8,6 +8,11 @@ use itertools::Itertools;
 use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "rkyv")]
+use darkpool_types::rkyv_remotes::ScalarDef;
+#[cfg(feature = "rkyv")]
+use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize, with::Map};
+
 /// A wrapper representing the coordinates of a value in a Merkle tree
 ///
 /// Used largely for readability
@@ -31,22 +36,26 @@ impl MerkleTreeCoords {
 
 /// Represents a Merkle authentication path for a wallet
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "rkyv", derive(Archive, RkyvDeserialize, RkyvSerialize))]
+#[cfg_attr(feature = "rkyv", rkyv(derive(Debug)))]
 pub struct MerkleAuthenticationPath {
     /// A list of sibling node values that are hashed with
     /// the wallet commitment in the root computation
     ///
     /// The first value in this list is a leaf, the last value is
     /// one of the root's children
+    #[cfg_attr(feature = "rkyv", rkyv(with = Map<ScalarDef>))]
     pub path_siblings: [Scalar; MERKLE_HEIGHT],
     /// The leaf index that this node sits at
-    pub leaf_index: BigUint,
+    pub leaf_index: u64,
     /// The value being authenticated
+    #[cfg_attr(feature = "rkyv", rkyv(with = ScalarDef))]
     pub value: Scalar,
 }
 
 impl MerkleAuthenticationPath {
     /// Constructor
-    pub fn new(path_siblings: [Scalar; MERKLE_HEIGHT], leaf_index: BigUint, value: Scalar) -> Self {
+    pub fn new(path_siblings: [Scalar; MERKLE_HEIGHT], leaf_index: u64, value: Scalar) -> Self {
         Self { path_siblings, leaf_index, value }
     }
 
@@ -76,20 +85,20 @@ impl MerkleAuthenticationPath {
     ///
     /// The result is sorted from leaf level to depth 1
     pub fn compute_authentication_path_coords(&self) -> Vec<MerkleTreeCoords> {
-        let mut current_index = self.leaf_index.clone();
+        let mut current_index = self.leaf_index;
 
         let mut coords = Vec::with_capacity(MERKLE_HEIGHT);
         for height in (1..MERKLE_HEIGHT + 1).rev() {
-            let sibling_index = if &current_index % 2u8 == BigUint::from(0u8) {
+            let sibling_index = if current_index % 2 == 0 {
                 // Left hand node
-                &current_index + 1u8
+                current_index + 1
             } else {
                 // Right hand node
-                &current_index - 1u8
+                current_index - 1
             };
 
-            coords.push(MerkleTreeCoords::new(height, sibling_index));
-            current_index >>= 1u8;
+            coords.push(MerkleTreeCoords::new(height, BigUint::from(sibling_index)));
+            current_index >>= 1;
         }
 
         coords
@@ -97,11 +106,11 @@ impl MerkleAuthenticationPath {
 
     /// Compute the root implied by the path
     pub fn compute_root(&self) -> Scalar {
-        let mut current_index = self.leaf_index.clone();
+        let mut current_index = self.leaf_index;
         let mut current_value = self.value;
 
         for sibling in self.path_siblings.iter() {
-            current_value = if &current_index % 2u8 == BigUint::from(0u8) {
+            current_value = if current_index % 2 == 0 {
                 compute_poseidon_hash(&[current_value, *sibling])
             } else {
                 compute_poseidon_hash(&[*sibling, current_value])
@@ -120,7 +129,7 @@ impl From<MerkleAuthenticationPath> for SizedMerkleOpening {
         // The path conversion is simply the first `MERKLE_HEIGHT` bits of
         // the leaf index
         let path_indices =
-            (0..MERKLE_HEIGHT).map(|bit| native_path.leaf_index.bit(bit as u64)).collect_vec();
+            (0..MERKLE_HEIGHT).map(|bit| (native_path.leaf_index >> bit) & 1 == 1).collect_vec();
 
         MerkleOpening {
             elems: native_path.path_siblings.to_vec().try_into().unwrap(),

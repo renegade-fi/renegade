@@ -20,6 +20,7 @@ use self::{error::StateApplicatorError, return_type::ApplicatorReturnType};
 
 pub mod account_index;
 pub mod error;
+pub mod merkle_proofs;
 pub mod matching_pools;
 pub mod order_book;
 pub mod return_type;
@@ -120,6 +121,9 @@ impl StateApplicator {
                 self.enqueue_preemptive_task(&keys, &task, &executor, serial)
             },
             StateTransition::ReassignTasks { from, to } => self.reassign_tasks(&from, &to),
+            StateTransition::AddMerkleProof { proof_type, proof } => {
+                self.add_merkle_proof(proof_type, proof)
+            },
             _ => unimplemented!("Unsupported state transition forwarded to applicator"),
         }
     }
