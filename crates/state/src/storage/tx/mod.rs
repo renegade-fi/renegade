@@ -10,6 +10,7 @@
 
 pub mod account_index;
 pub mod matching_pools;
+pub mod merkle_proofs;
 pub mod node_metadata;
 pub mod order_book;
 pub mod peer_index;

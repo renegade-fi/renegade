@@ -49,7 +49,7 @@ pub fn ciborium_deserialize<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> Res
 // -------------
 
 /// The number of tables to open in the database
-const NUM_TABLES: usize = 19;
+const NUM_TABLES: usize = 20;
 
 /// The name of the db table that stores node metadata
 pub(crate) const NODE_METADATA_TABLE: &str = "node-metadata";
@@ -93,6 +93,9 @@ pub(crate) const TASK_HISTORY_TABLE: &str = "task-history";
 /// The name of the db table that stores the offline phase values
 pub(crate) const MPC_PREPROCESSING_TABLE: &str = "mpc-preprocessing";
 
+/// The name of the db table that stores Merkle authentication paths (openings)
+pub(crate) const MERKLE_PROOFS_TABLE: &str = "merkle-proofs";
+
 /// The name of the raft metadata table in the database
 pub const RAFT_METADATA_TABLE: &str = "raft-metadata";
 /// The name of the raft logs table in the database
@@ -100,6 +103,7 @@ pub const RAFT_LOGS_TABLE: &str = "raft-logs";
 /// All tables in the database
 pub const ALL_TABLES: [&str; NUM_TABLES] = [
     CLUSTER_MEMBERSHIP_TABLE,
+    MERKLE_PROOFS_TABLE,
     MPC_PREPROCESSING_TABLE,
     NODE_METADATA_TABLE,
     NULLIFIER_TO_WALLET_TABLE,
