@@ -260,13 +260,13 @@ impl Task for UpdateWalletTask {
     #[allow(clippy::blocks_in_conditions)]
     #[instrument(skip_all, err, fields(
         task = self.name(),
-        state = %self.state(),
+        state = %self.task_state(),
         old_wallet_id = %self.old_wallet.wallet_id,
         new_wallet_id = %self.new_wallet.wallet_id,
     ))]
     async fn step(&mut self) -> Result<(), Self::Error> {
         // Dispatch based on the current transaction step
-        match self.state() {
+        match self.task_state() {
             UpdateWalletTaskState::Pending => {
                 // Skip proving and tx submission if the update doesn't require
                 // an on-chain update
@@ -314,10 +314,10 @@ impl Task for UpdateWalletTask {
     }
 
     fn completed(&self) -> bool {
-        matches!(self.state(), Self::State::Completed)
+        matches!(self.task_state(), Self::State::Completed)
     }
 
-    fn state(&self) -> Self::State {
+    fn task_state(&self) -> Self::State {
         self.task_state.clone()
     }
 

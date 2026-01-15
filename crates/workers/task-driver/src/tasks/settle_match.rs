@@ -220,10 +220,10 @@ impl Task for SettleMatchTask {
     }
 
     #[allow(clippy::blocks_in_conditions)]
-    #[instrument(skip_all, err, fields(task = %self.name(), state = %self.state()))]
+    #[instrument(skip_all, err, fields(task = %self.name(), state = %self.task_state()))]
     async fn step(&mut self) -> Result<(), Self::Error> {
         // Dispatch based on the current task state
-        match self.state() {
+        match self.task_state() {
             SettleMatchTaskState::Pending => {
                 self.task_state = SettleMatchTaskState::SubmittingMatch
             },
@@ -256,10 +256,10 @@ impl Task for SettleMatchTask {
     }
 
     fn completed(&self) -> bool {
-        matches!(self.state(), SettleMatchTaskState::Completed)
+        matches!(self.task_state(), SettleMatchTaskState::Completed)
     }
 
-    fn state(&self) -> SettleMatchTaskState {
+    fn task_state(&self) -> SettleMatchTaskState {
         self.task_state.clone()
     }
 }

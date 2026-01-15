@@ -209,10 +209,10 @@ impl Task for NewWalletTask {
     }
 
     #[allow(clippy::blocks_in_conditions)]
-    #[instrument(skip_all, err, fields(task = %self.name(), state = %self.state(), wallet_id = %self.wallet.wallet_id))]
+    #[instrument(skip_all, err, fields(task = %self.name(), state = %self.task_state(), wallet_id = %self.wallet.wallet_id))]
     async fn step(&mut self) -> Result<(), Self::Error> {
         // Dispatch based on the current state of the task
-        match self.state() {
+        match self.task_state() {
             NewWalletTaskState::Pending => {
                 self.task_state = NewWalletTaskState::Proving;
             },
@@ -243,7 +243,7 @@ impl Task for NewWalletTask {
         Ok(())
     }
 
-    fn state(&self) -> Self::State {
+    fn task_state(&self) -> Self::State {
         self.task_state.clone()
     }
 

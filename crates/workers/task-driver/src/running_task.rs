@@ -58,7 +58,7 @@ impl<T: Task> RunnableTask<T> {
 
     /// Returns the state of the underlying task
     pub fn state(&self) -> TaskStateWrapper {
-        self.task.state().into()
+        self.task.task_state().into()
     }
 
     /// `true` if the task does not need to update the task queue during state

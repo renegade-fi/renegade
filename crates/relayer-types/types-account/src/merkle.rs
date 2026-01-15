@@ -89,7 +89,7 @@ impl MerkleAuthenticationPath {
 
         let mut coords = Vec::with_capacity(MERKLE_HEIGHT);
         for height in (1..MERKLE_HEIGHT + 1).rev() {
-            let sibling_index = if current_index % 2 == 0 {
+            let sibling_index = if current_index.is_multiple_of(2) {
                 // Left hand node
                 current_index + 1
             } else {
@@ -110,7 +110,7 @@ impl MerkleAuthenticationPath {
         let mut current_value = self.value;
 
         for sibling in self.path_siblings.iter() {
-            current_value = if current_index % 2 == 0 {
+            current_value = if current_index.is_multiple_of(2) {
                 compute_poseidon_hash(&[current_value, *sibling])
             } else {
                 compute_poseidon_hash(&[*sibling, current_value])

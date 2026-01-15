@@ -5,16 +5,17 @@ version = 4
 [[package]]
 name = "abi"
 version = "0.1.0"
+source = "git+https://github.com/renegade-fi/renegade-contracts#81a526f8e81627e1d4ab307d5b1ad2fb303308f8"
 dependencies = [
  "alloy",
  "ark-bn254",
  "ark-ec",
  "ark-ff 0.4.2",
- "circuit-types",
- "circuits-core",
- "constants",
- "crypto",
- "darkpool-types",
+ "circuit-types 0.1.0 (git+https://github.com/renegade-fi/renegade?branch=joey%2Frelayer-v2)",
+ "circuits-core 0.1.0 (git+https://github.com/renegade-fi/renegade?branch=joey%2Frelayer-v2)",
+ "constants 0.1.0 (git+https://github.com/renegade-fi/renegade?branch=joey%2Frelayer-v2)",
+ "crypto 0.1.0 (git+https://github.com/renegade-fi/renegade?branch=joey%2Frelayer-v2)",
+ "darkpool-types 0.1.0 (git+https://github.com/renegade-fi/renegade?branch=joey%2Frelayer-v2)",
  "jf-primitives",
  "num-bigint",
  "serde",
@@ -838,15 +839,15 @@ dependencies = [
  "api-server-bench-util",
  "async-trait",
  "base64 0.21.7",
- "circuit-types",
+ "circuit-types 0.1.0",
  "clap 4.5.54",
  "colored",
  "compliance-api",
  "config",
- "constants",
+ "constants 0.1.0",
  "criterion",
  "crossbeam",
- "crypto",
+ "crypto 0.1.0",
  "ctor",
  "darkpool-client",
  "ecdsa 0.16.9",
@@ -889,7 +890,7 @@ dependencies = [
  "types-gossip",
  "types-runtime",
  "types-tasks",
- "util",
+ "util 0.1.0",
  "uuid",
 ]
 
@@ -898,7 +899,7 @@ name = "api-server-bench-util"
 version = "0.1.0"
 dependencies = [
  "alloy",
- "circuit-types",
+ "circuit-types 0.1.0",
  "config",
  "darkpool-client",
  "external-api",
@@ -915,7 +916,7 @@ dependencies = [
  "types-gossip",
  "types-runtime",
  "types-tasks",
- "util",
+ "util 0.1.0",
 ]
 
 [[package]]
@@ -2261,7 +2262,7 @@ dependencies = [
  "toml 0.8.23",
  "tracing",
  "types-core",
- "util",
+ "util 0.1.0",
 ]
 
 [[package]]
@@ -2457,10 +2458,10 @@ version = "0.1.0"
 dependencies = [
  "alloy",
  "async-trait",
- "circuit-types",
- "constants",
+ "circuit-types 0.1.0",
+ "constants 0.1.0",
  "crossbeam",
- "crypto",
+ "crypto 0.1.0",
  "darkpool-client",
  "futures-util",
  "gossip-api",
@@ -2476,7 +2477,7 @@ dependencies = [
  "types-core",
  "types-runtime",
  "types-tasks",
- "util",
+ "util 0.1.0",
 ]
 
 [[package]]
@@ -2542,6 +2543,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "circuit-macros"
+version = "0.1.0"
+source = "git+https://github.com/renegade-fi/renegade?branch=joey%2Frelayer-v2#3576ca43e1e5cded65ff27b169bbc1fe7ec4e8f1"
+dependencies = [
+ "itertools 0.10.5",
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
+]
+
+[[package]]
 name = "circuit-types"
 version = "0.1.0"
 dependencies = [
@@ -2554,9 +2566,9 @@ dependencies = [
  "async-trait",
  "bigdecimal",
  "byteorder",
- "circuit-macros",
- "constants",
- "crypto",
+ "circuit-macros 0.1.0",
+ "constants 0.1.0",
+ "crypto 0.1.0",
  "futures",
  "hex 0.4.3",
  "itertools 0.10.5",
@@ -2576,6 +2588,39 @@ dependencies = [
 ]
 
 [[package]]
+name = "circuit-types"
+version = "0.1.0"
+source = "git+https://github.com/renegade-fi/renegade?branch=joey%2Frelayer-v2#3576ca43e1e5cded65ff27b169bbc1fe7ec4e8f1"
+dependencies = [
+ "alloy-primitives",
+ "ark-bn254",
+ "ark-ec",
+ "ark-ff 0.4.2",
+ "ark-mpc",
+ "ark-serialize 0.4.2",
+ "async-trait",
+ "bigdecimal",
+ "byteorder",
+ "circuit-macros 0.1.0 (git+https://github.com/renegade-fi/renegade?branch=joey%2Frelayer-v2)",
+ "constants 0.1.0 (git+https://github.com/renegade-fi/renegade?branch=joey%2Frelayer-v2)",
+ "crypto 0.1.0 (git+https://github.com/renegade-fi/renegade?branch=joey%2Frelayer-v2)",
+ "futures",
+ "hex 0.4.3",
+ "itertools 0.10.5",
+ "jf-primitives",
+ "k256",
+ "lazy_static",
+ "mpc-plonk",
+ "mpc-relation",
+ "num-bigint",
+ "num-integer",
+ "num-traits",
+ "rand 0.8.5",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "circuits-core"
 version = "0.1.0"
 dependencies = [
@@ -2586,15 +2631,15 @@ dependencies = [
  "ark-mpc",
  "bigdecimal",
  "bitvec",
- "circuit-macros",
- "circuit-types",
+ "circuit-macros 0.1.0",
+ "circuit-types 0.1.0",
  "clap 4.5.54",
  "colored",
- "constants",
+ "constants 0.1.0",
  "criterion",
- "crypto",
+ "crypto 0.1.0",
  "ctor",
- "darkpool-types",
+ "darkpool-types 0.1.0",
  "dns-lookup",
  "eyre",
  "futures",
@@ -2613,7 +2658,38 @@ dependencies = [
  "serde_json",
  "test-helpers",
  "tokio",
- "util",
+ "util 0.1.0",
+]
+
+[[package]]
+name = "circuits-core"
+version = "0.1.0"
+source = "git+https://github.com/renegade-fi/renegade?branch=joey%2Frelayer-v2#3576ca43e1e5cded65ff27b169bbc1fe7ec4e8f1"
+dependencies = [
+ "alloy-primitives",
+ "ark-crypto-primitives",
+ "ark-ec",
+ "ark-ff 0.4.2",
+ "ark-mpc",
+ "bigdecimal",
+ "bitvec",
+ "circuit-macros 0.1.0 (git+https://github.com/renegade-fi/renegade?branch=joey%2Frelayer-v2)",
+ "circuit-types 0.1.0 (git+https://github.com/renegade-fi/renegade?branch=joey%2Frelayer-v2)",
+ "constants 0.1.0 (git+https://github.com/renegade-fi/renegade?branch=joey%2Frelayer-v2)",
+ "crypto 0.1.0 (git+https://github.com/renegade-fi/renegade?branch=joey%2Frelayer-v2)",
+ "darkpool-types 0.1.0 (git+https://github.com/renegade-fi/renegade?branch=joey%2Frelayer-v2)",
+ "futures",
+ "itertools 0.10.5",
+ "jf-primitives",
+ "lazy_static",
+ "mpc-plonk",
+ "mpc-relation",
+ "num-bigint",
+ "num-integer",
+ "rand 0.8.5",
+ "serde",
+ "serde_json",
+ "util 0.1.0 (git+https://github.com/renegade-fi/renegade?branch=joey%2Frelayer-v2)",
 ]
 
 [[package]]
@@ -2765,10 +2841,10 @@ dependencies = [
  "alloy",
  "base64 0.13.1",
  "bimap",
- "circuit-types",
+ "circuit-types 0.1.0",
  "clap 4.5.54",
  "colored",
- "constants",
+ "constants 0.1.0",
  "darkpool-client",
  "ed25519-dalek 1.0.1",
  "json",
@@ -2784,7 +2860,7 @@ dependencies = [
  "types-core",
  "types-gossip",
  "url",
- "util",
+ "util 0.1.0",
 ]
 
 [[package]]
@@ -2840,6 +2916,17 @@ checksum = "7c74b8349d32d297c9134b8c88677813a227df8f779daa29bfc29c183fe3dca6"
 [[package]]
 name = "constants"
 version = "0.1.0"
+dependencies = [
+ "ark-bn254",
+ "ark-ec",
+ "ark-ed-on-bn254",
+ "ark-mpc",
+]
+
+[[package]]
+name = "constants"
+version = "0.1.0"
+source = "git+https://github.com/renegade-fi/renegade?branch=joey%2Frelayer-v2#3576ca43e1e5cded65ff27b169bbc1fe7ec4e8f1"
 dependencies = [
  "ark-bn254",
  "ark-ec",
@@ -3069,7 +3156,7 @@ dependencies = [
  "ark-ff 0.4.2",
  "ark-mpc",
  "bigdecimal",
- "constants",
+ "constants 0.1.0",
  "criterion",
  "itertools 0.10.5",
  "lazy_static",
@@ -3078,6 +3165,23 @@ dependencies = [
  "serde",
  "serde_json",
  "zkhash",
+]
+
+[[package]]
+name = "crypto"
+version = "0.1.0"
+source = "git+https://github.com/renegade-fi/renegade?branch=joey%2Frelayer-v2#3576ca43e1e5cded65ff27b169bbc1fe7ec4e8f1"
+dependencies = [
+ "alloy-primitives",
+ "ark-ec",
+ "ark-ff 0.4.2",
+ "bigdecimal",
+ "constants 0.1.0 (git+https://github.com/renegade-fi/renegade?branch=joey%2Frelayer-v2)",
+ "itertools 0.10.5",
+ "lazy_static",
+ "num-bigint",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -3190,12 +3294,12 @@ dependencies = [
  "ark-ec",
  "ark-ff 0.4.2",
  "async-trait",
- "circuit-types",
- "circuits-core",
+ "circuit-types 0.1.0",
+ "circuits-core 0.1.0",
  "clap 4.5.54",
  "colored",
- "constants",
- "crypto",
+ "constants 0.1.0",
+ "crypto 0.1.0",
  "eyre",
  "inventory",
  "itertools 0.12.1",
@@ -3213,7 +3317,7 @@ dependencies = [
  "types-account",
  "types-core",
  "types-proofs",
- "util",
+ "util 0.1.0",
 ]
 
 [[package]]
@@ -3223,16 +3327,34 @@ dependencies = [
  "alloy-primitives",
  "ark-bn254",
  "ark-ff 0.4.2",
- "circuit-macros",
- "circuit-types",
- "constants",
- "crypto",
+ "circuit-macros 0.1.0",
+ "circuit-types 0.1.0",
+ "constants 0.1.0",
+ "crypto 0.1.0",
  "itertools 0.10.5",
  "jf-primitives",
  "mpc-plonk",
  "mpc-relation",
  "rand 0.8.5",
  "rkyv",
+ "serde",
+]
+
+[[package]]
+name = "darkpool-types"
+version = "0.1.0"
+source = "git+https://github.com/renegade-fi/renegade?branch=joey%2Frelayer-v2#3576ca43e1e5cded65ff27b169bbc1fe7ec4e8f1"
+dependencies = [
+ "alloy-primitives",
+ "circuit-macros 0.1.0 (git+https://github.com/renegade-fi/renegade?branch=joey%2Frelayer-v2)",
+ "circuit-types 0.1.0 (git+https://github.com/renegade-fi/renegade?branch=joey%2Frelayer-v2)",
+ "constants 0.1.0 (git+https://github.com/renegade-fi/renegade?branch=joey%2Frelayer-v2)",
+ "crypto 0.1.0 (git+https://github.com/renegade-fi/renegade?branch=joey%2Frelayer-v2)",
+ "itertools 0.10.5",
+ "jf-primitives",
+ "mpc-plonk",
+ "mpc-relation",
+ "rand 0.8.5",
  "serde",
 ]
 
@@ -3708,8 +3830,8 @@ name = "event-manager"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "circuit-types",
- "constants",
+ "circuit-types 0.1.0",
+ "constants 0.1.0",
  "futures",
  "job-types",
  "metrics",
@@ -3722,7 +3844,7 @@ dependencies = [
  "types-core",
  "types-runtime",
  "url",
- "util",
+ "util 0.1.0",
 ]
 
 [[package]]
@@ -3742,10 +3864,10 @@ dependencies = [
  "abi",
  "alloy",
  "base64 0.22.1",
- "circuit-types",
- "constants",
- "crypto",
- "darkpool-types",
+ "circuit-types 0.1.0",
+ "constants 0.1.0",
+ "crypto 0.1.0",
+ "darkpool-types 0.1.0",
  "hex 0.4.3",
  "http 1.4.0",
  "itertools 0.10.5",
@@ -3759,8 +3881,7 @@ dependencies = [
  "types-core",
  "types-gossip",
  "types-runtime",
- "types-tasks",
- "util",
+ "util 0.1.0",
  "uuid",
 ]
 
@@ -4131,7 +4252,7 @@ name = "gossip-api"
 version = "0.1.0"
 dependencies = [
  "bincode",
- "circuit-types",
+ "circuit-types 0.1.0",
  "hmac",
  "libp2p",
  "openraft",
@@ -4143,7 +4264,7 @@ dependencies = [
  "types-core",
  "types-gossip",
  "types-proofs",
- "util",
+ "util 0.1.0",
  "uuid",
 ]
 
@@ -4152,9 +4273,9 @@ name = "gossip-server"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "circuit-types",
- "circuits-core",
- "constants",
+ "circuit-types 0.1.0",
+ "circuits-core 0.1.0",
+ "constants 0.1.0",
  "darkpool-client",
  "futures",
  "gossip-api",
@@ -4172,7 +4293,7 @@ dependencies = [
  "types-gossip",
  "types-proofs",
  "types-runtime",
- "util",
+ "util 0.1.0",
 ]
 
 [[package]]
@@ -5029,11 +5150,11 @@ name = "job-types"
 version = "0.1.0"
 dependencies = [
  "ark-mpc",
- "circuit-types",
- "circuits-core",
- "constants",
+ "circuit-types 0.1.0",
+ "circuits-core 0.1.0",
+ "constants 0.1.0",
  "crossbeam",
- "darkpool-types",
+ "darkpool-types 0.1.0",
  "gossip-api",
  "lazy_static",
  "libp2p",
@@ -5047,7 +5168,7 @@ dependencies = [
  "types-gossip",
  "types-proofs",
  "types-tasks",
- "util",
+ "util 0.1.0",
  "uuid",
 ]
 
@@ -5715,15 +5836,15 @@ name = "matching-engine-core"
 version = "0.1.0"
 dependencies = [
  "alloy-primitives",
- "circuit-types",
- "crypto",
- "darkpool-types",
+ "circuit-types 0.1.0",
+ "crypto 0.1.0",
+ "darkpool-types 0.1.0",
  "dashmap",
  "rand 0.8.5",
  "rustc-hash 2.1.1",
  "types-account",
  "types-core",
- "util",
+ "util 0.1.0",
 ]
 
 [[package]]
@@ -5733,14 +5854,14 @@ dependencies = [
  "ark-mpc",
  "ark-serialize 0.4.2",
  "async-trait",
- "circuit-types",
+ "circuit-types 0.1.0",
  "clap 4.5.54",
  "colored",
- "constants",
+ "constants 0.1.0",
  "crossbeam",
- "crypto",
+ "crypto 0.1.0",
  "darkpool-client",
- "darkpool-types",
+ "darkpool-types 0.1.0",
  "eyre",
  "futures",
  "inventory",
@@ -5768,7 +5889,7 @@ dependencies = [
  "types-core",
  "types-runtime",
  "types-tasks",
- "util",
+ "util 0.1.0",
  "uuid",
 ]
 
@@ -5949,7 +6070,7 @@ dependencies = [
  "alloy",
  "api-server",
  "chain-events",
- "circuit-types",
+ "circuit-types 0.1.0",
  "config",
  "darkpool-client",
  "external-api",
@@ -5978,7 +6099,7 @@ dependencies = [
  "types-gossip",
  "types-runtime",
  "types-tasks",
- "util",
+ "util 0.1.0",
 ]
 
 [[package]]
@@ -6267,7 +6388,7 @@ dependencies = [
  "types-core",
  "types-gossip",
  "types-runtime",
- "util",
+ "util 0.1.0",
  "uuid",
 ]
 
@@ -7085,7 +7206,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "atomic_float 0.1.0",
- "constants",
+ "constants 0.1.0",
  "external-api",
  "futures",
  "futures-util",
@@ -7107,7 +7228,7 @@ dependencies = [
  "types-core",
  "types-runtime",
  "url",
- "util",
+ "util 0.1.0",
 ]
 
 [[package]]
@@ -7119,7 +7240,7 @@ dependencies = [
  "statrs",
  "thiserror 2.0.17",
  "types-core",
- "util",
+ "util 0.1.0",
 ]
 
 [[package]]
@@ -7236,9 +7357,9 @@ version = "0.1.0"
 dependencies = [
  "ark-mpc",
  "async-trait",
- "circuit-types",
- "circuits-core",
- "constants",
+ "circuit-types 0.1.0",
+ "circuits-core 0.1.0",
+ "constants 0.1.0",
  "crossbeam",
  "http-auth-basic",
  "job-types",
@@ -7256,7 +7377,7 @@ dependencies = [
  "types-proofs",
  "types-runtime",
  "types-tasks",
- "util",
+ "util 0.1.0",
 ]
 
 [[package]]
@@ -7827,7 +7948,7 @@ dependencies = [
  "metrics",
  "tracing",
  "types-core",
- "util",
+ "util 0.1.0",
 ]
 
 [[package]]
@@ -7836,10 +7957,10 @@ version = "0.1.0"
 dependencies = [
  "api-server",
  "chain-events",
- "circuit-types",
+ "circuit-types 0.1.0",
  "clap 3.2.25",
  "config",
- "constants",
+ "constants 0.1.0",
  "crossbeam",
  "darkpool-client",
  "event-manager",
@@ -7863,7 +7984,7 @@ dependencies = [
  "tracing",
  "types-runtime",
  "types-tasks",
- "util",
+ "util 0.1.0",
 ]
 
 [[package]]
@@ -8811,7 +8932,7 @@ dependencies = [
  "reqwest",
  "tokio",
  "tracing",
- "util",
+ "util 0.1.0",
 ]
 
 [[package]]
@@ -8889,12 +9010,12 @@ dependencies = [
  "alloy-primitives",
  "async-trait",
  "ciborium",
- "circuit-types",
+ "circuit-types 0.1.0",
  "config",
- "constants",
+ "constants 0.1.0",
  "criterion",
  "crossbeam",
- "darkpool-types",
+ "darkpool-types 0.1.0",
  "dashmap",
  "external-api",
  "eyre",
@@ -8929,7 +9050,7 @@ dependencies = [
  "types-gossip",
  "types-runtime",
  "types-tasks",
- "util",
+ "util 0.1.0",
  "uuid",
 ]
 
@@ -9068,8 +9189,8 @@ name = "system-bus"
 version = "0.1.0"
 dependencies = [
  "bus",
- "circuit-types",
- "darkpool-types",
+ "circuit-types 0.1.0",
+ "darkpool-types 0.1.0",
  "external-api",
  "futures",
  "rand 0.8.5",
@@ -9090,7 +9211,7 @@ dependencies = [
  "tokio",
  "tokio-cron-scheduler",
  "tracing",
- "util",
+ "util 0.1.0",
 ]
 
 [[package]]
@@ -9155,16 +9276,16 @@ dependencies = [
  "alloy-primitives",
  "ark-mpc",
  "async-trait",
- "circuit-types",
- "circuits-core",
+ "circuit-types 0.1.0",
+ "circuits-core 0.1.0",
  "clap 4.5.54",
  "colored",
  "config",
- "constants",
+ "constants 0.1.0",
  "crossbeam",
- "crypto",
+ "crypto 0.1.0",
  "darkpool-client",
- "darkpool-types",
+ "darkpool-types 0.1.0",
  "external-api",
  "eyre",
  "flate2",
@@ -9196,7 +9317,7 @@ dependencies = [
  "types-proofs",
  "types-runtime",
  "types-tasks",
- "util",
+ "util 0.1.0",
  "uuid",
 ]
 
@@ -9231,9 +9352,9 @@ dependencies = [
  "alloy-sol-types",
  "ark-mpc",
  "async-trait",
- "circuit-types",
- "constants",
- "crypto",
+ "circuit-types 0.1.0",
+ "constants 0.1.0",
+ "crypto 0.1.0",
  "darkpool-client",
  "dns-lookup",
  "eyre",
@@ -9247,7 +9368,7 @@ dependencies = [
  "tokio",
  "tracing",
  "types-runtime",
- "util",
+ "util 0.1.0",
 ]
 
 [[package]]
@@ -9925,10 +10046,10 @@ version = "0.1.0"
 dependencies = [
  "abi",
  "alloy",
- "circuit-types",
- "constants",
- "crypto",
- "darkpool-types",
+ "circuit-types 0.1.0",
+ "constants 0.1.0",
+ "crypto 0.1.0",
+ "darkpool-types 0.1.0",
  "derivative",
  "itertools 0.10.5",
  "k256",
@@ -9940,7 +10061,7 @@ dependencies = [
  "serde",
  "signature 2.2.0",
  "types-core",
- "util",
+ "util 0.1.0",
  "uuid",
 ]
 
@@ -9951,15 +10072,15 @@ dependencies = [
  "alloy",
  "base64 0.22.1",
  "bimap",
- "circuit-types",
- "constants",
+ "circuit-types 0.1.0",
+ "constants 0.1.0",
  "hmac",
  "num-bigint",
  "rand 0.8.5",
  "rkyv",
  "serde",
  "sha2 0.10.9",
- "util",
+ "util 0.1.0",
  "uuid",
 ]
 
@@ -9968,9 +10089,9 @@ name = "types-gossip"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
- "circuit-types",
- "constants",
- "darkpool-types",
+ "circuit-types 0.1.0",
+ "constants 0.1.0",
+ "darkpool-types 0.1.0",
  "derivative",
  "ed25519-dalek 1.0.1",
  "libp2p",
@@ -9981,7 +10102,7 @@ dependencies = [
  "serde",
  "serde_json",
  "types-account",
- "util",
+ "util 0.1.0",
  "uuid",
 ]
 
@@ -9991,9 +10112,9 @@ version = "0.1.0"
 dependencies = [
  "ark-ec",
  "ark-poly",
- "circuit-types",
- "circuits-core",
- "constants",
+ "circuit-types 0.1.0",
+ "circuits-core 0.1.0",
+ "constants 0.1.0",
  "jf-primitives",
  "mpc-plonk",
  "mpc-relation",
@@ -10017,13 +10138,14 @@ version = "0.1.0"
 dependencies = [
  "abi",
  "alloy",
- "circuit-types",
- "darkpool-types",
+ "circuit-types 0.1.0",
+ "darkpool-types 0.1.0",
+ "external-api",
  "rkyv",
  "serde",
  "types-account",
  "types-core",
- "util",
+ "util 0.1.0",
  "uuid",
 ]
 
@@ -10166,17 +10288,57 @@ dependencies = [
  "ark-ec",
  "ark-serialize 0.4.2",
  "chrono",
- "circuit-types",
- "constants",
+ "circuit-types 0.1.0",
+ "constants 0.1.0",
  "criterion",
  "crossbeam",
- "crypto",
+ "crypto 0.1.0",
  "eyre",
  "futures",
  "hex 0.4.3",
  "http 1.4.0",
  "json",
  "lazy_static",
+ "libp2p",
+ "metrics",
+ "metrics-exporter-statsd",
+ "metrics-tracing-context",
+ "metrics-util",
+ "num-bigint",
+ "num-traits",
+ "opentelemetry",
+ "opentelemetry-datadog",
+ "opentelemetry-otlp",
+ "opentelemetry-semantic-conventions",
+ "opentelemetry_sdk",
+ "rand 0.8.5",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-opentelemetry",
+ "tracing-serde 0.1.3",
+ "tracing-subscriber 0.3.22",
+]
+
+[[package]]
+name = "util"
+version = "0.1.0"
+source = "git+https://github.com/renegade-fi/renegade?branch=joey%2Frelayer-v2#3576ca43e1e5cded65ff27b169bbc1fe7ec4e8f1"
+dependencies = [
+ "alloy",
+ "ark-ec",
+ "ark-serialize 0.4.2",
+ "chrono",
+ "circuit-types 0.1.0 (git+https://github.com/renegade-fi/renegade?branch=joey%2Frelayer-v2)",
+ "constants 0.1.0 (git+https://github.com/renegade-fi/renegade?branch=joey%2Frelayer-v2)",
+ "crossbeam",
+ "crypto 0.1.0 (git+https://github.com/renegade-fi/renegade?branch=joey%2Frelayer-v2)",
+ "eyre",
+ "futures",
+ "hex 0.4.3",
+ "http 1.4.0",
+ "json",
  "libp2p",
  "metrics",
  "metrics-exporter-statsd",

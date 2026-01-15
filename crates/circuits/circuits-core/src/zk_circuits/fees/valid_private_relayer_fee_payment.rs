@@ -93,6 +93,10 @@ impl<const MERKLE_HEIGHT: usize> ValidPrivateRelayerFeePayment<MERKLE_HEIGHT> {
             receiver: balance.relayer_fee_recipient,
             blinder: witness.blinder,
         };
+
+        // We leak this value here so that the contracts may check that the fee receiver
+        // has signed the note's encryption (encrypted out of circuit). This allows the
+        // contracts to delegate ciphertext verification directly to the receiver.
         EqGadget::constrain_eq(&statement.relayer_fee_receiver, &note.receiver, cs)?;
 
         // Verify the commitment of the note

@@ -250,12 +250,12 @@ impl Task for SettleMalleableExternalMatchTask {
     #[allow(clippy::blocks_in_conditions)]
     #[instrument(skip_all, err, fields(
         task = self.name(),
-        state = %self.state(),
+        state = %self.task_state(),
         internal_wallet_id = %self.internal_wallet_id,
     ))]
     async fn step(&mut self) -> Result<()> {
         // Dispatch based on the current task state
-        match self.state() {
+        match self.task_state() {
             SettleMalleableExternalMatchTaskState::Pending => {
                 self.task_state = SettleMalleableExternalMatchTaskState::ProvingAtomicMatchSettle
             },
@@ -291,7 +291,7 @@ impl Task for SettleMalleableExternalMatchTask {
         matches!(self.task_state, SettleMalleableExternalMatchTaskState::Completed)
     }
 
-    fn state(&self) -> Self::State {
+    fn task_state(&self) -> Self::State {
         self.task_state.clone()
     }
 

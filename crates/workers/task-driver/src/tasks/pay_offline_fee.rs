@@ -214,12 +214,12 @@ impl Task for PayOfflineFeeTask {
     #[allow(clippy::blocks_in_conditions)]
     #[instrument(skip_all, err, fields(
         task = self.name(),
-        state = %self.state(),
+        state = %self.task_state(),
         old_wallet_id = %self.old_wallet.wallet_id,
         new_wallet_id = %self.new_wallet.wallet_id,
     ))]
     async fn step(&mut self) -> Result<(), Self::Error> {
-        match self.state() {
+        match self.task_state() {
             PayOfflineFeeTaskState::Pending => {
                 self.task_state = PayOfflineFeeTaskState::ProvingPayment;
             },
@@ -251,7 +251,7 @@ impl Task for PayOfflineFeeTask {
         self.task_state.completed()
     }
 
-    fn state(&self) -> Self::State {
+    fn task_state(&self) -> Self::State {
         self.task_state.clone()
     }
 

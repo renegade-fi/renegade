@@ -2,8 +2,11 @@
 
 use std::time::Duration;
 
-use alloy::providers::Provider;
+use alloy::contract::Error as ContractError;
+use alloy::network::Ethereum;
+use alloy::providers::{PendingTransactionBuilder, Provider};
 use alloy::rpc::types::TransactionRequest;
+use alloy::transports::TransportError;
 use alloy::{primitives::Address, rpc::types::TransactionReceipt};
 use alloy_contract::CallDecoder;
 use alloy_primitives::Selector;
@@ -12,7 +15,7 @@ use async_trait::async_trait;
 use circuit_types::Nullifier;
 use circuit_types::{elgamal::EncryptionKey, fixed_point::FixedPoint, merkle::MerkleRoot};
 use constants::Scalar;
-use renegade_solidity_abi::v2::IDarkpoolV2::DepositAuth;
+use renegade_solidity_abi::v2::IDarkpoolV2::{self, DepositAuth};
 use tracing::info;
 use types_proofs::{
     IntentOnlyBoundedSettlementBundle, OrderValidityProofBundle, ValidBalanceCreateBundle,
@@ -148,11 +151,22 @@ pub trait DarkpoolImplExt: DarkpoolImpl {
         C: CallDecoder + Send + Sync,
     {
         let gas_price = self.get_adjusted_gas_price().await?;
-        let pending_tx = tx
-            .gas_price(gas_price)
-            .send()
-            .await
-            .map_err(DarkpoolClientError::contract_interaction)?;
+        let pending_tx = tx.gas_price(gas_price).send().await;
+        let pending_tx = match pending_tx {
+            Ok(tx) => tx,
+            Err(ContractError::TransportError(TransportError::ErrorResp(err_payload))) => {
+                // Decode the error payload if possible using the ABI
+                let decoded =
+                    err_payload.as_decoded_interface_error::<IDarkpoolV2::IDarkpoolV2Errors>();
+                let err_str = decoded.map(|e| format!("{e:?}")).unwrap_or_else(|| {
+                    let msg = err_payload.message;
+                    let data = err_payload.data.unwrap_or_default();
+                    format!("unknown error: {msg} (data = {data})")
+                });
+                return Err(DarkpoolClientError::contract_interaction(err_str));
+            },
+            Err(e) => return Err(DarkpoolClientError::contract_interaction(e)),
+        };
 
         // TODO: Remove this debug log
         info!("Pending tx hash: {:#x}", pending_tx.tx_hash());

@@ -150,8 +150,6 @@ impl SettlementGadget {
         EqGadget::constrain_eq(&expected_shares, new_in_balance_public_shares, cs)?;
 
         // Output balance update
-        // Rather than compute the fee, it is more efficient to compute the implied fee
-        // from the output shares, this avoids using the floor gadget directly.
         Self::verify_output_balance_share_updates(
             fee_rates,
             out_balance_public_shares,
@@ -255,7 +253,6 @@ impl BoundedSettlementGadget {
     ///
     /// The contract validates that:
     /// - min_internal_party_amount_in <= max_internal_party_amount_in
-    /// - max_internal_party_amount_in <= intent.amount_in
     ///
     /// Therefore, we only need to check that the balance can capitalize the
     /// upper bound here.

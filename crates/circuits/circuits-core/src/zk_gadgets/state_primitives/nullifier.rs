@@ -4,6 +4,7 @@ use circuit_types::PlonkCircuit;
 use darkpool_types::state_wrapper::{StateWrapperBound, StateWrapperShareBound, StateWrapperVar};
 use mpc_relation::{Variable, errors::CircuitError, traits::Circuit};
 
+use crate::zk_gadgets::comparators::NotEqualGadget;
 use crate::zk_gadgets::primitives::poseidon::PoseidonHashGadget;
 use crate::zk_gadgets::state_primitives::csprng::CSPRNGGadget;
 
@@ -25,6 +26,10 @@ impl NullifierGadget {
         V: StateWrapperBound,
         V::ShareType: StateWrapperShareBound,
     {
+        // The recovery stream index cannot underflow
+        NotEqualGadget::not_equal(element.recovery_stream.index, cs.zero(), cs)?;
+
+        // Get the recovery identifier for the last update of the element
         let last_idx = cs.sub(element.recovery_stream.index, cs.one())?;
         let recovery_id = CSPRNGGadget::get_ith(&element.recovery_stream, last_idx, cs)?;
 

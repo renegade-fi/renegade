@@ -152,10 +152,10 @@ impl Task for UpdateMerkleProofTask {
     }
 
     #[allow(clippy::blocks_in_conditions)]
-    #[instrument(skip_all, err, fields(task = self.name(), state = %self.state()))]
+    #[instrument(skip_all, err, fields(task = self.name(), state = %self.task_state()))]
     async fn step(&mut self) -> Result<(), Self::Error> {
         // Dispatch based on the current transaction step
-        match self.state() {
+        match self.task_state() {
             UpdateMerkleProofTaskState::Pending => {
                 self.task_state = UpdateMerkleProofTaskState::FindingOpening
             },
@@ -176,10 +176,10 @@ impl Task for UpdateMerkleProofTask {
     }
 
     fn completed(&self) -> bool {
-        matches!(self.state(), Self::State::Completed)
+        matches!(self.task_state(), Self::State::Completed)
     }
 
-    fn state(&self) -> Self::State {
+    fn task_state(&self) -> Self::State {
         self.task_state.clone()
     }
 

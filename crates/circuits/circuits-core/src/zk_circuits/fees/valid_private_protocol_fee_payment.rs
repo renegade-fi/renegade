@@ -155,7 +155,7 @@ pub struct ValidPrivateProtocolFeePaymentWitness<const MERKLE_HEIGHT: usize> {
     pub old_balance: DarkpoolStateBalance,
     /// The opening of the old balance to the Merkle root
     pub old_balance_opening: MerkleOpening<MERKLE_HEIGHT>,
-    /// The blinder samples for the note
+    /// The blinder sampled for the note
     pub blinder: Scalar,
     /// The randomness used in the encryption of the note
     #[serde(with = "ser_embedded_scalar_field")]

@@ -545,7 +545,7 @@ mod test {
         // Generate shares with duplicated values
         let mut private_share1 = random_scalars_array();
         let mut private_share2 = random_scalars_array();
-        let mut public_share1 = private_share2.add_shares(&random_scalars_array());
+        let mut public_share1 = private_share1.add_shares(&random_scalars_array());
         let mut public_share2 = private_share2.add_shares(&random_scalars_array());
         private_share1[..private_prefix_length].copy_from_slice(&shared_private_prefix);
         private_share2[..private_prefix_length].copy_from_slice(&shared_private_prefix);
