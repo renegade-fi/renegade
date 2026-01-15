@@ -157,7 +157,7 @@ impl Task for RefreshWalletTask {
     }
 
     #[allow(clippy::blocks_in_conditions)]
-    #[instrument(skip_all, err, fields(task = %self.name(), state = %self.state()))]
+    #[instrument(skip_all, err, fields(task = %self.name(), state = %self.task_state()))]
     async fn step(&mut self) -> Result<(), Self::Error> {
         // Dispatch based on task state
         match self.task_state {
@@ -195,7 +195,7 @@ impl Task for RefreshWalletTask {
         REFRESH_WALLET_TASK_NAME.to_string()
     }
 
-    fn state(&self) -> Self::State {
+    fn task_state(&self) -> Self::State {
         self.task_state.clone()
     }
 }

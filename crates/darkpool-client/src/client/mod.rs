@@ -28,7 +28,7 @@ use crate::{
 };
 
 mod contract_interaction;
-// mod event_indexing;
+mod event_indexing;
 
 /// A type alias for the RPC client, which is an alloy middleware stack that
 /// includes a signer derived from a raw private key, and a provider that

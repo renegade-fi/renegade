@@ -12,12 +12,12 @@ use circuits_core::zk_circuits::valid_balance_create::{
     ValidBalanceCreateStatement, ValidBalanceCreateWitness,
 };
 use constants::Scalar;
-use darkpool_client::errors::DarkpoolClientError;
+use darkpool_client::{DarkpoolClient, errors::DarkpoolClientError};
 use darkpool_types::{balance::DarkpoolBalance, deposit::Deposit, state_wrapper::StateWrapper};
 use job_types::proof_manager::ProofJob;
 use renegade_solidity_abi::v2::IDarkpoolV2::DepositAuth;
 use serde::Serialize;
-use state::error::StateError;
+use state::{State, error::StateError};
 use tracing::{info, instrument};
 use types_account::{balance::Balance, keychain::KeyChain};
 use types_core::AccountId;
@@ -179,7 +179,7 @@ impl Task for CreateBalanceTask {
     }
 
     #[allow(clippy::blocks_in_conditions)]
-    #[instrument(skip_all, err, fields(task = %self.name(), state = %self.state()))]
+    #[instrument(skip_all, err, fields(task = %self.name(), state = %self.task_state()))]
     async fn step(&mut self) -> Result<()> {
         // Dispatch based on task state
         match self.task_state {
@@ -208,7 +208,7 @@ impl Task for CreateBalanceTask {
         CREATE_BALANCE_TASK_NAME.to_string()
     }
 
-    fn state(&self) -> Self::State {
+    fn task_state(&self) -> Self::State {
         self.task_state.clone()
     }
 }
@@ -272,11 +272,19 @@ impl CreateBalanceTask {
     /// Submit the deposit transaction to the darkpool
     pub async fn submit_deposit(&self) -> Result<()> {
         let proof_bundle = self.proof_bundle.clone().unwrap();
+        let commitment = proof_bundle.statement.balance_commitment;
         let receipt =
-            self.ctx.darkpool_client.create_balance(self.auth.clone(), proof_bundle).await?;
+            self.darkpool_client().create_balance(self.auth.clone(), proof_bundle).await?;
         info!("Successfully created balance at tx: {:#x}", receipt.transaction_hash);
 
-        // TODO: Pull a Merkle proof off of the receipt
+        // Parse a Merkle opening for the balance from the receipt
+        let opening =
+            self.darkpool_client().find_merkle_authentication_path_with_tx(commitment, &receipt)?;
+
+        // Store the Merkle opening in state
+        let waiter =
+            self.state().add_balance_merkle_proof(self.account_id, self.token, opening).await?;
+        waiter.await?;
         Ok(())
     }
 }
@@ -286,6 +294,16 @@ impl CreateBalanceTask {
 // -----------
 
 impl CreateBalanceTask {
+    /// Get a reference to the state
+    fn state(&self) -> &State {
+        &self.ctx.state
+    }
+
+    /// Get a reference to the darkpool client
+    fn darkpool_client(&self) -> &DarkpoolClient {
+        &self.ctx.darkpool_client
+    }
+
     /// Fetch the account's keychain
     async fn get_account_keychain(&self) -> Result<KeyChain> {
         self.ctx

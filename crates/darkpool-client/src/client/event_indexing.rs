@@ -4,8 +4,6 @@
 use std::cmp::Reverse;
 use std::collections::VecDeque;
 
-use alloy::consensus::Transaction;
-use alloy::consensus::constants::SELECTOR_LEN;
 use alloy::providers::{Provider, ext::DebugApi};
 use alloy::rpc::types::Log as RpcLog;
 use alloy::rpc::types::TransactionReceipt;
@@ -13,17 +11,14 @@ use alloy::rpc::types::trace::geth::{
     CallFrame, GethDebugBuiltInTracerType, GethDebugTracerType, GethDebugTracingOptions, GethTrace,
 };
 use alloy_contract::Event;
-use alloy_primitives::{Log, Selector, TxHash};
+use alloy_primitives::{Log, TxHash};
 use alloy_sol_types::SolEvent;
-use circuit_types::SizedWalletShare;
-use circuit_types::r#match::ExternalMatchResult;
-use types_account::MerkleAuthenticationPath;
 use constants::{MERKLE_HEIGHT, Scalar};
+use crypto::fields::scalar_to_u256;
 use itertools::Itertools;
-use num_bigint::BigUint;
-use tracing::{info, instrument};
+use tracing::instrument;
+use types_account::MerkleAuthenticationPath;
 
-use crate::conversion::scalar_to_u256;
 use crate::errors::DarkpoolClientError;
 use crate::traits::{DarkpoolImpl, MerkleInsertionEvent, MerkleOpeningNodeEvent};
 
@@ -40,34 +35,7 @@ const ERR_MERKLE_PATH_SIBLINGS: &str = "not enough Merkle path siblings found";
 const ERR_NO_TX_HASH: &str = "no tx hash for log";
 
 impl<D: DarkpoolImpl> DarkpoolClientInner<D> {
-    /// Return the hash of the transaction that last indexed secret shares for
-    /// the given public blinder share
-    ///
-    /// Returns `None` if the public blinder share has not been used
-    #[instrument(skip_all, err, fields(
-        tx_hash,
-        public_blinder_share = %public_blinder_share
-    ))]
-    pub async fn get_public_blinder_tx(
-        &self,
-        public_blinder_share: Scalar,
-    ) -> Result<Option<TxHash>, DarkpoolClientError> {
-        let filter =
-            self.event_filter::<D::WalletUpdated>().topic1(scalar_to_u256(public_blinder_share));
-
-        let maybe_event = self.query_latest_event(filter).await?;
-        if maybe_event.is_none() {
-            return Ok(None);
-        }
-
-        let (_event, log) = maybe_event.unwrap();
-        let tx_hash = log.transaction_hash.expect(ERR_NO_TX_HASH);
-        tracing::Span::current().record("tx_hash", format!("{tx_hash:#x}"));
-
-        Ok(Some(tx_hash))
-    }
-
-    /// Searches on-chain state for the insertion of the given wallet, then
+    /// Searches on-chain state for the insertion of the given commitment, then
     /// finds the most recent updates of the path's siblings and creates a
     /// Merkle authentication path
     #[instrument(skip_all, err, fields(commitment = %commitment))]
@@ -115,7 +83,7 @@ impl<D: DarkpoolImpl> DarkpoolClientInner<D> {
 
                 if event.value() == commitment {
                     insertion_idx = n_insertions;
-                    leaf_index = Some(BigUint::from(event.index()));
+                    leaf_index = Some(event.index() as u64);
                 }
                 n_insertions += 1;
             } else if topic0 == D::MerkleOpening::SIGNATURE_HASH {
@@ -153,7 +121,7 @@ impl<D: DarkpoolImpl> DarkpoolClientInner<D> {
     ) -> Result<(u128, TxHash), DarkpoolClientError> {
         let filter = self
             .event_filter::<D::MerkleInsertion>()
-            .topic2(scalar_to_u256(commitment))
+            .topic2(scalar_to_u256(&commitment))
             .from_block(self.deploy_block);
         let (event, log) = self
             .query_latest_event(filter)
@@ -163,84 +131,55 @@ impl<D: DarkpoolImpl> DarkpoolClientInner<D> {
         Ok((event.index(), log.transaction_hash.expect(ERR_NO_TX_HASH)))
     }
 
-    /// Fetch and parse the public secret shares from the calldata of the
-    /// transaction that updated the wallet with the given blinder
-    #[instrument(skip_all, err, fields(public_blinder_share = %public_blinder_share))]
-    pub async fn fetch_public_shares_for_blinder(
-        &self,
-        public_blinder_share: Scalar,
-    ) -> Result<SizedWalletShare, DarkpoolClientError> {
-        let tx_hash = self
-            .get_public_blinder_tx(public_blinder_share)
-            .await?
-            .ok_or(DarkpoolClientError::BlinderNotFound)?;
+    // /// Fetch all external matches in a given transaction
+    // pub async fn find_external_matches_in_tx(
+    //     &self,
+    //     tx_hash: TxHash,
+    // ) -> Result<Vec<BoundedMatchResult>, DarkpoolClientError> {
+    //     // Get all darkpool subcalls in the tx
+    //     let mut matches = Vec::new();
+    //     let darkpool_calls = self.fetch_tx_darkpool_calls(tx_hash).await?;
+    //     for frame in darkpool_calls.into_iter() {
+    //         let calldata: &[u8] = &frame.input;
+    //         if let Some(match_res) = D::parse_external_match(calldata)? {
+    //             matches.push(match_res);
+    //         }
+    //     }
 
-        let tx = self
-            .provider()
-            .get_transaction_by_hash(tx_hash)
-            .await
-            .map_err(DarkpoolClientError::tx_querying)?
-            .ok_or(DarkpoolClientError::TxNotFound(tx_hash.to_string()))?;
-
-        let calldata: Vec<u8> = tx.input().to_vec();
-        let selector = Selector::from_slice(&calldata[..SELECTOR_LEN]);
-        if D::is_known_selector(selector) {
-            D::parse_shares(selector, &calldata, public_blinder_share)
-        } else {
-            info!("unknown selector {selector:?}, searching calldata...");
-            self.fetch_public_shares_for_unknown_selector(tx_hash, public_blinder_share).await
-        }
-    }
-
-    /// Fetch all external matches in a given transaction
-    pub async fn find_external_matches_in_tx(
-        &self,
-        tx_hash: TxHash,
-    ) -> Result<Vec<ExternalMatchResult>, DarkpoolClientError> {
-        // Get all darkpool subcalls in the tx
-        let mut matches = Vec::new();
-        let darkpool_calls = self.fetch_tx_darkpool_calls(tx_hash).await?;
-        for frame in darkpool_calls.into_iter() {
-            let calldata: &[u8] = &frame.input;
-            if let Some(match_res) = D::parse_external_match(calldata)? {
-                matches.push(match_res);
-            }
-        }
-
-        Ok(matches)
-    }
+    //     Ok(matches)
+    // }
 
     // -----------
     // | Helpers |
     // -----------
 
-    // --- Fetch Shares --- //
+    // // --- Fetch Shares --- //
 
-    /// Fetch the public shares from a transaction that has an unknown selector
-    async fn fetch_public_shares_for_unknown_selector(
-        &self,
-        tx_hash: TxHash,
-        public_blinder_share: Scalar,
-    ) -> Result<SizedWalletShare, DarkpoolClientError> {
-        // Parse the call trace for calls to the darkpool contract
-        let calls = self.fetch_tx_darkpool_calls(tx_hash).await?;
-        if calls.is_empty() {
-            let hash_str = format!("{tx_hash:#x}");
-            return Err(DarkpoolClientError::DarkpoolSubcallNotFound(hash_str));
-        }
+    // /// Fetch the public shares from a transaction that has an unknown selector
+    // async fn fetch_public_shares_for_unknown_selector(
+    //     &self,
+    //     tx_hash: TxHash,
+    //     public_blinder_share: Scalar,
+    // ) -> Result<SizedWalletShare, DarkpoolClientError> {
+    //     // Parse the call trace for calls to the darkpool contract
+    //     let calls = self.fetch_tx_darkpool_calls(tx_hash).await?;
+    //     if calls.is_empty() {
+    //         let hash_str = format!("{tx_hash:#x}");
+    //         return Err(DarkpoolClientError::DarkpoolSubcallNotFound(hash_str));
+    //     }
 
-        // Attempt to parse public shares from the calldata of each call
-        for call in calls {
-            let data = call.input;
-            let selector = data[..SELECTOR_LEN].try_into().unwrap();
-            let public_share = D::parse_shares(selector, &data, public_blinder_share)?;
-            if public_share.blinder == public_blinder_share {
-                return Ok(public_share);
-            }
-        }
+    //     // Attempt to parse public shares from the calldata of each call
+    //     for call in calls {
+    //         let data = call.input;
+    //         let selector = data[..SELECTOR_LEN].try_into().unwrap();
+    //         let public_share = D::parse_shares(selector, &data,
+    // public_blinder_share)?;         if public_share.blinder ==
+    // public_blinder_share {             return Ok(public_share);
+    //         }
+    //     }
 
-        Err(DarkpoolClientError::InvalidSelector)
-    }
+    //     Err(DarkpoolClientError::InvalidSelector)
+    // }
 
     // --- Call Tracing --- //
 

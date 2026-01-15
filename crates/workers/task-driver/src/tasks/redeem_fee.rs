@@ -191,7 +191,7 @@ impl Task for RedeemFeeTask {
     #[allow(clippy::blocks_in_conditions)]
     #[instrument(skip_all, err, fields(
         task = self.name(),
-        state = %self.state(),
+        state = %self.task_state(),
         old_wallet = %self.old_wallet.wallet_id,
         new_wallet = %self.new_wallet.wallet_id,
     ))]
@@ -226,7 +226,7 @@ impl Task for RedeemFeeTask {
         self.task_state.completed()
     }
 
-    fn state(&self) -> Self::State {
+    fn task_state(&self) -> Self::State {
         self.task_state.clone()
     }
 

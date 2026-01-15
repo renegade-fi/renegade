@@ -52,8 +52,8 @@ impl CSPRNGGadget {
 #[cfg(test)]
 mod test {
     use circuit_types::{PlonkCircuit, traits::CircuitBaseType};
-    use darkpool_types::csprng::PoseidonCSPRNG;
     use constants::Scalar;
+    use darkpool_types::csprng::PoseidonCSPRNG;
     use eyre::Result;
     use mpc_relation::traits::Circuit;
     use rand::{Rng, thread_rng};

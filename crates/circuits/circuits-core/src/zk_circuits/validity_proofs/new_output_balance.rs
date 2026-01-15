@@ -136,6 +136,10 @@ impl<const MERKLE_HEIGHT: usize> NewOutputBalanceValidityCircuit<MERKLE_HEIGHT> 
     }
 
     /// Validate the newly created balance's fields
+    ///
+    /// Note that we don't need to check the mint of the balance here. In the
+    /// settlement circuits, we enforce that the output balance's mint matches
+    /// that of the intent.
     fn validate_new_balance(
         witness: &NewOutputBalanceValidityWitnessVar<MERKLE_HEIGHT>,
         cs: &mut PlonkCircuit,

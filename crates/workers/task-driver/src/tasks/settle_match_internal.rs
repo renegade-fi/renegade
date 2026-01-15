@@ -238,13 +238,13 @@ impl Task for SettleMatchInternalTask {
     #[allow(clippy::blocks_in_conditions)]
     #[instrument(skip_all, err, fields(
         task = self.name(),
-        state = %self.state(),
+        state = %self.task_state(),
         wallet_id1 = %self.wallet_id1,
         wallet_id2 = %self.wallet_id2,
     ))]
     async fn step(&mut self) -> Result<(), Self::Error> {
         // Dispatch based on the current task state
-        match self.state() {
+        match self.task_state() {
             SettleMatchInternalTaskState::Pending => {
                 self.task_state = SettleMatchInternalTaskState::ProvingMatchSettle
             },
@@ -292,7 +292,7 @@ impl Task for SettleMatchInternalTask {
         matches!(self.task_state, SettleMatchInternalTaskState::Completed)
     }
 
-    fn state(&self) -> Self::State {
+    fn task_state(&self) -> Self::State {
         self.task_state.clone()
     }
 }

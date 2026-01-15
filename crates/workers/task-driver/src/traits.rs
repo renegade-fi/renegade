@@ -45,10 +45,10 @@ pub trait Task: Send + Sized {
     /// dependency injections
     async fn new(descriptor: Self::Descriptor, ctx: TaskContext) -> Result<Self, Self::Error>;
     /// Get the current state of the task
-    fn state(&self) -> Self::State;
+    fn task_state(&self) -> Self::State;
     /// Whether or not the task is completed
     fn completed(&self) -> bool {
-        self.state().completed()
+        self.task_state().completed()
     }
     /// Get a displayable name for the task
     fn name(&self) -> String;
