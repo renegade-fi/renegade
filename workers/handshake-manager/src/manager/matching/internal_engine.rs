@@ -8,9 +8,10 @@ use common::types::{
     price::TimestampedPriceFp,
     proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle},
     tasks::{SettleMatchInternalTaskDescriptor, TaskDescriptor},
+    token::Token,
     wallet::{Order, OrderIdentifier, Wallet, WalletIdentifier},
 };
-use tracing::{error, info, instrument};
+use tracing::{error, info, instrument, warn};
 
 use crate::{
     error::HandshakeManagerError,
@@ -51,6 +52,14 @@ impl HandshakeExecutor {
             .get(&network_order.id)
             .cloned()
             .ok_or_else(|| HandshakeManagerError::State(ERR_NO_ORDER.to_string()))?;
+
+        // TEMP: Disable USDT matches here until we expose a config option for disabling
+        // matches on an asset
+        if my_order.base_mint == Token::usdt().get_addr_biguint() {
+            warn!("USDT matches are disabled, skipping internal matching engine...");
+            return Ok(());
+        }
+
         let sell_mint = my_order.send_mint();
         let my_balance = wallet.get_balance_or_default(sell_mint);
 
