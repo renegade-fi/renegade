@@ -70,6 +70,14 @@ impl HandshakeExecutor {
         response_topic: String,
         mut options: ExternalMatchingEngineOptions,
     ) -> Result<(), HandshakeManagerError> {
+        // TEMP: Disable USDT matches here until we expose a config option for disabling
+        // matches on an asset
+        if order.base_mint == Token::usdt().get_addr_biguint() {
+            warn!("USDT matches are disabled, skipping external matching engine...");
+            self.handle_no_match(response_topic);
+            return Ok(());
+        }
+
         // Sample an execution price if one is not provided
         let ts_price = match options.price {
             Some(price) => price.into(),
