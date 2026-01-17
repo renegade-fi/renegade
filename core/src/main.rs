@@ -291,6 +291,7 @@ async fn main() -> Result<(), CoordinatorError> {
     let (handshake_cancel_sender, handshake_cancel_receiver) = new_cancel_channel();
     let mut handshake_manager = HandshakeManager::new(HandshakeManagerConfig {
         min_fill_size: args.min_fill_size,
+        disabled_assets: args.disabled_assets.clone(),
         state: global_state.clone(),
         network_channel: network_sender.clone(),
         price_streams: price_streams.clone(),

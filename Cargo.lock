@@ -4464,6 +4464,7 @@ dependencies = [
  "libp2p",
  "lru 0.11.1",
  "mpc-plonk",
+ "num-bigint",
  "num-traits",
  "portpicker",
  "price-state",

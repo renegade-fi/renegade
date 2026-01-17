@@ -6,6 +6,8 @@ mod price_agreement;
 pub(crate) mod scheduler;
 mod tasks;
 
+use std::collections::HashSet;
+
 use circuit_types::{Amount, r#match::MatchResult};
 use common::{
     default_wrapper::{DefaultOption, DefaultWrapper},
@@ -38,6 +40,7 @@ use job_types::{
     task_driver::TaskDriverQueue,
 };
 use libp2p::request_response::ResponseChannel;
+use num_bigint::BigUint;
 use price_state::PriceStreamStates;
 use rand::{seq::SliceRandom, thread_rng};
 use renegade_metrics::helpers::record_match_volume;
@@ -98,6 +101,8 @@ pub struct HandshakeExecutor {
     /// The minimum amount of the quote asset that the relayer should settle
     /// matches on
     pub(crate) min_fill_size: Amount,
+    /// Assets for which matching is disabled (as BigUint addresses)
+    pub(crate) disabled_assets: HashSet<BigUint>,
     /// The cache used to mark order pairs as already matched
     pub(crate) handshake_cache: SharedHandshakeCache<OrderIdentifier>,
     /// Stores the state of existing handshake executions
@@ -126,6 +131,7 @@ impl HandshakeExecutor {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         min_fill_size: Amount,
+        disabled_assets: HashSet<BigUint>,
         job_channel: HandshakeManagerReceiver,
         network_channel: NetworkManagerQueue,
         price_streams: PriceStreamStates,
@@ -140,6 +146,7 @@ impl HandshakeExecutor {
 
         Ok(Self {
             min_fill_size,
+            disabled_assets,
             handshake_cache,
             handshake_state_index,
             job_channel: DefaultWrapper::new(Some(job_channel)),
@@ -150,6 +157,11 @@ impl HandshakeExecutor {
             system_bus,
             cancel,
         })
+    }
+
+    /// Check if an asset is disabled for matching
+    pub(crate) fn is_asset_disabled(&self, mint: &BigUint) -> bool {
+        self.disabled_assets.contains(mint)
     }
 
     /// The main loop: dequeues jobs and forwards them to the thread pool

@@ -37,6 +37,7 @@ renegade-metrics = { workspace = true }
 # === Misc Dependencies === #
 ark-serialize = "0.4"
 itertools = "0.11"
+num-bigint = { workspace = true }
 lazy_static = { workspace = true }
 lru = "0.11"
 portpicker = "0.1"

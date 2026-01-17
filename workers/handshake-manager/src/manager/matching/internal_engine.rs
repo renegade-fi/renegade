@@ -53,10 +53,11 @@ impl HandshakeExecutor {
             .cloned()
             .ok_or_else(|| HandshakeManagerError::State(ERR_NO_ORDER.to_string()))?;
 
-        // TEMP: Disable USDT matches here until we expose a config option for disabling
-        // matches on an asset
-        if my_order.base_mint == Token::usdt().get_addr_biguint() {
-            warn!("USDT matches are disabled, skipping internal matching engine...");
+        // Check if the asset is disabled for matching
+        if self.is_asset_disabled(&my_order.base_mint) {
+            let base = Token::from_addr_biguint(&my_order.base_mint);
+            let ticker = base.get_ticker().unwrap_or(base.get_addr());
+            warn!("{ticker} is disabled for matching, skipping internal matching engine...");
             return Ok(());
         }
 

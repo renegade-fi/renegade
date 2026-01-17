@@ -143,6 +143,7 @@ pub(crate) fn parse_config_from_args(cli_args: Cli) -> Result<RelayerConfig, Str
         gossip_warmup: cli_args.gossip_warmup,
         disable_price_reporter: cli_args.disable_price_reporter,
         disabled_exchanges: cli_args.disabled_exchanges,
+        disabled_assets: cli_args.disabled_assets,
         cluster_keypair,
         cluster_symmetric_key,
         admin_api_key,
