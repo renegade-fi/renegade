@@ -4,7 +4,7 @@ use std::thread::{Builder, JoinHandle};
 
 use async_trait::async_trait;
 use circuit_types::Amount;
-use common::types::CancelChannel;
+use common::types::{CancelChannel, token::Token};
 use common::worker::Worker;
 use external_api::bus_message::SystemBusMessage;
 use job_types::{
@@ -32,6 +32,8 @@ pub struct HandshakeManagerConfig {
     /// The minimum amount of the quote asset that the relayer should settle
     /// matches on
     pub min_fill_size: Amount,
+    /// Assets for which matching is disabled (by ticker)
+    pub disabled_assets: Vec<String>,
     /// The relayer-global state
     pub state: State,
     /// The channel on which to send outbound network requests
@@ -65,8 +67,17 @@ impl Worker for HandshakeManager {
             config.state.clone(),
             config.cancel_channel.clone(),
         );
+
+        // Convert disabled asset tickers to addresses
+        let disabled_assets = config
+            .disabled_assets
+            .iter()
+            .map(|ticker| Token::from_ticker(ticker).get_addr_biguint())
+            .collect();
+
         let executor = HandshakeExecutor::new(
             config.min_fill_size,
+            disabled_assets,
             config.job_receiver.take().unwrap(),
             config.network_channel.clone(),
             config.price_streams.clone(),

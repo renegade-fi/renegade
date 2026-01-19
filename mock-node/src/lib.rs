@@ -458,6 +458,7 @@ impl MockNodeController {
 
         let conf = HandshakeManagerConfig {
             min_fill_size: self.config.min_fill_size,
+            disabled_assets: Vec::new(),
             state,
             network_channel,
             price_streams,

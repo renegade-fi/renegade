@@ -215,6 +215,9 @@ pub struct Cli {
     /// Disables exchanges for price reporting
     #[clap(long, value_parser, num_args=1.., value_delimiter=' ')]
     pub disabled_exchanges: Vec<Exchange>,
+    /// Assets for which to disable matching (by ticker)
+    #[clap(long, value_parser, num_args=1.., value_delimiter=' ')]
+    pub disabled_assets: Vec<String>,
     /// Whether or not to run the relayer in debug mode
     #[clap(short, long, value_parser)]
     pub debug: bool,
@@ -402,6 +405,8 @@ pub struct RelayerConfig {
     pub disable_price_reporter: bool,
     /// The exchanges explicitly disabled for price reports
     pub disabled_exchanges: Vec<Exchange>,
+    /// Assets for which matching is disabled (by ticker)
+    pub disabled_assets: Vec<String>,
     /// Whether or not the relayer is in debug mode
     pub debug: bool,
 
