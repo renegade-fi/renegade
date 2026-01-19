@@ -2,12 +2,12 @@
 
 use alloy::primitives::Address;
 use circuit_types::{Amount, schnorr::SchnorrPublicKey};
-use renegade_solidity_abi::v2::IDarkpoolV2::DepositAuth;
-use types_core::AccountId;
 #[cfg(feature = "rkyv")]
 use darkpool_types::rkyv_remotes::{AddressDef, SchnorrPublicKeyDef};
+use renegade_solidity_abi::v2::IDarkpoolV2::DepositAuth;
 #[cfg(feature = "rkyv")]
 use types_account::account::deposit::DepositAuthDef;
+use types_core::AccountId;
 
 use super::TaskDescriptor;
 

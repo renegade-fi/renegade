@@ -10,8 +10,8 @@ use circuit_types::{
     Commitment, PlonkCircuit,
     traits::{BaseType, CircuitBaseType, CircuitVarType},
 };
-use darkpool_types::csprng::PoseidonCSPRNG;
 use constants::{Scalar, ScalarField};
+use darkpool_types::csprng::PoseidonCSPRNG;
 use darkpool_types::intent::{DarkpoolStateIntentVar, Intent, IntentShare};
 use mpc_plonk::errors::PlonkError;
 use mpc_relation::{

@@ -20,8 +20,8 @@ use self::{error::StateApplicatorError, return_type::ApplicatorReturnType};
 
 pub mod account_index;
 pub mod error;
-pub mod merkle_proofs;
 pub mod matching_pools;
+pub mod merkle_proofs;
 pub mod order_book;
 pub mod return_type;
 pub mod task_queue;

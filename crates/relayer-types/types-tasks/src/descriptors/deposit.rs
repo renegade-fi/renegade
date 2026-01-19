@@ -5,7 +5,10 @@ use circuit_types::{Amount, schnorr::SchnorrPublicKey};
 use renegade_solidity_abi::v2::IDarkpoolV2::DepositAuth;
 use types_core::AccountId;
 #[cfg(feature = "rkyv")]
-use {darkpool_types::rkyv_remotes::{AddressDef, SchnorrPublicKeyDef}, types_account::account::deposit::DepositAuthDef};
+use {
+    darkpool_types::rkyv_remotes::{AddressDef, SchnorrPublicKeyDef},
+    types_account::account::deposit::DepositAuthDef,
+};
 
 use super::TaskDescriptor;
 
