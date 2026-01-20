@@ -17,18 +17,15 @@ use super::traits::{Key, Value};
 pub struct DbCursor<'txn, Tx: TransactionKind, K: Key, V: Value> {
     /// The underlying cursor
     pub inner: Cursor<'txn, Tx>,
-    /// The filter applied to keys
+    /// The key prefix for filtering during iteration
     ///
-    /// Only keys for which this filter returns `true` will be returned by the
-    /// cursor methods
+    /// When set, the iterator will:
+    /// 1. Use `set_range` to position at the first key with this prefix
+    /// 2. Stop iteration when encountering the first key that doesn't match
     ///
-    /// Note however that the filter does not affect the position of the cursor,
-    /// so while methods like `next` and `prev` will skip over keys that do not
-    /// pass the filter, the cursor will still be positioned at those keys
-    ///
-    /// This is a boxed closure to allow capturing borrowed data (e.g. a prefix)
-    #[allow(clippy::type_complexity)]
-    key_filter: Option<Box<dyn Fn(&K::ArchivedType) -> bool + 'txn>>,
+    /// The prefix is stored as serialized bytes to avoid re-serialization
+    /// during comparison
+    key_prefix: Option<Vec<u8>>,
     /// A phantom data field to hold the deserialized type of
     /// the table
     _phantom: PhantomData<(K, V)>,
@@ -50,37 +47,61 @@ impl<'txn, Tx: TransactionKind, K: Key, V: Value> DbCursor<'txn, Tx, K, V> {
 
     /// Constructor
     pub fn new(cursor: Cursor<'txn, Tx>) -> Self {
-        Self { inner: cursor, key_filter: None, _phantom: PhantomData }
+        Self { inner: cursor, key_prefix: None, _phantom: PhantomData }
     }
 
-    /// Set a filter on the keys
+    /// Set a key prefix for filtering during iteration
     ///
     /// Consumes the cursor to provide a builder-like pattern.
-    /// Accepts any closure, including those that capture borrowed data.
-    pub fn with_key_filter(mut self, filter: impl Fn(&K::ArchivedType) -> bool + 'txn) -> Self {
-        self.key_filter = Some(Box::new(filter));
+    /// The prefix should be raw bytes (e.g., UTF-8 for string keys).
+    ///
+    /// When iterating, the cursor will:
+    /// 1. Position at the first key matching the prefix using `set_range`
+    /// 2. Stop when encountering a key that doesn't start with the prefix
+    pub fn with_key_prefix(mut self, prefix: impl AsRef<[u8]>) -> Self {
+        self.key_prefix = Some(prefix.as_ref().to_vec());
         self
     }
 
-    /// Whether the item under the cursor exists, returns false when the cursor
-    /// is exhausted
-    pub fn has_current(&mut self) -> Result<bool, StorageError> {
-        let res = self.inner.get_current::<(), ()>().map_err(StorageError::TxOp)?;
-        Ok(res.is_some())
-    }
-
     /// Get the key/value at the current position
-    ///
-    /// Assumes that the cursor is positioned at a valid key/value pair for the
-    /// filter, this invariant should be maintained by other cursor methods
     pub fn get_current(&mut self) -> Result<Option<Self::ArchivedKV>, StorageError> {
         let res =
             self.inner.get_current::<Self::TxBytes, Self::TxBytes>().map_err(StorageError::TxOp)?;
 
         match res {
             None => Ok(None),
-            Some(kv) => self.deserialize_and_filter(kv),
+            Some((k_buf, v_buf)) => {
+                let k_val = ArchivedValue::<'txn, K>::new(k_buf);
+                let v_val = ArchivedValue::<'txn, V>::new(v_buf);
+                Ok(Some((k_val, v_val)))
+            },
         }
+    }
+
+    /// Get the key/value at the current position, checking prefix if set
+    ///
+    /// Returns `None` if the current key doesn't match the prefix, signaling
+    /// end of iteration for prefix-filtered cursors
+    fn get_current_checked(&mut self) -> Result<Option<Self::ArchivedKV>, StorageError> {
+        let (k_buf, v_buf) = match self
+            .inner
+            .get_current::<Self::TxBytes, Self::TxBytes>()
+            .map_err(StorageError::TxOp)?
+        {
+            Some(kv) => kv,
+            None => return Ok(None),
+        };
+
+        // Check prefix on raw bytes
+        if let Some(ref prefix) = self.key_prefix
+            && !k_buf.starts_with(prefix)
+        {
+            return Ok(None); // End iteration
+        }
+
+        let k_val = ArchivedValue::<'txn, K>::new(k_buf);
+        let v_val = ArchivedValue::<'txn, V>::new(v_buf);
+        Ok(Some((k_val, v_val)))
     }
 
     /// Get the key/value at the current position position without deserializing
@@ -91,146 +112,33 @@ impl<'txn, Tx: TransactionKind, K: Key, V: Value> DbCursor<'txn, Tx, K, V> {
         self.inner.get_current::<Self::TxBytes, Self::TxBytes>().map_err(StorageError::TxOp)
     }
 
-    /// Position the cursor at the next key value pair
-    ///
-    /// Returns `true` if the cursor has reached the end of the table
-    pub fn seek_next(&mut self) -> Result<bool, StorageError> {
-        // Move the cursor forward and return early if it is exhausted
-        if self.inner.next::<Self::TxBytes, Self::TxBytes>().map_err(StorageError::TxOp)?.is_none()
-        {
-            return Ok(true);
-        }
-
-        // Seek forward to the next valid key
-        let end = self.seek_next_filtered(true /* forward */)?.is_none();
-        Ok(end)
-    }
-
-    /// Position the cursor at the next keypair without filtering
+    /// Position the cursor at the next keypair
     ///
     /// Returns `true` if the cursor has reached the end of the table
     pub fn seek_next_raw(&mut self) -> Result<bool, StorageError> {
         Ok(self.inner.next::<Self::TxBytes, Self::TxBytes>().map_err(StorageError::TxOp)?.is_none())
     }
 
-    /// Position the cursor at the previous key value pair
-    ///
-    /// Returns `true` if the cursor has reached the start of the table
-    pub fn seek_prev(&mut self) -> Result<bool, StorageError> {
-        // Move the cursor back and return early if it is exhausted
-        if self.inner.prev::<Self::TxBytes, Self::TxBytes>().map_err(StorageError::TxOp)?.is_none()
-        {
-            return Ok(true);
-        }
-
-        // Seek backward to the previous valid key
-        let start = self.seek_next_filtered(false /* forward */)?.is_none();
-        Ok(start)
-    }
-
     /// Seek to the first key in the table
     pub fn seek_first(&mut self) -> Result<(), StorageError> {
-        // Position the cursor at the first key then seek forward to the next valid key
-        self.inner.first::<Self::TxBytes, Self::TxBytes>().map_err(StorageError::TxOp)?;
-        self.seek_next_filtered(true /* forward */).map(|_| ())
+        self.inner.first::<Self::TxBytes, Self::TxBytes>().map_err(StorageError::TxOp).map(|_| ())
     }
 
     /// Seek to the last key in the table
     pub fn seek_last(&mut self) -> Result<(), StorageError> {
-        // Position the cursor at the last key then seek backwards to the next valid key
-        self.inner.last::<Self::TxBytes, Self::TxBytes>().map_err(StorageError::TxOp)?;
-        self.seek_next_filtered(false /* forward */).map(|_| ())
+        self.inner.last::<Self::TxBytes, Self::TxBytes>().map_err(StorageError::TxOp).map(|_| ())
     }
 
     /// Position the cursor at a specific key
     ///
     /// Note that if the key is not present, the cursor is positioned at an
-    /// empty value, the filter will then take effect on any further cursor
-    /// operations
+    /// empty value
     pub fn seek(&mut self, k: &K) -> Result<(), StorageError> {
-        // Validate the key
-        let k_bytes = k.rkyv_serialize()?;
-        let k_archived = K::rkyv_access_validated(&k_bytes)?;
-        if let Some(ref filter) = self.key_filter
-            && !filter(k_archived)
-        {
-            return Err(StorageError::InvalidKey(format!(
-                "Key {k:?} passed to `Cursor::seek` does not pass filter"
-            )));
-        }
-
         let k_bytes = k.rkyv_serialize()?;
         self.inner
             .set_key::<Self::TxBytes, Self::TxBytes>(&k_bytes)
             .map_err(StorageError::TxOp)
             .map(|_| ())
-    }
-
-    /// Position at the first key greater than or equal to the given key
-    pub fn seek_geq(&mut self, k: &K) -> Result<(), StorageError> {
-        // Position the cursor at the first key then seek forward to the next valid key
-        let k_bytes = k.rkyv_serialize()?;
-        self.inner
-            .set_range::<Self::TxBytes, Self::TxBytes>(&k_bytes)
-            .map_err(StorageError::TxOp)?;
-        self.seek_next_filtered(true /* forward */).map(|_| ())
-    }
-
-    // -----------
-    // | Helpers |
-    // -----------
-
-    /// Seek to the next value passing the filter from (inclusive) the
-    /// current cursor position. Repositions the cursor to that location,
-    /// returns the value
-    ///
-    /// The `forward` parameter determines the direction of the search
-    fn seek_next_filtered(
-        &mut self,
-        forward: bool,
-    ) -> Result<Option<Self::ArchivedKV>, StorageError> {
-        // Try the current position
-        let curr =
-            self.inner.get_current::<Self::TxBytes, Self::TxBytes>().map_err(StorageError::TxOp)?;
-        if let Some(val) = curr
-            && let Some(kv) = self.deserialize_and_filter(val)?
-        {
-            return Ok(Some(kv));
-        }
-
-        // Otherwise, directionally search for the next valid key
-        let next_fn = if forward {
-            Cursor::<Tx>::next::<Self::TxBytes, Self::TxBytes>
-        } else {
-            Cursor::<Tx>::prev::<Self::TxBytes, Self::TxBytes>
-        };
-
-        while let Some(kv) = next_fn(&mut self.inner).map_err(StorageError::TxOp)? {
-            if let Some(kv) = self.deserialize_and_filter(kv)? {
-                return Ok(Some(kv));
-            }
-        }
-
-        Ok(None)
-    }
-
-    /// Deserialize a key-value pair and filter the key
-    #[allow(unsafe_code, clippy::type_complexity)]
-    fn deserialize_and_filter(
-        &self,
-        kv: (Self::TxBytes, Self::TxBytes),
-    ) -> Result<Option<(ArchivedValue<'txn, K>, ArchivedValue<'txn, V>)>, StorageError> {
-        let (k_buf, v_buf) = kv;
-        let k_val = ArchivedValue::<K>::new(k_buf);
-        if let Some(ref filter) = self.key_filter
-            && !filter(&*k_val)
-        {
-            return Ok(None);
-        }
-
-        // Deserialize the value
-        let v_val = ArchivedValue::new(v_buf);
-        Ok(Some((k_val, v_val)))
     }
 }
 
@@ -263,8 +171,13 @@ impl<'txn, T: TransactionKind, K: Key, V: Value> IntoIterator for DbCursor<'txn,
     type IntoIter = DbCursorIter<'txn, T, K, V>;
 
     fn into_iter(mut self) -> Self::IntoIter {
-        // Setup the initial value for the iterator
-        let initial = self.get_current().unwrap();
+        // Position at prefix start if set
+        if let Some(ref prefix) = self.key_prefix {
+            let _ = self.inner.set_range::<Self::TxBytes, Self::TxBytes>(prefix);
+        }
+
+        // Get initial value, checking prefix if set
+        let initial = self.get_current_checked().unwrap();
         DbCursorIter { initial, cursor: self }
     }
 }
@@ -306,24 +219,22 @@ impl<T: TransactionKind, K: Key, V: Value> Iterator for DbCursorIter<'_, T, K, V
             return Some(Ok((k, v)));
         }
 
-        // Increment the cursor
-        match self.cursor.seek_next() {
-            Err(e) => return Some(Err(e)),
-            Ok(true) => return None, // end of iterator
-            _ => {},
-        };
+        // Move to next key
+        type TxBytes<'a> = std::borrow::Cow<'a, [u8]>;
+        match self.cursor.inner.next::<TxBytes<'_>, TxBytes<'_>>() {
+            Ok(None) => return None, // End of table
+            Err(e) => return Some(Err(StorageError::TxOp(e))),
+            Ok(Some(_)) => {},
+        }
 
-        // Get the current value under the cursor
-        self.cursor.get_current().transpose()
+        // Get the current value, checking prefix - returns None if prefix doesn't match
+        self.cursor.get_current_checked().transpose()
     }
 }
 
 #[cfg(test)]
 mod test {
-    use rand::{
-        seq::{IteratorRandom, SliceRandom},
-        thread_rng,
-    };
+    use rand::{seq::SliceRandom, thread_rng};
 
     use crate::{storage::db::DB, test_helpers::mock_db};
 
@@ -501,201 +412,98 @@ mod test {
         }
     }
 
-    /// Tests seeking and then peeking the current value then the next value
+    /// Tests a very simple case of a prefix cursor
     #[test]
-    fn test_seek_and_next() {
-        // Create a db and insert 0..N into the table randomly
-        const N: usize = 1000;
-
+    fn test_prefix_cursor_simple() {
         let db = mock_db();
         db.create_table(TEST_TABLE).unwrap();
 
-        insert_n_random(&db, N);
+        // Insert a key/value pair
+        db.write(TEST_TABLE, &"order:1".to_string(), &1u32).unwrap();
 
-        // Choose a random seek index
-        let seek_index = (0..(N - 1)).choose(&mut thread_rng()).unwrap();
-        let seek_key: ByteKey = (seek_index as u64).to_be_bytes();
-
-        // Seek to the value, assert its correctness, then check the next value
+        // Create a cursor with "order:" prefix
         let tx = db.new_raw_read_tx().unwrap();
-        let mut cursor = tx.cursor::<ByteKey, usize>(TEST_TABLE).unwrap();
-        cursor.seek(&seek_key).unwrap();
-        let (k_bytes, v) = cursor.get_current().unwrap().unwrap();
-        let k = u64::from_be_bytes(*k_bytes) as usize;
-
-        assert_eq!(k, seek_index);
-        assert_eq!(*v, seek_index as u32);
-
-        let (k_bytes, v) = cursor.get_current().unwrap().unwrap();
-        let k = u64::from_be_bytes(*k_bytes) as usize;
-        assert_eq!(k, seek_index);
-        assert_eq!(*v, seek_index as u32);
-
-        cursor.seek_next().unwrap();
-        let (k_bytes, v) = cursor.get_current().unwrap().unwrap();
-        let k = u64::from_be_bytes(*k_bytes) as usize;
-        assert_eq!(k, seek_index + 1);
-        assert_eq!(*v, (seek_index + 1) as u32);
+        let cursor = tx.cursor::<String, u32>(TEST_TABLE).unwrap().with_key_prefix("order:");
+        let elems: Vec<_> = cursor.into_iter().collect::<Result<Vec<_>, _>>().unwrap();
+        assert_eq!(elems.len(), 1);
+        assert_eq!(*elems[0].0, "order:1");
+        assert_eq!(*elems[0].1, 1u32);
     }
 
-    /// Tests seeking and then peeking the current value then previous value
+    /// Tests a prefix-filtered cursor using string keys
     #[test]
-    fn test_seek_and_prev() {
-        // Create a db and insert 0..N into the table randomly
-        const N: usize = 1000;
-
+    fn test_prefix_cursor() {
         let db = mock_db();
         db.create_table(TEST_TABLE).unwrap();
 
-        insert_n_random(&db, N);
-
-        // Choose a random seek index
-        let seek_index = (1..N).choose(&mut thread_rng()).unwrap();
-        let seek_key: ByteKey = (seek_index as u64).to_be_bytes();
-
-        // Seek to the value, assert its correctness, then check the previous value
-        let tx = db.new_raw_read_tx().unwrap();
-        let mut cursor = tx.cursor::<ByteKey, usize>(TEST_TABLE).unwrap();
-        cursor.seek(&seek_key).unwrap();
-        let (k_bytes, v) = cursor.get_current().unwrap().unwrap();
-        let k = u64::from_be_bytes(*k_bytes) as usize;
-
-        assert_eq!(k, seek_index);
-        assert_eq!(*v, seek_index as u32);
-
-        let (k_bytes, v) = cursor.get_current().unwrap().unwrap();
-        let k = u64::from_be_bytes(*k_bytes) as usize;
-        assert_eq!(k, seek_index);
-        assert_eq!(*v, seek_index as u32);
-
-        cursor.seek_prev().unwrap();
-        let (k_bytes, v) = cursor.get_current().unwrap().unwrap();
-        let k = u64::from_be_bytes(*k_bytes) as usize;
-        assert_eq!(k, seek_index - 1);
-        assert_eq!(*v, (seek_index - 1) as u32);
-    }
-
-    /// Tests seeking to the to the first key greater than or equal to the given
-    /// key
-    #[test]
-    fn test_seek_geq() {
-        // Create a db and insert 0..N into the table randomly
-        const N: usize = 1000;
-
-        let db = mock_db();
-        db.create_table(TEST_TABLE).unwrap();
-
-        let mut values = (0..N).collect::<Vec<_>>();
-        values.shuffle(&mut thread_rng());
-
-        // Insert all but one value
-        let exclude = (0..(N - 1)).choose(&mut thread_rng()).unwrap();
+        // Insert keys with different prefixes
         let tx = db.new_raw_write_tx().unwrap();
-        for i in values.into_iter() {
-            if i == exclude {
-                continue;
-            }
-
-            let key: ByteKey = (i as u64).to_be_bytes();
-            tx.write(TEST_TABLE, &key, &i).unwrap();
-        }
+        tx.write(TEST_TABLE, &"order:1".to_string(), &1u32).unwrap();
+        tx.write(TEST_TABLE, &"order:2".to_string(), &2u32).unwrap();
+        tx.write(TEST_TABLE, &"order:3".to_string(), &3u32).unwrap();
+        tx.write(TEST_TABLE, &"other:1".to_string(), &10u32).unwrap();
+        tx.write(TEST_TABLE, &"other:2".to_string(), &20u32).unwrap();
+        tx.write(TEST_TABLE, &"zzz:1".to_string(), &100u32).unwrap();
         tx.commit().unwrap();
 
-        // Test `seek_geq` to a key that does exist
-        let seek_ind = exclude - 1;
-        let seek_key: ByteKey = (seek_ind as u64).to_be_bytes();
-
+        // Create a cursor with "order:" prefix
         let tx = db.new_raw_read_tx().unwrap();
-        {
-            let mut cursor = tx.cursor::<ByteKey, usize>(TEST_TABLE).unwrap();
-            cursor.seek_geq(&seek_key).unwrap();
-            let (k_bytes, v) = cursor.get_current().unwrap().unwrap();
-            let k = u64::from_be_bytes(*k_bytes) as usize;
+        let cursor = tx.cursor::<String, u32>(TEST_TABLE).unwrap().with_key_prefix("order:");
 
-            assert_eq!(k, seek_ind);
-            assert_eq!(*v, seek_ind as u32);
-        }
-        tx.commit().unwrap();
+        // Iterate - should only return order: keys and stop at first non-matching
+        let elems: Vec<_> = cursor.into_iter().collect::<Result<Vec<_>, _>>().unwrap();
+        assert_eq!(elems.len(), 3);
 
-        // Now try seeking to a key that doesn't exist
-        let seek_ind = exclude;
-        let seek_key: ByteKey = (seek_ind as u64).to_be_bytes();
-
-        let tx = db.new_raw_read_tx().unwrap();
-        let mut cursor = tx.cursor::<ByteKey, usize>(TEST_TABLE).unwrap();
-        cursor.seek_geq(&seek_key).unwrap();
-        let (k_bytes, v) = cursor.get_current().unwrap().unwrap();
-        let k = u64::from_be_bytes(*k_bytes) as usize;
-
-        let expected = seek_ind + 1;
-        assert_eq!(k, expected);
-        assert_eq!(*v, expected as u32);
+        // Verify the keys are correct
+        assert_eq!(*elems[0].0, "order:1");
+        assert_eq!(*elems[0].1, 1u32);
+        assert_eq!(*elems[1].0, "order:2");
+        assert_eq!(*elems[1].1, 2u32);
+        assert_eq!(*elems[2].0, "order:3");
+        assert_eq!(*elems[2].1, 3u32);
     }
 
-    /// Tests a filtered cursor
+    /// Tests that prefix cursor stops at first non-matching key
     #[test]
-    fn test_filtered_cursor() {
-        // Create a db and insert 0..N into the table randomly
-        const N: usize = 1000;
+    fn test_prefix_cursor_stops_early() {
         let db = mock_db();
         db.create_table(TEST_TABLE).unwrap();
 
-        insert_n_random(&db, N);
+        // Insert keys where prefix keys are in the middle
+        let tx = db.new_raw_write_tx().unwrap();
+        tx.write(TEST_TABLE, &"aaa".to_string(), &1u32).unwrap();
+        tx.write(TEST_TABLE, &"prefix:1".to_string(), &2u32).unwrap();
+        tx.write(TEST_TABLE, &"prefix:2".to_string(), &3u32).unwrap();
+        tx.write(TEST_TABLE, &"zzz".to_string(), &4u32).unwrap();
+        tx.commit().unwrap();
 
-        // Create a filtered cursor that only returns odd keys
+        // Create a cursor with "prefix:" prefix - should use set_range to skip "aaa"
         let tx = db.new_raw_read_tx().unwrap();
-        let mut cursor = tx.cursor::<ByteKey, usize>(TEST_TABLE).unwrap().with_key_filter(|k| {
-            let key_val = u64::from_be_bytes(*k) as usize;
-            key_val % 2 == 1
-        });
-        cursor.seek_first().unwrap();
+        let cursor = tx.cursor::<String, u32>(TEST_TABLE).unwrap().with_key_prefix("prefix:");
 
-        // Cursor is positioned at one, should return `Some`
-        let (k_bytes, v) = cursor.get_current().unwrap().unwrap();
-        let k = u64::from_be_bytes(*k_bytes) as usize;
-        assert_eq!(k, 1);
-        assert_eq!(*v, 1);
+        let elems: Vec<_> = cursor.into_iter().collect::<Result<Vec<_>, _>>().unwrap();
+        assert_eq!(elems.len(), 2);
+        assert_eq!(*elems[0].0, "prefix:1");
+        assert_eq!(*elems[1].0, "prefix:2");
+    }
 
-        // Move the cursor to the next key, should be the next odd key
-        cursor.seek_next().unwrap();
-        let (k_bytes, v) = cursor.get_current().unwrap().unwrap();
-        let k = u64::from_be_bytes(*k_bytes) as usize;
-        assert_eq!(k, 3);
-        assert_eq!(*v, 3);
+    /// Tests prefix cursor with no matching keys
+    #[test]
+    fn test_prefix_cursor_no_matches() {
+        let db = mock_db();
+        db.create_table(TEST_TABLE).unwrap();
 
-        // Get the current key, should still be the second odd key
-        let (k_bytes, v) = cursor.get_current().unwrap().unwrap();
-        let k = u64::from_be_bytes(*k_bytes) as usize;
-        assert_eq!(k, 3);
-        assert_eq!(*v, 3);
+        // Insert keys that don't match the prefix
+        let tx = db.new_raw_write_tx().unwrap();
+        tx.write(TEST_TABLE, &"aaa".to_string(), &1u32).unwrap();
+        tx.write(TEST_TABLE, &"bbb".to_string(), &2u32).unwrap();
+        tx.commit().unwrap();
 
-        // Get the previous key, should return `Some`
-        cursor.seek_prev().unwrap();
-        let (k_bytes, v) = cursor.get_current().unwrap().unwrap();
-        let k = u64::from_be_bytes(*k_bytes) as usize;
-        assert_eq!(k, 1);
-        assert_eq!(*v, 1);
+        // Create a cursor with "zzz:" prefix - should find nothing
+        let tx = db.new_raw_read_tx().unwrap();
+        let cursor = tx.cursor::<String, u32>(TEST_TABLE).unwrap().with_key_prefix("zzz:");
 
-        // Seek to the last key, should be N - 1
-        cursor.seek_last().unwrap();
-        let (k_bytes, v) = cursor.get_current().unwrap().unwrap();
-        let k = u64::from_be_bytes(*k_bytes) as usize;
-        let idx = N - 1;
-        assert_eq!(k, idx);
-        assert_eq!(*v, idx as u32);
-
-        // Iterate over the cursor, should only return odd keys
-        cursor.seek_first().unwrap();
-        let elems = cursor.into_iter().collect::<Result<Vec<_>, _>>().unwrap();
-        assert_eq!(elems.len(), N / 2);
-
-        for (i, pair) in elems.into_iter().enumerate() {
-            let idx = i * 2 + 1;
-
-            let (k_bytes, v) = pair;
-            let k = u64::from_be_bytes(*k_bytes) as usize;
-            assert_eq!(k, idx);
-            assert_eq!(*v, idx as u32);
-        }
+        let elems: Vec<_> = cursor.into_iter().collect::<Result<Vec<_>, _>>().unwrap();
+        assert!(elems.is_empty());
     }
 }

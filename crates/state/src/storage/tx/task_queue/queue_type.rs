@@ -21,9 +21,10 @@ pub(crate) type TaskValue<'a> = ArchivedValue<'a, QueuedTask>;
 
 /// The preemption state of a task queue
 #[derive(
-    Debug,
     Clone,
     Copy,
+    Debug,
+    Default,
     Serialize,
     Deserialize,
     PartialEq,
@@ -35,17 +36,12 @@ pub(crate) type TaskValue<'a> = ArchivedValue<'a, QueuedTask>;
 #[rkyv(derive(Debug, PartialEq, Eq))]
 pub enum TaskQueuePreemptionState {
     /// The queue is not currently preempted by any task
+    #[default]
     NotPreempted,
     /// The queue contains a serial preemptive task
     SerialPreemptionQueued,
     /// The queue contains one or more concurrent preemptive tasks
     ConcurrentPreemptionsQueued,
-}
-
-impl Default for TaskQueuePreemptionState {
-    fn default() -> Self {
-        Self::NotPreempted
-    }
 }
 
 /// The task queue type, containing the list of tasks that are queued for
@@ -270,7 +266,7 @@ impl ArchivedValue<'_, TaskQueue> {
         if is_first_serial && self.concurrent_tasks.is_empty() {
             // Only the first serial task may run, if no concurrent tasks are queued
             return true;
-        } else if self.concurrent_tasks.iter().any(|t| *t == *task) {
+        } else if self.concurrent_tasks.contains(task) {
             // A concurrent task may run iff it is in the queue
             return true;
         }

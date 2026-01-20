@@ -7,11 +7,13 @@
 //!
 //! Each of the files in this module are named after the high level interface
 //! they expose
+#![allow(mismatched_lifetime_syntaxes)]
 
 pub mod account_index;
 pub mod matching_pools;
 pub mod merkle_proofs;
 pub mod node_metadata;
+pub mod order_auth;
 pub mod order_book;
 pub mod peer_index;
 pub mod proofs;
@@ -170,7 +172,7 @@ impl<'db, T: TransactionKind> DbTxn<'db, T> {
     }
 
     /// Open a table if the transaction has not done so already
-    fn open_table(&self, table_name: &str) -> Result<Table, StorageError> {
+    fn open_table(&self, table_name: &str) -> Result<Table<'_>, StorageError> {
         self.txn
             .open_table(Some(table_name))
             .map_err(|e| StorageError::OpenTable(table_name.to_string(), e))

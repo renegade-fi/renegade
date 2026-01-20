@@ -6,6 +6,7 @@ use alloy::primitives::{Bytes, U256};
 use circuit_types::{Amount, fixed_point::FixedPoint, schnorr::SchnorrSignature};
 use constants::Scalar;
 use darkpool_types::intent::Intent;
+#[cfg(feature = "full-api")]
 use renegade_solidity_abi::v2::IDarkpoolV2;
 use serde::{Deserialize, Serialize};
 use types_account::{
@@ -137,6 +138,7 @@ pub struct ApiOrder {
     pub created: u64,
 }
 
+#[cfg(feature = "full-api")]
 impl From<Order> for ApiOrder {
     fn from(order: Order) -> Self {
         Self {
@@ -227,6 +229,7 @@ pub enum OrderAuth {
     },
 }
 
+#[cfg(feature = "full-api")]
 impl TryFrom<OrderAuth> for types_account::order_auth::OrderAuth {
     type Error = ApiTypeError;
 
@@ -268,6 +271,7 @@ pub struct SignatureWithNonce {
     pub signature: String,
 }
 
+#[cfg(feature = "full-api")]
 impl TryFrom<SignatureWithNonce> for renegade_solidity_abi::v2::IDarkpoolV2::SignatureWithNonce {
     type Error = ApiTypeError;
 
