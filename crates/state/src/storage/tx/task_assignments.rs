@@ -69,10 +69,8 @@ impl<T: TransactionKind> StateTxn<'_, T> {
         peer_id: &WrappedPeerId,
     ) -> Result<Vec<TaskIdentifier>, StorageError> {
         let prefix = assigned_task_prefix(peer_id);
-        let cursor = self
-            .inner()
-            .cursor::<String, ()>(TASK_ASSIGNMENT_TABLE)?
-            .with_key_prefix(&prefix);
+        let cursor =
+            self.inner().cursor::<String, ()>(TASK_ASSIGNMENT_TABLE)?.with_key_prefix(&prefix);
 
         let mut tasks = Vec::new();
         for entry in cursor.into_iter() {
