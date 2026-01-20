@@ -41,7 +41,6 @@ pub struct OrderMetadata {
 impl Order {
     /// Create a new order from the given intent and metadata
     pub fn new(intent: StateWrapper<Intent>, metadata: OrderMetadata) -> Self {
-        let id = OrderId::new_v4();
         Self::new_with_ring(intent, metadata, PrivacyRing::default())
     }
 

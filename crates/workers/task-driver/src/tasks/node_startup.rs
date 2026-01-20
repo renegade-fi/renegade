@@ -8,11 +8,8 @@
 use std::{error::Error, fmt::Display, iter, time::Duration};
 
 use async_trait::async_trait;
-use circuit_types::{
-    elgamal::{DecryptionKey, EncryptionKey},
-    fixed_point::FixedPoint,
-};
-use constants::{NATIVE_ASSET_ADDRESS, Scalar, in_bootstrap_mode};
+use circuit_types::fixed_point::FixedPoint;
+use constants::{NATIVE_ASSET_ADDRESS, in_bootstrap_mode};
 use darkpool_client::{DarkpoolClient, errors::DarkpoolClientError};
 use job_types::{
     network_manager::{NetworkManagerControlSignal, NetworkManagerJob, NetworkManagerQueue},
@@ -22,20 +19,17 @@ use job_types::{
 use serde::Serialize;
 use state::{State, error::StateError};
 use tracing::{info, instrument};
-use types_account::keychain::KeyChain;
 use types_core::{AccountId, Token, get_all_tokens};
 use types_tasks::NodeStartupTaskDescriptor;
 use util::{
     err_str,
-    on_chain::{PROTOCOL_PUBKEY, set_external_match_fee, set_protocol_fee},
+    on_chain::{set_chain_id, set_external_match_fee},
 };
 
 use crate::{
-    await_task,
     state_migration::run_state_migrations,
     task_state::TaskStateWrapper,
     traits::{Descriptor, Task, TaskContext, TaskError, TaskState},
-    utils::ERR_WALLET_NOT_FOUND,
 };
 
 /// The name of the node startup task
@@ -43,8 +37,6 @@ const NODE_STARTUP_TASK_NAME: &str = "node-startup";
 
 /// Error sending a job to another worker
 const ERR_SEND_JOB: &str = "error sending job";
-/// Error deserializing the private key
-const ERR_INVALID_KEY: &str = "invalid private key";
 
 /// Defines the state of the node startup task
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -291,6 +283,10 @@ impl NodeStartupTask {
 
         // Fetch the external match fee overrides for each mint
         self.setup_external_match_fees().await?;
+
+        // Set the chain ID
+        let chain_id = self.darkpool_client.chain_id().await?;
+        set_chain_id(chain_id);
 
         // Set the values in their constant refs
         // set_protocol_fee(protocol_fee);

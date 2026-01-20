@@ -1,4 +1,5 @@
 //! Storage access methods for the local node's metadata
+use alloy::signers::local::PrivateKeySigner;
 use alloy_primitives::Address;
 use circuit_types::{
     baby_jubjub::BabyJubJubPoint, elgamal::EncryptionKey, fixed_point::FixedPoint,
@@ -7,6 +8,7 @@ use darkpool_types::rkyv_remotes::{AddressDef, BabyJubJubPointDef, FixedPointDef
 use libmdbx::{RW, TransactionKind};
 use libp2p::core::Multiaddr;
 use libp2p::identity::Keypair;
+use std::str::FromStr;
 use types_core::AccountId;
 use types_gossip::{ClusterId, MultiaddrDef, WrappedPeerId};
 use util::err_str;
@@ -44,6 +46,8 @@ const RELAYER_FEE_ADDR_KEY: &str = "relayer-fee-addr";
 /// The key for the local relayer's historical state enabled flag in the node
 /// metadata table
 const HISTORICAL_STATE_ENABLED_KEY: &str = "historical-state-enabled";
+/// The key for the executor private key in the node metadata table
+const EXECUTOR_KEY: &str = "executor-key";
 
 /// A type alias for a with-wrapped baby jubjub point
 type WithBabyJubJubPoint = RkyvWith<BabyJubJubPoint, BabyJubJubPointDef>;
@@ -158,6 +162,16 @@ impl<T: TransactionKind> StateTxn<'_, T> {
             .ok_or_else(|| err_not_found(HISTORICAL_STATE_ENABLED_KEY))?
             .deserialize()
     }
+
+    /// Get the executor private key
+    pub fn get_executor_key(&self) -> Result<PrivateKeySigner, StorageError> {
+        let hex_str: String = self
+            .inner()
+            .read::<_, String>(NODE_METADATA_TABLE, &EXECUTOR_KEY.to_string())?
+            .ok_or_else(|| err_not_found(EXECUTOR_KEY))?
+            .deserialize()?;
+        PrivateKeySigner::from_str(&hex_str).map_err(err_str!(StorageError::Other))
+    }
 }
 
 // -----------
@@ -222,5 +236,13 @@ impl StateTxn<'_, RW> {
     /// Set the local relayer's historical state enabled flag
     pub fn set_historical_state_enabled(&self, enabled: bool) -> Result<(), StorageError> {
         self.inner().write(NODE_METADATA_TABLE, &HISTORICAL_STATE_ENABLED_KEY.to_string(), &enabled)
+    }
+
+    /// Set the executor private key (stored as hex string)
+    pub fn set_executor_key(&self, executor_key: &PrivateKeySigner) -> Result<(), StorageError> {
+        // Convert PrivateKeySigner to hex string by accessing the secret key bytes
+        let secret_key_bytes = executor_key.to_bytes();
+        let hex_str = util::hex::bytes_to_hex_string(secret_key_bytes.as_slice());
+        self.inner().write(NODE_METADATA_TABLE, &EXECUTOR_KEY.to_string(), &hex_str)
     }
 }

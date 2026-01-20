@@ -38,6 +38,8 @@ pub static PROTOCOL_FEE_OVERRIDES: RwStatic<HashMap<Address, FixedPoint>> =
     RwStatic::new(|| RwLock::new(HashMap::new()));
 /// The protocol's public encryption key used for paying fees
 pub static PROTOCOL_PUBKEY: OnceLock<EncryptionKey> = OnceLock::new();
+/// The chain ID for the blockchain network
+static CHAIN_ID: RwStatic<u64> = RwStatic::new(|| RwLock::new(0));
 
 /// Parse the address of the deployed contract from the `deployments.json` file
 pub fn parse_addr_from_deployments_file(file_path: &str, contract_key: &str) -> Result<String> {
@@ -116,4 +118,14 @@ pub fn get_protocol_pubkey() -> EncryptionKey {
     {
         *PROTOCOL_PUBKEY.get().expect("Protocol pubkey has not been set")
     }
+}
+
+/// Get the chain ID from the static variable
+pub fn get_chain_id() -> u64 {
+    *CHAIN_ID.read().expect("chain ID lock poisoned")
+}
+
+/// Set the chain ID
+pub fn set_chain_id(chain_id: u64) {
+    *CHAIN_ID.write().expect("chain ID lock poisoned") = chain_id;
 }

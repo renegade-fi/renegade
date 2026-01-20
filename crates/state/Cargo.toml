@@ -41,6 +41,7 @@ futures = { workspace = true }
 tokio = { workspace = true }
 
 # === Workspace Dependencies === #
+alloy = { workspace = true }
 alloy-primitives = { workspace = true }
 circuit-types = { workspace = true }
 darkpool-types = { workspace = true, features = ["rkyv"] }

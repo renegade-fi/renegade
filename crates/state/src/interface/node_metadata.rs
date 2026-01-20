@@ -1,5 +1,6 @@
 //! Stores state information relating to the node's configuration
 
+use alloy::signers::local::PrivateKeySigner;
 use alloy_primitives::Address;
 use circuit_types::{elgamal::EncryptionKey, fixed_point::FixedPoint};
 use config::RelayerConfig;
@@ -55,6 +56,11 @@ impl StateInner {
         self.with_blocking_read_tx(|tx| tx.get_historical_state_enabled().map_err(StateError::Db))
     }
 
+    /// Get the executor private key
+    pub fn get_executor_key(&self) -> Result<PrivateKeySigner, StateError> {
+        self.with_blocking_read_tx(|tx| tx.get_executor_key().map_err(StateError::Db))
+    }
+
     // -----------
     // | Setters |
     // -----------
@@ -94,6 +100,7 @@ impl StateInner {
         let per_asset_fees = config.per_asset_fees.clone();
         let relayer_fee_addr = config.relayer_fee_addr;
         let historical_state_enabled = config.record_historical_state;
+        let executor_key = config.executor_private_key.clone();
 
         if !historical_state_enabled {
             warn!("Historical state is disabled")
@@ -115,6 +122,7 @@ impl StateInner {
             if let Some(addr) = relayer_fee_addr {
                 tx.set_relayer_fee_addr(&addr)?;
             }
+            tx.set_executor_key(&executor_key)?;
 
             Ok(())
         })

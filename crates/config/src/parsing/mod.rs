@@ -65,6 +65,8 @@ pub(crate) fn parse_config_from_args(cli_args: Cli) -> Result<RelayerConfig, Str
     // Parse the local relayer's keys and fee configuration from the CLI
     let private_key =
         PrivateKeySigner::from_str(&cli_args.private_key).map_err(|e| e.to_string())?;
+    let executor_private_key = PrivateKeySigner::from_str(&cli_args.executor_private_key)
+        .map_err(|e| format!("Failed to parse executor private key: {e}"))?;
     let fee_key = parse_fee_key(cli_args.fee_encryption_key)?;
     let relayer_fee_addr = cli_args
         .relayer_fee_addr
@@ -150,6 +152,7 @@ pub(crate) fn parse_config_from_args(cli_args: Cli) -> Result<RelayerConfig, Str
         coinbase_key_secret: cli_args.coinbase_key_secret,
         rpc_url: cli_args.rpc_url,
         private_key,
+        executor_private_key,
         fee_key,
         eth_websocket_addr: cli_args.eth_websocket_addr,
         otlp_enabled: cli_args.otlp_enabled,

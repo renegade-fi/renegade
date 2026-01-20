@@ -227,6 +227,13 @@ pub struct Cli {
         default_value = "0xb6b15c8cb491557369f3c7d2c287b053eb229daa9c22138887752191c9520659",
     )]
     pub private_key: String,
+    /// The executor private key used for order execution
+    #[clap(
+        value_parser,
+        long = "executor-private-key",
+        default_value = "0xb6b15c8cb491557369f3c7d2c287b053eb229daa9c22138887752191c9520659",
+    )]
+    pub executor_private_key: String,
     /// The key used to encrypt fee payments
     #[clap(long = "fee-encryption-key", value_parser, env = "FEE_ENCRYPTION_KEY")]
     pub fee_encryption_key: Option<String>,
@@ -392,6 +399,8 @@ pub struct RelayerConfig {
     pub rpc_url: Option<String>,
     /// The private key used to send transactions
     pub private_key: PrivateKeySigner,
+    /// The executor private key used for order execution
+    pub executor_private_key: PrivateKeySigner,
     /// The Ethereum RPC node websocket address to dial for on-chain data
     pub eth_websocket_addr: Option<String>,
     /// The key used to encrypt fee payments
