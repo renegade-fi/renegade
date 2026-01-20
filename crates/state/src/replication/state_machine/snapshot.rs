@@ -330,12 +330,8 @@ mod tests {
     use types_account::account::{Account, mocks::mock_empty_account};
 
     use crate::{
-        WALLETS_TABLE,
-        // caching::order_cache::OrderBookFilter,
-        replication::mock_raft::mock_state_machine,
-        state_transition::StateTransition,
-        storage::error::StorageError,
-        test_helpers::mock_db,
+        ACCOUNTS_TABLE, replication::mock_raft::mock_state_machine,
+        state_transition::StateTransition, storage::error::StorageError, test_helpers::mock_db,
     };
 
     use super::*;
@@ -458,7 +454,7 @@ mod tests {
     #[tokio::test]
     async fn test_copy_db() {
         // One table is included in a snapshot copy operation, one is excluded
-        const INCLUDED_TABLE: &str = WALLETS_TABLE;
+        const INCLUDED_TABLE: &str = ACCOUNTS_TABLE;
         const EXCLUDED_TABLE: &str = EXCLUDED_TABLES[0];
         let (k1, v1) = ("key1".to_string(), "value1".to_string());
         let (k2, v2) = ("key2".to_string(), "value2".to_string());
@@ -497,7 +493,7 @@ mod tests {
     /// Tests applying a snapshot to the DB
     #[tokio::test]
     async fn test_apply_snapshot() {
-        const INCLUDED_TABLE: &str = WALLETS_TABLE;
+        const INCLUDED_TABLE: &str = ACCOUNTS_TABLE;
         const EXCLUDED_TABLE: &str = EXCLUDED_TABLES[0];
         let (k1, v1) = ("key1".to_string(), "value1".to_string());
         let (k2, v2) = ("key2".to_string(), "value2".to_string());

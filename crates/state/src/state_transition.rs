@@ -7,7 +7,11 @@
 use circuit_types::Nullifier;
 use darkpool_types::rkyv_remotes::ScalarDef;
 use serde::{Deserialize, Serialize};
-use types_account::{Account, MatchingPoolName, MerkleAuthenticationPath, account::OrderId};
+use types_account::{
+    Account, MatchingPoolName, MerkleAuthenticationPath, account::OrderId, order::Order,
+    order_auth::OrderAuth,
+};
+use types_core::AccountId;
 use types_gossip::WrappedPeerId;
 use types_tasks::{QueuedTask, QueuedTaskState, TaskIdentifier, TaskQueueKey};
 use uuid::Uuid;
@@ -44,8 +48,8 @@ pub enum StateTransition {
     // --- Accounts --- //
     /// Create a new account
     CreateAccount { account: Account },
-    /// Update an account
-    UpdateAccount { account: Account },
+    /// Update an account by adding a local order, marking it as local, and storing its auth
+    AddLocalOrder { account_id: AccountId, order: Order, auth: OrderAuth },
 
     // --- Orders --- //
     /// Add a validity proof to an order

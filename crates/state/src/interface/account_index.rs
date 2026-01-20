@@ -3,26 +3,19 @@
 //! Account index updates must go through raft consensus so that the leader may
 //! order them
 
-use alloy_primitives::Address;
 use circuit_types::Amount;
 use types_account::{
     account::{Account, OrderId},
     keychain::KeyChain,
     order::Order,
+    order_auth::OrderAuth,
 };
 use types_core::{AccountId, HmacKey};
-use types_tasks::QueuedTask;
 use util::res_some;
 
 use crate::{
-    StateInner,
-    error::StateError,
-    notifications::ProposalWaiter,
-    state_transition::StateTransition,
-    storage::{
-        error::StorageError,
-        traits::{RkyvValue, WithAddress},
-    },
+    StateInner, error::StateError, notifications::ProposalWaiter,
+    state_transition::StateTransition, storage::traits::RkyvValue,
 };
 
 impl StateInner {
@@ -34,30 +27,8 @@ impl StateInner {
     pub async fn contains_account(&self, id: &AccountId) -> Result<bool, StateError> {
         let id = *id;
         self.with_read_tx(move |tx| {
-            let exists = tx.get_account(&id)?.is_some();
+            let exists = tx.get_account_header(&id)?.is_some();
             Ok(exists)
-        })
-        .await
-    }
-
-    /// Check if an account has a balance for the given token without
-    /// deserializing the account
-    pub async fn account_has_balance(
-        &self,
-        account_id: &AccountId,
-        token: &Address,
-    ) -> Result<bool, StateError> {
-        let account_id = *account_id;
-        let token = *token;
-        self.with_read_tx(move |tx| {
-            let account_value = tx.get_account(&account_id)?.ok_or_else(|| {
-                StateError::Db(StorageError::NotFound("account not found".to_string()))
-            })?;
-
-            let with_token = WithAddress::new(token);
-            let archived_token = with_token.to_archived()?;
-            let has_balance = account_value.balances.get(&archived_token).is_some();
-            Ok(has_balance)
         })
         .await
     }
@@ -69,8 +40,8 @@ impl StateInner {
     ) -> Result<Option<HmacKey>, StateError> {
         let id = *id;
         self.with_read_tx(move |tx| {
-            let account_value = res_some!(tx.get_account(&id)?);
-            let archived_key = &account_value.keychain.secret_keys.symmetric_key;
+            let header = res_some!(tx.get_account_header(&id)?);
+            let archived_key = &header.keychain.secret_keys.symmetric_key;
             let key = HmacKey::from_archived(archived_key)?;
 
             Ok(Some(key))
@@ -85,12 +56,8 @@ impl StateInner {
     ) -> Result<Option<KeyChain>, StateError> {
         let id = *id;
         self.with_read_tx(move |tx| {
-            let account_value = tx.get_account(&id)?.ok_or_else(|| {
-                StateError::Db(StorageError::NotFound("account not found".to_string()))
-            })?;
-            let archived_keychain = &account_value.keychain;
-            let keychain = KeyChain::from_archived(archived_keychain)?;
-
+            let header = res_some!(tx.get_account_header(&id)?);
+            let keychain = KeyChain::from_archived(&header.keychain)?;
             Ok(Some(keychain))
         })
         .await
@@ -100,39 +67,8 @@ impl StateInner {
     pub async fn get_account(&self, id: &AccountId) -> Result<Option<Account>, StateError> {
         let id = *id;
         self.with_read_tx(move |tx| {
-            let account_value = res_some!(tx.get_account(&id)?);
-            let account = account_value.deserialize()?;
-            Ok(Some(account))
-        })
-        .await
-    }
-
-    /// Get the account and the tasks in the queue for the account
-    ///
-    /// Defined here to manage these in a single tx
-    pub async fn get_account_and_tasks(
-        &self,
-        id: &AccountId,
-    ) -> Result<Option<(Account, Vec<QueuedTask>)>, StateError> {
-        let id = *id;
-        self.with_read_tx(move |tx| {
-            // Read the account's task queue
-            let account_value = res_some!(tx.get_account(&id)?);
-            let account = account_value.deserialize()?;
-            let queue = tx.get_task_queue(&id)?;
-
-            // Fetch the tasks one by one
-            let mut tasks = Vec::new();
-            if let Some(queue) = queue {
-                for task_id in queue.all_tasks() {
-                    if let Some(task_value) = tx.get_task(&task_id)? {
-                        let task = task_value.deserialize()?;
-                        tasks.push(task);
-                    }
-                }
-            }
-
-            Ok(Some((account, tasks)))
+            let account = tx.get_account(&id)?;
+            Ok(account)
         })
         .await
     }
@@ -141,9 +77,8 @@ impl StateInner {
     pub async fn get_managed_order(&self, id: &OrderId) -> Result<Option<Order>, StateError> {
         let id = *id;
         self.with_read_tx(move |tx| {
-            let account_value = res_some!(tx.get_account_for_order(&id)?);
-            let account = account_value.deserialize()?;
-            Ok(account.orders.get(&id).cloned())
+            let order = res_some!(tx.get_order(&id)?).deserialize()?;
+            Ok(Some(order))
         })
         .await
     }
@@ -155,12 +90,9 @@ impl StateInner {
     ) -> Result<Option<(Order, Amount)>, StateError> {
         let id = *id;
         self.with_read_tx(move |tx| {
-            let account = res_some!(tx.get_account_for_order(&id)?);
-            let archived_order = res_some!(account.orders.get(&id));
-            let matchable_amount = account.get_matchable_amount_for_order(archived_order);
-            let order = Order::from_archived(archived_order)?;
-
-            Ok(Some((order, matchable_amount.to_native())))
+            let order = res_some!(tx.get_order(&id)?).deserialize()?;
+            let matchable_amount = tx.get_order_matchable_amount(&id)?.unwrap_or_default();
+            Ok(Some((order, matchable_amount)))
         })
         .await
     }
@@ -178,33 +110,6 @@ impl StateInner {
         .await
     }
 
-    /// Get the account that contains the given intent ID
-    pub async fn get_account_for_order(
-        &self,
-        intent_id: &OrderId,
-    ) -> Result<Option<Account>, StateError> {
-        let iid = *intent_id;
-        self.with_read_tx(move |tx| {
-            let account_value = res_some!(tx.get_account_for_order(&iid)?);
-            let account = account_value.deserialize()?;
-            Ok(Some(account))
-        })
-        .await
-    }
-
-    /// Get all the accounts managed by the local relayer
-    pub async fn get_all_accounts(&self) -> Result<Vec<Account>, StateError> {
-        self.with_read_tx(move |tx| {
-            let accounts = tx.get_all_accounts()?;
-            let accounts = accounts
-                .into_iter()
-                .map(|account_value| account_value.deserialize())
-                .collect::<Result<Vec<Account>, _>>()?;
-            Ok(accounts)
-        })
-        .await
-    }
-
     // -----------
     // | Setters |
     // -----------
@@ -216,15 +121,22 @@ impl StateInner {
         self.send_proposal(StateTransition::CreateAccount { account }).await
     }
 
-    /// Update an account in the index
-    pub async fn update_account(&self, account: Account) -> Result<ProposalWaiter, StateError> {
-        self.send_proposal(StateTransition::UpdateAccount { account }).await
+    /// Add a local order to an account
+    pub async fn add_local_order(
+        &self,
+        account_id: AccountId,
+        order: Order,
+        auth: OrderAuth,
+    ) -> Result<ProposalWaiter, StateError> {
+        self.send_proposal(StateTransition::AddLocalOrder { account_id, order, auth }).await
     }
 }
 
 #[cfg(test)]
 mod test {
-    use types_account::{account::mocks::mock_empty_account, order::mocks::mock_order};
+    use types_account::{
+        account::mocks::mock_empty_account, order::mocks::mock_order, order_auth::OrderAuth,
+    };
 
     use crate::test_helpers::mock_state;
 
@@ -242,21 +154,29 @@ mod test {
         assert_eq!(retrieved_account.id, account.id);
     }
 
-    /// Test updating an account
+    /// Test adding a local order to an account
     #[tokio::test]
-    async fn test_update_account() {
+    async fn test_add_local_order() {
         let state = mock_state().await;
 
         let account = mock_empty_account();
         let waiter = state.new_account(account.clone()).await.unwrap();
         waiter.await.unwrap();
 
-        // Update the account
-        let mut updated_account = account.clone();
+        // Add a local order to the account
         let order = mock_order();
-        updated_account.orders.insert(order.id, order);
+        let auth = OrderAuth::PublicOrder {
+            intent_signature: renegade_solidity_abi::v2::IDarkpoolV2::SignatureWithNonce {
+                nonce: alloy::primitives::U256::from(0),
+                signature: alloy::primitives::Bytes::from(vec![0u8; 65]),
+            },
+        };
+        let waiter = state.add_local_order(account.id, order.clone(), auth).await.unwrap();
+        waiter.await.unwrap();
+
         // Verify the account was updated
         let retrieved_account = state.get_account(&account.id).await.unwrap().unwrap();
-        assert_eq!(retrieved_account.id, updated_account.id);
+        assert_eq!(retrieved_account.id, account.id);
+        assert!(retrieved_account.orders.contains_key(&order.id));
     }
 }

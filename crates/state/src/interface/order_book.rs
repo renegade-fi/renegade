@@ -251,9 +251,8 @@ impl StateInner {
                 tx.nullify_order(nullifier)?;
 
                 let matching_pool = tx.get_matching_pool_for_order(&order_id)?;
-                let account = res_some!(tx.get_account_for_order(&order_id)?);
-                let archived_order = res_some!(account.orders.get(&order_id));
-                let order = Order::from_archived(archived_order)?;
+                let archived_order = res_some!(tx.get_order(&order_id)?);
+                let order = Order::from_archived(&archived_order)?;
                 Ok(Some((order, matching_pool)))
             })
             .await?;

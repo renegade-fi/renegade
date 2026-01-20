@@ -1,58 +1,255 @@
 //! Helpers for accessing account index information in the database
+//!
+//! This module implements a normalized storage model where:
+//! - AccountHeader contains only id and keychain (small, stable)
+//! - Orders are stored as separate KV entries
+//! - Balances are stored as separate KV entries
+//! - Order->account mapping is stored for quick order lookups
 
+use std::collections::HashMap;
+
+use alloy_primitives::Address;
+use circuit_types::Amount;
 use libmdbx::{RW, TransactionKind};
-use types_account::account::{Account, OrderId};
+use serde::{Deserialize, Serialize};
+use types_account::{
+    account::{Account, OrderId},
+    balance::Balance,
+    keychain::KeyChain,
+    order::Order,
+};
 use types_core::AccountId;
 use util::res_some;
 
 use crate::{
-    INTENT_TO_WALLET_TABLE, WALLETS_TABLE, storage::ArchivedValue, storage::error::StorageError,
+    ACCOUNTS_TABLE,
+    storage::{
+        ArchivedValue,
+        error::StorageError,
+        traits::{RkyvValue, WithAddress},
+    },
 };
 
 use super::StateTxn;
 
-/// Type alias for an archived account value with transaction lifetime
-pub type AccountValue<'a> = ArchivedValue<'a, Account>;
+// -----------
+// | Types |
+// -----------
+
+/// A lightweight account header containing only stable metadata
+///
+/// Orders and balances are stored separately and reconstructed on demand
+#[derive(
+    Clone,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
+#[rkyv(derive(Debug))]
+pub struct AccountHeader {
+    /// The account identifier
+    pub id: AccountId,
+    /// The keychain for the account
+    pub keychain: KeyChain,
+}
+
+/// Type alias for an archived account header value with transaction lifetime
+pub type AccountHeaderValue<'a> = ArchivedValue<'a, AccountHeader>;
+/// Type alias for an archived order value with transaction lifetime
+pub type OrderValue<'a> = ArchivedValue<'a, Order>;
+/// Type alias for an archived balance value with transaction lifetime
+pub type BalanceValue<'a> = ArchivedValue<'a, Balance>;
+
+// -------------------
+// | Key Helpers |
+// -------------------
+
+/// Build the key for an account header
+fn account_header_key(account_id: &AccountId) -> String {
+    format!("{account_id}:header")
+}
+
+/// Build the key for an order
+fn order_key(account_id: &AccountId, order_id: &OrderId) -> String {
+    format!("{account_id}:orders:{order_id}")
+}
+
+/// Build the prefix for scanning all orders of an account
+fn orders_prefix(account_id: &AccountId) -> String {
+    format!("{account_id}:orders:")
+}
+
+/// Build the key for a balance
+fn balance_key(account_id: &AccountId, token: &Address) -> String {
+    format!("{account_id}:balances:{token:?}")
+}
+
+/// Build the prefix for scanning all balances of an account
+fn balances_prefix(account_id: &AccountId) -> String {
+    format!("{account_id}:balances:")
+}
+
+/// Build the key for the order -> account index
+fn order_index_key(order_id: &OrderId) -> String {
+    format!("order_index:{order_id}")
+}
 
 // -----------
 // | Getters |
 // -----------
 
 impl<T: TransactionKind> StateTxn<'_, T> {
-    /// Get the account associated with the given ID
-    pub fn get_account(
+    /// Get the account header for the given ID
+    pub fn get_account_header(
         &self,
         account_id: &AccountId,
-    ) -> Result<Option<AccountValue<'_>>, StorageError> {
-        self.inner().read(WALLETS_TABLE, account_id)
+    ) -> Result<Option<AccountHeaderValue<'_>>, StorageError> {
+        let key = account_header_key(account_id);
+        self.inner().read(ACCOUNTS_TABLE, &key)
     }
 
     /// Get the account ID managing a given order
     pub fn get_account_id_for_order(
         &self,
-        intent_id: &OrderId,
+        order_id: &OrderId,
     ) -> Result<Option<AccountId>, StorageError> {
+        let key = order_index_key(order_id);
         self.inner()
-            .read::<_, OrderId>(INTENT_TO_WALLET_TABLE, intent_id)
+            .read::<_, AccountId>(ACCOUNTS_TABLE, &key)
             .map(|opt| opt.map(|archived| archived.deserialize()).transpose())?
     }
 
-    /// Get the account for a given order
-    pub fn get_account_for_order(
-        &self,
-        intent_id: &OrderId,
-    ) -> Result<Option<AccountValue<'_>>, StorageError> {
-        let account_id = res_some!(self.get_account_id_for_order(intent_id)?);
-        self.get_account(&account_id)
+    /// Get an order by its ID
+    ///
+    /// Uses the order->account index to find the account, then retrieves the
+    /// order
+    pub fn get_order(&self, order_id: &OrderId) -> Result<Option<OrderValue<'_>>, StorageError> {
+        let account_id = res_some!(self.get_account_id_for_order(order_id)?);
+        let key = order_key(&account_id, order_id);
+        self.inner().read(ACCOUNTS_TABLE, &key)
     }
 
-    /// Get all the accounts in the database
-    pub fn get_all_accounts(&self) -> Result<Vec<AccountValue<'_>>, StorageError> {
-        // Create a cursor and take only the values
-        let account_cursor = self.inner().cursor::<AccountId, Account>(WALLETS_TABLE)?.into_iter();
-        let accounts = account_cursor.values().collect::<Result<Vec<_>, _>>()?;
+    /// Get a balance for an account by token address
+    pub fn get_balance(
+        &self,
+        account_id: &AccountId,
+        token: &Address,
+    ) -> Result<Option<BalanceValue<'_>>, StorageError> {
+        let key = balance_key(account_id, token);
+        self.inner().read(ACCOUNTS_TABLE, &key)
+    }
 
+    /// Get the order for a given order ID and the matchable amount
+    ///
+    /// The matchable amount is the minimum of the order's input amount and the
+    /// account's balance for the order's input token
+    pub fn get_order_matchable_amount(
+        &self,
+        order_id: &OrderId,
+    ) -> Result<Option<Amount>, StorageError> {
+        // Fetch the account and order
+        let account = res_some!(self.get_account_id_for_order(order_id)?);
+        let order = res_some!(self.get_order(order_id)?);
+        let in_token = WithAddress::from_archived(order.input_token())?;
+
+        // Fetch the capitalizing balance
+        let balance = res_some!(self.get_balance(&account, in_token.inner())?);
+        let bal_amt = balance.amount();
+
+        let matchable_amount = Amount::min(bal_amt, order.amount_in());
+        Ok(Some(matchable_amount))
+    }
+
+    /// Get a full account by reconstructing from header, orders, and balances
+    ///
+    /// This method reads the account header, then scans all orders and balances
+    /// for the account using prefix cursors
+    pub fn get_account(&self, account_id: &AccountId) -> Result<Option<Account>, StorageError> {
+        // Fetch the account header
+        let header = res_some!(self.get_account_header(account_id)?).deserialize()?;
+
+        // Fetch the orders and balances for the account
+        let orders = self.fetch_orders_for_account(account_id)?;
+        let balances = self.fetch_balances_for_account(account_id)?;
+
+        // Reconstruct the account struct
+        Ok(Some(Account { id: header.id, orders, balances, keychain: header.keychain }))
+    }
+
+    /// Get all accounts in the database
+    ///
+    /// Iterates over all account headers, collects their IDs, and reconstructs
+    /// each full account. Accounts for which reconstruction fails are filtered
+    /// out.
+    pub fn get_all_accounts(&self) -> Result<Vec<Account>, StorageError> {
+        let header_cursor = self.inner().cursor::<String, AccountHeader>(ACCOUNTS_TABLE)?;
+        let account_ids: Vec<AccountId> = header_cursor
+            .into_iter()
+            .filter_map(|res| {
+                let (key, val) = res.ok()?;
+                // Only process entries that are headers (keys ending with ":header")
+                if key.ends_with(":header") {
+                    let header = val.deserialize().ok()?;
+                    Some(header.id)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        // Call get_account for each account ID and filter out None results
+        let mut accounts = Vec::new();
+        for account_id in account_ids {
+            if let Some(account) = self.get_account(&account_id)? {
+                accounts.push(account);
+            }
+        }
         Ok(accounts)
+    }
+
+    // --- Private Helpers --- //
+
+    /// Fetch all orders for an account
+    fn fetch_orders_for_account(
+        &self,
+        account_id: &AccountId,
+    ) -> Result<HashMap<OrderId, Order>, StorageError> {
+        let order_prefix = orders_prefix(account_id);
+        let order_cursor =
+            self.inner().cursor::<String, Order>(ACCOUNTS_TABLE)?.with_key_prefix(&order_prefix);
+        order_cursor
+            .into_iter()
+            .map(|res| {
+                let (_key, val) = res?;
+                let order = val.deserialize()?;
+                Ok((order.id, order))
+            })
+            .collect::<Result<_, StorageError>>()
+    }
+
+    /// Fetch all balances for an account
+    fn fetch_balances_for_account(
+        &self,
+        account_id: &AccountId,
+    ) -> Result<HashMap<Address, Balance>, StorageError> {
+        let balance_prefix = balances_prefix(account_id);
+        let balance_cursor = self
+            .inner()
+            .cursor::<String, Balance>(ACCOUNTS_TABLE)?
+            .with_key_prefix(&balance_prefix);
+        balance_cursor
+            .into_iter()
+            .map(|res| {
+                let (_key, val) = res?;
+                let balance = val.deserialize()?;
+                Ok((balance.mint(), balance))
+            })
+            .collect::<Result<_, StorageError>>()
     }
 }
 
@@ -61,21 +258,51 @@ impl<T: TransactionKind> StateTxn<'_, T> {
 // -----------
 
 impl StateTxn<'_, RW> {
-    /// Write an account to the table
-    pub fn write_account(&self, account: &Account) -> Result<(), StorageError> {
-        self.inner().write(WALLETS_TABLE, &account.id, account)
+    /// Create a new account with only a header (no orders or balances)
+    pub fn new_account(&self, account: &Account) -> Result<(), StorageError> {
+        let header = AccountHeader { id: account.id, keychain: account.keychain.clone() };
+        let key = account_header_key(&account.id);
+        self.inner().write(ACCOUNTS_TABLE, &key, &header)
     }
 
-    /// Update the mapping from order to account for each of the given orders
-    pub fn index_orders(
+    /// Add an order to an account
+    ///
+    /// This writes both the order data and the order->account index
+    pub fn add_order(&self, account_id: &AccountId, order: &Order) -> Result<(), StorageError> {
+        // Write the order
+        let key = order_key(account_id, &order.id);
+        self.inner().write(ACCOUNTS_TABLE, &key, order)?;
+
+        // Write the order -> account index
+        let index_key = order_index_key(&order.id);
+        self.inner().write(ACCOUNTS_TABLE, &index_key, account_id)
+    }
+
+    /// Update (add or modify) a balance for an account
+    pub fn update_balance(
         &self,
         account_id: &AccountId,
-        orders: &[OrderId],
+        balance: &Balance,
     ) -> Result<(), StorageError> {
-        for order in orders.iter() {
-            self.inner().write(INTENT_TO_WALLET_TABLE, order, account_id)?;
-        }
+        let key = balance_key(account_id, &balance.mint());
+        self.inner().write(ACCOUNTS_TABLE, &key, balance)
+    }
 
+    /// Remove an order from an account
+    ///
+    /// This deletes both the order data and the order->account index
+    pub fn remove_order(
+        &self,
+        account_id: &AccountId,
+        order_id: &OrderId,
+    ) -> Result<(), StorageError> {
+        // Delete the order
+        let key = order_key(account_id, order_id);
+        self.inner().delete(ACCOUNTS_TABLE, &key)?;
+
+        // Delete the order -> account index
+        let index_key = order_index_key(order_id);
+        self.inner().delete(ACCOUNTS_TABLE, &index_key)?;
         Ok(())
     }
 }
@@ -86,84 +313,239 @@ impl StateTxn<'_, RW> {
 
 #[cfg(test)]
 mod test {
-    use types_account::{account::OrderId, mocks::mock_empty_account};
+    use types_account::{
+        Account, balance::mocks::mock_balance, mocks::mock_keychain, order::mocks::mock_order,
+    };
     use types_core::AccountId;
 
-    use crate::{INTENT_TO_WALLET_TABLE, WALLETS_TABLE, test_helpers::mock_db};
-    use itertools::Itertools;
+    use crate::{ACCOUNTS_TABLE, test_helpers::mock_db};
 
-    /// Tests adding an account then retrieving it
-    #[test]
-    fn test_add_account() {
-        let db = mock_db();
-        db.create_table(WALLETS_TABLE).unwrap();
-
-        // Write the account
-        let account = mock_empty_account();
-        let tx = db.new_write_tx().unwrap();
-        tx.write_account(&account).unwrap();
-        tx.commit().unwrap();
-
-        // Read the account
-        let tx = db.new_read_tx().unwrap();
-        let account_res = tx.get_account(&account.id).unwrap();
-        assert!(account_res.is_some());
-        let retrieved = account_res.unwrap().deserialize().unwrap();
-        assert_eq!(retrieved.id, account.id);
+    /// Create a mock account
+    fn mock_account() -> Account {
+        let id = AccountId::new_v4();
+        let keychain = mock_keychain();
+        Account::new_empty_account(id, keychain)
     }
 
-    /// Tests adding an account for an order then retrieving it
+    /// Tests creating a new account and retrieving it
     #[test]
-    fn test_get_account_id_for_intent() {
+    fn test_new_account() {
         let db = mock_db();
-        db.create_table(INTENT_TO_WALLET_TABLE).unwrap();
+        db.create_table(ACCOUNTS_TABLE).unwrap();
 
-        // Write the mapping
-        let intent_id1 = OrderId::new_v4();
-        let intent_id2 = OrderId::new_v4();
-        let intent_id3 = OrderId::new_v4();
-        let account_id1 = AccountId::new_v4();
-        let account_id2 = AccountId::new_v4();
-
+        // Create the account
+        let account = mock_account();
         let tx = db.new_write_tx().unwrap();
-        tx.index_orders(&account_id1, &[intent_id1, intent_id2]).unwrap();
-        tx.index_orders(&account_id2, &[intent_id3]).unwrap();
+        tx.new_account(&account).unwrap();
         tx.commit().unwrap();
 
-        // Check all order mappings
+        // Read the account header
         let tx = db.new_read_tx().unwrap();
-        let account_res1 = tx.get_account_id_for_order(&intent_id1).unwrap();
-        assert_eq!(account_res1, Some(account_id1));
-        let account_res2 = tx.get_account_id_for_order(&intent_id2).unwrap();
-        assert_eq!(account_res2, Some(account_id1));
-        let account_res3 = tx.get_account_id_for_order(&intent_id3).unwrap();
-        assert_eq!(account_res3, Some(account_id2));
+        let header = tx.get_account_header(&account.id).unwrap();
+        assert!(header.is_some());
+        let header = header.unwrap().deserialize().unwrap();
+        assert_eq!(header.id, account.id);
+        assert_eq!(header.keychain, account.keychain);
     }
 
-    /// Tests creating multiple accounts and retrieving them all
+    /// Tests adding an order and retrieving it
+    #[test]
+    fn test_add_and_get_order() {
+        let db = mock_db();
+        db.create_table(ACCOUNTS_TABLE).unwrap();
+
+        // Create account and add order
+        let account = mock_account();
+        let order = mock_order();
+
+        let tx = db.new_write_tx().unwrap();
+        tx.new_account(&account).unwrap();
+        tx.add_order(&account.id, &order).unwrap();
+        tx.commit().unwrap();
+
+        // Retrieve order by ID
+        let tx = db.new_read_tx().unwrap();
+        let retrieved = tx.get_order(&order.id).unwrap();
+        assert!(retrieved.is_some());
+        let retrieved = retrieved.unwrap().deserialize().unwrap();
+        assert_eq!(retrieved.id, order.id);
+    }
+
+    /// Tests the order -> account mapping
+    #[test]
+    fn test_get_account_id_for_order() {
+        let db = mock_db();
+        db.create_table(ACCOUNTS_TABLE).unwrap();
+
+        let account1 = mock_account();
+        let account2 = mock_account();
+        let order1 = mock_order();
+        let order2 = mock_order();
+        let order3 = mock_order();
+
+        // Create accounts and add orders
+        let tx = db.new_write_tx().unwrap();
+        tx.new_account(&account1).unwrap();
+        tx.new_account(&account2).unwrap();
+        tx.add_order(&account1.id, &order1).unwrap();
+        tx.add_order(&account1.id, &order2).unwrap();
+        tx.add_order(&account2.id, &order3).unwrap();
+        tx.commit().unwrap();
+
+        // Check order -> account mappings
+        let tx = db.new_read_tx().unwrap();
+        assert_eq!(tx.get_account_id_for_order(&order1.id).unwrap(), Some(account1.id));
+        assert_eq!(tx.get_account_id_for_order(&order2.id).unwrap(), Some(account1.id));
+        assert_eq!(tx.get_account_id_for_order(&order3.id).unwrap(), Some(account2.id));
+    }
+
+    /// Tests updating a balance
+    #[test]
+    fn test_update_balance() {
+        let db = mock_db();
+        db.create_table(ACCOUNTS_TABLE).unwrap();
+
+        let account = mock_account();
+        let balance = mock_balance();
+        let mint = balance.mint();
+
+        // Create account and add balance
+        let tx = db.new_write_tx().unwrap();
+        tx.new_account(&account).unwrap();
+        tx.update_balance(&account.id, &balance).unwrap();
+        tx.commit().unwrap();
+
+        // Retrieve balance
+        let tx = db.new_read_tx().unwrap();
+        let retrieved = tx.get_balance(&account.id, &mint).unwrap();
+        assert!(retrieved.is_some());
+        let retrieved = retrieved.unwrap().deserialize().unwrap();
+        assert_eq!(retrieved.mint(), mint);
+    }
+
+    /// Tests removing an order
+    #[test]
+    fn test_remove_order() {
+        let db = mock_db();
+        db.create_table(ACCOUNTS_TABLE).unwrap();
+
+        let account = mock_account();
+        let order = mock_order();
+
+        // Create account and add order
+        let tx = db.new_write_tx().unwrap();
+        tx.new_account(&account).unwrap();
+        tx.add_order(&account.id, &order).unwrap();
+        tx.commit().unwrap();
+
+        // Verify order exists
+        let tx = db.new_read_tx().unwrap();
+        assert!(tx.get_order(&order.id).unwrap().is_some());
+        assert!(tx.get_account_id_for_order(&order.id).unwrap().is_some());
+        drop(tx);
+
+        // Remove order
+        let tx = db.new_write_tx().unwrap();
+        tx.remove_order(&account.id, &order.id).unwrap();
+        tx.commit().unwrap();
+
+        // Verify order is gone
+        let tx = db.new_read_tx().unwrap();
+        assert!(tx.get_order(&order.id).unwrap().is_none());
+        assert!(tx.get_account_id_for_order(&order.id).unwrap().is_none());
+    }
+
+    /// Tests full account reconstruction
+    #[test]
+    fn test_get_account_reconstruction() {
+        let db = mock_db();
+        db.create_table(ACCOUNTS_TABLE).unwrap();
+
+        let account = mock_account();
+        let order1 = mock_order();
+        let order2 = mock_order();
+        let balance1 = mock_balance();
+        let mint1 = balance1.mint();
+
+        // Create account with orders and balances
+        let tx = db.new_write_tx().unwrap();
+        tx.new_account(&account).unwrap();
+        tx.add_order(&account.id, &order1).unwrap();
+        tx.add_order(&account.id, &order2).unwrap();
+        tx.update_balance(&account.id, &balance1).unwrap();
+        tx.commit().unwrap();
+
+        // Reconstruct full account
+        let tx = db.new_read_tx().unwrap();
+        let account = tx.get_account(&account.id).unwrap();
+        assert!(account.is_some());
+        let account = account.unwrap();
+
+        // Verify header
+        assert_eq!(account.id, account.id);
+        assert_eq!(account.keychain, account.keychain);
+
+        // Verify orders
+        assert_eq!(account.orders.len(), 2);
+        assert!(account.orders.contains_key(&order1.id));
+        assert!(account.orders.contains_key(&order2.id));
+
+        // Verify balances
+        assert_eq!(account.balances.len(), 1);
+        assert!(account.balances.contains_key(&mint1));
+    }
+
+    /// Tests getting all accounts
     #[test]
     fn test_get_all_accounts() {
         let db = mock_db();
-        db.create_table(WALLETS_TABLE).unwrap();
+        db.create_table(ACCOUNTS_TABLE).unwrap();
 
-        const N: usize = 10;
-        let mut accounts = (0..N).map(|_| mock_empty_account()).collect_vec();
+        // Create multiple accounts with different data
+        let account1 = mock_account();
+        let account2 = mock_account();
+        let account3 = mock_account();
+
+        let order1 = mock_order();
+        let order2 = mock_order();
+        let balance1 = mock_balance();
+        let mint1 = balance1.mint();
+
+        // Create accounts with various combinations of orders and balances
         let tx = db.new_write_tx().unwrap();
-        for account in accounts.iter() {
-            tx.write_account(account).unwrap();
-        }
+        tx.new_account(&account1).unwrap();
+        tx.add_order(&account1.id, &order1).unwrap();
+        tx.update_balance(&account1.id, &balance1).unwrap();
+
+        tx.new_account(&account2).unwrap();
+        tx.add_order(&account2.id, &order2).unwrap();
+
+        tx.new_account(&account3).unwrap();
         tx.commit().unwrap();
 
-        // Read the accounts
+        // Get all accounts
         let tx = db.new_read_tx().unwrap();
-        let accounts_res = tx.get_all_accounts().unwrap();
-        assert_eq!(accounts_res.len(), N);
+        let all_accounts = tx.get_all_accounts().unwrap();
 
-        // Deserialize and sort for comparison
-        let mut deserialized: Vec<_> =
-            accounts_res.into_iter().map(|archived| archived.deserialize().unwrap()).collect();
-        deserialized.sort_by_key(|account| account.id);
-        accounts.sort_by_key(|account| account.id);
-        assert_eq!(deserialized, accounts);
+        // Verify we got all 3 accounts
+        assert_eq!(all_accounts.len(), 3);
+
+        // Verify account1 has order and balance
+        let acc1 = all_accounts.iter().find(|a| a.id == account1.id).unwrap();
+        assert_eq!(acc1.orders.len(), 1);
+        assert!(acc1.orders.contains_key(&order1.id));
+        assert_eq!(acc1.balances.len(), 1);
+        assert!(acc1.balances.contains_key(&mint1));
+
+        // Verify account2 has order but no balance
+        let acc2 = all_accounts.iter().find(|a| a.id == account2.id).unwrap();
+        assert_eq!(acc2.orders.len(), 1);
+        assert!(acc2.orders.contains_key(&order2.id));
+        assert_eq!(acc2.balances.len(), 0);
+
+        // Verify account3 has no orders or balances
+        let acc3 = all_accounts.iter().find(|a| a.id == account3.id).unwrap();
+        assert_eq!(acc3.orders.len(), 0);
+        assert_eq!(acc3.balances.len(), 0);
     }
 }

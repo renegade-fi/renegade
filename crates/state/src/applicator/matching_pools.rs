@@ -4,7 +4,7 @@ use libmdbx::RW;
 use types_account::{MatchingPoolName, OrderId, order::Order};
 
 use crate::{
-    applicator::{reject_account_missing, reject_order_missing},
+    applicator::reject_order_missing,
     storage::{
         traits::RkyvValue,
         tx::{StateTxn, matching_pools::MATCHING_POOL_DOES_NOT_EXIST_ERR},
@@ -67,10 +67,9 @@ impl StateApplicator {
         tx: &StateTxn<RW>,
     ) -> Result<(), StateApplicatorError> {
         let old_pool = tx.get_matching_pool_for_order(&id)?;
-        let account = tx.get_account_for_order(&id)?.ok_or_else(|| reject_account_missing(id))?;
-        let order = account.orders.get(&id).ok_or_else(|| reject_order_missing(id, account.id))?;
-        let order_deser = Order::from_archived(order)?;
-        let matchable_amount = account.get_matchable_amount_for_order(order).to_native();
+        let order = tx.get_order(&id)?.ok_or_else(|| reject_order_missing(id))?;
+        let order_deser = Order::from_archived(&order)?;
+        let matchable_amount = tx.get_order_matchable_amount(&id)?.unwrap_or_default();
 
         // Update the state of the matching engine
         let engine = self.matching_engine();
@@ -133,14 +132,13 @@ mod test {
         let pool_name: MatchingPoolName = TEST_POOL_NAME.to_string();
 
         // Create an account with an order
-        let mut account = mock_empty_account();
+        let account = mock_empty_account();
         let order = mock_order();
         let order_id = order.id;
-        account.orders.insert(order_id, order);
 
         // Add the account to the state
         applicator.create_account(&account).unwrap();
-        applicator.update_account(&account).unwrap();
+        // applicator.add_local_order(account.id, &order, &auth).unwrap();
 
         // Create a matching pool, then assign the order
         applicator.create_matching_pool(&pool_name).unwrap();
@@ -160,14 +158,19 @@ mod test {
         let pool_2_name: MatchingPoolName = "pool-2".to_string();
 
         // Create an account with an order
-        let mut account = mock_empty_account();
+        let account = mock_empty_account();
         let order = mock_order();
         let order_id = order.id;
-        account.orders.insert(order_id, order);
+        let auth = types_account::order_auth::OrderAuth::PublicOrder {
+            intent_signature: renegade_solidity_abi::v2::IDarkpoolV2::SignatureWithNonce {
+                nonce: alloy::primitives::U256::from(0),
+                signature: alloy::primitives::Bytes::from(vec![0u8; 65]),
+            },
+        };
 
         // Add the account to the state
         applicator.create_account(&account).unwrap();
-        applicator.update_account(&account).unwrap();
+        // applicator.add_local_order(account.id, &order, &auth).unwrap();
 
         // Create both matching pools
         applicator.create_matching_pool(&pool_1_name).unwrap();

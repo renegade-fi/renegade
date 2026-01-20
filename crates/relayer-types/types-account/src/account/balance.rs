@@ -79,6 +79,14 @@ impl AsRef<DarkpoolBalance> for Balance {
     }
 }
 
+#[cfg(feature = "rkyv")]
+impl ArchivedBalance {
+    /// Get the balance of the amount
+    pub fn amount(&self) -> Amount {
+        self.state_wrapper.inner.amount.to_native()
+    }
+}
+
 #[cfg(feature = "mocks")]
 /// Mock types for balance testing
 pub mod mocks {
