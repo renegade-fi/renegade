@@ -5,7 +5,7 @@ version = 4
 [[package]]
 name = "abi"
 version = "0.1.0"
-source = "git+https://github.com/renegade-fi/renegade-contracts#4318648d35e1b947a04541f90101c16bc96e2643"
+source = "git+https://github.com/renegade-fi/renegade-contracts#6e2af32068a8cdebfa65c69b6136cffdb4215653"
 dependencies = [
  "alloy",
  "ark-bn254",
@@ -8919,6 +8919,7 @@ checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 name = "state"
 version = "0.1.0"
 dependencies = [
+ "alloy",
  "alloy-primitives",
  "async-trait",
  "ciborium",
@@ -10054,6 +10055,7 @@ dependencies = [
  "darkpool-types",
  "rkyv",
  "serde",
+ "thiserror 2.0.18",
  "types-account",
  "types-core",
  "util",

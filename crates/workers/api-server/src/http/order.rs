@@ -1,5 +1,6 @@
 //! Route handlers for order operations
 
+use alloy::primitives::Address;
 use async_trait::async_trait;
 use external_api::{
     EmptyRequestResponse,
@@ -60,14 +61,16 @@ impl TypedHandler for GetOrdersHandler {
 
 /// Handler for POST /v2/account/:account_id/orders
 pub struct CreateOrderHandler {
+    /// The local relayer's executor address
+    executor: Address,
     /// A handle to the relayer's state
     state: State,
 }
 
 impl CreateOrderHandler {
     /// Constructor
-    pub fn new(state: State) -> Self {
-        Self { state }
+    pub fn new(executor: Address, state: State) -> Self {
+        Self { executor, state }
     }
 }
 
@@ -98,7 +101,9 @@ impl TypedHandler for CreateOrderHandler {
         let (intent, ring, metadata) = req.into_order_components()?;
 
         // Create the task descriptor
-        let descriptor = CreateOrderTaskDescriptor::new(account_id, intent, ring, metadata, auth);
+        let descriptor =
+            CreateOrderTaskDescriptor::new(account_id, self.executor, intent, ring, metadata, auth)
+                .map_err(bad_request)?;
         let task_id = append_task(descriptor.into(), &self.state).await?;
 
         Ok(CreateOrderResponse { task_id, completed: false })

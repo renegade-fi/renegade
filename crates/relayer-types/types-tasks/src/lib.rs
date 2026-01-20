@@ -9,9 +9,11 @@
 #![deny(clippy::missing_docs_in_private_items)]
 
 mod descriptors;
+mod error;
 mod history;
 #[cfg(feature = "mocks")]
 pub mod mocks;
 
 pub use descriptors::*;
+pub use error::*;
 pub use history::*;

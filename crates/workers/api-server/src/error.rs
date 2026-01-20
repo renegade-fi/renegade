@@ -40,6 +40,12 @@ impl ApiServerError {
     pub fn server_failure<T: ToString>(e: T) -> Self {
         ApiServerError::HttpServerFailure(e.to_string())
     }
+
+    /// A setup error
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn setup<T: ToString>(e: T) -> Self {
+        ApiServerError::Setup(e.to_string())
+    }
 }
 
 impl Display for ApiServerError {

@@ -95,14 +95,14 @@ pub(super) struct HttpServer {
 
 impl HttpServer {
     /// Create a new http server
-    pub(super) fn new(config: ApiServerConfig, state: &State) -> Self {
+    pub(super) fn new(config: ApiServerConfig, state: &State) -> Result<Self, ApiServerError> {
         // Build the router, server, and register routes
-        let router = Self::build_router(&config, state);
-        Self { router: Arc::new(router), config }
+        let router = Self::build_router(&config, state)?;
+        Ok(Self { router: Arc::new(router), config })
     }
 
     /// Build a router and register routes on it
-    fn build_router(config: &ApiServerConfig, state: &State) -> Router {
+    fn build_router(config: &ApiServerConfig, state: &State) -> Result<Router, ApiServerError> {
         // Build the router and register its routes
         let mut router = Router::new(config.admin_api_key, state.clone());
 
@@ -151,10 +151,11 @@ impl HttpServer {
         );
 
         // POST /v2/account/:account_id/orders
+        let executor = state.get_executor_key().map_err(ApiServerError::setup)?.address();
         router.add_unauthenticated_route(
             &Method::POST,
             CREATE_ORDER_ROUTE.to_string(),
-            CreateOrderHandler::new(state.clone()),
+            CreateOrderHandler::new(executor, state.clone()),
         );
 
         // GET /v2/account/:account_id/orders/:order_id
@@ -323,7 +324,7 @@ impl HttpServer {
             AdminGetOrderByIdHandler::new(),
         );
 
-        router
+        Ok(router)
     }
 
     /// The execution loop for the http server, accepts incoming connections,

@@ -14,6 +14,7 @@ alloy = { workspace = true }
 # === Serialization === #
 rkyv = { workspace = true, features = ["uuid-1"], optional = true }
 serde = { workspace = true }
+thiserror = { workspace = true }
 uuid = { version = "1.1.2", features = ["v4", "serde"] }
 
 # === Workspace Dependencies === #
@@ -22,4 +23,4 @@ darkpool-types = { workspace = true }
 types-account = { workspace = true }
 types-core = { workspace = true }
 util = { workspace = true, features = ["telemetry"] }
-renegade-solidity-abi = { workspace = true }
+renegade-solidity-abi = { workspace = true, features = ["v2-auth-helpers"] }

@@ -6,7 +6,7 @@ use std::{
 };
 
 use async_trait::async_trait;
-use darkpool_types::{intent::Intent, state_wrapper::StateWrapper};
+use darkpool_types::state_wrapper::StateWrapper;
 use serde::Serialize;
 use state::error::StateError;
 use tracing::instrument;
@@ -188,6 +188,13 @@ impl CreateOrderTask {
     /// Create a new order
     pub async fn create_order(&self) -> Result<()> {
         tracing::info!("GOT TO CREATE ORDER");
+
+        // Load and print the executor key to verify it's working
+        let executor_key = self.ctx.state.get_executor_key()?;
+        let executor_key_bytes = executor_key.to_bytes();
+        let executor_key_hex = util::hex::bytes_to_hex_string(executor_key_bytes.as_slice());
+        tracing::info!("Executor key loaded successfully: {executor_key_hex}");
+
         Ok(())
     }
 }
