@@ -75,19 +75,12 @@ impl StateApplicator {
         tx.attach_validity_proof(&order_id, proof)?;
         // tx.write_validity_proof_witness(&order_id, witness)?;
 
-        // Get the order info for update message
-        let account = tx
-            .get_account_for_order(&order_id)?
-            .ok_or_else(|| StateApplicatorError::reject(ERR_WALLET_MISSING))?;
-
         // Get the order and matchable amount
-        let order = account
-            .orders
-            .get(&order_id)
+        let order = tx
+            .get_order(&order_id)?
             .ok_or_else(|| StateApplicatorError::reject(ERR_ORDER_MISSING))?;
-        let matchable_value = account.get_matchable_amount_for_order(order);
-        let matchable_amount = Amount::from_archived(&matchable_value)?;
-        let order_deser = Order::from_archived(order)?;
+        let matchable_amount = tx.get_order_matchable_amount(&order_id)?.unwrap_or_default();
+        let order_deser = Order::from_archived(&order)?;
 
         // Get the matching pool for the order
         let matching_pool = tx.get_matching_pool_for_order(&order_id)?;
@@ -113,7 +106,9 @@ impl StateApplicator {
 mod test {
     use constants::Scalar;
     use rand::thread_rng;
-    use types_account::{account::mocks::mock_empty_account, order::mocks::mock_order};
+    use types_account::{
+        account::mocks::mock_empty_account, order::mocks::mock_order, order_auth::OrderAuth,
+    };
     use types_gossip::network_order::{
         ArchivedNetworkOrderState, test_helpers::dummy_network_order,
     };
@@ -129,14 +124,13 @@ mod test {
         let applicator = mock_applicator();
 
         // Create an account with an order
-        let mut account = mock_empty_account();
+        let account = mock_empty_account();
         let order = mock_order();
         let order_id = order.id;
-        account.orders.insert(order_id, order);
 
         // Add the account to the state
         applicator.create_account(&account).unwrap();
-        applicator.update_account(&account).unwrap();
+        // applicator.add_local_order(account.id, &order, &auth).unwrap();
 
         // Create a network order and add it to the order book
         // The order must exist in the order book for add_order_validity_proof to work

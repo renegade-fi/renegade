@@ -1,8 +1,5 @@
 //! Error types and conversions for the replication interface
-use std::{
-    fmt::Debug,
-    io::{Error as IoError, ErrorKind as IoErrorKind},
-};
+use std::{fmt::Debug, io::Error as IoError};
 
 use openraft::{
     ErrorSubject, ErrorVerb, LogId, RaftTypeConfig, StorageError as RaftStorageError,
@@ -17,7 +14,7 @@ use super::{Node, NodeId, TypeConfig};
 pub fn new_log_read_error(
     err: StorageError,
 ) -> RaftStorageError<<TypeConfig as RaftTypeConfig>::NodeId> {
-    let io_err = IoError::new(IoErrorKind::Other, Box::new(err));
+    let io_err = IoError::other(Box::new(err));
     RaftStorageError::from_io_error(ErrorSubject::Logs, ErrorVerb::Read, io_err)
 }
 
@@ -25,7 +22,7 @@ pub fn new_log_read_error(
 pub fn new_log_write_error(
     err: StorageError,
 ) -> RaftStorageError<<TypeConfig as RaftTypeConfig>::NodeId> {
-    let io_err = IoError::new(IoErrorKind::Other, Box::new(err));
+    let io_err = IoError::other(Box::new(err));
     RaftStorageError::from_io_error(ErrorSubject::Logs, ErrorVerb::Write, io_err)
 }
 
@@ -35,7 +32,7 @@ pub fn new_apply_error<T: ToString>(
     log_id: LogId<NodeId>,
     err: T,
 ) -> RaftStorageError<<TypeConfig as RaftTypeConfig>::NodeId> {
-    let io_err = IoError::new(IoErrorKind::Other, err.to_string());
+    let io_err = IoError::other(err.to_string());
     RaftStorageError::from_io_error(ErrorSubject::Apply(log_id), ErrorVerb::Write, io_err)
 }
 
@@ -43,7 +40,7 @@ pub fn new_apply_error<T: ToString>(
 pub fn new_snapshot_error(
     err: ReplicationError,
 ) -> RaftStorageError<<TypeConfig as RaftTypeConfig>::NodeId> {
-    let io_err = IoError::new(IoErrorKind::Other, Box::new(err));
+    let io_err = IoError::other(Box::new(err));
     RaftStorageError::from_io_error(ErrorSubject::Snapshot(None), ErrorVerb::Write, io_err)
 }
 

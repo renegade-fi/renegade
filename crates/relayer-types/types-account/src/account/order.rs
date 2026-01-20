@@ -5,6 +5,8 @@
 
 use alloy::primitives::Address;
 use circuit_types::{Amount, fixed_point::FixedPoint};
+#[cfg(feature = "rkyv")]
+use darkpool_types::rkyv_remotes::ArchivedAddress;
 use darkpool_types::{intent::Intent, state_wrapper::StateWrapper};
 #[cfg(feature = "rkyv")]
 use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
@@ -74,6 +76,11 @@ impl Order {
         self.intent.inner.out_token
     }
 
+    /// The input amount for the order
+    pub fn amount_in(&self) -> Amount {
+        self.intent.inner.amount_in
+    }
+
     /// Whether the order is zero'd out
     ///
     /// This can happen without an order being removed from an account because
@@ -108,6 +115,19 @@ impl Order {
         // Check the worst case price
         let implied_price = FixedPoint::from_integer_ratio(output_amount, input_amount);
         implied_price >= self.intent.inner.min_price
+    }
+}
+
+#[cfg(feature = "rkyv")]
+impl ArchivedOrder {
+    /// Get the input token for the order
+    pub fn input_token(&self) -> &ArchivedAddress {
+        &self.intent.inner.in_token
+    }
+
+    /// Get the amount in for the order
+    pub fn amount_in(&self) -> Amount {
+        self.intent.inner.amount_in.to_native()
     }
 }
 

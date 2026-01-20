@@ -43,8 +43,8 @@ fn reject_account_missing(order_id: OrderId) -> StateApplicatorError {
 }
 
 /// Create an order missing rejection error
-fn reject_order_missing(order_id: OrderId, account_id: AccountId) -> StateApplicatorError {
-    StateApplicatorError::reject(format!("order {order_id} not found in account {account_id}"))
+fn reject_order_missing(order_id: OrderId) -> StateApplicatorError {
+    StateApplicatorError::reject(format!("order {order_id} not found in state"))
 }
 
 // --------------
@@ -98,7 +98,9 @@ impl StateApplicator {
     ) -> Result<ApplicatorReturnType> {
         match *transition {
             StateTransition::CreateAccount { account } => self.create_account(&account),
-            StateTransition::UpdateAccount { account } => self.update_account(&account),
+            StateTransition::AddLocalOrder { account_id, order, auth } => {
+                todo!()
+            },
             StateTransition::AddOrderValidityProof { order_id, proof } => {
                 self.add_order_validity_proof(order_id, proof)
             },

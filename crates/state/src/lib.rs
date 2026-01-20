@@ -67,6 +67,8 @@ pub(crate) const PRIORITIES_TABLE: &str = "priorities";
 pub(crate) const ORDERS_TABLE: &str = "orders";
 /// The table that stores order metadata indexed by wallet id
 pub(crate) const ORDER_HISTORY_TABLE: &str = "order-history";
+/// The name of the db table that stores order authorization data
+pub(crate) const ORDER_AUTH_TABLE: &str = "order-auth";
 
 /// The name of the db table that stores proofs
 pub(crate) const PROOFS_TABLE: &str = "proofs";
@@ -74,12 +76,11 @@ pub(crate) const PROOFS_TABLE: &str = "proofs";
 /// The name of the db table mapping orders to their matching pool
 pub(crate) const POOL_TABLE: &str = "matching-pools";
 
-/// The name of the db table that maps intent to their encapsulating wallet
-pub(crate) const INTENT_TO_WALLET_TABLE: &str = "intent-to-wallet";
 /// The name of the db table that maps nullifiers to wallets
 pub(crate) const NULLIFIER_TO_WALLET_TABLE: &str = "nullifier-to-wallet";
-/// The name of the db table that stores wallet information
-pub(crate) const WALLETS_TABLE: &str = "wallet-info";
+/// The name of the db table that stores account information (headers, orders,
+/// balances, and order index)
+pub(crate) const ACCOUNTS_TABLE: &str = "accounts";
 
 /// The name of the db table that stores task queues
 pub(crate) const TASK_QUEUE_TABLE: &str = "task-queues";
@@ -102,13 +103,14 @@ pub const RAFT_METADATA_TABLE: &str = "raft-metadata";
 pub const RAFT_LOGS_TABLE: &str = "raft-logs";
 /// All tables in the database
 pub const ALL_TABLES: [&str; NUM_TABLES] = [
+    ACCOUNTS_TABLE,
     CLUSTER_MEMBERSHIP_TABLE,
     MERKLE_PROOFS_TABLE,
     MPC_PREPROCESSING_TABLE,
     NODE_METADATA_TABLE,
     NULLIFIER_TO_WALLET_TABLE,
+    ORDER_AUTH_TABLE,
     ORDER_HISTORY_TABLE,
-    INTENT_TO_WALLET_TABLE,
     ORDERS_TABLE,
     PEER_INFO_TABLE,
     POOL_TABLE,
@@ -121,7 +123,6 @@ pub const ALL_TABLES: [&str; NUM_TABLES] = [
     TASK_HISTORY_TABLE,
     TASK_QUEUE_TABLE,
     TASK_TO_KEY_TABLE,
-    WALLETS_TABLE,
 ];
 
 // ---------
