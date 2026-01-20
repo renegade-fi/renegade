@@ -2,9 +2,16 @@
 
 #[cfg(feature = "full-api")]
 use circuit_types::schnorr::SchnorrPublicKeyShare;
-use circuit_types::{baby_jubjub::BabyJubJubPoint, schnorr::SchnorrPublicKey};
+use circuit_types::{
+    baby_jubjub::BabyJubJubPoint,
+    schnorr::{SchnorrPublicKey, SchnorrSignature},
+};
+use constants::Scalar;
 use darkpool_types::csprng::PoseidonCSPRNG;
 use serde::{Deserialize, Serialize};
+use util::hex::embedded_scalar_from_decimal_string;
+
+use crate::error::ApiTypeError;
 
 // -----------------------
 // | Cryptographic Types |
@@ -40,6 +47,16 @@ impl From<BabyJubJubPoint> for ApiBabyJubJubPoint {
     }
 }
 
+impl TryFrom<ApiBabyJubJubPoint> for BabyJubJubPoint {
+    type Error = ApiTypeError;
+
+    fn try_from(point: ApiBabyJubJubPoint) -> Result<Self, Self::Error> {
+        let x = Scalar::from_hex_string(&point.x).map_err(ApiTypeError::parsing)?;
+        let y = Scalar::from_hex_string(&point.y).map_err(ApiTypeError::parsing)?;
+        Ok(BabyJubJubPoint { x, y })
+    }
+}
+
 /// A Schnorr signature over a Baby JubJub curve
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ApiSchnorrSignature {
@@ -47,6 +64,16 @@ pub struct ApiSchnorrSignature {
     pub s: String,
     /// The point component of the signature
     pub r: ApiBabyJubJubPoint,
+}
+
+impl TryFrom<ApiSchnorrSignature> for SchnorrSignature {
+    type Error = ApiTypeError;
+
+    fn try_from(signature: ApiSchnorrSignature) -> Result<Self, Self::Error> {
+        let s = embedded_scalar_from_decimal_string(&signature.s).map_err(ApiTypeError::parsing)?;
+        let r = BabyJubJubPoint::try_from(signature.r)?;
+        Ok(SchnorrSignature { s, r })
+    }
 }
 
 /// A Schnorr public key

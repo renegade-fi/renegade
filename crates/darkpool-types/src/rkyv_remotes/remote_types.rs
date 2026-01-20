@@ -7,10 +7,14 @@ use std::{hash::Hash, marker::PhantomData};
 
 use alloy_primitives::{Address, Uint};
 use ark_bn254::FrConfig;
+use ark_ed_on_bn254::FrConfig as EmbeddedFrConfig;
 use ark_ff::{BigInt, Fp, MontBackend};
 use circuit_types::{
     fixed_point::FixedPoint,
-    primitives::{baby_jubjub::BabyJubJubPoint, schnorr::SchnorrPublicKey},
+    primitives::{
+        baby_jubjub::BabyJubJubPoint,
+        schnorr::{SchnorrPublicKey, SchnorrSignature},
+    },
 };
 
 // Share types are only available when proof-system-types feature is enabled
@@ -19,7 +23,7 @@ use circuit_types::{
     fixed_point::FixedPointShare,
     primitives::{baby_jubjub::BabyJubJubPointShare, schnorr::SchnorrPublicKeyShare},
 };
-use constants::Scalar;
+use constants::{EmbeddedScalarField, Scalar};
 use rkyv::{Archive, Deserialize, Serialize};
 
 /// The number of u64 limbs which arkworks uses to represent an element of the
@@ -123,6 +127,41 @@ impl PartialEq<Scalar> for ArchivedScalar {
     }
 }
 
+// --- EmbeddedScalarField --- //
+
+// EmbeddedScalarFieldDef matches EmbeddedScalarField
+// (Fp<MontBackend<EmbeddedFrConfig, 4>, 4>) structure
+#[derive(Archive, Deserialize, Serialize)]
+#[rkyv(derive(Debug))]
+#[rkyv(remote = Fp<MontBackend<EmbeddedFrConfig, SCALAR_LIMBS>, SCALAR_LIMBS>)]
+pub struct EmbeddedScalarFieldDef(
+    #[rkyv(with = BigIntDef)] pub BigInt<SCALAR_LIMBS>,
+    pub PhantomData<MontBackend<EmbeddedFrConfig, SCALAR_LIMBS>>,
+);
+
+impl From<EmbeddedScalarFieldDef>
+    for Fp<MontBackend<EmbeddedFrConfig, SCALAR_LIMBS>, SCALAR_LIMBS>
+{
+    fn from(value: EmbeddedScalarFieldDef) -> Self {
+        Fp(value.0, value.1)
+    }
+}
+
+impl From<Fp<MontBackend<EmbeddedFrConfig, SCALAR_LIMBS>, SCALAR_LIMBS>>
+    for EmbeddedScalarFieldDef
+{
+    fn from(value: Fp<MontBackend<EmbeddedFrConfig, SCALAR_LIMBS>, SCALAR_LIMBS>) -> Self {
+        EmbeddedScalarFieldDef(value.0, value.1)
+    }
+}
+
+impl PartialEq<EmbeddedScalarField> for ArchivedEmbeddedScalarFieldDef {
+    fn eq(&self, other: &EmbeddedScalarField) -> bool {
+        // Compare the BigInt limbs directly
+        self.0.0 == other.0.0
+    }
+}
+
 // --- BabyJubJubPoint --- //
 
 /// Remote type shim for
@@ -180,6 +219,45 @@ impl From<SchnorrPublicKeyDef> for SchnorrPublicKey {
 impl PartialEq<SchnorrPublicKey> for ArchivedSchnorrPublicKey {
     fn eq(&self, other: &SchnorrPublicKey) -> bool {
         self.point == other.point
+    }
+}
+
+// --- SchnorrSignature --- //
+
+/// Remote type shim for `circuit_types::primitives::schnorr::SchnorrSignature`
+#[derive(Archive, Deserialize, Serialize)]
+#[rkyv(remote = SchnorrSignature)]
+#[rkyv(derive(Debug))]
+#[rkyv(archived = ArchivedSchnorrSignature)]
+pub struct SchnorrSignatureDef {
+    /// The s-value of the signature
+    ///
+    /// s = H(M || r) * private_key + k
+    #[rkyv(with = EmbeddedScalarFieldDef)]
+    pub s: EmbeddedScalarField,
+    /// The R-value of the signature
+    ///
+    /// r = k * G for random k; though practically k is made deterministic via
+    /// the transcript.
+    #[rkyv(with = BabyJubJubPointDef)]
+    pub r: BabyJubJubPoint,
+}
+
+impl From<SchnorrSignatureDef> for SchnorrSignature {
+    fn from(value: SchnorrSignatureDef) -> Self {
+        SchnorrSignature { s: value.s, r: value.r }
+    }
+}
+
+impl From<SchnorrSignature> for SchnorrSignatureDef {
+    fn from(value: SchnorrSignature) -> Self {
+        SchnorrSignatureDef { s: value.s, r: value.r }
+    }
+}
+
+impl PartialEq<SchnorrSignature> for ArchivedSchnorrSignature {
+    fn eq(&self, other: &SchnorrSignature) -> bool {
+        self.s == other.s && self.r == other.r
     }
 }
 

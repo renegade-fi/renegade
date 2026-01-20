@@ -149,3 +149,11 @@ rkyv = "0.8.8"
 # We patch `ahash` here since version mismatches w/ the contracts code have
 # led to verification errors in the past.
 ahash = { git = "https://github.com/tkaitchuck/aHash.git", tag = "v0.8.11" }
+
+[patch."https://github.com/renegade-fi/renegade"]
+circuit-types = { path = "crates/circuits/circuit-types" }
+circuits-core = { path = "crates/circuits/circuits-core" }
+constants = { path = "crates/constants" }
+crypto = { path = "crates/crypto" }
+darkpool-types = { path = "crates/darkpool-types" }
+util = { path = "crates/util" }

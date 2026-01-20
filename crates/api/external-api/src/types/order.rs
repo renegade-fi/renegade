@@ -1,11 +1,25 @@
 //! API types for orders
 
+use std::str::FromStr;
+
+use alloy::primitives::{Bytes, U256};
+use circuit_types::{Amount, fixed_point::FixedPoint, schnorr::SchnorrSignature};
+use constants::Scalar;
+use darkpool_types::intent::Intent;
+use renegade_solidity_abi::v2::IDarkpoolV2;
 use serde::{Deserialize, Serialize};
-use types_account::{OrderId, order::Order};
-use util::hex::address_to_hex_string;
+use types_account::{
+    OrderId,
+    order::{Order, OrderMetadata, PrivacyRing},
+};
+use util::{
+    base64::bytes_from_base64_string,
+    hex::{address_from_hex_string, address_to_hex_string},
+};
 use uuid::Uuid;
 
 use super::crypto_primitives::{ApiPoseidonCSPRNG, ApiSchnorrSignature};
+use crate::error::ApiTypeError;
 
 // --------------
 // | Core Types |
@@ -34,6 +48,32 @@ pub struct ApiOrderCore {
     pub allow_external_matches: bool,
 }
 
+impl ApiOrderCore {
+    /// Return the order metadata from the core order
+    pub fn get_order_metadata(&self) -> Result<OrderMetadata, ApiTypeError> {
+        let min_fill = Amount::from_str(&self.min_fill_size)
+            .map_err(|e| ApiTypeError::parsing(format!("invalid min fill size: {e:?}")))?;
+
+        Ok(OrderMetadata {
+            min_fill_size: min_fill,
+            allow_external_matches: self.allow_external_matches,
+        })
+    }
+
+    /// Get the intent from the core order
+    pub fn get_intent(&self) -> Result<Intent, ApiTypeError> {
+        let in_token = address_from_hex_string(&self.in_token).map_err(ApiTypeError::parsing)?;
+        let out_token = address_from_hex_string(&self.out_token).map_err(ApiTypeError::parsing)?;
+        let owner = address_from_hex_string(&self.owner).map_err(ApiTypeError::parsing)?;
+        let repr = Scalar::from_decimal_string(&self.min_price).map_err(ApiTypeError::parsing)?;
+        let min_price = FixedPoint::from_repr(repr);
+        let amount_in = Amount::from_str(&self.amount_in).map_err(ApiTypeError::parsing)?;
+
+        Ok(Intent { in_token, out_token, owner, min_price, amount_in })
+    }
+}
+
+#[cfg(feature = "full-api")]
 impl From<Order> for ApiOrderCore {
     fn from(order: Order) -> Self {
         Self {
@@ -44,7 +84,7 @@ impl From<Order> for ApiOrderCore {
             min_price: order.intent().min_price.repr.to_string(),
             amount_in: order.intent().amount_in.to_string(),
             min_fill_size: order.metadata.min_fill_size.to_string(),
-            order_type: OrderType::PublicOrder,
+            order_type: order.ring.into(),
             allow_external_matches: order.metadata.allow_external_matches,
         }
     }
@@ -113,7 +153,7 @@ impl From<Order> for ApiOrder {
 }
 
 /// The type of order
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum OrderType {
     /// A public order visible to all
@@ -124,6 +164,28 @@ pub enum OrderType {
     RenegadeSettledPublicFillOrder,
     /// A Renegade-settled order with private fills
     RenegadeSettledPrivateFillOrder,
+}
+
+impl From<OrderType> for PrivacyRing {
+    fn from(order_type: OrderType) -> Self {
+        match order_type {
+            OrderType::PublicOrder => PrivacyRing::Ring0,
+            OrderType::NativelySettledPrivateOrder => PrivacyRing::Ring1,
+            OrderType::RenegadeSettledPublicFillOrder => PrivacyRing::Ring2,
+            OrderType::RenegadeSettledPrivateFillOrder => PrivacyRing::Ring3,
+        }
+    }
+}
+
+impl From<PrivacyRing> for OrderType {
+    fn from(privacy_ring: PrivacyRing) -> Self {
+        match privacy_ring {
+            PrivacyRing::Ring0 => OrderType::PublicOrder,
+            PrivacyRing::Ring1 => OrderType::NativelySettledPrivateOrder,
+            PrivacyRing::Ring2 => OrderType::RenegadeSettledPublicFillOrder,
+            PrivacyRing::Ring3 => OrderType::RenegadeSettledPrivateFillOrder,
+        }
+    }
 }
 
 /// The state of an order
@@ -160,9 +222,41 @@ pub enum OrderAuth {
     RenegadeSettledOrder {
         /// The Schnorr signature for intent
         intent_signature: ApiSchnorrSignature,
-        /// The Schnorr signature for the new output balance
+        /// The Schnorr signature for the new output balance, if one is needed
         new_output_balance_signature: ApiSchnorrSignature,
     },
+}
+
+impl TryFrom<OrderAuth> for types_account::order_auth::OrderAuth {
+    type Error = ApiTypeError;
+
+    fn try_from(auth: OrderAuth) -> Result<Self, Self::Error> {
+        match auth {
+            OrderAuth::PublicOrder { intent_signature } => {
+                let intent_signature = IDarkpoolV2::SignatureWithNonce::try_from(intent_signature)
+                    .map_err(ApiTypeError::parsing)?;
+                Ok(types_account::order_auth::OrderAuth::PublicOrder { intent_signature })
+            },
+            OrderAuth::NativelySettledPrivateOrder { intent_signature } => {
+                let intent_signature =
+                    SchnorrSignature::try_from(intent_signature).map_err(ApiTypeError::parsing)?;
+                Ok(types_account::order_auth::OrderAuth::NativelySettledPrivateOrder {
+                    intent_signature,
+                })
+            },
+            OrderAuth::RenegadeSettledOrder { intent_signature, new_output_balance_signature } => {
+                let intent_signature =
+                    SchnorrSignature::try_from(intent_signature).map_err(ApiTypeError::parsing)?;
+                let new_output_balance_signature =
+                    SchnorrSignature::try_from(new_output_balance_signature)
+                        .map_err(ApiTypeError::parsing)?;
+                Ok(types_account::order_auth::OrderAuth::RenegadeSettledOrder {
+                    intent_signature,
+                    new_output_balance_signature,
+                })
+            },
+        }
+    }
 }
 
 /// A signature with an associated nonce
@@ -172,6 +266,19 @@ pub struct SignatureWithNonce {
     pub nonce: String,
     /// The signature bytes (base64 encoded)
     pub signature: String,
+}
+
+impl TryFrom<SignatureWithNonce> for renegade_solidity_abi::v2::IDarkpoolV2::SignatureWithNonce {
+    type Error = ApiTypeError;
+
+    fn try_from(signature_with_nonce: SignatureWithNonce) -> Result<Self, Self::Error> {
+        let nonce = U256::from_str(&signature_with_nonce.nonce)
+            .map_err(|e| ApiTypeError::parsing(format!("invalid nonce: {e}")))?;
+        let signature_bytes = bytes_from_base64_string(&signature_with_nonce.signature)
+            .map_err(ApiTypeError::parsing)?;
+        let signature = Bytes::from(signature_bytes);
+        Ok(renegade_solidity_abi::v2::IDarkpoolV2::SignatureWithNonce { nonce, signature })
+    }
 }
 
 /// A partial fill of an order

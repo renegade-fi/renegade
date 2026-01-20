@@ -7,11 +7,17 @@ use external_api::{
         CancelOrderRequest, CancelOrderResponse, CreateOrderRequest, CreateOrderResponse,
         GetOrderByIdResponse, GetOrdersResponse, UpdateOrderRequest, UpdateOrderResponse,
     },
+    types::OrderType,
 };
 use hyper::HeaderMap;
+use state::State;
+use types_account::order_auth::OrderAuth;
+use types_tasks::CreateOrderTaskDescriptor;
 
 use crate::{
-    error::ApiServerError,
+    error::{ApiServerError, bad_request},
+    http::helpers::append_task,
+    param_parsing::parse_account_id_from_params,
     router::{QueryParams, TypedHandler, UrlParams},
 };
 
@@ -53,12 +59,15 @@ impl TypedHandler for GetOrdersHandler {
 }
 
 /// Handler for POST /v2/account/:account_id/orders
-pub struct CreateOrderHandler;
+pub struct CreateOrderHandler {
+    /// A handle to the relayer's state
+    state: State,
+}
 
 impl CreateOrderHandler {
     /// Constructor
-    pub fn new() -> Self {
-        Self
+    pub fn new(state: State) -> Self {
+        Self { state }
     }
 }
 
@@ -70,11 +79,29 @@ impl TypedHandler for CreateOrderHandler {
     async fn handle_typed(
         &self,
         _headers: HeaderMap,
-        _req: Self::Request,
-        _params: UrlParams,
+        req: Self::Request,
+        params: UrlParams,
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
-        Err(ApiServerError::not_implemented(ERR_NOT_IMPLEMENTED))
+        // Parse account ID from URL params
+        let account_id = parse_account_id_from_params(&params)?;
+
+        // TODO: Allow all order types
+        let ty = req.order.order_type;
+        if !matches!(ty, OrderType::PublicOrder) {
+            return Err(bad_request("Only public orders are currently supported"));
+        }
+
+        // Convert order auth to an internal type
+        let auth = OrderAuth::try_from(req.auth.clone())
+            .map_err(|e| bad_request(format!("invalid order auth: {e}")))?;
+        let (intent, ring, metadata) = req.into_order_components()?;
+
+        // Create the task descriptor
+        let descriptor = CreateOrderTaskDescriptor::new(account_id, intent, ring, metadata, auth);
+        let task_id = append_task(descriptor.into(), &self.state).await?;
+
+        Ok(CreateOrderResponse { task_id, completed: false })
     }
 }
 

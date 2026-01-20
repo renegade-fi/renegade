@@ -10,6 +10,7 @@ pub mod keychain;
 #[cfg(feature = "mocks")]
 pub mod mocks;
 pub mod order;
+pub mod order_auth;
 pub mod pair;
 
 use std::collections::HashMap;
@@ -17,7 +18,7 @@ use std::collections::HashMap;
 use alloy::primitives::Address;
 use circuit_types::{Amount, max_amount, schnorr::SchnorrPublicKey};
 use darkpool_types::{
-    balance::DarkpoolBalance, csprng::PoseidonCSPRNG, state_wrapper::StateWrapper,
+    balance::DarkpoolBalance, csprng::PoseidonCSPRNG, intent::Intent, state_wrapper::StateWrapper,
 };
 use serde::{Deserialize, Serialize};
 use types_core::AccountId;
@@ -28,7 +29,12 @@ use darkpool_types::rkyv_remotes::AddressDef;
 #[cfg(feature = "rkyv")]
 use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize, with};
 
-use crate::{MerkleAuthenticationPath, balance::Balance, keychain::KeyChain, order::Order};
+use crate::{
+    MerkleAuthenticationPath,
+    balance::Balance,
+    keychain::KeyChain,
+    order::{Order, OrderMetadata, PrivacyRing},
+};
 
 pub use error::AccountError;
 
@@ -81,6 +87,16 @@ impl Account {
         let bal_amt =
             self.balances.get(&order.input_token()).map(|b| b.amount()).unwrap_or_default();
         Amount::min(bal_amt, order.intent.inner.amount_in)
+    }
+
+    /// Place an order into the account
+    pub fn place_order(&mut self, intent: Intent, ring: PrivacyRing, metadata: OrderMetadata) {
+        let share_stream = self.sample_share_stream_seed();
+        let recovery_stream = self.sample_recovery_id_stream_seed();
+        let wrapper = StateWrapper::new(intent, share_stream.seed, recovery_stream.seed);
+
+        let order = Order::new_with_ring(wrapper, metadata, ring);
+        self.orders.insert(order.id, order);
     }
 }
 

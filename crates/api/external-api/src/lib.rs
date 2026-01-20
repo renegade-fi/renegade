@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "auth")]
 pub mod auth;
+pub mod error;
 pub mod http;
 pub mod types;
 #[cfg(feature = "websocket")]

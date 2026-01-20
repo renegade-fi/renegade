@@ -14,6 +14,7 @@ pub mod node_startup;
 // pub mod update_wallet;
 pub mod create_balance;
 pub mod create_new_account;
+pub mod create_order;
 pub mod deposit;
 
 // ------------------

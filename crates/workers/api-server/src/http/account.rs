@@ -92,7 +92,7 @@ impl TypedHandler for CreateAccountHandler {
         _params: UrlParams,
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
-        let auth_key = HmacKey::from_hex_string(&req.auth_hmac_key).map_err(bad_request)?;
+        let auth_key = HmacKey::from_base64_string(&req.auth_hmac_key).map_err(bad_request)?;
         let master_view_seed = parse_scalar_from_string(&req.master_view_seed)?;
         let keychain = KeyChain::new(PrivateKeyChain::new(auth_key, master_view_seed));
         let task = NewAccountTaskDescriptor::new(req.account_id, keychain);

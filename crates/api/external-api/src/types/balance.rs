@@ -9,6 +9,7 @@ use types_account::balance::Balance;
 use util::hex::address_to_hex_string;
 
 use super::crypto_primitives::{ApiPoseidonCSPRNG, ApiSchnorrPublicKey, ApiSchnorrPublicKeyShare};
+use crate::error::ApiTypeError;
 
 // -----------------
 // | Balance Types |
@@ -106,7 +107,7 @@ pub struct ApiDepositPermit {
 
 #[cfg(feature = "full-api")]
 impl TryFrom<ApiDepositPermit> for DepositAuth {
-    type Error = String;
+    type Error = ApiTypeError;
 
     fn try_from(permit: ApiDepositPermit) -> Result<Self, Self::Error> {
         use std::str::FromStr;
@@ -116,13 +117,13 @@ impl TryFrom<ApiDepositPermit> for DepositAuth {
 
         let permit_signature_bytes = BASE64_ENGINE
             .decode(&permit.signature)
-            .map_err(|e| format!("invalid permit signature: {e}"))?;
+            .map_err(|e| ApiTypeError::parsing(format!("invalid permit signature: {e}")))?;
 
         Ok(DepositAuth {
             permit2Nonce: U256::from_str(&permit.nonce)
-                .map_err(|e| format!("invalid permit nonce: {e}"))?,
+                .map_err(|e| ApiTypeError::parsing(format!("invalid permit nonce: {e}")))?,
             permit2Deadline: U256::from_str(&permit.deadline)
-                .map_err(|e| format!("invalid permit deadline: {e}"))?,
+                .map_err(|e| ApiTypeError::parsing(format!("invalid permit deadline: {e}")))?,
             permit2Signature: Bytes::from(permit_signature_bytes),
         })
     }

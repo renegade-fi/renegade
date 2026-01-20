@@ -21,6 +21,8 @@ pub struct Order {
     pub id: OrderId,
     /// The intent
     pub intent: StateWrapper<Intent>,
+    /// The privacy ring in which the intent is allocated
+    pub ring: PrivacyRing,
     /// The metadata for the order
     pub metadata: OrderMetadata,
 }
@@ -40,7 +42,17 @@ impl Order {
     /// Create a new order from the given intent and metadata
     pub fn new(intent: StateWrapper<Intent>, metadata: OrderMetadata) -> Self {
         let id = OrderId::new_v4();
-        Self { id, intent, metadata }
+        Self::new_with_ring(intent, metadata, PrivacyRing::default())
+    }
+
+    /// Create a new order from the given intent, metadata, and privacy ring
+    pub fn new_with_ring(
+        intent: StateWrapper<Intent>,
+        metadata: OrderMetadata,
+        ring: PrivacyRing,
+    ) -> Self {
+        let id = OrderId::new_v4();
+        Self { id, intent, metadata, ring }
     }
 
     /// Get a reference to the intent
@@ -124,6 +136,44 @@ impl Default for OrderMetadata {
     fn default() -> Self {
         Self { min_fill_size: 0, allow_external_matches: true }
     }
+}
+
+/// The privacy ring in which the intent is allocated
+///
+/// Renegade allows users to configure the level or privacy applied to the
+/// intent. This allows users to tradeoff privacy versus latency in a very
+/// direct way. We expose 4 privacy rings:
+///
+/// - Ring 0: Public intent, public balance. Intents are allocated in the clear
+///   on-chain and the balances that capitalize them are assumed to be EOA ERC20
+///   balances.
+/// - Ring 1: Private intent, public balance. Intents in ring 1 are Merklized to
+///   hide their contents, but the capitalizing balances are still ERC20
+///   balances. This hides the total size of the intent, but not the individual
+///   fills.
+/// - Ring 2: Private intent, private balance (public fill). In this ring, both
+///   intents and balances are Merklized to hide their contents. This allows for
+///   private fills, in which full post-trade privacy is guaranteed. However,
+///   opting into ring 2 also allows an intent to cross with intents from other
+///   rings, effectively _allowing_ public fills.
+/// - Ring 3: Private intent, private balance (private fill). In this ring, both
+///   intents and balances are Merklized to hide their contents. This is similar
+///   to ring 2, except public fills are explicitly disabled. Ring 3 intents may
+///   only cross with other ring 2 and ring 3 intents, where private fills are
+///   possible.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "rkyv", derive(Archive, RkyvDeserialize, RkyvSerialize))]
+#[cfg_attr(feature = "rkyv", rkyv(derive(Debug)))]
+pub enum PrivacyRing {
+    /// Ring 0: Public intent, public balance
+    #[default]
+    Ring0,
+    /// Ring 1: Private intent, public balance
+    Ring1,
+    /// Ring 2: Private intent, private balance (public fill)
+    Ring2,
+    /// Ring 3: Private intent, private balance (private fill)
+    Ring3,
 }
 
 #[cfg(feature = "mocks")]

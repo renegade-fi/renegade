@@ -71,6 +71,16 @@ pub enum HistoricalTaskDescription {
         /// The amount for the balance
         amount: Amount,
     },
+    /// An order was created
+    CreateOrder {
+        /// The account ID that created the order
+        account_id: AccountId,
+        /// The input token for the order
+        #[cfg_attr(feature = "rkyv", rkyv(with = AddressDef))]
+        token: Address,
+        /// The input amount for the order
+        amount: Amount,
+    },
 }
 
 impl HistoricalTaskDescription {
@@ -78,6 +88,11 @@ impl HistoricalTaskDescription {
     pub fn from_task_descriptor(_key: TaskQueueKey, desc: &TaskDescriptor) -> Option<Self> {
         match desc {
             TaskDescriptor::NewAccount(_) => Some(Self::NewAccount),
+            TaskDescriptor::CreateOrder(desc) => Some(Self::CreateOrder {
+                account_id: desc.account_id,
+                token: desc.intent.in_token,
+                amount: desc.intent.amount_in,
+            }),
             TaskDescriptor::Deposit(desc) => Some(Self::Deposit {
                 account_id: desc.account_id,
                 token: desc.token,

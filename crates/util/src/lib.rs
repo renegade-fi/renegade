@@ -13,6 +13,7 @@ pub mod channels;
 pub mod concurrency;
 mod default_wrapper;
 pub use default_wrapper::*;
+pub mod base64;
 #[cfg(feature = "errors")]
 pub mod errors;
 #[cfg(any(feature = "hex", feature = "hex-core"))]

@@ -19,7 +19,7 @@ use crate::{
     running_task::RunnableTask,
     tasks::{
         create_balance::CreateBalanceTask, create_new_account::CreateNewAccountTask,
-        deposit::DepositTask, node_startup::NodeStartupTask,
+        create_order::CreateOrderTask, deposit::DepositTask, node_startup::NodeStartupTask,
     },
     traits::{Descriptor as _, Task, TaskContext},
     worker::TaskDriverConfig,
@@ -227,6 +227,9 @@ impl TaskExecutor {
             },
             TaskDescriptor::CreateBalance(desc) => {
                 self.start_task_helper::<CreateBalanceTask>(id, desc, affected_accounts).await
+            },
+            TaskDescriptor::CreateOrder(desc) => {
+                self.start_task_helper::<CreateOrderTask>(id, desc, affected_accounts).await
             },
         };
 

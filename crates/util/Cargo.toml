@@ -49,6 +49,7 @@ constants = { workspace = true, optional = true }
 crypto = { workspace = true, optional = true }
 
 # === Misc === #
+base64 = "0.22"
 eyre = { workspace = true }
 hex = "0.4"
 json = "0.12"

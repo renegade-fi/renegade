@@ -3,11 +3,13 @@
 #![cfg_attr(feature = "rkyv", allow(missing_docs))]
 
 mod create_balance;
+mod create_order;
 mod deposit;
 mod new_account;
 mod node_startup;
 
 pub use create_balance::*;
+pub use create_order::*;
 pub use deposit::*;
 pub use new_account::*;
 pub use node_startup::*;
@@ -137,6 +139,8 @@ pub enum TaskDescriptor {
     Deposit(DepositTaskDescriptor),
     /// The task descriptor for the `CreateBalance` task
     CreateBalance(CreateBalanceTaskDescriptor),
+    /// The task descriptor for the `CreateOrder` task
+    CreateOrder(CreateOrderTaskDescriptor),
 }
 
 impl TaskDescriptor {
@@ -147,6 +151,7 @@ impl TaskDescriptor {
             TaskDescriptor::NodeStartup(task) => task.id,
             TaskDescriptor::Deposit(task) => task.account_id,
             TaskDescriptor::CreateBalance(task) => task.account_id,
+            TaskDescriptor::CreateOrder(task) => task.account_id,
         }
     }
 
@@ -157,6 +162,7 @@ impl TaskDescriptor {
             TaskDescriptor::NodeStartup(_) => vec![],
             TaskDescriptor::Deposit(task) => vec![task.account_id],
             TaskDescriptor::CreateBalance(task) => vec![task.account_id],
+            TaskDescriptor::CreateOrder(task) => vec![task.account_id],
         }
     }
 
@@ -167,6 +173,7 @@ impl TaskDescriptor {
             TaskDescriptor::NodeStartup(_) => false,
             TaskDescriptor::Deposit(_) => true,
             TaskDescriptor::CreateBalance(_) => true,
+            TaskDescriptor::CreateOrder(_) => true,
         }
     }
 
@@ -177,6 +184,7 @@ impl TaskDescriptor {
             TaskDescriptor::NodeStartup(_) => "Node Startup".to_string(),
             TaskDescriptor::Deposit(_) => "Deposit".to_string(),
             TaskDescriptor::CreateBalance(_) => "Create Balance".to_string(),
+            TaskDescriptor::CreateOrder(_) => "Create Order".to_string(),
         }
     }
 }

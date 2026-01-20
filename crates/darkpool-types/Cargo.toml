@@ -14,7 +14,7 @@ proof-system-types = [
     "dep:mpc-plonk",
     "dep:mpc-relation",
 ]
-rkyv = ["dep:rkyv", "dep:ark-ff", "dep:ark-bn254"]
+rkyv = ["dep:rkyv", "dep:ark-ff", "dep:ark-bn254", "dep:ark-ed-on-bn254"]
 test_helpers = ["proof-system-types"]
 
 [dependencies]
@@ -38,6 +38,7 @@ serde = { workspace = true, features = ["serde_derive"] }
 
 # === Cryptography === #
 ark-bn254 = { version = "0.4", optional = true }
+ark-ed-on-bn254 = { version = "0.4", optional = true }
 ark-ff = { version = "0.4", optional = true }
 
 # === Misc === #

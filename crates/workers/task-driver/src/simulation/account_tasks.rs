@@ -4,8 +4,8 @@ use state::State;
 use tracing::warn;
 use types_account::Account;
 use types_tasks::{
-    CreateBalanceTaskDescriptor, DepositTaskDescriptor, NewAccountTaskDescriptor, QueuedTask,
-    TaskDescriptor,
+    CreateBalanceTaskDescriptor, CreateOrderTaskDescriptor, DepositTaskDescriptor,
+    NewAccountTaskDescriptor, QueuedTask, TaskDescriptor,
 };
 
 use super::error::TaskSimulationError;
@@ -43,6 +43,7 @@ pub fn simulate_account_tasks(
 fn should_simulate(task: &QueuedTask) -> bool {
     match task.descriptor {
         TaskDescriptor::NewAccount(_) => false,
+        TaskDescriptor::CreateOrder(_) => true,
         TaskDescriptor::Deposit(_) => true,
         TaskDescriptor::CreateBalance(_) => true,
         TaskDescriptor::NodeStartup(_) => false,
@@ -118,6 +119,7 @@ fn simulate_single_account_task(
 ) -> Result<(), TaskSimulationError> {
     match task {
         TaskDescriptor::NewAccount(t) => simulate_new_account(account, &t),
+        TaskDescriptor::CreateOrder(t) => simulate_create_order(account, &t),
         TaskDescriptor::Deposit(t) => simulate_deposit(account, &t),
         TaskDescriptor::CreateBalance(t) => simulate_create_balance(account, &t, state),
         // Ignore all non-wallet tasks
@@ -136,6 +138,15 @@ fn simulate_new_account(
     }
 
     warn!("TODO: Implement new account simulation");
+    Ok(())
+}
+
+/// Simulate a `CreateOrder` task applied to a wallet
+fn simulate_create_order(
+    account: &mut Account,
+    desc: &CreateOrderTaskDescriptor,
+) -> Result<(), TaskSimulationError> {
+    account.place_order(desc.intent.clone(), desc.ring.clone(), desc.metadata.clone());
     Ok(())
 }
 

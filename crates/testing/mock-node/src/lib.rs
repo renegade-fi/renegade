@@ -23,7 +23,7 @@ use job_types::{
     gossip_server::{
         GossipServerJob, GossipServerQueue, GossipServerReceiver, new_gossip_server_queue,
     },
-    matching_engine_worker::{
+    matching_engine::{
         MatchingEngineWorkerJob, MatchingEngineWorkerQueue, MatchingEngineWorkerReceiver,
         new_matching_engine_worker_queue,
     },

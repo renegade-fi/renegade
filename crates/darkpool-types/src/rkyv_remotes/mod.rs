@@ -13,8 +13,8 @@ mod remote_types;
 // Re-export remote types (always available)
 pub use remote_types::{
     AddressDef, ArchivedAddress, ArchivedBabyJubJubPoint, ArchivedFixedPoint, ArchivedScalar,
-    ArchivedSchnorrPublicKey, ArchivedU256, BabyJubJubPointDef, FixedPointDef, ScalarDef,
-    SchnorrPublicKeyDef, U256Def,
+    ArchivedSchnorrPublicKey, ArchivedSchnorrSignature, ArchivedU256, BabyJubJubPointDef,
+    FixedPointDef, ScalarDef, SchnorrPublicKeyDef, SchnorrSignatureDef, U256Def,
 };
 
 // Re-export share type definitions (only when proof-system-types is enabled)

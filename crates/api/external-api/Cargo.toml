@@ -32,12 +32,11 @@ circuit-types = { workspace = true }
 darkpool-types = { workspace = true }
 types-core = { workspace = true }
 types-gossip = { workspace = true }
-types-tasks = { workspace = true }
 types-account = { workspace = true }
 types-runtime = { workspace = true }
 constants = { workspace = true }
 crypto = { workspace = true }
-util = { workspace = true }
+util = { workspace = true, features = ["hex"] }
 renegade-solidity-abi = { workspace = true, optional = true }
 
 # === Misc Dependencies === #

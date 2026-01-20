@@ -79,7 +79,7 @@ impl DarkpoolClientConfig {
             .with_simple_nonce_management()
             .filler(ChainIdFiller::default())
             .filler(GasFiller)
-            .filler(BlobGasFiller)
+            .filler(BlobGasFiller::default())
             .wallet(key)
             .connect_http(url);
         provider.client().set_poll_interval(self.block_polling_interval);

@@ -154,7 +154,7 @@ impl HttpServer {
         router.add_unauthenticated_route(
             &Method::POST,
             CREATE_ORDER_ROUTE.to_string(),
-            CreateOrderHandler::new(),
+            CreateOrderHandler::new(state.clone()),
         );
 
         // GET /v2/account/:account_id/orders/:order_id

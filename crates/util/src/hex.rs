@@ -12,14 +12,12 @@ use alloy::primitives::Address;
 use ark_ec::{CurveGroup, twisted_edwards::Projective};
 #[cfg(feature = "hex")]
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
-#[cfg(all(feature = "hex", feature = "v1"))]
-use circuit_types::keychain::{NonNativeScalar, PublicSigningKey};
 #[cfg(feature = "hex")]
 use circuit_types::primitives::baby_jubjub::BabyJubJubPoint;
 #[cfg(feature = "hex")]
-use constants::{EmbeddedCurveConfig, Scalar};
+use constants::{EmbeddedCurveConfig, EmbeddedScalarField, Scalar};
 #[cfg(feature = "hex")]
-use crypto::fields::{biguint_to_scalar, scalar_to_biguint};
+use crypto::fields::{biguint_to_jubjub, biguint_to_scalar, jubjub_to_biguint, scalar_to_biguint};
 use num_bigint::BigUint;
 use num_traits::Num;
 
@@ -95,40 +93,33 @@ pub fn scalar_from_hex_string(hex: &str) -> Result<Scalar, String> {
     Ok(biguint_to_scalar(&biguint))
 }
 
-/// A helper to serialize a nonnative scalar to a hex string
-#[cfg(all(feature = "hex", feature = "v1"))]
-pub fn nonnative_scalar_to_hex_string<const NUM_WORDS: usize>(
-    val: &NonNativeScalar<NUM_WORDS>,
-) -> String {
-    biguint_to_hex_string(&val.into())
+/// A helper to serialize an EmbeddedScalarField to a hex string
+#[cfg(feature = "hex")]
+pub fn embedded_scalar_to_hex_string(val: &EmbeddedScalarField) -> String {
+    let biguint = jubjub_to_biguint(*val);
+    biguint_to_hex_string(&biguint)
 }
 
-/// A helper method to deserialize a nonnative scalar from a hex string
-#[cfg(all(feature = "hex", feature = "v1"))]
-pub fn nonnative_scalar_from_hex_string<const NUM_WORDS: usize>(
-    hex: &str,
-) -> Result<NonNativeScalar<NUM_WORDS>, String> {
+/// A helper to deserialize an EmbeddedScalarField from a hex string
+#[cfg(feature = "hex")]
+pub fn embedded_scalar_from_hex_string(hex: &str) -> Result<EmbeddedScalarField, String> {
     let biguint = biguint_from_hex_string(hex)?;
-    Ok(NonNativeScalar::from(&biguint))
+    Ok(biguint_to_jubjub(&biguint))
 }
 
-/// A helper to serialize a signing key to a hex string
-#[cfg(all(feature = "hex", feature = "v1"))]
-pub fn public_sign_key_to_hex_string(val: &PublicSigningKey) -> String {
-    let bytes = val.to_uncompressed_bytes();
-    format!("0x{}", hex::encode(bytes))
+/// A helper to serialize an EmbeddedScalarField to a decimal string
+#[cfg(feature = "hex")]
+pub fn embedded_scalar_to_decimal_string(val: &EmbeddedScalarField) -> String {
+    let biguint = jubjub_to_biguint(*val);
+    biguint.to_string()
 }
 
-/// A helper to deserialize a signing key from a hex string
-#[cfg(all(feature = "hex", feature = "v1"))]
-pub fn public_sign_key_from_hex_string(hex: &str) -> Result<PublicSigningKey, String> {
-    // Deserialize as a string and remove "0x" if present
-    let stripped = hex.strip_prefix("0x").unwrap_or(hex);
-    let bytes = hex::decode(stripped)
-        .map_err(|e| format!("error deserializing bytes from hex string: {e}"))?;
-
-    PublicSigningKey::from_bytes(&bytes)
-        .map_err(|e| format!("error deserializing signing key from bytes: {e}"))
+/// A helper to deserialize an EmbeddedScalarField from a decimal string
+#[cfg(feature = "hex")]
+pub fn embedded_scalar_from_decimal_string(decimal: &str) -> Result<EmbeddedScalarField, String> {
+    let biguint = BigUint::from_str_radix(decimal, 10 /* radix */)
+        .map_err(|e| format!("error deserializing BigUint from decimal string: {e}"))?;
+    Ok(biguint_to_jubjub(&biguint))
 }
 
 /// Convert a Baby-JubJub point to a hex string

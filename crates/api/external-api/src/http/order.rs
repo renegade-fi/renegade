@@ -1,8 +1,13 @@
 //! HTTP route definitions and request/response types for order operations
 
+#[cfg(feature = "full-api")]
+use darkpool_types::intent::Intent;
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "full-api")]
+use types_account::order::{OrderMetadata, PrivacyRing};
 use uuid::Uuid;
 
+use crate::error::ApiTypeError;
 use crate::types::{ApiOrder, ApiOrderCore, OrderAuth};
 
 // ---------------
@@ -52,13 +57,25 @@ pub struct CreateOrderRequest {
     pub precompute_cancellation_proof: bool,
 }
 
+#[cfg(feature = "full-api")]
+impl CreateOrderRequest {
+    /// Return the components of an order from the request
+    pub fn into_order_components(
+        self,
+    ) -> Result<(Intent, PrivacyRing, OrderMetadata), ApiTypeError> {
+        let intent = self.order.get_intent()?;
+        let ring = self.order.order_type.into();
+        let meta = self.order.get_order_metadata()?;
+
+        Ok((intent, ring, meta))
+    }
+}
+
 /// Response for create order
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CreateOrderResponse {
     /// The task ID for the creation
     pub task_id: Uuid,
-    /// The created order
-    pub order: ApiOrder,
     /// Whether the operation has completed
     pub completed: bool,
 }
