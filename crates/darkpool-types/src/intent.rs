@@ -131,4 +131,3 @@ impl StateWrapper<Intent> {
         self.public_share.amount_in -= Scalar::from(obligation.amount_in);
     }
 }
-
