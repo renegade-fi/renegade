@@ -2,6 +2,7 @@
 //!
 //! We serialize types using the `flexbuffers` format (a schema-less version of
 //! `flatbuffers`): https://flatbuffers.dev/flexbuffers.html
+#![allow(mismatched_lifetime_syntaxes)]
 
 use std::{ops::Bound, path::Path};
 

@@ -72,7 +72,7 @@ impl<T: TransactionKind> StateTxn<'_, T> {
         let cursor = self
             .inner()
             .cursor::<String, ()>(TASK_ASSIGNMENT_TABLE)?
-            .with_key_filter(|key| key.starts_with(prefix.as_str()));
+            .with_key_prefix(&prefix);
 
         let mut tasks = Vec::new();
         for entry in cursor.into_iter() {

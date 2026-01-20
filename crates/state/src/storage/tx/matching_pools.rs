@@ -89,7 +89,7 @@ impl StateTxn<'_, RW> {
         let cursor = self
             .inner()
             .cursor::<String, MatchingPoolName>(POOL_TABLE)?
-            .with_key_filter(|key| key.starts_with(POOL_KEY_PREFIX));
+            .with_key_prefix(POOL_KEY_PREFIX);
 
         for entry in cursor.into_iter() {
             let (key, value) = entry?;

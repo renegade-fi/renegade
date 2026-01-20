@@ -76,7 +76,7 @@ impl<T: TransactionKind> StateTxn<'_, T> {
     pub fn get_order_info(
         &self,
         order_id: &OrderId,
-    ) -> Result<Option<NetworkOrderValue>, StorageError> {
+    ) -> Result<Option<NetworkOrderValue<'_>>, StorageError> {
         let key = order_key(order_id);
         self.inner().read(ORDERS_TABLE, &key)
     }
@@ -107,7 +107,7 @@ impl<T: TransactionKind> StateTxn<'_, T> {
     pub fn get_order_by_nullifier(
         &self,
         nullifier: Nullifier,
-    ) -> Result<Option<OrderIdValue>, StorageError> {
+    ) -> Result<Option<OrderIdValue<'_>>, StorageError> {
         let key = nullifier_key(nullifier);
         self.inner().read(ORDERS_TABLE, &key)
     }
@@ -117,11 +117,9 @@ impl<T: TransactionKind> StateTxn<'_, T> {
     /// Warning: this can be very slow when the state has a medium to large
     /// number of orders
     pub fn get_all_orders(&self) -> Result<Vec<NetworkOrderValue>, StorageError> {
-        // Build a cursor over the table
-        let cursor = self
-            .inner()
-            .cursor::<String, NetworkOrder>(ORDERS_TABLE)?
-            .with_key_filter(|key| key.starts_with("order:"));
+        // Build a cursor over the table with order prefix
+        let cursor =
+            self.inner().cursor::<String, NetworkOrder>(ORDERS_TABLE)?.with_key_prefix("order:");
 
         // Destructure the result and handle errors
         let mut res = Vec::new();
@@ -222,6 +220,8 @@ impl StateTxn<'_, RW> {
 
         // Remove from the priority table
         self.inner().delete(PRIORITIES_TABLE, order_id)?;
+        // Remove order authorization
+        self.delete_order_auth(order_id)?;
         Ok(())
     }
 
