@@ -104,6 +104,11 @@ fn order_index_key(order_id: &OrderId) -> String {
 // -----------
 
 impl<T: TransactionKind> StateTxn<'_, T> {
+    /// Whether the account exists
+    pub fn contains_account(&self, account_id: &AccountId) -> Result<bool, StorageError> {
+        self.get_account_header(account_id).map(|opt| opt.is_some())
+    }
+
     /// Get the account header for the given ID
     pub fn get_account_header(
         &self,

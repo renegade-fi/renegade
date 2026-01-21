@@ -87,6 +87,7 @@ mod test {
         MatchingPoolName,
         account::{OrderId, mocks::mock_empty_account},
         order::mocks::mock_order,
+        order_auth::mocks::mock_order_auth,
     };
 
     use crate::applicator::test_helpers::mock_applicator;
@@ -135,10 +136,11 @@ mod test {
         let account = mock_empty_account();
         let order = mock_order();
         let order_id = order.id;
+        let auth = mock_order_auth();
 
         // Add the account to the state
         applicator.create_account(&account).unwrap();
-        // applicator.add_local_order(account.id, &order, &auth).unwrap();
+        applicator.add_order_to_account(account.id, &order, &auth).unwrap();
 
         // Create a matching pool, then assign the order
         applicator.create_matching_pool(&pool_name).unwrap();
@@ -161,16 +163,11 @@ mod test {
         let account = mock_empty_account();
         let order = mock_order();
         let order_id = order.id;
-        let auth = types_account::order_auth::OrderAuth::PublicOrder {
-            intent_signature: renegade_solidity_abi::v2::IDarkpoolV2::SignatureWithNonce {
-                nonce: alloy::primitives::U256::from(0),
-                signature: alloy::primitives::Bytes::from(vec![0u8; 65]),
-            },
-        };
+        let auth = mock_order_auth();
 
         // Add the account to the state
         applicator.create_account(&account).unwrap();
-        // applicator.add_local_order(account.id, &order, &auth).unwrap();
+        applicator.add_order_to_account(account.id, &order, &auth).unwrap();
 
         // Create both matching pools
         applicator.create_matching_pool(&pool_1_name).unwrap();

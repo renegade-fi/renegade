@@ -1,9 +1,14 @@
 //! Applicator methods for the account index, separated out for discoverability
 
 use system_bus::{SystemBusMessage, account_topic};
-use types_account::account::Account;
+use types_account::{
+    account::{Account, OrderId},
+    order::Order,
+    order_auth::OrderAuth,
+};
+use types_core::AccountId;
 
-use crate::applicator::error::StateApplicatorError;
+use crate::{applicator::error::StateApplicatorError, storage::traits::RkyvValue};
 
 use super::{Result, StateApplicator, return_type::ApplicatorReturnType};
 
@@ -27,6 +32,67 @@ impl StateApplicator {
 
         // Publish a message to the bus describing the account update
         self.publish_account_update(account);
+        Ok(ApplicatorReturnType::None)
+    }
+
+    /// Add an order to an account
+    pub fn add_order_to_account(
+        &self,
+        account_id: AccountId,
+        order: &Order,
+        auth: &OrderAuth,
+    ) -> Result<ApplicatorReturnType> {
+        // Create write transaction
+        let tx = self.db().new_write_tx()?;
+
+        // Verify account exists
+        if !tx.contains_account(&account_id)? {
+            return Err(StateApplicatorError::reject("account not found"));
+        }
+
+        // Write the order fields
+        tx.add_order(&account_id, order)?;
+        tx.write_order_auth(&order.id, auth)?;
+
+        // Get the info needed to update the matching engine
+        let matching_pool = tx.get_matching_pool_for_order(&order.id)?;
+        let matchable_amount = tx.get_order_matchable_amount(&order.id)?.unwrap_or_default();
+        tx.commit()?;
+
+        // Update the matching engine
+        self.matching_engine().add_order(order, matchable_amount, matching_pool);
+        Ok(ApplicatorReturnType::None)
+    }
+
+    /// Remove an order from an account
+    pub fn remove_order_from_account(
+        &self,
+        account_id: AccountId,
+        order_id: OrderId,
+    ) -> Result<ApplicatorReturnType> {
+        // Create write transaction
+        let tx = self.db().new_write_tx()?;
+
+        // Verify account exists
+        if !tx.contains_account(&account_id)? {
+            return Err(StateApplicatorError::reject("account not found"));
+        }
+
+        // Get the order and matching pool before removing
+        let archived_order = tx
+            .get_order(&order_id)?
+            .ok_or_else(|| StateApplicatorError::reject(format!("order {order_id} not found")))?;
+        let order = Order::from_archived(&archived_order)?;
+        let matching_pool = tx.get_matching_pool_for_order(&order_id)?;
+
+        // Remove order from account storage
+        tx.remove_order(&account_id, &order_id)?;
+        tx.delete_order_auth(&order_id)?;
+        tx.remove_order_from_matching_pool(&order_id)?;
+        tx.commit()?;
+
+        // Remove from the matching engine
+        self.matching_engine().cancel_order(&order, matching_pool);
         Ok(ApplicatorReturnType::None)
     }
 
@@ -129,67 +195,117 @@ impl StateApplicator {
 // | Tests |
 // ---------
 
-// #[cfg(test)]
-// pub(crate) mod test {
-//     use types_account::{
-//         account::{Account, mocks::mock_empty_account},
-//         order::mocks::mock_order,
-//         order_auth::OrderAuth,
-//     };
-//     use types_core::AccountId;
+#[cfg(test)]
+pub(crate) mod test {
+    use types_account::{
+        account::mocks::mock_empty_account, order::mocks::mock_order,
+        order_auth::mocks::mock_order_auth,
+    };
 
-//     use crate::{INTENT_TO_WALLET_TABLE, WALLETS_TABLE,
-// applicator::test_helpers::mock_applicator};
+    use crate::applicator::test_helpers::mock_applicator;
 
-//     /// Tests adding a new account to the index
-//     #[test]
-//     fn test_create_account() {
-//         let applicator = mock_applicator();
+    /// Tests adding a new account to the index
+    #[test]
+    fn test_create_account() {
+        let applicator = mock_applicator();
 
-//         // Add an account
-//         let account = mock_empty_account();
-//         applicator.create_account(&account).unwrap();
+        // Add an account
+        let account = mock_empty_account();
+        applicator.create_account(&account).unwrap();
 
-//         // Check that the account is indexed correctly
-//         let expected_account: Account = account;
+        // Check that the account exists
+        let tx = applicator.db().new_read_tx().unwrap();
+        let retrieved_account = tx.get_account(&account.id).unwrap();
+        assert!(retrieved_account.is_some());
+        let retrieved_account = retrieved_account.unwrap();
+        assert_eq!(retrieved_account.id, account.id);
+    }
 
-//         let db = applicator.db();
-//         let account: Account = db.read(WALLETS_TABLE,
-// &expected_account.id).unwrap().unwrap();
+    /// Test adding an order to an account
+    #[test]
+    fn test_add_order_to_account() {
+        let applicator = mock_applicator();
 
-//         assert_eq!(account, expected_account);
-//     }
+        // Add an account
+        let account = mock_empty_account();
+        applicator.create_account(&account).unwrap();
 
-//     /// Test adding a local order to an account
-//     #[test]
-//     fn test_add_local_order() {
-//         let applicator = mock_applicator();
+        // Add an order to the account
+        let order = mock_order();
+        let auth = mock_order_auth();
+        applicator.add_order_to_account(account.id, &order, &auth).unwrap();
 
-//         // Add an account
-//         let account = mock_empty_account();
-//         applicator.create_account(&account).unwrap();
+        // Check that the order is stored in the account
+        let tx = applicator.db().new_read_tx().unwrap();
+        let retrieved_account = tx.get_account(&account.id).unwrap().unwrap();
+        assert!(retrieved_account.orders.contains_key(&order.id));
 
-//         // Add a local order to the account
-//         let order = mock_order();
-//         let auth = OrderAuth::PublicOrder {
-//             intent_signature:
-// renegade_solidity_abi::v2::IDarkpoolV2::SignatureWithNonce {
-// nonce: alloy::primitives::U256::from(0),                 signature:
-// alloy::primitives::Bytes::from(vec![0u8; 65]),             },
-//         };
-//         applicator.add_local_order(account.id, &order, &auth).unwrap();
+        // Check the order -> account mapping
+        let account_id = tx.get_account_id_for_order(&order.id).unwrap();
+        assert_eq!(account_id, Some(account.id));
 
-//         // Check that the indexed account is as expected
-//         let db = applicator.db();
-//         let updated_account: Account = db.read(WALLETS_TABLE,
-// &account.id).unwrap().unwrap();
+        // Check that the order can be retrieved
+        let retrieved_order = tx.get_order(&order.id).unwrap();
+        assert!(retrieved_order.is_some());
+        let retrieved_order = retrieved_order.unwrap().deserialize().unwrap();
+        assert_eq!(retrieved_order.id, order.id);
 
-//         assert_eq!(updated_account.id, account.id);
-//         assert!(updated_account.orders.contains_key(&order.id));
+        // Check that the order auth is stored
+        let retrieved_auth = tx.get_order_auth(&order.id).unwrap();
+        assert!(retrieved_auth.is_some());
+        let retrieved_auth = retrieved_auth.unwrap().deserialize().unwrap();
+        assert_eq!(retrieved_auth, auth);
 
-//         // Check the intent -> account mapping
-//         let order_id = updated_account.orders.keys().next().unwrap();
-//         let account_id: AccountId = db.read(INTENT_TO_WALLET_TABLE,
-// order_id).unwrap().unwrap();         assert_eq!(account_id, account.id);
-//     }
-// }
+        // Check that the order is in the matching engine
+        let matching_pool = tx.get_matching_pool_for_order(&order.id).unwrap();
+        assert!(applicator.matching_engine().contains_order(&order, matching_pool));
+    }
+
+    /// Test removing an order from an account
+    #[test]
+    fn test_remove_order_from_account() {
+        let applicator = mock_applicator();
+        let matching_engine = applicator.matching_engine().clone();
+
+        // Add an account
+        let account = mock_empty_account();
+        applicator.create_account(&account).unwrap();
+
+        // Add an order to the account
+        let order = mock_order();
+        let auth = mock_order_auth();
+        applicator.add_order_to_account(account.id, &order, &auth).unwrap();
+
+        // Verify the order exists before removal
+        let tx = applicator.db().new_read_tx().unwrap();
+        let retrieved_account = tx.get_account(&account.id).unwrap().unwrap();
+        assert!(retrieved_account.orders.contains_key(&order.id));
+        assert!(tx.get_order(&order.id).unwrap().is_some());
+        assert!(tx.get_order_auth(&order.id).unwrap().is_some());
+        let matching_pool = tx.get_matching_pool_for_order(&order.id).unwrap();
+        let contains_order = matching_engine.contains_order(&order, matching_pool.clone());
+        assert!(contains_order);
+        drop(tx);
+
+        // Remove the order from the account
+        applicator.remove_order_from_account(account.id, order.id).unwrap();
+
+        // Verify the order is removed from the account
+        let tx = applicator.db().new_read_tx().unwrap();
+        let retrieved_account = tx.get_account(&account.id).unwrap().unwrap();
+        assert!(!retrieved_account.orders.contains_key(&order.id));
+
+        // Verify the order -> account mapping is removed
+        let account_id = tx.get_account_id_for_order(&order.id).unwrap();
+        assert_eq!(account_id, None);
+
+        // Verify the order cannot be retrieved
+        assert!(tx.get_order(&order.id).unwrap().is_none());
+        assert!(tx.get_order_auth(&order.id).unwrap().is_none());
+
+        // Verify the order is removed from the matching engine
+        let matching_pool = tx.get_matching_pool_for_order(&order.id).unwrap();
+        let contains_order = matching_engine.contains_order(&order, matching_pool.clone());
+        assert!(!contains_order);
+    }
+}

@@ -81,3 +81,24 @@ mod rkyv_impls {
 // Re-export the rkyv remote type shims
 #[cfg(feature = "rkyv")]
 pub use rkyv_impls::*;
+
+#[cfg(feature = "mocks")]
+pub mod mocks {
+    //! Mocks for order auth
+    #![allow(missing_docs, clippy::missing_docs_in_private_items)]
+
+    use alloy::primitives::{Bytes, U256};
+    use renegade_solidity_abi::v2::IDarkpoolV2::SignatureWithNonce;
+
+    use super::OrderAuth;
+
+    /// Create a mock signature with nonce
+    pub fn mock_signature_with_nonce() -> SignatureWithNonce {
+        SignatureWithNonce { nonce: U256::from(0), signature: Bytes::from(vec![0u8; 65]) }
+    }
+
+    /// Create a mock order auth
+    pub fn mock_order_auth() -> OrderAuth {
+        OrderAuth::PublicOrder { intent_signature: mock_signature_with_nonce() }
+    }
+}
