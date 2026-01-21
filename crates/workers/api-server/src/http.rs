@@ -192,7 +192,7 @@ impl HttpServer {
         router.add_unauthenticated_route(
             &Method::GET,
             GET_BALANCE_BY_MINT_ROUTE.to_string(),
-            GetBalanceByMintHandler::new(),
+            GetBalanceByMintHandler::new(state.clone()),
         );
 
         // POST /v2/account/:account_id/balances/:mint/deposit

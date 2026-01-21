@@ -3,9 +3,11 @@
 //! Account index updates must go through raft consensus so that the leader may
 //! order them
 
+use alloy_primitives::Address;
 use circuit_types::Amount;
 use types_account::{
     account::{Account, OrderId},
+    balance::Balance,
     keychain::KeyChain,
     order::Order,
     order_auth::OrderAuth,
@@ -106,6 +108,38 @@ impl StateInner {
         self.with_read_tx(move |tx| {
             let account_id = tx.get_account_id_for_order(&id)?;
             Ok(account_id)
+        })
+        .await
+    }
+
+    /// Get the balance amount for an account and token
+    pub async fn get_account_balance_value(
+        &self,
+        account_id: &AccountId,
+        token: &Address,
+    ) -> Result<Amount, StateError> {
+        let account_id = *account_id;
+        let token = *token;
+        self.with_read_tx(move |tx| {
+            let balance = tx.get_balance(&account_id, &token)?;
+            let amt = balance.map(|b| b.amount()).unwrap_or_default();
+            Ok(amt)
+        })
+        .await
+    }
+
+    /// Get the full state balance type for an account on a given token
+    pub async fn get_account_balance(
+        &self,
+        account_id: &AccountId,
+        token: &Address,
+    ) -> Result<Option<Balance>, StateError> {
+        let account_id = *account_id;
+        let token = *token;
+        self.with_read_tx(move |tx| {
+            let balance = res_some!(tx.get_balance(&account_id, &token)?);
+            let balance = balance.deserialize()?;
+            Ok(Some(balance))
         })
         .await
     }

@@ -1,15 +1,27 @@
 //! Defines a task to create an order
 
-use std::fmt::{Display, Formatter, Result as FmtResult};
+use std::{
+    cmp,
+    fmt::{Display, Formatter, Result as FmtResult},
+};
 
+use alloy::primitives::{Address, U256};
 use async_trait::async_trait;
+use circuit_types::{Amount, schnorr::SchnorrPublicKey};
 use constants::Scalar;
-use darkpool_types::intent::{DarkpoolStateIntent, Intent};
+use darkpool_client::{DarkpoolClient, errors::DarkpoolClientError};
+use darkpool_types::{
+    balance::DarkpoolBalance,
+    intent::{DarkpoolStateIntent, Intent},
+    state_wrapper::StateWrapper,
+};
+use renegade_solidity_abi::v2::relayer_types::u256_to_u128;
 use serde::Serialize;
 use state::{State, error::StateError};
-use tracing::instrument;
+use tracing::{info, instrument};
 use types_account::{
     OrderId,
+    balance::Balance,
     order::{Order, OrderMetadata, PrivacyRing},
     order_auth::OrderAuth,
 };
@@ -19,6 +31,7 @@ use types_tasks::CreateOrderTaskDescriptor;
 use crate::{
     task_state::TaskStateWrapper,
     traits::{Descriptor, Task, TaskContext, TaskError, TaskState},
+    utils::get_relayer_fee_addr,
 };
 
 /// The task name for the create order task
@@ -35,6 +48,8 @@ pub enum CreateOrderTaskState {
     Pending,
     /// The task is creating the order
     Creating,
+    /// The task is checking for a balance on-chain approved to the darkpool
+    CheckingAllowance,
     /// The task is completed
     Completed,
 }
@@ -54,6 +69,7 @@ impl Display for CreateOrderTaskState {
         match self {
             CreateOrderTaskState::Pending => write!(f, "Pending"),
             CreateOrderTaskState::Creating => write!(f, "Creating"),
+            CreateOrderTaskState::CheckingAllowance => write!(f, "CheckingAllowance"),
             CreateOrderTaskState::Completed => write!(f, "Completed"),
         }
     }
@@ -72,6 +88,9 @@ impl From<CreateOrderTaskState> for TaskStateWrapper {
 /// The error type thrown by the create order task
 #[derive(Clone, Debug, thiserror::Error)]
 pub enum CreateOrderTaskError {
+    /// An error interacting with the darkpool client
+    #[error("darkpool client error: {0}")]
+    DarkpoolClient(String),
     /// The descriptor is invalid
     #[error("invalid descriptor: {0}")]
     InvalidDescriptor(String),
@@ -81,6 +100,12 @@ pub enum CreateOrderTaskError {
 }
 
 impl CreateOrderTaskError {
+    /// Create a new darkpool client error
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn darkpool_client<T: ToString>(msg: T) -> Self {
+        Self::DarkpoolClient(msg.to_string())
+    }
+
     /// Create a new invalid descriptor error
     #[allow(clippy::needless_pass_by_value)]
     pub fn invalid_descriptor<T: ToString>(msg: T) -> Self {
@@ -97,6 +122,12 @@ impl CreateOrderTaskError {
 impl TaskError for CreateOrderTaskError {
     fn retryable(&self) -> bool {
         matches!(self, CreateOrderTaskError::State(_))
+    }
+}
+
+impl From<DarkpoolClientError> for CreateOrderTaskError {
+    fn from(e: DarkpoolClientError) -> Self {
+        CreateOrderTaskError::darkpool_client(e)
     }
 }
 
@@ -169,6 +200,10 @@ impl Task for CreateOrderTask {
             },
             CreateOrderTaskState::Creating => {
                 self.create_order().await?;
+                self.task_state = CreateOrderTaskState::CheckingAllowance;
+            },
+            CreateOrderTaskState::CheckingAllowance => {
+                self.check_allowance().await?;
                 self.task_state = CreateOrderTaskState::Completed;
             },
             CreateOrderTaskState::Completed => {
@@ -206,6 +241,47 @@ impl CreateOrderTask {
         let waiter = self.state().add_order_to_account(account_id, order, auth).await?;
         waiter.await.map_err(CreateOrderTaskError::state).map(|_| ())
     }
+
+    /// Check for a balance on-chain approved to the darkpool
+    pub async fn check_allowance(&self) -> Result<()> {
+        // First, check if a balance already exists for the input token
+        // If a balance does exist, we can assume that the on-chain event listener will
+        // keep its value up to date as new permits and erc20 transfers happen
+        let in_token = self.intent.in_token;
+        let state = self.state();
+        let bal = state.get_account_balance_value(&self.account_id, &in_token).await?;
+        if bal > 0 {
+            return Ok(());
+        }
+
+        // Otherwise, we need to check for an existing allowance on-chain
+        let owner = self.intent.owner;
+        info!("Checking for balance of {in_token} for owner {owner}");
+        let darkpool_client = self.darkpool_client();
+
+        let erc20_bal = darkpool_client.get_erc20_balance(in_token, owner).await?;
+        let permit_allowance = darkpool_client.get_darkpool_allowance(owner, in_token).await?;
+        let usable_balance = cmp::min(erc20_bal, permit_allowance);
+        if usable_balance == U256::ZERO {
+            info!(
+                "No usable balance found for new intent [balance = {}, permit = {}]",
+                erc20_bal, permit_allowance
+            );
+            return Ok(());
+        }
+
+        // Update the account balance with the newly discovered balance
+        let relayer_fee_addr =
+            get_relayer_fee_addr(&self.ctx).map_err(CreateOrderTaskError::state)?;
+
+        let amt = u256_to_u128(usable_balance);
+        info!("Found usable balance of {amt} on chain, updating account balance");
+
+        let bal = create_ring0_balance(in_token, owner, relayer_fee_addr, amt);
+        let waiter = self.state().update_account_balance(self.account_id, bal).await?;
+        waiter.await.map_err(CreateOrderTaskError::state)?;
+        Ok(())
+    }
 }
 
 // -----------
@@ -217,14 +293,38 @@ impl CreateOrderTask {
     fn state(&self) -> &State {
         &self.ctx.state
     }
+
+    /// Get a handle on the darkpool client
+    fn darkpool_client(&self) -> &DarkpoolClient {
+        &self.ctx.darkpool_client
+    }
 }
 
 /// Create a state wrapper for a ring 0 intent
 ///
 /// A ring 0 intent does not have secret share or a recovery id stream, so we
 /// use the default stream seeds.
-fn create_ring0_state_wrapper(intent: Intent) -> DarkpoolStateIntent {
+fn create_ring0_state_wrapper(intent: Intent) -> StateWrapper<Intent> {
     let share_stream_seed = Scalar::zero();
     let recovery_stream_seed = Scalar::zero();
     DarkpoolStateIntent::new(intent, share_stream_seed, recovery_stream_seed)
+}
+
+/// Create a ring 0 balance from a usable balance
+///
+/// We again mock the authority and share/recovery stream seeds
+fn create_ring0_balance(
+    mint: Address,
+    owner: Address,
+    relayer_fee_recipient: Address,
+    amount: Amount,
+) -> Balance {
+    let mock_authority = SchnorrPublicKey::default();
+    let bal = DarkpoolBalance::new(mint, owner, relayer_fee_recipient, mock_authority)
+        .with_amount(amount);
+
+    let share_stream_seed = Scalar::zero();
+    let recovery_stream_seed = Scalar::zero();
+    let state_wrapper = StateWrapper::new(bal, share_stream_seed, recovery_stream_seed);
+    Balance::new(state_wrapper)
 }

@@ -15,6 +15,8 @@ use super::router::{ResponseBody, build_500_response, build_response_from_status
 pub(crate) const ERR_RATE_LIMIT_EXCEEDED: &str = "Rate limit exceeded";
 /// The error message for account not found
 pub(crate) const ERR_ACCOUNT_NOT_FOUND: &str = "account not found";
+/// The error message for balance not found
+pub(crate) const ERR_BALANCE_NOT_FOUND: &str = "balance not found";
 
 /// The error type for errors that occur during ApiServer execution
 #[derive(Debug)]
