@@ -17,7 +17,10 @@ use types_tasks::{CreateBalanceTaskDescriptor, DepositTaskDescriptor};
 use util::hex::scalar_from_hex_string;
 
 use crate::{
-    error::{ApiServerError, ERR_ACCOUNT_NOT_FOUND, bad_request, internal_error, not_found},
+    error::{
+        ApiServerError, ERR_ACCOUNT_NOT_FOUND, ERR_BALANCE_NOT_FOUND, bad_request, internal_error,
+        not_found,
+    },
     http::helpers::append_task,
     param_parsing::{
         parse_account_id_from_params, parse_address_from_hex_string, parse_amount_from_string,
@@ -79,12 +82,15 @@ impl TypedHandler for GetBalancesHandler {
 }
 
 /// Handler for GET /v2/account/:account_id/balances/:mint
-pub struct GetBalanceByMintHandler;
+pub struct GetBalanceByMintHandler {
+    /// The global state
+    state: State,
+}
 
 impl GetBalanceByMintHandler {
     /// Constructor
-    pub fn new() -> Self {
-        Self
+    pub fn new(state: State) -> Self {
+        Self { state }
     }
 }
 
@@ -97,10 +103,16 @@ impl TypedHandler for GetBalanceByMintHandler {
         &self,
         _headers: HeaderMap,
         _req: Self::Request,
-        _params: UrlParams,
+        params: UrlParams,
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
-        Err(ApiServerError::not_implemented(ERR_NOT_IMPLEMENTED))
+        let account_id = parse_account_id_from_params(&params)?;
+        let token = parse_mint_from_params(&params)?;
+
+        let balance = self.state.get_account_balance(&account_id, &token).await?;
+        let balance = balance.ok_or(not_found(ERR_BALANCE_NOT_FOUND))?;
+
+        Ok(GetBalanceByMintResponse { balance: balance.into() })
     }
 }
 
