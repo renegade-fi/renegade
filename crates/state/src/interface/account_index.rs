@@ -121,21 +121,31 @@ impl StateInner {
         self.send_proposal(StateTransition::CreateAccount { account }).await
     }
 
-    /// Add a local order to an account
-    pub async fn add_local_order(
+    /// Add an order to an account
+    pub async fn add_order_to_account(
         &self,
         account_id: AccountId,
         order: Order,
         auth: OrderAuth,
     ) -> Result<ProposalWaiter, StateError> {
-        self.send_proposal(StateTransition::AddLocalOrder { account_id, order, auth }).await
+        self.send_proposal(StateTransition::AddOrderToAccount { account_id, order, auth }).await
+    }
+
+    /// Remove an order from an account
+    pub async fn remove_order_from_account(
+        &self,
+        account_id: AccountId,
+        order_id: OrderId,
+    ) -> Result<ProposalWaiter, StateError> {
+        self.send_proposal(StateTransition::RemoveOrderFromAccount { account_id, order_id }).await
     }
 }
 
 #[cfg(test)]
 mod test {
     use types_account::{
-        account::mocks::mock_empty_account, order::mocks::mock_order, order_auth::OrderAuth,
+        account::mocks::mock_empty_account, order::mocks::mock_order,
+        order_auth::mocks::mock_order_auth,
     };
 
     use crate::test_helpers::mock_state;
@@ -156,7 +166,7 @@ mod test {
 
     /// Test adding a local order to an account
     #[tokio::test]
-    async fn test_add_local_order() {
+    async fn test_add_order_to_account() {
         let state = mock_state().await;
 
         let account = mock_empty_account();
@@ -165,18 +175,41 @@ mod test {
 
         // Add a local order to the account
         let order = mock_order();
-        let auth = OrderAuth::PublicOrder {
-            intent_signature: renegade_solidity_abi::v2::IDarkpoolV2::SignatureWithNonce {
-                nonce: alloy::primitives::U256::from(0),
-                signature: alloy::primitives::Bytes::from(vec![0u8; 65]),
-            },
-        };
-        let waiter = state.add_local_order(account.id, order.clone(), auth).await.unwrap();
+        let auth = mock_order_auth();
+        let waiter = state.add_order_to_account(account.id, order.clone(), auth).await.unwrap();
         waiter.await.unwrap();
 
         // Verify the account was updated
         let retrieved_account = state.get_account(&account.id).await.unwrap().unwrap();
         assert_eq!(retrieved_account.id, account.id);
         assert!(retrieved_account.orders.contains_key(&order.id));
+    }
+
+    /// Test removing an order from an account
+    #[tokio::test]
+    async fn test_remove_order_from_account() {
+        let state = mock_state().await;
+
+        let account = mock_empty_account();
+        let waiter = state.new_account(account.clone()).await.unwrap();
+        waiter.await.unwrap();
+
+        // Add a local order to the account
+        let order = mock_order();
+        let auth = mock_order_auth();
+        let waiter = state.add_order_to_account(account.id, order.clone(), auth).await.unwrap();
+        waiter.await.unwrap();
+
+        // Verify the order was added
+        let retrieved_account = state.get_account(&account.id).await.unwrap().unwrap();
+        assert!(retrieved_account.orders.contains_key(&order.id));
+
+        // Remove the order from the account
+        let waiter = state.remove_order_from_account(account.id, order.id).await.unwrap();
+        waiter.await.unwrap();
+
+        // Verify the order was removed
+        let retrieved_account = state.get_account(&account.id).await.unwrap().unwrap();
+        assert!(!retrieved_account.orders.contains_key(&order.id));
     }
 }

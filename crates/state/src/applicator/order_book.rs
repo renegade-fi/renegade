@@ -1,7 +1,7 @@
 //! Applicator methods for the network order book, separated out for
 //! discoverability
 
-use circuit_types::{Amount, Nullifier};
+use circuit_types::Nullifier;
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 use types_account::{OrderId, order::Order};
@@ -21,8 +21,6 @@ pub const ORDER_DEFAULT_PRIORITY: u32 = 1;
 
 /// The error message emitted when an order is missing from the message
 const ERR_ORDER_MISSING: &str = "Order missing from message";
-/// The error message emitted when a wallet cannot be found for an order
-const ERR_WALLET_MISSING: &str = "Cannot find wallet for order";
 
 // ----------------------------
 // | Orderbook Implementation |
@@ -107,7 +105,8 @@ mod test {
     use constants::Scalar;
     use rand::thread_rng;
     use types_account::{
-        account::mocks::mock_empty_account, order::mocks::mock_order, order_auth::OrderAuth,
+        account::mocks::mock_empty_account, order::mocks::mock_order,
+        order_auth::mocks::mock_order_auth,
     };
     use types_gossip::network_order::{
         ArchivedNetworkOrderState, test_helpers::dummy_network_order,
@@ -127,10 +126,11 @@ mod test {
         let account = mock_empty_account();
         let order = mock_order();
         let order_id = order.id;
+        let auth = mock_order_auth();
 
         // Add the account to the state
         applicator.create_account(&account).unwrap();
-        // applicator.add_local_order(account.id, &order, &auth).unwrap();
+        applicator.add_order_to_account(account.id, &order, &auth).unwrap();
 
         // Create a network order and add it to the order book
         // The order must exist in the order book for add_order_validity_proof to work

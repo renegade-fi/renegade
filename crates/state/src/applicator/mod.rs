@@ -9,7 +9,6 @@ use job_types::{
 };
 use system_bus::SystemBus;
 use types_account::OrderId;
-use types_core::AccountId;
 use types_gossip::ClusterId;
 
 use crate::state_transition::StateTransition;
@@ -36,11 +35,6 @@ pub(crate) type Result<T> = std::result::Result<T, StateApplicatorError>;
 // ----------
 // | Errors |
 // ----------
-
-/// Create an account missing rejection error
-fn reject_account_missing(order_id: OrderId) -> StateApplicatorError {
-    StateApplicatorError::reject(format!("account not found for order {order_id}"))
-}
 
 /// Create an order missing rejection error
 fn reject_order_missing(order_id: OrderId) -> StateApplicatorError {
@@ -98,8 +92,11 @@ impl StateApplicator {
     ) -> Result<ApplicatorReturnType> {
         match *transition {
             StateTransition::CreateAccount { account } => self.create_account(&account),
-            StateTransition::AddLocalOrder { account_id, order, auth } => {
-                todo!()
+            StateTransition::AddOrderToAccount { account_id, order, auth } => {
+                self.add_order_to_account(account_id, &order, &auth)
+            },
+            StateTransition::RemoveOrderFromAccount { account_id, order_id } => {
+                self.remove_order_from_account(account_id, order_id)
             },
             StateTransition::AddOrderValidityProof { order_id, proof } => {
                 self.add_order_validity_proof(order_id, proof)
@@ -141,8 +138,8 @@ impl StateApplicator {
     }
 
     /// Get a reference to the matching engine
-    pub(crate) fn matching_engine(&self) -> &MatchingEngine {
-        &self.config.matching_engine
+    pub(crate) fn matching_engine(&self) -> MatchingEngine {
+        self.config.matching_engine.clone()
     }
 }
 
