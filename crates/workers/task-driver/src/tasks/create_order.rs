@@ -1,16 +1,17 @@
 //! Defines a task to create an order
 
-use std::{
-    error::Error,
-    fmt::{Display, Formatter, Result as FmtResult},
-};
+use std::fmt::{Display, Formatter, Result as FmtResult};
 
 use async_trait::async_trait;
-use darkpool_types::state_wrapper::StateWrapper;
+use constants::Scalar;
+use darkpool_types::intent::{DarkpoolStateIntent, Intent};
 use serde::Serialize;
-use state::error::StateError;
+use state::{State, error::StateError};
 use tracing::instrument;
-use types_account::order::Order;
+use types_account::{
+    order::{Order, OrderMetadata, PrivacyRing},
+    order_auth::OrderAuth,
+};
 use types_core::AccountId;
 use types_tasks::CreateOrderTaskDescriptor;
 
@@ -68,10 +69,28 @@ impl From<CreateOrderTaskState> for TaskStateWrapper {
 // ---------------
 
 /// The error type thrown by the create order task
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, thiserror::Error)]
 pub enum CreateOrderTaskError {
+    /// The descriptor is invalid
+    #[error("invalid descriptor: {0}")]
+    InvalidDescriptor(String),
     /// Error interacting with global state
+    #[error("state error: {0}")]
     State(String),
+}
+
+impl CreateOrderTaskError {
+    /// Create a new invalid descriptor error
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn invalid_descriptor<T: ToString>(msg: T) -> Self {
+        Self::InvalidDescriptor(msg.to_string())
+    }
+
+    /// Create a new state error
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn state<T: ToString>(msg: T) -> Self {
+        Self::State(msg.to_string())
+    }
 }
 
 impl TaskError for CreateOrderTaskError {
@@ -80,17 +99,9 @@ impl TaskError for CreateOrderTaskError {
     }
 }
 
-impl Display for CreateOrderTaskError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        write!(f, "{self:?}")
-    }
-}
-
-impl Error for CreateOrderTaskError {}
-
 impl From<StateError> for CreateOrderTaskError {
     fn from(e: StateError) -> Self {
-        CreateOrderTaskError::State(e.to_string())
+        CreateOrderTaskError::state(e)
     }
 }
 
@@ -102,11 +113,18 @@ type Result<T> = std::result::Result<T, CreateOrderTaskError>;
 // -------------------
 
 /// Represents a task to create an order
+#[derive(Clone)]
 pub struct CreateOrderTask {
     /// The account ID creating the order
     pub account_id: AccountId,
-    /// The order to create
-    pub order: Order,
+    /// The intent to create an order for
+    pub intent: Intent,
+    /// The privacy ring in which the intent is allocated
+    pub ring: PrivacyRing,
+    /// The metadata for the order
+    pub metadata: OrderMetadata,
+    /// The order authorization
+    pub auth: OrderAuth,
     /// The state of the task's execution
     pub task_state: CreateOrderTaskState,
     /// The context of the task
@@ -120,30 +138,18 @@ impl Task for CreateOrderTask {
     type Descriptor = CreateOrderTaskDescriptor;
 
     async fn new(descriptor: Self::Descriptor, ctx: TaskContext) -> Result<Self> {
-        // Construct StateWrapper<Intent> from the descriptor
-        // TODO: Get seeds from account state or generate deterministically
-        // The seeds should come from the account's CSPRNG state, not be randomly
-        // generated For now, this is a placeholder that needs to be implemented
-        // properly
-        //
-        // The proper implementation should:
-        // 1. Get the account from state using descriptor.account_id
-        // 2. Extract or generate seeds from the account's CSPRNG state
-        // 3. Use those seeds to construct the StateWrapper<Intent>
-
-        // Temporary: Using zero seeds as placeholder - this will need proper
-        // implementation
-        use constants::Scalar;
-        let share_stream_seed = Scalar::zero();
-        let recovery_stream_seed = Scalar::zero();
-
-        let intent_wrapper =
-            StateWrapper::new(descriptor.intent, share_stream_seed, recovery_stream_seed);
-        let order = Order::new_with_ring(intent_wrapper, descriptor.metadata, descriptor.ring);
+        let ring = descriptor.ring;
+        if !matches!(ring, PrivacyRing::Ring0) {
+            let msg = format!("ring must be Ring0, got {ring:?}");
+            return Err(CreateOrderTaskError::invalid_descriptor(msg));
+        }
 
         Ok(Self {
             account_id: descriptor.account_id,
-            order,
+            intent: descriptor.intent,
+            ring: descriptor.ring,
+            metadata: descriptor.metadata,
+            auth: descriptor.auth,
             task_state: CreateOrderTaskState::Pending,
             ctx,
         })
@@ -187,14 +193,33 @@ impl Descriptor for CreateOrderTaskDescriptor {}
 impl CreateOrderTask {
     /// Create a new order
     pub async fn create_order(&self) -> Result<()> {
-        tracing::info!("GOT TO CREATE ORDER");
+        let CreateOrderTask { intent, ring, metadata, auth, account_id, .. } = self.clone();
 
-        // Load and print the executor key to verify it's working
-        let executor_key = self.ctx.state.get_executor_key()?;
-        let executor_key_bytes = executor_key.to_bytes();
-        let executor_key_hex = util::hex::bytes_to_hex_string(executor_key_bytes.as_slice());
-        tracing::info!("Executor key loaded successfully: {executor_key_hex}");
-
-        Ok(())
+        // Create the order in the state
+        let state_intent = create_ring0_state_wrapper(intent);
+        let order = Order::new_with_ring(state_intent, metadata, ring);
+        let waiter = self.state().add_order_to_account(account_id, order, auth).await?;
+        waiter.await.map_err(CreateOrderTaskError::state).map(|_| ())
     }
+}
+
+// -----------
+// | Helpers |
+// -----------
+
+impl CreateOrderTask {
+    /// Get a handle on the state
+    fn state(&self) -> &State {
+        &self.ctx.state
+    }
+}
+
+/// Create a state wrapper for a ring 0 intent
+///
+/// A ring 0 intent does not have secret share or a recovery id stream, so we
+/// use the default stream seeds.
+fn create_ring0_state_wrapper(intent: Intent) -> DarkpoolStateIntent {
+    let share_stream_seed = Scalar::zero();
+    let recovery_stream_seed = Scalar::zero();
+    DarkpoolStateIntent::new(intent, share_stream_seed, recovery_stream_seed)
 }

@@ -180,9 +180,10 @@ impl Default for OrderMetadata {
 ///   to ring 2, except public fills are explicitly disabled. Ring 3 intents may
 ///   only cross with other ring 2 and ring 3 intents, where private fills are
 ///   possible.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "rkyv", derive(Archive, RkyvDeserialize, RkyvSerialize))]
 #[cfg_attr(feature = "rkyv", rkyv(derive(Debug)))]
+#[serde(rename_all = "lowercase")]
 pub enum PrivacyRing {
     /// Ring 0: Public intent, public balance
     #[default]
