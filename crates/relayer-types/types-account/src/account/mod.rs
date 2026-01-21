@@ -90,12 +90,18 @@ impl Account {
     }
 
     /// Place an order into the account
-    pub fn place_order(&mut self, intent: Intent, ring: PrivacyRing, metadata: OrderMetadata) {
+    pub fn place_order(
+        &mut self,
+        id: OrderId,
+        intent: Intent,
+        ring: PrivacyRing,
+        metadata: OrderMetadata,
+    ) {
         let share_stream = self.sample_share_stream_seed();
         let recovery_stream = self.sample_recovery_id_stream_seed();
         let wrapper = StateWrapper::new(intent, share_stream.seed, recovery_stream.seed);
 
-        let order = Order::new_with_ring(wrapper, metadata, ring);
+        let order = Order::new_with_ring(id, wrapper, metadata, ring);
         self.orders.insert(order.id, order);
     }
 }

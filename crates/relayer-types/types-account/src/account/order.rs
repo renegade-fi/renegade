@@ -43,16 +43,17 @@ pub struct OrderMetadata {
 impl Order {
     /// Create a new order from the given intent and metadata
     pub fn new(intent: StateWrapper<Intent>, metadata: OrderMetadata) -> Self {
-        Self::new_with_ring(intent, metadata, PrivacyRing::default())
+        let id = OrderId::new_v4();
+        Self::new_with_ring(id, intent, metadata, PrivacyRing::default())
     }
 
     /// Create a new order from the given intent, metadata, and privacy ring
     pub fn new_with_ring(
+        id: OrderId,
         intent: StateWrapper<Intent>,
         metadata: OrderMetadata,
         ring: PrivacyRing,
     ) -> Self {
-        let id = OrderId::new_v4();
         Self { id, intent, metadata, ring }
     }
 
@@ -180,9 +181,10 @@ impl Default for OrderMetadata {
 ///   to ring 2, except public fills are explicitly disabled. Ring 3 intents may
 ///   only cross with other ring 2 and ring 3 intents, where private fills are
 ///   possible.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "rkyv", derive(Archive, RkyvDeserialize, RkyvSerialize))]
 #[cfg_attr(feature = "rkyv", rkyv(derive(Debug)))]
+#[serde(rename_all = "lowercase")]
 pub enum PrivacyRing {
     /// Ring 0: Public intent, public balance
     #[default]

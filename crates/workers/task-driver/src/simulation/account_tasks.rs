@@ -146,7 +146,7 @@ fn simulate_create_order(
     account: &mut Account,
     desc: &CreateOrderTaskDescriptor,
 ) -> Result<(), TaskSimulationError> {
-    account.place_order(desc.intent.clone(), desc.ring.clone(), desc.metadata.clone());
+    account.place_order(desc.order_id, desc.intent.clone(), desc.ring, desc.metadata.clone());
     Ok(())
 }
 

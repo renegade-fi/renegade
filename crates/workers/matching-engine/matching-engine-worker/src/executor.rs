@@ -147,7 +147,7 @@ impl MatchingEngineExecutor {
     async fn token_pair_for_order(&self, order_id: &OrderId) -> Result<Pair, MatchingEngineError> {
         let order = self
             .state
-            .get_managed_order(order_id)
+            .get_account_order(order_id)
             .await?
             .ok_or_else(|| MatchingEngineError::state(format!("order_id: {order_id:?}")))?;
 

@@ -7,6 +7,7 @@ use external_api::{auth::AuthError, error::ApiTypeError};
 use hyper::{Response, StatusCode};
 use price_state::error::PriceStateError;
 use state::error::StateError;
+use types_account::OrderId;
 
 use super::router::{ResponseBody, build_500_response, build_response_from_status_code};
 
@@ -45,6 +46,11 @@ impl ApiServerError {
     #[allow(clippy::needless_pass_by_value)]
     pub fn setup<T: ToString>(e: T) -> Self {
         ApiServerError::Setup(e.to_string())
+    }
+
+    /// Create an order not found error
+    pub fn order_not_found(id: OrderId) -> Self {
+        not_found(format!("order not found: {id}"))
     }
 }
 

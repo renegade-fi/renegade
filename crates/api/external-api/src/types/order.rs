@@ -5,7 +5,7 @@ use std::str::FromStr;
 use alloy::primitives::{Bytes, U256};
 use circuit_types::{Amount, fixed_point::FixedPoint, schnorr::SchnorrSignature};
 use constants::Scalar;
-use darkpool_types::intent::Intent;
+use darkpool_types::intent::{Intent, IntentShare};
 #[cfg(feature = "full-api")]
 use renegade_solidity_abi::v2::IDarkpoolV2;
 use serde::{Deserialize, Serialize};
@@ -106,14 +106,15 @@ pub struct ApiOrderShare {
     pub amount_in: String,
 }
 
-// TODO: Remove this
-fn dummy_api_order_share() -> ApiOrderShare {
-    ApiOrderShare {
-        in_token: "".to_string(),
-        out_token: "".to_string(),
-        owner: "".to_string(),
-        min_price: "".to_string(),
-        amount_in: "".to_string(),
+impl From<IntentShare> for ApiOrderShare {
+    fn from(share: IntentShare) -> Self {
+        Self {
+            in_token: share.in_token.to_string(),
+            out_token: share.out_token.to_string(),
+            owner: share.owner.to_string(),
+            min_price: share.min_price.repr.to_string(),
+            amount_in: share.amount_in.to_string(),
+        }
     }
 }
 
@@ -141,12 +142,15 @@ pub struct ApiOrder {
 #[cfg(feature = "full-api")]
 impl From<Order> for ApiOrder {
     fn from(order: Order) -> Self {
+        let recovery_stream = order.intent.recovery_stream.clone().into();
+        let share_stream = order.intent.share_stream.clone().into();
+        let public_shares = order.intent.public_share.clone().into();
         Self {
             id: order.id,
             order: order.into(),
-            recovery_stream: ApiPoseidonCSPRNG { seed: "".to_string(), index: 0 },
-            share_stream: ApiPoseidonCSPRNG { seed: "".to_string(), index: 0 },
-            public_shares: dummy_api_order_share(),
+            recovery_stream,
+            share_stream,
+            public_shares,
             state: OrderState::Created,
             fills: vec![],
             created: 0,

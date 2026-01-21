@@ -121,7 +121,7 @@ impl HttpServer {
         );
 
         // GET /v2/account/:account_id
-        router.add_wallet_authenticated_route(
+        router.add_account_authenticated_route(
             &Method::GET,
             GET_ACCOUNT_BY_ID_ROUTE.to_string(),
             GetAccountByIdHandler::new(state.clone()),
@@ -144,7 +144,7 @@ impl HttpServer {
         // --- Order Routes (v2) --- //
 
         // GET /v2/account/:account_id/orders
-        router.add_unauthenticated_route(
+        router.add_account_authenticated_route(
             &Method::GET,
             GET_ORDERS_ROUTE.to_string(),
             GetOrdersHandler::new(),
@@ -152,17 +152,17 @@ impl HttpServer {
 
         // POST /v2/account/:account_id/orders
         let executor = state.get_executor_key().map_err(ApiServerError::setup)?.address();
-        router.add_unauthenticated_route(
+        router.add_account_authenticated_route(
             &Method::POST,
             CREATE_ORDER_ROUTE.to_string(),
             CreateOrderHandler::new(executor, state.clone()),
         );
 
         // GET /v2/account/:account_id/orders/:order_id
-        router.add_unauthenticated_route(
+        router.add_account_authenticated_route(
             &Method::GET,
             GET_ORDER_BY_ID_ROUTE.to_string(),
-            GetOrderByIdHandler::new(),
+            GetOrderByIdHandler::new(state.clone()),
         );
 
         // POST /v2/account/:account_id/orders/:order_id/update
