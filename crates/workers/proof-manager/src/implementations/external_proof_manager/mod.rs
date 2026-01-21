@@ -128,20 +128,62 @@ impl ExternalProofManager {
                 client.prove_output_balance_validity(witness, statement).await
             },
             // Settlement proofs
-            ProofJob::IntentAndBalanceBoundedSettlement { witness, statement } => {
-                client.prove_intent_and_balance_bounded_settlement(witness, statement).await
+            ProofJob::IntentAndBalanceBoundedSettlement {
+                witness,
+                statement,
+                validity_link_hint,
+            } => {
+                client
+                    .prove_intent_and_balance_bounded_settlement(
+                        witness,
+                        statement,
+                        validity_link_hint,
+                    )
+                    .await
             },
-            ProofJob::IntentAndBalancePrivateSettlement { witness, statement } => {
-                client.prove_intent_and_balance_private_settlement(witness, statement).await
+            ProofJob::IntentAndBalancePrivateSettlement {
+                witness,
+                statement,
+                validity_link_hint_0,
+                validity_link_hint_1,
+                output_balance_link_hint_0,
+                output_balance_link_hint_1,
+            } => {
+                client
+                    .prove_intent_and_balance_private_settlement(
+                        witness,
+                        statement,
+                        validity_link_hint_0,
+                        validity_link_hint_1,
+                        output_balance_link_hint_0,
+                        output_balance_link_hint_1,
+                    )
+                    .await
             },
-            ProofJob::IntentAndBalancePublicSettlement { witness, statement } => {
-                client.prove_intent_and_balance_public_settlement(witness, statement).await
+            ProofJob::IntentAndBalancePublicSettlement {
+                witness,
+                statement,
+                party_id,
+                validity_link_hint,
+            } => {
+                client
+                    .prove_intent_and_balance_public_settlement(
+                        witness,
+                        statement,
+                        party_id,
+                        validity_link_hint,
+                    )
+                    .await
             },
-            ProofJob::IntentOnlyBoundedSettlement { witness, statement } => {
-                client.prove_intent_only_bounded_settlement(witness, statement).await
+            ProofJob::IntentOnlyBoundedSettlement { witness, statement, validity_link_hint } => {
+                client
+                    .prove_intent_only_bounded_settlement(witness, statement, validity_link_hint)
+                    .await
             },
-            ProofJob::IntentOnlyPublicSettlement { witness, statement } => {
-                client.prove_intent_only_public_settlement(witness, statement).await
+            ProofJob::IntentOnlyPublicSettlement { witness, statement, validity_link_hint } => {
+                client
+                    .prove_intent_only_public_settlement(witness, statement, validity_link_hint)
+                    .await
             },
             // Fee proofs
             ProofJob::ValidNoteRedemption { witness, statement } => {
