@@ -42,6 +42,20 @@ impl MatchingEngine {
         }
     }
 
+    /// Get the matchable amount for an order
+    pub fn get_matchable_amount(
+        &self,
+        order: &Order,
+        matching_pool: MatchingPoolName,
+    ) -> Option<Amount> {
+        let pair = order.pair();
+        if let Some(book) = self.book_map.get(&(pair, matching_pool)) {
+            book.get_matchable_amount(order.id)
+        } else {
+            None
+        }
+    }
+
     /// Add an order to the matching engine
     pub fn add_order(
         &self,
@@ -52,7 +66,12 @@ impl MatchingEngine {
         let pair = order.pair();
         let mut book = self.book_map.entry((pair, matching_pool)).or_insert_with(Book::new);
 
-        book.add_order(order, matchable_amount);
+        // Upsert the order
+        if book.contains_order(order.id) {
+            book.update_order(order, matchable_amount);
+        } else {
+            book.add_order(order, matchable_amount);
+        }
     }
 
     /// Remove an order from the matching engine

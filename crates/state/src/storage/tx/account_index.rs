@@ -163,11 +163,43 @@ impl<T: TransactionKind> StateTxn<'_, T> {
         let in_token = WithAddress::from_archived(order.input_token())?;
 
         // Fetch the capitalizing balance
-        let balance = res_some!(self.get_balance(&account, in_token.inner())?);
+        let balance = match self.get_balance(&account, in_token.inner())? {
+            Some(balance) => balance,
+            None => return Ok(Some(0)),
+        };
         let bal_amt = balance.amount();
 
         let matchable_amount = Amount::min(bal_amt, order.amount_in());
         Ok(Some(matchable_amount))
+    }
+
+    /// Get order IDs for an account where the given mint is the input token
+    ///
+    /// This efficiently filters orders without deserializing full orders - only
+    /// deserializes the input_token Address field for comparison.
+    pub fn get_orders_with_input_token(
+        &self,
+        account_id: &AccountId,
+        mint: &Address,
+    ) -> Result<Vec<OrderId>, StorageError> {
+        let order_prefix = orders_prefix(account_id);
+        let order_cursor =
+            self.inner().cursor::<String, Order>(ACCOUNTS_TABLE)?.with_key_prefix(&order_prefix);
+
+        // Filter for orders with the given mint as input token
+        let mut matching_order_ids = Vec::new();
+        for (_, archived_order) in order_cursor.into_iter().filter_map(|res| res.ok()) {
+            // Check the input token of the order
+            let in_token = archived_order.input_token();
+
+            // If input token matches, add to result
+            if in_token == mint {
+                let oid = archived_order.id;
+                matching_order_ids.push(oid);
+            }
+        }
+
+        Ok(matching_order_ids)
     }
 
     /// Get a full account by reconstructing from header, orders, and balances
@@ -318,8 +350,13 @@ impl StateTxn<'_, RW> {
 
 #[cfg(test)]
 mod test {
+    use alloy_primitives::Address;
     use types_account::{
-        Account, balance::mocks::mock_balance, mocks::mock_keychain, order::mocks::mock_order,
+        Account,
+        balance::mocks::mock_balance,
+        mocks::mock_keychain,
+        order::mocks::{mock_order, mock_order_with_pair},
+        pair::Pair,
     };
     use types_core::AccountId;
 
@@ -498,6 +535,55 @@ mod test {
         // Verify balances
         assert_eq!(account.balances.len(), 1);
         assert!(account.balances.contains_key(&mint1));
+    }
+
+    /// Tests getting orders with a specific input token
+    #[test]
+    fn test_get_orders_with_input_token() {
+        let db = mock_db();
+        db.create_table(ACCOUNTS_TABLE).unwrap();
+
+        // Create account
+        let account = mock_account();
+        let tx = db.new_write_tx().unwrap();
+        tx.new_account(&account).unwrap();
+
+        // Create orders with different input tokens
+        let mint1 = Address::from([1u8; 20]);
+        let mint2 = Address::from([2u8; 20]);
+        let mint3 = Address::from([3u8; 20]);
+
+        let pair1 = Pair::new(mint1, mint2);
+        let pair2 = Pair::new(mint1, mint3); // Same input token as pair1
+        let pair3 = Pair::new(mint2, mint1); // Different input token
+
+        let order1 = mock_order_with_pair(pair1);
+        let order2 = mock_order_with_pair(pair2);
+        let order3 = mock_order_with_pair(pair3);
+
+        // Add all orders to the account
+        tx.add_order(&account.id, &order1).unwrap();
+        tx.add_order(&account.id, &order2).unwrap();
+        tx.add_order(&account.id, &order3).unwrap();
+        tx.commit().unwrap();
+
+        // Test: Get orders with mint1 as input token
+        let tx = db.new_read_tx().unwrap();
+        let orders_with_mint1 = tx.get_orders_with_input_token(&account.id, &mint1).unwrap();
+        assert_eq!(orders_with_mint1.len(), 2);
+        assert!(orders_with_mint1.contains(&order1.id));
+        assert!(orders_with_mint1.contains(&order2.id));
+        assert!(!orders_with_mint1.contains(&order3.id));
+
+        // Test: Get orders with mint2 as input token
+        let orders_with_mint2 = tx.get_orders_with_input_token(&account.id, &mint2).unwrap();
+        assert_eq!(orders_with_mint2.len(), 1);
+        assert_eq!(orders_with_mint2[0], order3.id);
+
+        // Test: Get orders with a mint that has no orders
+        let mint4 = Address::from([4u8; 20]);
+        let orders_with_mint4 = tx.get_orders_with_input_token(&account.id, &mint4).unwrap();
+        assert!(orders_with_mint4.is_empty());
     }
 
     /// Tests getting all accounts
