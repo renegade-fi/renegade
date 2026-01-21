@@ -9,6 +9,7 @@ use serde::Serialize;
 use state::{State, error::StateError};
 use tracing::instrument;
 use types_account::{
+    OrderId,
     order::{Order, OrderMetadata, PrivacyRing},
     order_auth::OrderAuth,
 };
@@ -117,6 +118,8 @@ type Result<T> = std::result::Result<T, CreateOrderTaskError>;
 pub struct CreateOrderTask {
     /// The account ID creating the order
     pub account_id: AccountId,
+    /// The order ID for the new order
+    pub order_id: OrderId,
     /// The intent to create an order for
     pub intent: Intent,
     /// The privacy ring in which the intent is allocated
@@ -146,6 +149,7 @@ impl Task for CreateOrderTask {
 
         Ok(Self {
             account_id: descriptor.account_id,
+            order_id: descriptor.order_id,
             intent: descriptor.intent,
             ring: descriptor.ring,
             metadata: descriptor.metadata,
@@ -193,11 +197,12 @@ impl Descriptor for CreateOrderTaskDescriptor {}
 impl CreateOrderTask {
     /// Create a new order
     pub async fn create_order(&self) -> Result<()> {
-        let CreateOrderTask { intent, ring, metadata, auth, account_id, .. } = self.clone();
+        let CreateOrderTask { order_id, account_id, intent, ring, metadata, auth, .. } =
+            self.clone();
 
         // Create the order in the state
         let state_intent = create_ring0_state_wrapper(intent);
-        let order = Order::new_with_ring(state_intent, metadata, ring);
+        let order = Order::new_with_ring(order_id, state_intent, metadata, ring);
         let waiter = self.state().add_order_to_account(account_id, order, auth).await?;
         waiter.await.map_err(CreateOrderTaskError::state).map(|_| ())
     }

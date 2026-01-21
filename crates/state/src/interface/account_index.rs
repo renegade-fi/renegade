@@ -74,7 +74,7 @@ impl StateInner {
     }
 
     /// Get the plaintext order for a locally managed order ID
-    pub async fn get_managed_order(&self, id: &OrderId) -> Result<Option<Order>, StateError> {
+    pub async fn get_account_order(&self, id: &OrderId) -> Result<Option<Order>, StateError> {
         let id = *id;
         self.with_read_tx(move |tx| {
             let order = res_some!(tx.get_order(&id)?).deserialize()?;
@@ -84,7 +84,7 @@ impl StateInner {
     }
 
     /// Get the order for a given order ID and the balance that capitalizes it
-    pub async fn get_managed_order_and_matchable_amount(
+    pub async fn get_account_order_and_matchable_amount(
         &self,
         id: &OrderId,
     ) -> Result<Option<(Order, Amount)>, StateError> {

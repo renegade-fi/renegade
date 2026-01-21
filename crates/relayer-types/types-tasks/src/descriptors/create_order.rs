@@ -4,6 +4,7 @@ use alloy::primitives::Address;
 use darkpool_types::intent::Intent;
 use renegade_solidity_abi::v2::IDarkpoolV2::{PublicIntentPermit, SignatureWithNonce};
 use types_account::{
+    OrderId,
     order::{OrderMetadata, PrivacyRing},
     order_auth::OrderAuth,
 };
@@ -24,6 +25,8 @@ const INVALID_PUBLIC_ORDER_AUTH: &str = "invalid public order auth";
 pub struct CreateOrderTaskDescriptor {
     /// The account ID creating the order
     pub account_id: AccountId,
+    /// The order ID for the new order
+    pub order_id: OrderId,
     /// The intent
     pub intent: Intent,
     /// The privacy ring in which the intent is allocated
@@ -38,6 +41,7 @@ impl CreateOrderTaskDescriptor {
     /// Create a new create order task descriptor
     pub fn new(
         account_id: AccountId,
+        order_id: OrderId,
         executor: Address,
         intent: Intent,
         ring: PrivacyRing,
@@ -45,7 +49,7 @@ impl CreateOrderTaskDescriptor {
         auth: OrderAuth,
     ) -> Result<Self, TaskError> {
         validate_order_auth(executor, &intent, &auth)?;
-        Ok(Self { account_id, intent, ring, metadata, auth })
+        Ok(Self { account_id, order_id, intent, ring, metadata, auth })
     }
 }
 

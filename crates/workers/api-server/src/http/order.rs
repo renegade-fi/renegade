@@ -16,9 +16,9 @@ use types_account::order_auth::OrderAuth;
 use types_tasks::CreateOrderTaskDescriptor;
 
 use crate::{
-    error::{ApiServerError, bad_request},
+    error::{ApiServerError, bad_request, not_found},
     http::helpers::append_task,
-    param_parsing::parse_account_id_from_params,
+    param_parsing::{parse_account_id_from_params, parse_order_id_from_params},
     router::{QueryParams, TypedHandler, UrlParams},
 };
 
@@ -28,6 +28,8 @@ use crate::{
 
 /// Error message for not implemented
 const ERR_NOT_IMPLEMENTED: &str = "not implemented";
+/// Error message for order not found
+const ERR_ORDER_NOT_FOUND: &str = "order not found";
 
 // -------------------
 // | Order Handlers  |
@@ -56,6 +58,51 @@ impl TypedHandler for GetOrdersHandler {
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
         Err(ApiServerError::not_implemented(ERR_NOT_IMPLEMENTED))
+    }
+}
+
+/// Handler for GET /v2/account/:account_id/orders/:order_id
+pub struct GetOrderByIdHandler {
+    /// A handle to the relayer's state
+    state: State,
+}
+
+impl GetOrderByIdHandler {
+    /// Constructor
+    pub fn new(state: State) -> Self {
+        Self { state }
+    }
+}
+
+#[async_trait]
+impl TypedHandler for GetOrderByIdHandler {
+    type Request = EmptyRequestResponse;
+    type Response = GetOrderByIdResponse;
+
+    async fn handle_typed(
+        &self,
+        _headers: HeaderMap,
+        _req: Self::Request,
+        params: UrlParams,
+        _query_params: QueryParams,
+    ) -> Result<Self::Response, ApiServerError> {
+        let acct_id = parse_account_id_from_params(&params)?;
+        let order_id = parse_order_id_from_params(&params)?;
+        let order_account = self
+            .state
+            .get_account_id_for_order(&order_id)
+            .await?
+            .ok_or(ApiServerError::order_not_found(order_id))?;
+
+        // Check the account id matches the order's account id
+        if order_account != acct_id {
+            return Err(ApiServerError::order_not_found(order_id));
+        }
+
+        // Fetch the order
+        let order =
+            self.state.get_account_order(&order_id).await?.ok_or(not_found(ERR_ORDER_NOT_FOUND))?;
+        Ok(GetOrderByIdResponse { order: order.into() })
     }
 }
 
@@ -98,41 +145,23 @@ impl TypedHandler for CreateOrderHandler {
         // Convert order auth to an internal type
         let auth = OrderAuth::try_from(req.auth.clone())
             .map_err(|e| bad_request(format!("invalid order auth: {e}")))?;
+        let order_id = req.order.id;
         let (intent, ring, metadata) = req.into_order_components()?;
 
         // Create the task descriptor
-        let descriptor =
-            CreateOrderTaskDescriptor::new(account_id, self.executor, intent, ring, metadata, auth)
-                .map_err(bad_request)?;
+        let descriptor = CreateOrderTaskDescriptor::new(
+            account_id,
+            order_id,
+            self.executor,
+            intent,
+            ring,
+            metadata,
+            auth,
+        )
+        .map_err(bad_request)?;
         let task_id = append_task(descriptor.into(), &self.state).await?;
 
         Ok(CreateOrderResponse { task_id, completed: false })
-    }
-}
-
-/// Handler for GET /v2/account/:account_id/orders/:order_id
-pub struct GetOrderByIdHandler;
-
-impl GetOrderByIdHandler {
-    /// Constructor
-    pub fn new() -> Self {
-        Self
-    }
-}
-
-#[async_trait]
-impl TypedHandler for GetOrderByIdHandler {
-    type Request = EmptyRequestResponse;
-    type Response = GetOrderByIdResponse;
-
-    async fn handle_typed(
-        &self,
-        _headers: HeaderMap,
-        _req: Self::Request,
-        _params: UrlParams,
-        _query_params: QueryParams,
-    ) -> Result<Self::Response, ApiServerError> {
-        Err(ApiServerError::not_implemented(ERR_NOT_IMPLEMENTED))
     }
 }
 

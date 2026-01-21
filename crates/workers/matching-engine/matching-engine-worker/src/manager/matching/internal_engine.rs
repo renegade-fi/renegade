@@ -92,7 +92,7 @@ impl MatchingEngineExecutor {
         id: &OrderId,
     ) -> Result<(Order, Amount), MatchingEngineError> {
         let (order, matchable_amount) =
-            self.state.get_managed_order_and_matchable_amount(id).await?.ok_or_else(|| {
+            self.state.get_account_order_and_matchable_amount(id).await?.ok_or_else(|| {
                 MatchingEngineError::state(format!("failed to fetch order and balance for {id:?}"))
             })?;
 

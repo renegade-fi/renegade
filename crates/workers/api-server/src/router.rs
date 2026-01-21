@@ -240,7 +240,7 @@ impl Router {
     }
 
     /// Add a route with wallet authentication
-    pub fn add_wallet_authenticated_route<H: Handler + 'static>(
+    pub fn add_account_authenticated_route<H: Handler + 'static>(
         &mut self,
         method: &Method,
         route: String,
