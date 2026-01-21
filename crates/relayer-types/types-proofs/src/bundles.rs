@@ -3,7 +3,7 @@
 //! This module contains types for bundling proofs together with their
 //! statements.
 
-use circuit_types::{PlonkProof, ProofLinkingHint};
+use circuit_types::{PlonkLinkProof, PlonkProof, ProofLinkingHint};
 use circuits_core::zk_circuits::{
     fees::{
         valid_note_redemption::ValidNoteRedemptionStatement,
@@ -130,6 +130,131 @@ impl<Statement> std::ops::Deref for ProofAndHintBundle<Statement> {
     }
 }
 
+/// The inner settlement proof bundle type containing a proof, statement, and
+/// link proof
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SettlementProofBundleInner<Statement> {
+    /// The proof
+    pub proof: PlonkProof,
+    /// The statement for this proof
+    pub statement: Statement,
+    /// The linking proof
+    pub link_proof: PlonkLinkProof,
+}
+
+/// A heap-allocated settlement proof bundle
+///
+/// This type boxes the inner proof bundle to avoid large stack allocations.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct SettlementProofBundle<Statement>(Box<SettlementProofBundleInner<Statement>>);
+
+impl<Statement> SettlementProofBundle<Statement> {
+    /// Create a new settlement proof bundle from its components
+    pub fn new(proof: PlonkProof, statement: Statement, link_proof: PlonkLinkProof) -> Self {
+        Self(Box::new(SettlementProofBundleInner { proof, statement, link_proof }))
+    }
+
+    /// Create a new settlement proof bundle from an inner type
+    pub fn from_inner(inner: SettlementProofBundleInner<Statement>) -> Self {
+        Self(Box::new(inner))
+    }
+
+    /// Consume the bundle and return the inner data
+    pub fn into_inner(self) -> SettlementProofBundleInner<Statement> {
+        *self.0
+    }
+}
+
+impl<Statement> AsRef<SettlementProofBundleInner<Statement>> for SettlementProofBundle<Statement> {
+    fn as_ref(&self) -> &SettlementProofBundleInner<Statement> {
+        &self.0
+    }
+}
+
+impl<Statement> std::ops::Deref for SettlementProofBundle<Statement> {
+    type Target = SettlementProofBundleInner<Statement>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+/// The inner private settlement proof bundle type containing a proof,
+/// statement, and multiple link proofs
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PrivateSettlementProofBundleInner<Statement> {
+    /// The proof
+    pub proof: PlonkProof,
+    /// The statement for this proof
+    pub statement: Statement,
+    /// Party 0's validity linking proof
+    pub validity_link_proof_0: PlonkLinkProof,
+    /// Party 1's validity linking proof
+    pub validity_link_proof_1: PlonkLinkProof,
+    /// Party 0's output balance linking proof
+    pub output_balance_link_proof_0: PlonkLinkProof,
+    /// Party 1's output balance linking proof
+    pub output_balance_link_proof_1: PlonkLinkProof,
+}
+
+/// A heap-allocated private settlement proof bundle
+///
+/// This type boxes the inner proof bundle to avoid large stack allocations.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct PrivateSettlementProofBundle<Statement>(
+    Box<PrivateSettlementProofBundleInner<Statement>>,
+);
+
+impl<Statement> PrivateSettlementProofBundle<Statement> {
+    /// Create a new private settlement proof bundle from its components
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        proof: PlonkProof,
+        statement: Statement,
+        validity_link_proof_0: PlonkLinkProof,
+        validity_link_proof_1: PlonkLinkProof,
+        output_balance_link_proof_0: PlonkLinkProof,
+        output_balance_link_proof_1: PlonkLinkProof,
+    ) -> Self {
+        Self(Box::new(PrivateSettlementProofBundleInner {
+            proof,
+            statement,
+            validity_link_proof_0,
+            validity_link_proof_1,
+            output_balance_link_proof_0,
+            output_balance_link_proof_1,
+        }))
+    }
+
+    /// Create a new private settlement proof bundle from an inner type
+    pub fn from_inner(inner: PrivateSettlementProofBundleInner<Statement>) -> Self {
+        Self(Box::new(inner))
+    }
+
+    /// Consume the bundle and return the inner data
+    pub fn into_inner(self) -> PrivateSettlementProofBundleInner<Statement> {
+        *self.0
+    }
+}
+
+impl<Statement> AsRef<PrivateSettlementProofBundleInner<Statement>>
+    for PrivateSettlementProofBundle<Statement>
+{
+    fn as_ref(&self) -> &PrivateSettlementProofBundleInner<Statement> {
+        &self.0
+    }
+}
+
+impl<Statement> std::ops::Deref for PrivateSettlementProofBundle<Statement> {
+    type Target = PrivateSettlementProofBundleInner<Statement>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 // ------------------------
 // | Update Proof Bundles |
 // ------------------------
@@ -176,22 +301,23 @@ pub type OutputBalanceValidityBundle = ProofAndHintBundle<OutputBalanceValidityS
 
 /// A proof bundle for `INTENT AND BALANCE BOUNDED SETTLEMENT`
 pub type IntentAndBalanceBoundedSettlementBundle =
-    ProofAndHintBundle<IntentAndBalanceBoundedSettlementStatement>;
+    SettlementProofBundle<IntentAndBalanceBoundedSettlementStatement>;
 
 /// A proof bundle for `INTENT AND BALANCE PRIVATE SETTLEMENT`
 pub type IntentAndBalancePrivateSettlementBundle =
-    ProofAndHintBundle<IntentAndBalancePrivateSettlementStatement>;
+    PrivateSettlementProofBundle<IntentAndBalancePrivateSettlementStatement>;
 
 /// A proof bundle for `INTENT AND BALANCE PUBLIC SETTLEMENT`
 pub type IntentAndBalancePublicSettlementBundle =
-    ProofAndHintBundle<IntentAndBalancePublicSettlementStatement>;
+    SettlementProofBundle<IntentAndBalancePublicSettlementStatement>;
 
 /// A proof bundle for `INTENT ONLY BOUNDED SETTLEMENT`
 pub type IntentOnlyBoundedSettlementBundle =
-    ProofAndHintBundle<IntentOnlyBoundedSettlementStatement>;
+    SettlementProofBundle<IntentOnlyBoundedSettlementStatement>;
 
 /// A proof bundle for `INTENT ONLY PUBLIC SETTLEMENT`
-pub type IntentOnlyPublicSettlementBundle = ProofAndHintBundle<IntentOnlyPublicSettlementStatement>;
+pub type IntentOnlyPublicSettlementBundle =
+    SettlementProofBundle<IntentOnlyPublicSettlementStatement>;
 
 // -----------------------
 // | Fee Circuit Bundles |

@@ -91,8 +91,10 @@ use job_types::proof_manager::{
 };
 use tokio::runtime::Handle;
 use tracing::{error, instrument};
-use types_proofs::mocks::{dummy_link_hint, dummy_proof};
-use types_proofs::{ProofAndHintBundle, ProofBundle};
+use types_proofs::mocks::{dummy_link_hint, dummy_link_proof, dummy_proof};
+use types_proofs::{
+    PrivateSettlementProofBundle, ProofAndHintBundle, ProofBundle, SettlementProofBundle,
+};
 use util::channels::TracedMessage;
 
 use crate::error::ProofManagerError;
@@ -174,19 +176,19 @@ impl MockProofManager {
                 Self::output_balance_validity(witness, statement, skip_constraints)
             },
             // Settlement proofs
-            ProofJob::IntentAndBalanceBoundedSettlement { witness, statement } => {
+            ProofJob::IntentAndBalanceBoundedSettlement { witness, statement, .. } => {
                 Self::intent_and_balance_bounded_settlement(witness, statement, skip_constraints)
             },
-            ProofJob::IntentAndBalancePrivateSettlement { witness, statement } => {
+            ProofJob::IntentAndBalancePrivateSettlement { witness, statement, .. } => {
                 Self::intent_and_balance_private_settlement(witness, statement, skip_constraints)
             },
-            ProofJob::IntentAndBalancePublicSettlement { witness, statement } => {
+            ProofJob::IntentAndBalancePublicSettlement { witness, statement, .. } => {
                 Self::intent_and_balance_public_settlement(witness, statement, skip_constraints)
             },
-            ProofJob::IntentOnlyBoundedSettlement { witness, statement } => {
+            ProofJob::IntentOnlyBoundedSettlement { witness, statement, .. } => {
                 Self::intent_only_bounded_settlement(witness, statement, skip_constraints)
             },
-            ProofJob::IntentOnlyPublicSettlement { witness, statement } => {
+            ProofJob::IntentOnlyPublicSettlement { witness, statement, .. } => {
                 Self::intent_only_public_settlement(witness, statement, skip_constraints)
             },
             // Fee proofs
@@ -374,8 +376,8 @@ impl MockProofManager {
             )?;
         }
         let proof = dummy_proof();
-        let link_hint = dummy_link_hint();
-        let bundle = ProofAndHintBundle::new(proof, statement, link_hint);
+        let link_proof = dummy_link_proof();
+        let bundle = SettlementProofBundle::new(proof, statement, link_proof);
         Ok(ProofManagerResponse::IntentAndBalanceBoundedSettlement(bundle))
     }
 
@@ -391,8 +393,14 @@ impl MockProofManager {
             )?;
         }
         let proof = dummy_proof();
-        let link_hint = dummy_link_hint();
-        let bundle = ProofAndHintBundle::new(proof, statement, link_hint);
+        let bundle = PrivateSettlementProofBundle::new(
+            proof,
+            statement,
+            dummy_link_proof(),
+            dummy_link_proof(),
+            dummy_link_proof(),
+            dummy_link_proof(),
+        );
         Ok(ProofManagerResponse::IntentAndBalancePrivateSettlement(bundle))
     }
 
@@ -408,8 +416,8 @@ impl MockProofManager {
             )?;
         }
         let proof = dummy_proof();
-        let link_hint = dummy_link_hint();
-        let bundle = ProofAndHintBundle::new(proof, statement, link_hint);
+        let link_proof = dummy_link_proof();
+        let bundle = SettlementProofBundle::new(proof, statement, link_proof);
         Ok(ProofManagerResponse::IntentAndBalancePublicSettlement(bundle))
     }
 
@@ -423,8 +431,8 @@ impl MockProofManager {
             Self::check_constraints::<IntentOnlyBoundedSettlementCircuit>(&witness, &statement)?;
         }
         let proof = dummy_proof();
-        let link_hint = dummy_link_hint();
-        let bundle = ProofAndHintBundle::new(proof, statement, link_hint);
+        let link_proof = dummy_link_proof();
+        let bundle = SettlementProofBundle::new(proof, statement, link_proof);
         Ok(ProofManagerResponse::IntentOnlyBoundedSettlement(bundle))
     }
 
@@ -438,8 +446,8 @@ impl MockProofManager {
             Self::check_constraints::<IntentOnlyPublicSettlementCircuit>(&witness, &statement)?;
         }
         let proof = dummy_proof();
-        let link_hint = dummy_link_hint();
-        let bundle = ProofAndHintBundle::new(proof, statement, link_hint);
+        let link_proof = dummy_link_proof();
+        let bundle = SettlementProofBundle::new(proof, statement, link_proof);
         Ok(ProofManagerResponse::IntentOnlyPublicSettlement(bundle))
     }
 

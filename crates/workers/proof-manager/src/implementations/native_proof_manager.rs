@@ -2,7 +2,11 @@
 
 use std::sync::Arc;
 
-use circuit_types::traits::{SingleProverCircuit, setup_preprocessed_keys};
+use ark_mpc::network::PartyId;
+use circuit_types::{
+    PlonkLinkProof, ProofLinkingHint,
+    traits::{SingleProverCircuit, setup_preprocessed_keys},
+};
 use circuits_core::{
     singleprover_prove, singleprover_prove_with_hint,
     zk_circuits::{
@@ -27,6 +31,11 @@ use circuits_core::{
                 SizedValidPublicRelayerFeePayment, SizedValidPublicRelayerFeePaymentWitness,
                 ValidPublicRelayerFeePaymentStatement,
             },
+        },
+        proof_linking::{
+            intent_and_balance::link_sized_intent_and_balance_settlement_with_party,
+            intent_only::link_sized_intent_only_settlement,
+            output_balance::link_sized_output_balance_settlement_with_party,
         },
         settlement::{
             intent_and_balance_bounded_settlement::{
@@ -98,7 +107,9 @@ use job_types::proof_manager::{
 };
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use tracing::{error, info, info_span, instrument};
-use types_proofs::{ProofAndHintBundle, ProofBundle};
+use types_proofs::{
+    PrivateSettlementProofBundle, ProofAndHintBundle, ProofBundle, SettlementProofBundle,
+};
 use types_runtime::CancelChannel;
 use util::{DefaultOption, default_option};
 use util::{channels::TracedMessage, concurrency::runtime::sleep_forever_blocking, err_str};
@@ -223,20 +234,46 @@ impl NativeProofManager {
                 self.prove_output_balance_validity(witness, statement)
             },
             // Settlement proofs
-            ProofJob::IntentAndBalanceBoundedSettlement { witness, statement } => {
-                self.prove_intent_and_balance_bounded_settlement(witness, statement)
+            ProofJob::IntentAndBalanceBoundedSettlement {
+                witness,
+                statement,
+                validity_link_hint,
+            } => self.prove_intent_and_balance_bounded_settlement(
+                witness,
+                statement,
+                validity_link_hint,
+            ),
+            ProofJob::IntentAndBalancePrivateSettlement {
+                witness,
+                statement,
+                validity_link_hint_0,
+                validity_link_hint_1,
+                output_balance_link_hint_0,
+                output_balance_link_hint_1,
+            } => self.prove_intent_and_balance_private_settlement(
+                witness,
+                statement,
+                validity_link_hint_0,
+                validity_link_hint_1,
+                output_balance_link_hint_0,
+                output_balance_link_hint_1,
+            ),
+            ProofJob::IntentAndBalancePublicSettlement {
+                witness,
+                statement,
+                party_id,
+                validity_link_hint,
+            } => self.prove_intent_and_balance_public_settlement(
+                witness,
+                statement,
+                party_id,
+                validity_link_hint,
+            ),
+            ProofJob::IntentOnlyBoundedSettlement { witness, statement, validity_link_hint } => {
+                self.prove_intent_only_bounded_settlement(witness, statement, validity_link_hint)
             },
-            ProofJob::IntentAndBalancePrivateSettlement { witness, statement } => {
-                self.prove_intent_and_balance_private_settlement(witness, statement)
-            },
-            ProofJob::IntentAndBalancePublicSettlement { witness, statement } => {
-                self.prove_intent_and_balance_public_settlement(witness, statement)
-            },
-            ProofJob::IntentOnlyBoundedSettlement { witness, statement } => {
-                self.prove_intent_only_bounded_settlement(witness, statement)
-            },
-            ProofJob::IntentOnlyPublicSettlement { witness, statement } => {
-                self.prove_intent_only_public_settlement(witness, statement)
+            ProofJob::IntentOnlyPublicSettlement { witness, statement, validity_link_hint } => {
+                self.prove_intent_only_public_settlement(witness, statement, validity_link_hint)
             },
             // Fee proofs
             ProofJob::ValidNoteRedemption { witness, statement } => {
@@ -476,11 +513,20 @@ impl NativeProofManager {
         &self,
         witness: IntentAndBalanceBoundedSettlementWitness,
         statement: IntentAndBalanceBoundedSettlementStatement,
+        validity_link_hint: ProofLinkingHint,
     ) -> Result<ProofManagerResponse, ProofManagerError> {
-        let (proof, link_hint) = singleprover_prove_with_hint::<
+        let (proof, settlement_link_hint) = singleprover_prove_with_hint::<
             IntentAndBalanceBoundedSettlementCircuit,
         >(&witness, &statement)?;
-        let bundle = ProofAndHintBundle::new(proof, statement, link_hint);
+
+        // Bounded settlement always links into party 0 slot
+        let link_proof = link_sized_intent_and_balance_settlement_with_party(
+            0,
+            &validity_link_hint,
+            &settlement_link_hint,
+        )?;
+
+        let bundle = SettlementProofBundle::new(proof, statement, link_proof);
         Ok(ProofManagerResponse::IntentAndBalanceBoundedSettlement(bundle))
     }
 
@@ -490,11 +536,37 @@ impl NativeProofManager {
         &self,
         witness: IntentAndBalancePrivateSettlementWitness,
         statement: IntentAndBalancePrivateSettlementStatement,
+        validity_link_hint_0: ProofLinkingHint,
+        validity_link_hint_1: ProofLinkingHint,
+        output_balance_link_hint_0: ProofLinkingHint,
+        output_balance_link_hint_1: ProofLinkingHint,
     ) -> Result<ProofManagerResponse, ProofManagerError> {
-        let (proof, link_hint) = singleprover_prove_with_hint::<
+        let (proof, settlement_link_hint) = singleprover_prove_with_hint::<
             IntentAndBalancePrivateSettlementCircuit,
         >(&witness, &statement)?;
-        let bundle = ProofAndHintBundle::new(proof, statement, link_hint);
+
+        // Compute all 4 linking proofs in parallel
+        let [
+            validity_link_proof_0,
+            validity_link_proof_1,
+            output_balance_link_proof_0,
+            output_balance_link_proof_1,
+        ] = self.compute_private_settlement_link_proofs(
+            &validity_link_hint_0,
+            &validity_link_hint_1,
+            &output_balance_link_hint_0,
+            &output_balance_link_hint_1,
+            &settlement_link_hint,
+        )?;
+
+        let bundle = PrivateSettlementProofBundle::new(
+            proof,
+            statement,
+            validity_link_proof_0,
+            validity_link_proof_1,
+            output_balance_link_proof_0,
+            output_balance_link_proof_1,
+        );
         Ok(ProofManagerResponse::IntentAndBalancePrivateSettlement(bundle))
     }
 
@@ -504,11 +576,20 @@ impl NativeProofManager {
         &self,
         witness: IntentAndBalancePublicSettlementWitness,
         statement: IntentAndBalancePublicSettlementStatement,
+        party_id: PartyId,
+        validity_link_hint: ProofLinkingHint,
     ) -> Result<ProofManagerResponse, ProofManagerError> {
-        let (proof, link_hint) = singleprover_prove_with_hint::<
+        let (proof, settlement_link_hint) = singleprover_prove_with_hint::<
             IntentAndBalancePublicSettlementCircuit,
         >(&witness, &statement)?;
-        let bundle = ProofAndHintBundle::new(proof, statement, link_hint);
+
+        let link_proof = link_sized_intent_and_balance_settlement_with_party(
+            party_id as u8,
+            &validity_link_hint,
+            &settlement_link_hint,
+        )?;
+
+        let bundle = SettlementProofBundle::new(proof, statement, link_proof);
         Ok(ProofManagerResponse::IntentAndBalancePublicSettlement(bundle))
     }
 
@@ -518,11 +599,16 @@ impl NativeProofManager {
         &self,
         witness: IntentOnlyBoundedSettlementWitness,
         statement: IntentOnlyBoundedSettlementStatement,
+        validity_link_hint: ProofLinkingHint,
     ) -> Result<ProofManagerResponse, ProofManagerError> {
-        let (proof, link_hint) = singleprover_prove_with_hint::<IntentOnlyBoundedSettlementCircuit>(
-            &witness, &statement,
-        )?;
-        let bundle = ProofAndHintBundle::new(proof, statement, link_hint);
+        let (proof, settlement_link_hint) = singleprover_prove_with_hint::<
+            IntentOnlyBoundedSettlementCircuit,
+        >(&witness, &statement)?;
+
+        let link_proof =
+            link_sized_intent_only_settlement(&validity_link_hint, &settlement_link_hint)?;
+
+        let bundle = SettlementProofBundle::new(proof, statement, link_proof);
         Ok(ProofManagerResponse::IntentOnlyBoundedSettlement(bundle))
     }
 
@@ -532,11 +618,16 @@ impl NativeProofManager {
         &self,
         witness: IntentOnlyPublicSettlementWitness,
         statement: IntentOnlyPublicSettlementStatement,
+        validity_link_hint: ProofLinkingHint,
     ) -> Result<ProofManagerResponse, ProofManagerError> {
-        let (proof, link_hint) = singleprover_prove_with_hint::<IntentOnlyPublicSettlementCircuit>(
-            &witness, &statement,
-        )?;
-        let bundle = ProofAndHintBundle::new(proof, statement, link_hint);
+        let (proof, settlement_link_hint) = singleprover_prove_with_hint::<
+            IntentOnlyPublicSettlementCircuit,
+        >(&witness, &statement)?;
+
+        let link_proof =
+            link_sized_intent_only_settlement(&validity_link_hint, &settlement_link_hint)?;
+
+        let bundle = SettlementProofBundle::new(proof, statement, link_proof);
         Ok(ProofManagerResponse::IntentOnlyPublicSettlement(bundle))
     }
 
@@ -600,5 +691,69 @@ impl NativeProofManager {
         let proof = singleprover_prove::<SizedValidPublicRelayerFeePayment>(&witness, &statement)?;
         let bundle = ProofBundle::new(proof, statement);
         Ok(ProofManagerResponse::ValidPublicRelayerFeePayment(bundle))
+    }
+
+    // --- Helpers --- //
+
+    /// Compute all 4 linking proofs for a private settlement in parallel
+    ///
+    /// This computes the validity and output balance linking proofs for both
+    /// parties using nested `thread_pool.join` calls for parallelism.
+    fn compute_private_settlement_link_proofs(
+        &self,
+        validity_link_hint_0: &ProofLinkingHint,
+        validity_link_hint_1: &ProofLinkingHint,
+        output_balance_link_hint_0: &ProofLinkingHint,
+        output_balance_link_hint_1: &ProofLinkingHint,
+        settlement_link_hint: &ProofLinkingHint,
+    ) -> Result<[PlonkLinkProof; 4], ProofManagerError> {
+        let (
+            (validity_link_proof_0, validity_link_proof_1),
+            (output_balance_link_proof_0, output_balance_link_proof_1),
+        ) = self.thread_pool.join(
+            || {
+                self.thread_pool.join(
+                    || {
+                        link_sized_intent_and_balance_settlement_with_party(
+                            0,
+                            validity_link_hint_0,
+                            settlement_link_hint,
+                        )
+                    },
+                    || {
+                        link_sized_intent_and_balance_settlement_with_party(
+                            1,
+                            validity_link_hint_1,
+                            settlement_link_hint,
+                        )
+                    },
+                )
+            },
+            || {
+                self.thread_pool.join(
+                    || {
+                        link_sized_output_balance_settlement_with_party(
+                            0,
+                            output_balance_link_hint_0,
+                            settlement_link_hint,
+                        )
+                    },
+                    || {
+                        link_sized_output_balance_settlement_with_party(
+                            1,
+                            output_balance_link_hint_1,
+                            settlement_link_hint,
+                        )
+                    },
+                )
+            },
+        );
+
+        Ok([
+            validity_link_proof_0?,
+            validity_link_proof_1?,
+            output_balance_link_proof_0?,
+            output_balance_link_proof_1?,
+        ])
     }
 }

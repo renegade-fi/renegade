@@ -4,6 +4,8 @@
 //! See the whitepaper https://renegade.fi/whitepaper.pdf for a formal specification
 //! of the types defined here
 
+use ark_mpc::network::PartyId;
+use circuit_types::ProofLinkingHint;
 use circuits_core::zk_circuits::{
     fees::{
         valid_note_redemption::{SizedValidNoteRedemptionWitness, ValidNoteRedemptionStatement},
@@ -389,26 +391,44 @@ pub enum ProofJob {
     IntentAndBalanceBoundedSettlement {
         witness: IntentAndBalanceBoundedSettlementWitness,
         statement: IntentAndBalanceBoundedSettlementStatement,
+        /// The link hint for the validity proof
+        validity_link_hint: ProofLinkingHint,
     },
     /// Prove `INTENT AND BALANCE PRIVATE SETTLEMENT`
     IntentAndBalancePrivateSettlement {
         witness: IntentAndBalancePrivateSettlementWitness,
         statement: IntentAndBalancePrivateSettlementStatement,
+        /// The link hint for party 0's validity proof
+        validity_link_hint_0: ProofLinkingHint,
+        /// The link hint for party 1's validity proof
+        validity_link_hint_1: ProofLinkingHint,
+        /// The link hint for party 0's output balance validity proof
+        output_balance_link_hint_0: ProofLinkingHint,
+        /// The link hint for party 1's output balance validity proof
+        output_balance_link_hint_1: ProofLinkingHint,
     },
     /// Prove `INTENT AND BALANCE PUBLIC SETTLEMENT`
     IntentAndBalancePublicSettlement {
         witness: IntentAndBalancePublicSettlementWitness,
         statement: IntentAndBalancePublicSettlementStatement,
+        /// The party ID (0 or 1) for two-party settlements
+        party_id: PartyId,
+        /// The link hint for the validity proof
+        validity_link_hint: ProofLinkingHint,
     },
     /// Prove `INTENT ONLY BOUNDED SETTLEMENT`
     IntentOnlyBoundedSettlement {
         witness: IntentOnlyBoundedSettlementWitness,
         statement: IntentOnlyBoundedSettlementStatement,
+        /// The link hint for the validity proof
+        validity_link_hint: ProofLinkingHint,
     },
     /// Prove `INTENT ONLY PUBLIC SETTLEMENT`
     IntentOnlyPublicSettlement {
         witness: IntentOnlyPublicSettlementWitness,
         statement: IntentOnlyPublicSettlementStatement,
+        /// The link hint for the validity proof
+        validity_link_hint: ProofLinkingHint,
     },
     // Fee proofs
     /// Prove `VALID NOTE REDEMPTION`

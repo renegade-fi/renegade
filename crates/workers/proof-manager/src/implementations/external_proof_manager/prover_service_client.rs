@@ -1,5 +1,7 @@
 //! Implements the client for the prover service
 
+use ark_mpc::network::PartyId;
+use circuit_types::ProofLinkingHint;
 use circuits_core::zk_circuits::{
     fees::{
         valid_note_redemption::{SizedValidNoteRedemptionWitness, ValidNoteRedemptionStatement},
@@ -74,7 +76,8 @@ use crate::{
         IntentAndBalanceValidityRequest, IntentOnlyBoundedSettlementRequest,
         IntentOnlyFirstFillValidityRequest, IntentOnlyPublicSettlementRequest,
         IntentOnlyValidityRequest, NewOutputBalanceValidityRequest, OutputBalanceValidityRequest,
-        ProofAndHintResponse, ProofResponse, ValidBalanceCreateRequest, ValidDepositRequest,
+        PrivateSettlementProofResponse, ProofAndHintResponse, ProofResponse,
+        SettlementProofResponse, ValidBalanceCreateRequest, ValidDepositRequest,
         ValidNoteRedemptionRequest, ValidOrderCancellationRequest,
         ValidPrivateProtocolFeePaymentRequest, ValidPrivateRelayerFeePaymentRequest,
         ValidPublicProtocolFeePaymentRequest, ValidPublicRelayerFeePaymentRequest,
@@ -82,7 +85,9 @@ use crate::{
     },
     worker::ProofManagerConfig,
 };
-use types_proofs::{ProofAndHintBundle, ProofBundle};
+use types_proofs::{
+    PrivateSettlementProofBundle, ProofAndHintBundle, ProofBundle, SettlementProofBundle,
+};
 
 /// The HTTP basic auth user name to use
 const HTTP_BASIC_AUTH_USER: &str = "admin";
@@ -344,16 +349,20 @@ impl ProofServiceClient {
         &self,
         witness: IntentAndBalanceBoundedSettlementWitness,
         statement: IntentAndBalanceBoundedSettlementStatement,
+        validity_link_hint: ProofLinkingHint,
     ) -> Result<ProofManagerResponse, ProofManagerError> {
-        let req =
-            IntentAndBalanceBoundedSettlementRequest { statement: statement.clone(), witness };
+        let req = IntentAndBalanceBoundedSettlementRequest {
+            statement: statement.clone(),
+            witness,
+            validity_link_hint,
+        };
         let res = self
-            .send_request::<_, ProofAndHintResponse>(
+            .send_request::<_, SettlementProofResponse>(
                 INTENT_AND_BALANCE_BOUNDED_SETTLEMENT_PATH,
                 req,
             )
             .await?;
-        let bundle = ProofAndHintBundle::new(res.proof, statement, res.link_hint);
+        let bundle = SettlementProofBundle::new(res.proof, statement, res.link_proof);
         Ok(ProofManagerResponse::IntentAndBalanceBoundedSettlement(bundle))
     }
 
@@ -363,16 +372,33 @@ impl ProofServiceClient {
         &self,
         witness: IntentAndBalancePrivateSettlementWitness,
         statement: IntentAndBalancePrivateSettlementStatement,
+        validity_link_hint_0: ProofLinkingHint,
+        validity_link_hint_1: ProofLinkingHint,
+        output_balance_link_hint_0: ProofLinkingHint,
+        output_balance_link_hint_1: ProofLinkingHint,
     ) -> Result<ProofManagerResponse, ProofManagerError> {
-        let req =
-            IntentAndBalancePrivateSettlementRequest { statement: statement.clone(), witness };
+        let req = IntentAndBalancePrivateSettlementRequest {
+            statement: statement.clone(),
+            witness,
+            validity_link_hint_0,
+            validity_link_hint_1,
+            output_balance_link_hint_0,
+            output_balance_link_hint_1,
+        };
         let res = self
-            .send_request::<_, ProofAndHintResponse>(
+            .send_request::<_, PrivateSettlementProofResponse>(
                 INTENT_AND_BALANCE_PRIVATE_SETTLEMENT_PATH,
                 req,
             )
             .await?;
-        let bundle = ProofAndHintBundle::new(res.proof, statement, res.link_hint);
+        let bundle = PrivateSettlementProofBundle::new(
+            res.proof,
+            statement,
+            res.validity_link_proof_0,
+            res.validity_link_proof_1,
+            res.output_balance_link_proof_0,
+            res.output_balance_link_proof_1,
+        );
         Ok(ProofManagerResponse::IntentAndBalancePrivateSettlement(bundle))
     }
 
@@ -382,12 +408,22 @@ impl ProofServiceClient {
         &self,
         witness: IntentAndBalancePublicSettlementWitness,
         statement: IntentAndBalancePublicSettlementStatement,
+        party_id: PartyId,
+        validity_link_hint: ProofLinkingHint,
     ) -> Result<ProofManagerResponse, ProofManagerError> {
-        let req = IntentAndBalancePublicSettlementRequest { statement: statement.clone(), witness };
+        let req = IntentAndBalancePublicSettlementRequest {
+            statement: statement.clone(),
+            witness,
+            party_id: party_id as u8,
+            validity_link_hint,
+        };
         let res = self
-            .send_request::<_, ProofAndHintResponse>(INTENT_AND_BALANCE_PUBLIC_SETTLEMENT_PATH, req)
+            .send_request::<_, SettlementProofResponse>(
+                INTENT_AND_BALANCE_PUBLIC_SETTLEMENT_PATH,
+                req,
+            )
             .await?;
-        let bundle = ProofAndHintBundle::new(res.proof, statement, res.link_hint);
+        let bundle = SettlementProofBundle::new(res.proof, statement, res.link_proof);
         Ok(ProofManagerResponse::IntentAndBalancePublicSettlement(bundle))
     }
 
@@ -397,12 +433,17 @@ impl ProofServiceClient {
         &self,
         witness: IntentOnlyBoundedSettlementWitness,
         statement: IntentOnlyBoundedSettlementStatement,
+        validity_link_hint: ProofLinkingHint,
     ) -> Result<ProofManagerResponse, ProofManagerError> {
-        let req = IntentOnlyBoundedSettlementRequest { statement: statement.clone(), witness };
+        let req = IntentOnlyBoundedSettlementRequest {
+            statement: statement.clone(),
+            witness,
+            validity_link_hint,
+        };
         let res = self
-            .send_request::<_, ProofAndHintResponse>(INTENT_ONLY_BOUNDED_SETTLEMENT_PATH, req)
+            .send_request::<_, SettlementProofResponse>(INTENT_ONLY_BOUNDED_SETTLEMENT_PATH, req)
             .await?;
-        let bundle = ProofAndHintBundle::new(res.proof, statement, res.link_hint);
+        let bundle = SettlementProofBundle::new(res.proof, statement, res.link_proof);
         Ok(ProofManagerResponse::IntentOnlyBoundedSettlement(bundle))
     }
 
@@ -411,12 +452,17 @@ impl ProofServiceClient {
         &self,
         witness: IntentOnlyPublicSettlementWitness,
         statement: IntentOnlyPublicSettlementStatement,
+        validity_link_hint: ProofLinkingHint,
     ) -> Result<ProofManagerResponse, ProofManagerError> {
-        let req = IntentOnlyPublicSettlementRequest { statement: statement.clone(), witness };
+        let req = IntentOnlyPublicSettlementRequest {
+            statement: statement.clone(),
+            witness,
+            validity_link_hint,
+        };
         let res = self
-            .send_request::<_, ProofAndHintResponse>(INTENT_ONLY_PUBLIC_SETTLEMENT_PATH, req)
+            .send_request::<_, SettlementProofResponse>(INTENT_ONLY_PUBLIC_SETTLEMENT_PATH, req)
             .await?;
-        let bundle = ProofAndHintBundle::new(res.proof, statement, res.link_hint);
+        let bundle = SettlementProofBundle::new(res.proof, statement, res.link_proof);
         Ok(ProofManagerResponse::IntentOnlyPublicSettlement(bundle))
     }
 
