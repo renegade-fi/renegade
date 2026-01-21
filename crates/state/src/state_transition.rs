@@ -8,8 +8,8 @@ use circuit_types::Nullifier;
 use darkpool_types::rkyv_remotes::ScalarDef;
 use serde::{Deserialize, Serialize};
 use types_account::{
-    Account, MatchingPoolName, MerkleAuthenticationPath, account::OrderId, order::Order,
-    order_auth::OrderAuth,
+    Account, MatchingPoolName, MerkleAuthenticationPath, account::OrderId, balance::Balance,
+    order::Order, order_auth::OrderAuth,
 };
 use types_core::AccountId;
 use types_gossip::WrappedPeerId;
@@ -52,6 +52,8 @@ pub enum StateTransition {
     AddOrderToAccount { account_id: AccountId, order: Order, auth: OrderAuth },
     /// Remove an order from an account
     RemoveOrderFromAccount { account_id: AccountId, order_id: OrderId },
+    /// Update a balance in an account
+    UpdateAccountBalance { account_id: AccountId, balance: Balance },
 
     // --- Orders --- //
     /// Add a validity proof to an order
