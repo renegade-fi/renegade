@@ -124,7 +124,8 @@ async fn main() -> Result<(), CoordinatorError> {
 
     // Construct a darkpool client that workers will use for submitting txs
     let darkpool_client_config = DarkpoolClientConfig {
-        darkpool_addr: args.contract_address.clone(),
+        darkpool_addr: args.contract_address,
+        permit2_addr: args.permit2_address,
         chain: args.chain_id,
         rpc_url: args.rpc_url.clone().expect("rpc url not set"),
         private_key: args.private_key.clone(),
@@ -135,7 +136,8 @@ async fn main() -> Result<(), CoordinatorError> {
 
     // Construct a darkpool client for the on-chain event listener worker
     let chain_listener_darkpool_client_config = DarkpoolClientConfig {
-        darkpool_addr: args.contract_address.clone(),
+        darkpool_addr: args.contract_address,
+        permit2_addr: args.permit2_address,
         chain: args.chain_id,
         rpc_url: args.rpc_url.unwrap(),
         private_key: args.private_key.clone(),

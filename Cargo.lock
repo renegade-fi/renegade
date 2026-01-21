@@ -3240,6 +3240,7 @@ dependencies = [
  "ruint",
  "serde",
  "test-helpers",
+ "thiserror 2.0.18",
  "tokio",
  "tracing",
  "types-account",

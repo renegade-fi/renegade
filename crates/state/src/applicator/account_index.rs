@@ -58,7 +58,7 @@ impl StateApplicator {
 
         // Update the matching engine
         if matchable_amount > 0 {
-            self.matching_engine().add_order(order, matchable_amount, matching_pool);
+            self.matching_engine().upsert_order(order, matchable_amount, matching_pool);
         }
         Ok(ApplicatorReturnType::None)
     }
@@ -128,7 +128,7 @@ impl StateApplicator {
             let matching_pool = tx.get_matching_pool_for_order(&order_id)?;
             let matchable_amount = tx.get_order_matchable_amount(&order_id)?.unwrap_or_default();
             if matchable_amount > 0 {
-                engine.add_order(&order, matchable_amount, matching_pool);
+                engine.upsert_order(&order, matchable_amount, matching_pool);
             } else {
                 engine.cancel_order(&order, matching_pool);
             }

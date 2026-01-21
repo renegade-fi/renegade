@@ -85,11 +85,7 @@ impl StateApplicator {
 
         // Update the matching engine
         let matching_engine = self.matching_engine();
-        if matching_engine.contains_order(&order_deser, matching_pool.clone()) {
-            matching_engine.update_order(&order_deser, matchable_amount, matching_pool);
-        } else {
-            matching_engine.add_order(&order_deser, matchable_amount, matching_pool);
-        }
+        matching_engine.upsert_order(&order_deser, matchable_amount, matching_pool);
         tx.commit()?;
 
         Ok(ApplicatorReturnType::None)

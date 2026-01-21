@@ -98,8 +98,11 @@ pub struct Cli {
     #[clap(long, value_parser, default_value = "arbitrum-sepolia", env = "CHAIN")]
     pub chain_id: Chain,
     /// The address of the darkpool contract, defaults to the internal testnet deployment
-    #[clap(long, value_parser, env = "DARKPOOL_ADDRESS", default_value = "0x2f88458fc25591f1de247dd3297f039eecfcd534")]
+    #[clap(long, value_parser, env = "DARKPOOL_ADDRESS")]
     pub contract_address: String,
+    /// The address of the permit2 contract
+    #[clap(long, value_parser, env = "PERMIT2_ADDRESS")]
+    pub permit2_address: String,
     /// The path to the file containing token remaps for the given chain
     /// 
     /// See https://github.com/renegade-fi/token-mappings for more information on the format of this file
@@ -319,7 +322,9 @@ pub struct RelayerConfig {
     /// The chain that the relayer settles to
     pub chain_id: Chain,
     /// The address of the contract in the target network
-    pub contract_address: String,
+    pub contract_address: Address,
+    /// The address of the permit2 contract
+    pub permit2_address: Address,
 
     // ----------------------------
     // | Networking Configuration |

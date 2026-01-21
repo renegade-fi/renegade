@@ -30,6 +30,7 @@ pub fn new_task_notification(task_id: TaskIdentifier) -> (TaskNotificationReceiv
 
 /// The job type for the task driver
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum TaskDriverJob {
     /// Run a task
     Run {
