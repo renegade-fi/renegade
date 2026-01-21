@@ -1,7 +1,7 @@
 //! The definition of the darkpool client, which holds the configuration
 //! details, along with a lower-level handle for the darkpool smart contract
 
-use std::{str::FromStr, time::Duration};
+use std::{ops::Add, str::FromStr, time::Duration};
 
 use alloy::{
     providers::{
@@ -28,6 +28,7 @@ use crate::{
 };
 
 mod contract_interaction;
+pub mod erc20;
 mod event_indexing;
 
 /// A type alias for the RPC client, which is an alloy middleware stack that
@@ -44,7 +45,9 @@ pub struct DarkpoolClientConfig {
     /// The address of the darkpool proxy contract.
     ///
     /// This is the main entrypoint to interaction with the darkpool.
-    pub darkpool_addr: String,
+    pub darkpool_addr: Address,
+    /// The address of the permit2 contract.
+    pub permit2_addr: Address,
     /// Which chain the client should interact with,
     /// e.g. arbitrum-sepolia, base-mainnet, etc.
     pub chain: Chain,
@@ -86,13 +89,6 @@ impl DarkpoolClientConfig {
 
         Ok(DynProvider::new(provider))
     }
-
-    /// Parses the darkpool proxy address from the configuration,
-    /// returning an [`alloy::primitives::Address`]
-    fn get_darkpool_address(&self) -> Result<Address, DarkpoolClientConfigError> {
-        Address::from_str(&self.darkpool_addr)
-            .map_err(|e| DarkpoolClientConfigError::AddressParsing(e.to_string()))
-    }
 }
 
 /// The darkpool client, which provides a higher-level interface to the darkpool
@@ -103,18 +99,18 @@ pub struct DarkpoolClientInner<D: DarkpoolImpl> {
     darkpool: D,
     /// The block number at which the darkpool was deployed
     deploy_block: BlockNumber,
+    /// The address of the permit2 contract
+    permit2_addr: Address,
 }
 
 impl<D: DarkpoolImpl> DarkpoolClientInner<D> {
     /// Constructs a new darkpool client from the given configuration
     #[allow(clippy::needless_pass_by_value)]
     pub fn new(config: DarkpoolClientConfig) -> Result<Self, DarkpoolClientError> {
-        let darkpool_address = config.get_darkpool_address()?;
         let provider = config.get_provider()?;
-        let darkpool = D::new(darkpool_address, provider);
+        let darkpool = D::new(config.darkpool_addr, provider);
         let deploy_block = config.get_deploy_block();
-
-        Ok(Self { darkpool, deploy_block })
+        Ok(Self { darkpool, deploy_block, permit2_addr: config.permit2_addr })
     }
 
     /// Get a darkpool contract client

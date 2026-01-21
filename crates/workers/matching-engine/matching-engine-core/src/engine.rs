@@ -57,7 +57,7 @@ impl MatchingEngine {
     }
 
     /// Add an order to the matching engine
-    pub fn add_order(
+    pub fn upsert_order(
         &self,
         order: &Order,
         matchable_amount: Amount,
@@ -275,7 +275,7 @@ mod tests {
         let order = create_test_order(100, FixedPoint::from_integer(1));
         let pool = test_matching_pool();
 
-        engine.add_order(&order, 100, pool.clone());
+        engine.upsert_order(&order, 100, pool.clone());
         assert!(engine.contains_order(&order, pool.clone()));
     }
 
@@ -285,7 +285,7 @@ mod tests {
         let order = create_test_order(100, FixedPoint::from_integer(1));
         let pool = test_matching_pool();
 
-        engine.add_order(&order, 100, pool.clone());
+        engine.upsert_order(&order, 100, pool.clone());
         engine.cancel_order(&order, pool.clone());
         assert!(!engine.contains_order(&order, pool.clone()));
     }
@@ -329,7 +329,7 @@ mod tests {
         // Their min_price is in units of A/B = 1/2 = 0.5
         let counterparty_order =
             create_counterparty_order(500, FixedPoint::from_f64_round_down(0.5));
-        engine.add_order(&counterparty_order, 500, pool.clone());
+        engine.upsert_order(&counterparty_order, 500, pool.clone());
 
         let result =
             engine.find_match(input_pair, input_range, pool, TimestampedPriceFp::from(price));
@@ -384,7 +384,7 @@ mod tests {
         // So 0.5 < 0.6, match should fail
         let counterparty_order =
             create_counterparty_order(500, FixedPoint::from_f64_round_down(0.6));
-        engine.add_order(&counterparty_order, 500, pool.clone());
+        engine.upsert_order(&counterparty_order, 500, pool.clone());
 
         let result =
             engine.find_match(input_pair, input_range, pool, TimestampedPriceFp::from(price));
@@ -402,7 +402,7 @@ mod tests {
 
         let counterparty_order =
             create_counterparty_order(500, FixedPoint::from_f64_round_down(0.4));
-        engine.add_order(&counterparty_order, 500, pool.clone());
+        engine.upsert_order(&counterparty_order, 500, pool.clone());
 
         let result =
             engine.find_match(input_pair, input_range, pool, TimestampedPriceFp::from(price));
@@ -428,7 +428,7 @@ mod tests {
         // Counterparty only has 100 B available
         let counterparty_order =
             create_counterparty_order(100, FixedPoint::from_f64_round_down(0.4));
-        engine.add_order(&counterparty_order, 100, pool.clone());
+        engine.upsert_order(&counterparty_order, 100, pool.clone());
 
         let result =
             engine.find_match(input_pair, input_range, pool, TimestampedPriceFp::from(price));
@@ -456,9 +456,9 @@ mod tests {
         let order2 = create_counterparty_order(500, FixedPoint::from_f64_round_down(0.4));
         let order3 = create_counterparty_order(200, FixedPoint::from_f64_round_down(0.4));
 
-        engine.add_order(&order1, 100, pool.clone());
-        engine.add_order(&order2, 500, pool.clone());
-        engine.add_order(&order3, 200, pool.clone());
+        engine.upsert_order(&order1, 100, pool.clone());
+        engine.upsert_order(&order2, 500, pool.clone());
+        engine.upsert_order(&order3, 200, pool.clone());
 
         let result =
             engine.find_match(input_pair, input_range, pool, TimestampedPriceFp::from(price));
@@ -486,7 +486,7 @@ mod tests {
 
         // Add order to pool1
         let order1 = create_counterparty_order(500, FixedPoint::from_f64_round_down(0.4));
-        engine.add_order(&order1, 500, pool1.clone());
+        engine.upsert_order(&order1, 500, pool1.clone());
 
         // Should find match in pool1
         let result1 = engine.find_match(
@@ -518,7 +518,7 @@ mod tests {
         let mut counterparty_order =
             create_counterparty_order(500, FixedPoint::from_f64_round_down(0.4));
         counterparty_order.metadata.min_fill_size = 100; // Requires at least 100 B
-        engine.add_order(&counterparty_order, 500, pool.clone());
+        engine.upsert_order(&counterparty_order, 500, pool.clone());
 
         // input_range max of 10 A -> 20 B, but counterparty needs at least 100 B
         let result =
@@ -537,7 +537,7 @@ mod tests {
 
         let counterparty_order =
             create_counterparty_order(500, FixedPoint::from_f64_round_down(0.5));
-        engine.add_order(&counterparty_order, 500, pool.clone());
+        engine.upsert_order(&counterparty_order, 500, pool.clone());
 
         let result =
             engine.find_match(input_pair, input_range, pool, TimestampedPriceFp::from(price));
@@ -570,8 +570,8 @@ mod tests {
         let mut order2 = create_counterparty_order(300, FixedPoint::from_f64_round_down(0.4));
         order2.metadata.allow_external_matches = false;
 
-        engine.add_order(&order1, 300, pool.clone());
-        engine.add_order(&order2, 500, pool.clone());
+        engine.upsert_order(&order1, 300, pool.clone());
+        engine.upsert_order(&order2, 500, pool.clone());
 
         // find_match (internal) should match with order2 (largest, 500)
         let result_internal = engine.find_match(
@@ -614,7 +614,7 @@ mod tests {
         // Create a counterparty order that is NOT externally matchable
         let mut order = create_counterparty_order(500, FixedPoint::from_f64_round_down(0.4));
         order.metadata.allow_external_matches = false;
-        engine.add_order(&order, 500, pool.clone());
+        engine.upsert_order(&order, 500, pool.clone());
 
         // find_match (internal) should still match
         let result_internal = engine.find_match(
@@ -657,7 +657,7 @@ mod tests {
         // Counterparty has 500 B available
         let counterparty_order =
             create_counterparty_order(500, FixedPoint::from_f64_round_down(0.4));
-        engine.add_order(&counterparty_order, 500, pool.clone());
+        engine.upsert_order(&counterparty_order, 500, pool.clone());
 
         let result =
             engine.find_match(input_pair, input_range, pool, TimestampedPriceFp::from(price));
@@ -687,7 +687,7 @@ mod tests {
         // Counterparty's range: min_fill_size..=100 = 1..=100 B
         let counterparty_order =
             create_counterparty_order(100, FixedPoint::from_f64_round_down(0.4));
-        engine.add_order(&counterparty_order, 100, pool.clone());
+        engine.upsert_order(&counterparty_order, 100, pool.clone());
 
         let result =
             engine.find_match(input_pair, input_range, pool, TimestampedPriceFp::from(price));
@@ -711,7 +711,7 @@ mod tests {
         let mut counterparty_order =
             create_counterparty_order(500, FixedPoint::from_f64_round_down(0.4));
         counterparty_order.metadata.min_fill_size = 100;
-        engine.add_order(&counterparty_order, 500, pool.clone());
+        engine.upsert_order(&counterparty_order, 500, pool.clone());
 
         let result =
             engine.find_match(input_pair, input_range, pool, TimestampedPriceFp::from(price));
@@ -738,7 +738,7 @@ mod tests {
         let mut counterparty_order =
             create_counterparty_order(80, FixedPoint::from_f64_round_down(0.4));
         counterparty_order.metadata.min_fill_size = 50;
-        engine.add_order(&counterparty_order, 80, pool.clone());
+        engine.upsert_order(&counterparty_order, 80, pool.clone());
 
         let result =
             engine.find_match(input_pair, input_range, pool, TimestampedPriceFp::from(price));
@@ -771,7 +771,7 @@ mod tests {
         let mut counterparty_order =
             create_counterparty_order(200, FixedPoint::from_f64_round_down(0.4));
         counterparty_order.metadata.min_fill_size = 100;
-        engine.add_order(&counterparty_order, 200, pool.clone());
+        engine.upsert_order(&counterparty_order, 200, pool.clone());
 
         let result =
             engine.find_match(input_pair, input_range, pool, TimestampedPriceFp::from(price));
@@ -805,8 +805,8 @@ mod tests {
         let mut order2 = create_counterparty_order(100, FixedPoint::from_f64_round_down(0.4));
         order2.metadata.min_fill_size = 50;
 
-        engine.add_order(&order1, 500, pool.clone());
-        engine.add_order(&order2, 100, pool.clone());
+        engine.upsert_order(&order1, 500, pool.clone());
+        engine.upsert_order(&order2, 100, pool.clone());
 
         let result =
             engine.find_match(input_pair, input_range, pool, TimestampedPriceFp::from(price));
@@ -839,7 +839,7 @@ mod tests {
         let mut counterparty_order =
             create_counterparty_order(100, FixedPoint::from_f64_round_down(0.5));
         counterparty_order.metadata.min_fill_size = 50;
-        engine.add_order(&counterparty_order, 100, pool.clone());
+        engine.upsert_order(&counterparty_order, 100, pool.clone());
 
         let result =
             engine.find_match(input_pair, input_range, pool, TimestampedPriceFp::from(price));

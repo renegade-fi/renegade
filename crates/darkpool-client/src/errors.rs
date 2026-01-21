@@ -1,43 +1,61 @@
 //! Possible errors thrown by the darkpool client
 
-use std::{error::Error, fmt::Display};
-
 use alloy_sol_types::Error as SolError;
 
 /// The error type returned by the darkpool client interface
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, thiserror::Error)]
 pub enum DarkpoolClientError {
+    /// Error thrown when a target public blinder share was not found
+    /// in a given transaction
+    #[error("blinder not found")]
+    BlinderNotFound,
+    /// Error thrown when a commitment can't be found in the Merkle tree
+    #[error("commitment not found")]
+    CommitmentNotFound,
     /// Error thrown when the darkpool client configuration fails
-    Config(DarkpoolClientConfigError),
+    #[error("darkpool client configuration error: {0}")]
+    Config(#[from] DarkpoolClientConfigError),
+    /// Error thrown when converting between relayer & smart contract types
+    #[error("conversion error: {0}")]
+    Conversion(#[from] ConversionError),
     /// Error thrown when a contract call fails
+    #[error("contract interaction error: {0}")]
     ContractInteraction(String),
     /// Error thrown when a darkpool sub-call cannot be found in a tx
+    #[error("darkpool sub-call not found: {0}")]
     DarkpoolSubcallNotFound(String),
-    /// Error thrown when serializing/deserializing calldata/retdata
-    Serde(String),
-    /// An signing error
-    Signing(String),
-    /// Error thrown when converting between relayer & smart contract types
-    Conversion(ConversionError),
+    /// An error interacting with an erc20 contract
+    #[error("ERC20 error: {0}")]
+    Erc20(String),
+    /// An error interacting with permit2
+    #[error("Permit2 error: {0}")]
+    Permit2(String),
     /// Error thrown when querying events
+    #[error("event querying error: {0}")]
     EventQuerying(String),
-    /// Error thrown when a commitment can't be found in the Merkle tree
-    CommitmentNotFound,
-    /// An error interacting with the lower level rpc client
-    Rpc(String),
-    /// Error thrown when getting a transaction fails
-    TxQuerying(String),
-    /// Error thrown when a transaction can't be found
-    TxNotFound(String),
-    /// Error thrown when a transaction is dropped from the mempool
-    TxDropped,
     /// Error thrown when a transaction's selector doesn't match
     /// one of the supported ones
     /// (`newWallet`, `updateWallet`, `processMatchSettle`)
+    #[error("invalid selector")]
     InvalidSelector,
-    /// Error thrown when a target public blinder share was not found
-    /// in a given transaction
-    BlinderNotFound,
+    /// An error interacting with the lower level rpc client
+    #[error("RPC error: {0}")]
+    Rpc(String),
+    /// Error thrown when serializing/deserializing calldata/retdata
+    #[error("serialization error: {0}")]
+    Serde(String),
+    /// An signing error
+    #[error("signing error: {0}")]
+    Signing(String),
+    /// Error thrown when a transaction is dropped from the mempool
+    #[error("transaction dropped from mempool")]
+    TxDropped,
+    /// Error thrown when a transaction can't be found
+    #[error("transaction not found: {0}")]
+    TxNotFound(String),
+    /// Error thrown when getting a transaction fails
+    #[error("transaction querying error: {0}")]
+    TxQuerying(String),
 }
 
 impl DarkpoolClientError {
@@ -45,6 +63,18 @@ impl DarkpoolClientError {
     #[allow(clippy::needless_pass_by_value)]
     pub fn contract_interaction<T: ToString>(msg: T) -> Self {
         Self::ContractInteraction(msg.to_string())
+    }
+
+    /// Create a new erc20 error
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn erc20<T: ToString>(msg: T) -> Self {
+        Self::Erc20(msg.to_string())
+    }
+
+    /// Create a new permit2 error
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn permit2<T: ToString>(msg: T) -> Self {
+        Self::Permit2(msg.to_string())
     }
 
     /// Create a new event querying error
@@ -72,56 +102,27 @@ impl DarkpoolClientError {
     }
 }
 
-impl Display for DarkpoolClientError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{self:?}")
-    }
-}
-impl Error for DarkpoolClientError {}
-
 /// The error type returned by the darkpool client configuration interface
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, thiserror::Error)]
 pub enum DarkpoolClientConfigError {
     /// Error thrown when the RPC client fails to initialize
+    #[error("RPC client initialization error: {0}")]
     RpcClientInitialization(String),
     /// Error thrown when a contract address can't be parsed
+    #[error("address parsing error: {0}")]
     AddressParsing(String),
 }
 
-impl Display for DarkpoolClientConfigError {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{self:?}")
-    }
-}
-impl Error for DarkpoolClientConfigError {}
-
-impl From<DarkpoolClientConfigError> for DarkpoolClientError {
-    fn from(e: DarkpoolClientConfigError) -> Self {
-        Self::Config(e)
-    }
-}
-
 /// Errors generated when converting between relayer and smart contract types
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, thiserror::Error)]
 pub enum ConversionError {
     /// Error thrown when a variable-length input
     /// can't be coerced into a fixed-length array
+    #[error("invalid length")]
     InvalidLength,
     /// Error thrown when converting between uint types
+    #[error("invalid uint")]
     InvalidUint,
-}
-
-impl Display for ConversionError {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{self:?}")
-    }
-}
-impl Error for ConversionError {}
-
-impl From<ConversionError> for DarkpoolClientError {
-    fn from(e: ConversionError) -> Self {
-        Self::Conversion(e)
-    }
 }
 
 impl From<SolError> for DarkpoolClientError {

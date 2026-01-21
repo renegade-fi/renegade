@@ -10,9 +10,8 @@ use gossip_api::{
 use libp2p::request_response::ResponseChannel;
 use libp2p_core::Multiaddr;
 use tokio::sync::oneshot::{Receiver as OneshotReceiver, Sender as OneshotSender};
-use types_gossip::{ConnectionRole, WrappedPeerId};
+use types_gossip::WrappedPeerId;
 use util::channels::{TracedTokioReceiver, TracedTokioSender, new_traced_tokio_channel};
-use uuid::Uuid;
 
 use crate::new_response_channel;
 
