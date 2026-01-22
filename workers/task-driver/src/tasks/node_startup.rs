@@ -274,6 +274,10 @@ impl Task for NodeStartupTask {
     fn name(&self) -> String {
         NODE_STARTUP_TASK_NAME.to_string()
     }
+
+    fn requires_refresh_on_failure(&self) -> bool {
+        false
+    }
 }
 
 impl Descriptor for NodeStartupTaskDescriptor {

@@ -66,6 +66,10 @@ pub trait Task: Send + Sized {
     async fn cleanup(&mut self) -> Result<(), Self::Error> {
         Ok(())
     }
+    /// Whether or not the task requires a refresh on failure
+    fn requires_refresh_on_failure(&self) -> bool {
+        true
+    }
 }
 
 /// A descriptor for a task, from which the task is constructable

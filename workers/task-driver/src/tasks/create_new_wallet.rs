@@ -249,6 +249,10 @@ impl Task for NewWalletTask {
     fn name(&self) -> String {
         NEW_WALLET_TASK_NAME.to_string()
     }
+
+    fn requires_refresh_on_failure(&self) -> bool {
+        false
+    }
 }
 
 impl Descriptor for NewWalletTaskDescriptor {}
