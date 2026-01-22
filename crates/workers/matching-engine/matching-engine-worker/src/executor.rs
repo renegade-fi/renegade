@@ -12,7 +12,6 @@ use price_state::PriceStreamStates;
 use state::State;
 use system_bus::SystemBus;
 use tracing::{Instrument, error, info, info_span, instrument};
-use types_account::{account::OrderId, pair::Pair};
 use types_runtime::CancelChannel;
 use util::{DefaultOption, channels::TracedMessage, concurrency::runtime::sleep_forever_async};
 
@@ -122,35 +121,13 @@ impl MatchingEngineExecutor {
             // An order has been updated, the executor should run the internal engine on the
             // new order to check for matches
             MatchingEngineWorkerJob::InternalMatchingEngine { order } => {
-                todo!()
-                // self.run_internal_matching_engine(order).await
+                self.run_internal_matching_engine(order).await
             },
 
             // A request to run the external matching engine
             MatchingEngineWorkerJob::ExternalMatchingEngine { order, response_topic, options } => {
-                todo!()
-                // self.run_external_matching_engine(order, response_topic,
-                // options).await
+                self.run_external_matching_engine(order, response_topic, options).await
             },
         }
-    }
-
-    // -----------
-    // | Helpers |
-    // -----------
-
-    /// Converts the token pair of the given order to one that price
-    /// data can be found for
-    ///
-    /// This involves both converting the address into an Eth mainnet analog
-    /// and casting this to a `Token`
-    async fn token_pair_for_order(&self, order_id: &OrderId) -> Result<Pair, MatchingEngineError> {
-        let order = self
-            .state
-            .get_account_order(order_id)
-            .await?
-            .ok_or_else(|| MatchingEngineError::state(format!("order_id: {order_id:?}")))?;
-
-        Ok(order.pair())
     }
 }

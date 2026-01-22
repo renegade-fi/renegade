@@ -100,7 +100,8 @@ async fn main() -> Result<(), CoordinatorError> {
     let system_clock = SystemClock::new().await;
     let (network_sender, network_receiver) = new_network_manager_queue();
     let (gossip_worker_sender, gossip_worker_receiver) = new_gossip_server_queue();
-    let (handshake_worker_sender, handshake_worker_receiver) = new_matching_engine_worker_queue();
+    let (matching_engine_worker_sender, matching_engine_worker_receiver) =
+        new_matching_engine_worker_queue();
     let (proof_generation_worker_sender, proof_generation_worker_receiver) =
         new_proof_manager_queue();
     let (task_sender, task_receiver) = new_task_driver_queue();
@@ -114,7 +115,7 @@ async fn main() -> Result<(), CoordinatorError> {
         network_sender.clone(),
         matching_engine.clone(),
         task_sender.clone(),
-        handshake_worker_sender.clone(),
+        matching_engine_worker_sender.clone(),
         event_manager_sender.clone(),
         system_bus.clone(),
         &system_clock,
@@ -280,7 +281,7 @@ async fn main() -> Result<(), CoordinatorError> {
         state: global_state.clone(),
         matching_engine: matching_engine.clone(),
         price_streams: price_streams.clone(),
-        job_receiver: Some(handshake_worker_receiver),
+        job_receiver: Some(matching_engine_worker_receiver),
         task_queue: task_sender.clone(),
         system_bus: system_bus.clone(),
         cancel_channel: handshake_cancel_receiver,
@@ -324,7 +325,7 @@ async fn main() -> Result<(), CoordinatorError> {
         system_bus,
         price_streams: price_streams.clone(),
         proof_generation_work_queue: proof_generation_worker_sender,
-        handshake_manager_work_queue: handshake_worker_sender,
+        matching_engine_worker_queue: matching_engine_worker_sender.clone(),
         cancel_channel: api_cancel_receiver,
     })
     .await

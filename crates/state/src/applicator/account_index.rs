@@ -1,5 +1,7 @@
 //! Applicator methods for the account index, separated out for discoverability
 
+use job_types::matching_engine::MatchingEngineWorkerJob;
+use tracing::warn;
 use types_account::{
     account::{Account, OrderId},
     balance::Balance,
@@ -59,6 +61,7 @@ impl StateApplicator {
         // Update the matching engine
         if matchable_amount > 0 {
             self.matching_engine().upsert_order(order, matchable_amount, matching_pool);
+            self.run_matching_engine_on_order(&order.id);
         }
         Ok(ApplicatorReturnType::None)
     }
@@ -129,12 +132,23 @@ impl StateApplicator {
             let matchable_amount = tx.get_order_matchable_amount(&order_id)?.unwrap_or_default();
             if matchable_amount > 0 {
                 engine.upsert_order(&order, matchable_amount, matching_pool);
+                self.run_matching_engine_on_order(&order_id);
             } else {
                 engine.cancel_order(&order, matching_pool);
             }
         }
 
         Ok(ApplicatorReturnType::None)
+    }
+
+    // --- Helpers --- //
+
+    /// Run the matching engine on an order
+    fn run_matching_engine_on_order(&self, id: &OrderId) {
+        let job = MatchingEngineWorkerJob::run_internal_engine(*id);
+        if let Err(e) = self.config.matching_engine_worker_queue.send(job) {
+            warn!("Error enqueuing matching engine job for order {id}: {e}");
+        }
     }
 }
 

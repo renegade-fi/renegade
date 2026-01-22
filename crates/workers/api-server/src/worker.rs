@@ -69,8 +69,8 @@ pub struct ApiServerConfig {
     pub price_streams: PriceStreamStates,
     /// The worker job queue for the ProofGenerationManager
     pub proof_generation_work_queue: ProofManagerQueue,
-    /// The worker job queue for the HandshakeManager
-    pub handshake_manager_work_queue: MatchingEngineWorkerQueue,
+    /// The worker job queue for the MatchingEngineManager
+    pub matching_engine_worker_queue: MatchingEngineWorkerQueue,
     /// The relayer-global state
     pub state: State,
     /// The system pubsub bus that all workers have access to
