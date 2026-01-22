@@ -85,6 +85,11 @@ impl<T: TransactionKind> StateTxn<'_, T> {
 // -----------
 
 impl StateTxn<'_, RW> {
+    /// Remove a wallet from the table
+    pub fn remove_wallet(&self, wallet_id: &WalletIdentifier) -> Result<(), StorageError> {
+        self.inner().delete(WALLETS_TABLE, wallet_id).map(|_| ())
+    }
+
     /// Write a wallet to the table
     pub fn write_wallet(&self, wallet: &Wallet) -> Result<(), StorageError> {
         let nullifier = wallet.get_wallet_nullifier();

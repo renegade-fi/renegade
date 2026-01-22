@@ -9,6 +9,9 @@ use state::State;
 use tokio::task::JoinHandle;
 use tracing::{error, info};
 
+mod remove_quoter_wallet;
+pub(crate) use remove_quoter_wallet::remove_quoter_wallet;
+
 mod remove_phantom_orders;
 pub(crate) use remove_phantom_orders::remove_phantom_orders;
 
@@ -18,6 +21,18 @@ pub(crate) use remove_old_proofs::remove_old_proofs;
 /// Apply all state migrations
 pub(crate) fn run_state_migrations(state: &State) -> Vec<JoinHandle<()>> {
     let mut handles = Vec::new();
+
+    // Remove the quoter wallet
+    let state_clone = state.clone();
+    let handle = tokio::task::spawn(async move {
+        info!("removing quoter wallet...");
+        if let Err(e) = remove_quoter_wallet(&state_clone).await {
+            error!("error removing quoter wallet: {e}");
+        } else {
+            info!("done removing quoter wallet");
+        }
+    });
+    handles.push(handle);
 
     // Remove phantom orders in the order book
     let state_clone = state.clone();

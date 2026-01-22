@@ -36,7 +36,7 @@ alloy = { workspace = true }
 darkpool-client = { workspace = true }
 circuits = { workspace = true }
 circuit-types = { workspace = true }
-common = { workspace = true }
+common = { workspace = true, features = ["wallet"] }
 constants = { workspace = true }
 external-api = { workspace = true }
 gossip-api = { workspace = true }
