@@ -69,6 +69,7 @@ impl MatchingEngineExecutor {
         user_order: OrderId,
         match_result: SuccessfulMatch,
     ) -> Result<(), MatchingEngineError> {
+        println!("Found match for {user_order}: {match_result:?}");
         todo!("Add settlement task")
     }
 

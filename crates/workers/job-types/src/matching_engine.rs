@@ -52,6 +52,11 @@ pub enum MatchingEngineWorkerJob {
 }
 
 impl MatchingEngineWorkerJob {
+    /// Run the internal matching engine on a given order
+    pub fn run_internal_engine(order: OrderId) -> Self {
+        Self::InternalMatchingEngine { order }
+    }
+
     /// Get a quote for an external order
     pub fn get_external_quote(order: Order) -> (Self, String) {
         let opt = ExternalMatchingEngineOptions::only_quote();

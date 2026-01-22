@@ -16,6 +16,7 @@ use types_account::OrderId;
 use types_core::TimestampedPriceFp;
 
 /// A successful match between two orders
+#[derive(Debug)]
 pub struct SuccessfulMatch {
     /// The ID of the other order that matched
     pub other_order_id: OrderId,

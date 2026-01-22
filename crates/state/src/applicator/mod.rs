@@ -55,7 +55,7 @@ pub struct StateApplicatorConfig {
     /// A sender to the task driver's work queue
     pub task_queue: TaskDriverQueue,
     /// The handshake manager's work queue
-    pub handshake_manager_queue: MatchingEngineWorkerQueue,
+    pub matching_engine_worker_queue: MatchingEngineWorkerQueue,
     /// The event manager's work queue
     pub event_queue: EventManagerQueue,
     /// The matching engine
@@ -174,7 +174,7 @@ pub mod test_helpers {
 
     /// Create a mock `StateApplicator` with the given task queue
     pub(crate) fn mock_applicator_with_task_queue(task_queue: TaskDriverQueue) -> StateApplicator {
-        let (handshake_manager_queue, _recv) = new_matching_engine_worker_queue();
+        let (matching_engine_worker_queue, _recv) = new_matching_engine_worker_queue();
         mem::forget(_recv);
 
         let (event_queue, _recv) = new_event_manager_queue();
@@ -185,7 +185,7 @@ pub mod test_helpers {
             task_queue,
             matching_engine: MatchingEngine::new(),
             db: Arc::new(mock_db()),
-            handshake_manager_queue,
+            matching_engine_worker_queue,
             event_queue,
             system_bus: SystemBus::new(),
             cluster_id: ClusterId::from_str("test-cluster").unwrap(),

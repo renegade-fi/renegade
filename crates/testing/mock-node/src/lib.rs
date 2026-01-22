@@ -96,7 +96,7 @@ pub struct MockNodeController {
     /// The price streams
     price_streams: PriceStreamStates,
     /// The system bus
-    bus: SystemBus<SystemBusMessage>,
+    bus: SystemBus,
     /// The system clock
     clock: SystemClock,
     /// The global state (if initialized)
@@ -110,7 +110,8 @@ pub struct MockNodeController {
     /// The gossip message queue
     gossip_queue: (GossipServerQueue, DefaultOption<GossipServerReceiver>),
     /// The handshake manager's queue
-    handshake_queue: (MatchingEngineWorkerQueue, DefaultOption<MatchingEngineWorkerReceiver>),
+    matching_engine_worker_queue:
+        (MatchingEngineWorkerQueue, DefaultOption<MatchingEngineWorkerReceiver>),
     /// The proof generation queue
     proof_queue: (ProofManagerQueue, DefaultOption<ProofManagerReceiver>),
     /// The event manager queue
@@ -127,7 +128,8 @@ impl MockNodeController {
         let clock = run_fut(SystemClock::new());
         let (network_sender, network_recv) = new_network_manager_queue();
         let (gossip_sender, gossip_recv) = new_gossip_server_queue();
-        let (handshake_send, handshake_recv) = new_matching_engine_worker_queue();
+        let (matching_engine_worker_send, matching_engine_worker_recv) =
+            new_matching_engine_worker_queue();
         let (proof_gen_sender, proof_gen_recv) = new_proof_manager_queue();
         let (event_sender, event_recv) = new_event_manager_queue();
         let (task_sender, task_recv) = new_task_driver_queue();
@@ -146,7 +148,10 @@ impl MockNodeController {
             state: None,
             network_queue: (network_sender, default_option(network_recv)),
             gossip_queue: (gossip_sender, default_option(gossip_recv)),
-            handshake_queue: (handshake_send, default_option(handshake_recv)),
+            matching_engine_worker_queue: (
+                matching_engine_worker_send,
+                default_option(matching_engine_worker_recv),
+            ),
             proof_queue: (proof_gen_sender, default_option(proof_gen_recv)),
             event_queue: (event_sender, default_option(event_recv)),
             task_queue: (task_sender, default_option(task_recv)),
@@ -329,7 +334,7 @@ impl MockNodeController {
         // Create a global state instance
         let network_queue = self.network_queue.0.clone();
         let task_sender = self.task_queue.0.clone();
-        let handshake_queue = self.handshake_queue.0.clone();
+        let matching_engine_worker_queue = self.handshake_queue.0.clone();
         let event_queue = self.event_queue.0.clone();
         let bus = self.bus.clone();
         let clock = self.clock.clone();
@@ -341,7 +346,7 @@ impl MockNodeController {
             network_queue,
             matching_engine,
             task_sender,
-            handshake_queue,
+            matching_engine_worker_queue,
             event_queue,
             bus,
             &clock,
