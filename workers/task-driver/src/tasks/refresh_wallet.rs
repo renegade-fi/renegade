@@ -200,6 +200,10 @@ impl Task for RefreshWalletTask {
     fn state(&self) -> Self::State {
         self.task_state.clone()
     }
+
+    fn requires_refresh_on_failure(&self) -> bool {
+        false
+    }
 }
 
 impl Descriptor for RefreshWalletTaskDescriptor {}

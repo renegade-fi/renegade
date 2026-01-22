@@ -139,7 +139,7 @@ impl<T: Task> RunnableTask<T> {
         // code paths will clear task queues in the case of a failure.
         let failed_past_commit = !success && self.state().committed();
         should_refresh = should_refresh || failed_past_commit;
-        if should_refresh {
+        if should_refresh && self.task.requires_refresh_on_failure() {
             for wallet_id in affected_wallets {
                 let task_id = self.state.append_wallet_refresh_task(wallet_id).await?;
                 info!("enqueued wallet refresh task ({task_id}) for {wallet_id}");
