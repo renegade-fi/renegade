@@ -34,6 +34,11 @@ impl<T: Task> RunnableTask<T> {
         Self { task_id, task, state }
     }
 
+    /// Get the inner task
+    pub fn inner(&self) -> &T {
+        &self.task
+    }
+
     /// Create a runnable from the given descriptor and context
     pub async fn from_descriptor(
         id: TaskIdentifier,
@@ -124,27 +129,10 @@ impl<T: Task> RunnableTask<T> {
 
         // Pop the task from the state, unless this task bypasses the task queue
         // Do not propagate this error; otherwise we may skip the account refresh step
-        let mut should_refresh = false;
         if !self.bypass_task_queue()
             && let Err(e) = self.pop_task_or_clear_queue(success, &affected_accounts).await
         {
             error!("error popping task: {e}");
-            should_refresh = true;
-        }
-
-        // If the task failed at/after its commit point, we enqueue an account refresh
-        // task for the affected accounts to ensure they are in sync w/ the
-        // onchain state.
-        //
-        // Note: it's important to do this after popping / resuming above, as those
-        // code paths will clear task queues in the case of a failure.
-        let failed_past_commit = !success && self.state().committed();
-        should_refresh = should_refresh || failed_past_commit;
-        if should_refresh {
-            for account_id in affected_accounts {
-                let task_id = self.state.append_account_refresh_task(account_id).await?;
-                info!("enqueued account refresh task ({task_id}) for {account_id}");
-            }
         }
 
         Ok(())
@@ -165,7 +153,7 @@ impl<T: Task> RunnableTask<T> {
             return Ok(());
         }
 
-        // Failing through the match implies we should clear the task queues
+        // Failing through the above code path implies we should clear the task queues
         for account_id in affected_accounts {
             let clear_res = self.state.clear_task_queue(account_id).await?.await;
             res = clear_res.and(res);

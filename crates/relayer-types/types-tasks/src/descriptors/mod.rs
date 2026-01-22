@@ -7,12 +7,14 @@ mod create_order;
 mod deposit;
 mod new_account;
 mod node_startup;
+mod settle_internal_match;
 
 pub use create_balance::*;
 pub use create_order::*;
 pub use deposit::*;
 pub use new_account::*;
 pub use node_startup::*;
+pub use settle_internal_match::*;
 
 #[cfg(feature = "rkyv")]
 use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize, with::Skip};
@@ -141,6 +143,8 @@ pub enum TaskDescriptor {
     CreateBalance(CreateBalanceTaskDescriptor),
     /// The task descriptor for the `CreateOrder` task
     CreateOrder(CreateOrderTaskDescriptor),
+    /// The task descriptor for the `SettleInternalMatch` task
+    SettleInternalMatch(SettleInternalMatchTaskDescriptor),
 }
 
 impl TaskDescriptor {
@@ -152,6 +156,7 @@ impl TaskDescriptor {
             TaskDescriptor::Deposit(task) => task.account_id,
             TaskDescriptor::CreateBalance(task) => task.account_id,
             TaskDescriptor::CreateOrder(task) => task.account_id,
+            TaskDescriptor::SettleInternalMatch(task) => task.account_id,
         }
     }
 
@@ -163,17 +168,21 @@ impl TaskDescriptor {
             TaskDescriptor::Deposit(task) => vec![task.account_id],
             TaskDescriptor::CreateBalance(task) => vec![task.account_id],
             TaskDescriptor::CreateOrder(task) => vec![task.account_id],
+            TaskDescriptor::SettleInternalMatch(task) => {
+                vec![task.account_id, task.other_account_id]
+            },
         }
     }
 
     /// Returns whether the task is a wallet task
-    pub fn is_wallet_task(&self) -> bool {
+    pub fn is_account_task(&self) -> bool {
         match self {
             TaskDescriptor::NewAccount(_) => true,
             TaskDescriptor::NodeStartup(_) => false,
             TaskDescriptor::Deposit(_) => true,
             TaskDescriptor::CreateBalance(_) => true,
             TaskDescriptor::CreateOrder(_) => true,
+            TaskDescriptor::SettleInternalMatch(_) => true,
         }
     }
 
@@ -185,6 +194,7 @@ impl TaskDescriptor {
             TaskDescriptor::Deposit(_) => "Deposit".to_string(),
             TaskDescriptor::CreateBalance(_) => "Create Balance".to_string(),
             TaskDescriptor::CreateOrder(_) => "Create Order".to_string(),
+            TaskDescriptor::SettleInternalMatch(_) => "Settle Internal Match".to_string(),
         }
     }
 }

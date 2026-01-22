@@ -3,6 +3,8 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use circuit_types::fixed_point::FixedPoint;
+#[cfg(feature = "rkyv")]
+use darkpool_types::rkyv_remotes::FixedPointDef;
 use serde::{Deserialize, Serialize};
 
 use crate::exchange::PriceReport;
@@ -62,8 +64,11 @@ impl From<&PriceReport> for TimestampedPrice {
 
 /// A price along with the time it was sampled represented as a fixed point
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "rkyv", derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize))]
+#[cfg_attr(feature = "rkyv", rkyv(derive(Debug)))]
 pub struct TimestampedPriceFp {
     /// The price
+    #[cfg_attr(feature = "rkyv", rkyv(with = FixedPointDef))]
     pub price: FixedPoint,
     /// The time the price was sampled, in milliseconds since the epoch
     pub timestamp: u64,

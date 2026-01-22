@@ -182,6 +182,7 @@ async fn main() -> Result<(), CoordinatorError> {
         network_sender.clone(),
         proof_generation_worker_sender.clone(),
         event_manager_sender.clone(),
+        matching_engine_worker_sender.clone(),
         system_bus.clone(),
         global_state.clone(),
     );

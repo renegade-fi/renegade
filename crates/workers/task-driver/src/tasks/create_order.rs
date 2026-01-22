@@ -29,6 +29,7 @@ use types_core::AccountId;
 use types_tasks::CreateOrderTaskDescriptor;
 
 use crate::{
+    hooks::{RefreshAccountHook, RunMatchingEngineHook, TaskHook},
     task_state::TaskStateWrapper,
     traits::{Descriptor, Task, TaskContext, TaskError, TaskState},
     utils::get_relayer_fee_addr,
@@ -220,6 +221,18 @@ impl Task for CreateOrderTask {
 
     fn task_state(&self) -> Self::State {
         self.task_state.clone()
+    }
+
+    // Refresh the account after a failure
+    fn failure_hooks(&self) -> Vec<Box<dyn TaskHook>> {
+        let refresh = RefreshAccountHook::new(vec![self.account_id]);
+        vec![Box::new(refresh)]
+    }
+
+    // Run the matching engine on the order after a successful creation
+    fn success_hooks(&self) -> Vec<Box<dyn TaskHook>> {
+        let run_matching_engine = RunMatchingEngineHook::new(vec![self.order_id]);
+        vec![Box::new(run_matching_engine)]
     }
 }
 

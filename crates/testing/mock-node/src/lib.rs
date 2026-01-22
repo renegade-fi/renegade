@@ -378,6 +378,7 @@ impl MockNodeController {
             network_queue,
             proof_queue,
             event_queue,
+            self.matching_engine_worker_queue.0.clone(),
             bus,
             state,
         );

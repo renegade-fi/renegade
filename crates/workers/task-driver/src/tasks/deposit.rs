@@ -15,11 +15,11 @@ use renegade_solidity_abi::v2::IDarkpoolV2::DepositAuth;
 use serde::Serialize;
 use state::error::StateError;
 use tracing::{info, instrument};
-use types_account::keychain::KeyChain;
 use types_core::AccountId;
 use types_tasks::DepositTaskDescriptor;
 
 use crate::{
+    hooks::{RefreshAccountHook, RunMatchingEngineForBalanceHook, TaskHook},
     task_state::TaskStateWrapper,
     traits::{Descriptor, Task, TaskContext, TaskError, TaskState},
     utils::enqueue_proof_job,
@@ -209,6 +209,16 @@ impl Task for DepositTask {
 
     fn task_state(&self) -> Self::State {
         self.task_state.clone()
+    }
+
+    fn failure_hooks(&self) -> Vec<Box<dyn TaskHook>> {
+        let refresh = RefreshAccountHook::new(vec![self.account_id]);
+        vec![Box::new(refresh)]
+    }
+
+    fn success_hooks(&self) -> Vec<Box<dyn TaskHook>> {
+        let run_matching = RunMatchingEngineForBalanceHook::new(self.account_id, self.token);
+        vec![Box::new(run_matching)]
     }
 }
 

@@ -9,7 +9,7 @@ use crate::{
     tasks::{
         create_balance::CreateBalanceTaskState, create_new_account::CreateNewAccountTaskState,
         create_order::CreateOrderTaskState, deposit::DepositTaskState,
-        node_startup::NodeStartupTaskState,
+        node_startup::NodeStartupTaskState, settle_internal_match::SettleInternalMatchTaskState,
     },
     traits::TaskState,
 };
@@ -33,6 +33,8 @@ pub enum TaskStateWrapper {
     CreateBalance(CreateBalanceTaskState),
     /// The state of a create order task
     CreateOrder(CreateOrderTaskState),
+    /// The state of a settle internal match task
+    SettleInternalMatch(SettleInternalMatchTaskState),
 }
 
 impl TaskStateWrapper {
@@ -52,6 +54,9 @@ impl TaskStateWrapper {
             TaskStateWrapper::CreateOrder(state) => {
                 <CreateOrderTaskState as TaskState>::committed(state)
             },
+            TaskStateWrapper::SettleInternalMatch(state) => {
+                <SettleInternalMatchTaskState as TaskState>::committed(state)
+            },
         }
     }
 
@@ -68,6 +73,9 @@ impl TaskStateWrapper {
                 *state == CreateBalanceTaskState::commit_point()
             },
             TaskStateWrapper::CreateOrder(state) => *state == CreateOrderTaskState::commit_point(),
+            TaskStateWrapper::SettleInternalMatch(state) => {
+                *state == SettleInternalMatchTaskState::commit_point()
+            },
         }
     }
 
@@ -87,6 +95,9 @@ impl TaskStateWrapper {
             TaskStateWrapper::CreateOrder(state) => {
                 <CreateOrderTaskState as TaskState>::completed(state)
             },
+            TaskStateWrapper::SettleInternalMatch(state) => {
+                <SettleInternalMatchTaskState as TaskState>::completed(state)
+            },
         }
     }
 }
@@ -99,6 +110,7 @@ impl Display for TaskStateWrapper {
             TaskStateWrapper::Deposit(state) => write!(f, "{state}"),
             TaskStateWrapper::CreateBalance(state) => write!(f, "{state}"),
             TaskStateWrapper::CreateOrder(state) => write!(f, "{state}"),
+            TaskStateWrapper::SettleInternalMatch(state) => write!(f, "{state}"),
         }
     }
 }

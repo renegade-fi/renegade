@@ -11,6 +11,9 @@ use circuit_types::{Amount, traits::BaseType};
 use constants::Scalar;
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "rkyv")]
+use crate::rkyv_remotes::AddressDef;
+
 #[cfg(feature = "proof-system-types")]
 use {
     circuit_types::traits::{
@@ -28,10 +31,14 @@ use {
 #[cfg_attr(feature = "proof-system-types", circuit_type(serde, singleprover_circuit, secret_share))]
 #[cfg_attr(not(feature = "proof-system-types"), circuit_type(serde))]
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "rkyv", derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize))]
+#[cfg_attr(feature = "rkyv", rkyv(derive(Debug)))]
 pub struct SettlementObligation {
     /// The input token address
+    #[cfg_attr(feature = "rkyv", rkyv(with = AddressDef))]
     pub input_token: Address,
     /// The output token address
+    #[cfg_attr(feature = "rkyv", rkyv(with = AddressDef))]
     pub output_token: Address,
     /// The amount of the input token to trade
     pub amount_in: Amount,
@@ -41,6 +48,8 @@ pub struct SettlementObligation {
 
 /// A match result is a pair of settlement obligations; one for each party
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "rkyv", derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize))]
+#[cfg_attr(feature = "rkyv", rkyv(derive(Debug)))]
 pub struct MatchResult {
     /// The settlement obligation for the first party
     pub party0_obligation: SettlementObligation,
