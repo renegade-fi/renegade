@@ -6,6 +6,7 @@ use async_trait::async_trait;
 use darkpool_client::DarkpoolClient;
 use job_types::{
     event_manager::EventManagerQueue,
+    matching_engine::MatchingEngineWorkerQueue,
     network_manager::NetworkManagerQueue,
     proof_manager::ProofManagerQueue,
     task_driver::{TaskDriverQueue, TaskDriverReceiver},
@@ -42,6 +43,8 @@ pub struct TaskDriverConfig {
     pub proof_queue: ProofManagerQueue,
     /// A sender to the event manager's work queue
     pub event_queue: EventManagerQueue,
+    /// A sender to the matching engine worker's work queue
+    pub matching_engine_queue: MatchingEngineWorkerQueue,
     /// The system bus to publish task updates onto
     pub system_bus: SystemBus,
     /// A handle on the global state
@@ -58,6 +61,7 @@ impl TaskDriverConfig {
         network_queue: NetworkManagerQueue,
         proof_queue: ProofManagerQueue,
         event_queue: EventManagerQueue,
+        matching_engine_queue: MatchingEngineWorkerQueue,
         system_bus: SystemBus,
         state: State,
     ) -> Self {
@@ -69,6 +73,7 @@ impl TaskDriverConfig {
             network_queue,
             proof_queue,
             event_queue,
+            matching_engine_queue,
             system_bus,
             state,
         }

@@ -25,6 +25,7 @@ use types_proofs::ValidBalanceCreateBundle;
 use types_tasks::CreateBalanceTaskDescriptor;
 
 use crate::{
+    hooks::{RefreshAccountHook, RunMatchingEngineForBalanceHook, TaskHook},
     task_state::TaskStateWrapper,
     traits::{Descriptor, Task, TaskContext, TaskError, TaskState},
     utils::{enqueue_proof_job, get_relayer_fee_addr},
@@ -210,6 +211,16 @@ impl Task for CreateBalanceTask {
 
     fn task_state(&self) -> Self::State {
         self.task_state.clone()
+    }
+
+    fn failure_hooks(&self) -> Vec<Box<dyn TaskHook>> {
+        let refresh = RefreshAccountHook::new(vec![self.account_id]);
+        vec![Box::new(refresh)]
+    }
+
+    fn success_hooks(&self) -> Vec<Box<dyn TaskHook>> {
+        let run_matching = RunMatchingEngineForBalanceHook::new(self.account_id, self.token);
+        vec![Box::new(run_matching)]
     }
 }
 

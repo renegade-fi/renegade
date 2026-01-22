@@ -5,6 +5,7 @@ use matching_engine_core::SuccessfulMatch;
 use tracing::{error, info, instrument};
 use types_account::{MatchingPoolName, OrderId, order::Order};
 use types_core::AccountId;
+use types_tasks::{SettleInternalMatchTaskDescriptor, TaskDescriptor};
 
 use crate::{error::MatchingEngineError, executor::MatchingEngineExecutor};
 
@@ -69,8 +70,26 @@ impl MatchingEngineExecutor {
         user_order: OrderId,
         match_result: SuccessfulMatch,
     ) -> Result<(), MatchingEngineError> {
-        println!("Found match for {user_order}: {match_result:?}");
-        todo!("Add settlement task")
+        info!("Found match for {user_order}: {match_result:?}");
+
+        // Lookup account IDs for both orders
+        let account_id = self.get_account_id_for_order(&user_order).await?;
+        let other_account_id = self.get_account_id_for_order(&match_result.other_order_id).await?;
+
+        // Create the settlement task descriptor
+        let descriptor = SettleInternalMatchTaskDescriptor {
+            account_id,
+            other_account_id,
+            order_id: user_order,
+            other_order_id: match_result.other_order_id,
+            execution_price: match_result.price,
+            match_result: match_result.match_result,
+        };
+
+        // Enqueue the task as a preemptive task through raft
+        self.forward_queued_task(TaskDescriptor::from(descriptor)).await?;
+
+        Ok(())
     }
 
     // -----------

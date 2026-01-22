@@ -5,14 +5,15 @@ use std::fmt::{Debug, Display};
 use async_trait::async_trait;
 use darkpool_client::DarkpoolClient;
 use job_types::{
-    event_manager::EventManagerQueue, network_manager::NetworkManagerQueue,
-    proof_manager::ProofManagerQueue, task_driver::TaskDriverQueue,
+    event_manager::EventManagerQueue, matching_engine::MatchingEngineWorkerQueue,
+    network_manager::NetworkManagerQueue, proof_manager::ProofManagerQueue,
+    task_driver::TaskDriverQueue,
 };
 use serde::{Deserialize, Serialize};
 use state::State;
 use system_bus::SystemBus;
 
-use crate::task_state::TaskStateWrapper;
+use crate::{hooks::TaskHook, task_state::TaskStateWrapper};
 
 // ------------------
 // | Task and State |
@@ -44,6 +45,9 @@ pub trait Task: Send + Sized {
     /// A constructor for the task that takes a descriptor and a set of
     /// dependency injections
     async fn new(descriptor: Self::Descriptor, ctx: TaskContext) -> Result<Self, Self::Error>;
+
+    // --- Task State --- //
+
     /// Get the current state of the task
     fn task_state(&self) -> Self::State;
     /// Whether or not the task is completed
@@ -59,11 +63,25 @@ pub trait Task: Send + Sized {
     fn bypass_task_queue(&self) -> bool {
         false
     }
+
+    // --- Task Execution --- //
+
     /// Take a step in the task, steps should represent largely async behavior
     async fn step(&mut self) -> Result<(), Self::Error>;
     /// A cleanup step that is run in the event of a task failure
     async fn cleanup(&mut self) -> Result<(), Self::Error> {
         Ok(())
+    }
+
+    // --- Hooks --- //
+
+    /// The hooks to run if the task succeeds
+    fn success_hooks(&self) -> Vec<Box<dyn TaskHook>> {
+        vec![]
+    }
+    /// The hooks to run if the task fails
+    fn failure_hooks(&self) -> Vec<Box<dyn TaskHook>> {
+        vec![]
     }
 }
 
@@ -120,6 +138,8 @@ pub struct TaskContext {
     pub proof_queue: ProofManagerQueue,
     /// A sender to the event manager's queue
     pub event_queue: EventManagerQueue,
+    /// A sender to the matching engine worker's queue
+    pub matching_engine_queue: MatchingEngineWorkerQueue,
     /// A sender back to the task driver's queue
     pub task_queue: TaskDriverQueue,
     /// A handle on the system bus

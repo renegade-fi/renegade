@@ -103,6 +103,7 @@ impl HistoricalTaskDescription {
                 token: desc.token,
                 amount: desc.amount,
             }),
+            TaskDescriptor::SettleInternalMatch(_) => None,
             TaskDescriptor::NodeStartup(_) => None,
         }
     }

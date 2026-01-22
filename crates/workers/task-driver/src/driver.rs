@@ -20,6 +20,7 @@ use crate::{
     tasks::{
         create_balance::CreateBalanceTask, create_new_account::CreateNewAccountTask,
         create_order::CreateOrderTask, deposit::DepositTask, node_startup::NodeStartupTask,
+        settle_internal_match::SettleInternalMatchTask,
     },
     traits::{Descriptor as _, Task, TaskContext},
     worker::TaskDriverConfig,
@@ -96,6 +97,7 @@ impl TaskExecutor {
             network_queue: config.network_queue,
             proof_queue: config.proof_queue,
             event_queue: config.event_queue,
+            matching_engine_queue: config.matching_engine_queue,
             task_queue: config.task_queue_sender,
             state: config.state,
             bus: config.system_bus.clone(),
@@ -231,6 +233,9 @@ impl TaskExecutor {
             TaskDescriptor::CreateOrder(desc) => {
                 self.start_task_helper::<CreateOrderTask>(id, desc, affected_accounts).await
             },
+            TaskDescriptor::SettleInternalMatch(desc) => {
+                self.start_task_helper::<SettleInternalMatchTask>(id, desc, affected_accounts).await
+            },
         };
 
         // Notify any listeners that the task has completed
@@ -275,7 +280,12 @@ impl TaskExecutor {
 
         // Cleanup
         let cleanup_res = task.cleanup(res.is_ok(), affected_accounts).await;
-        res.and(cleanup_res)
+
+        // Run the success/failure hooks
+        let post_task_res = self.run_post_task_hooks(task.inner(), res.is_ok()).await;
+
+        // Chain the results of the steps
+        res.and(cleanup_res).and(post_task_res)
     }
 
     /// Run a task to completion
@@ -309,5 +319,25 @@ impl TaskExecutor {
         }
 
         if task.completed() { Ok(()) } else { Err(TaskDriverError::TaskFailed) }
+    }
+
+    /// Run the success/failure hooks for a task
+    async fn run_post_task_hooks<T: Task>(
+        &self,
+        task: &T,
+        success: bool,
+    ) -> Result<(), TaskDriverError> {
+        let hooks = if success { task.success_hooks() } else { task.failure_hooks() };
+
+        // Run the hooks
+        let ctx = self.task_context();
+        for hook in hooks {
+            if let Err(e) = hook.run(&ctx).await {
+                let description = hook.description();
+                error!("error running hook {description}: {e:?}");
+            }
+        }
+
+        Ok(())
     }
 }

@@ -16,10 +16,4 @@ pub mod create_balance;
 pub mod create_new_account;
 pub mod create_order;
 pub mod deposit;
-
-// ------------------
-// | Error Messages |
-// ------------------
-
-/// Error message emitted when an account cannot be found
-pub(crate) const ERR_ACCOUNT_NOT_FOUND: &str = "account not found";
+pub mod settle_internal_match;

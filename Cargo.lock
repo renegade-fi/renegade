@@ -9989,6 +9989,7 @@ dependencies = [
  "bimap",
  "circuit-types",
  "constants",
+ "darkpool-types",
  "hmac",
  "num-bigint",
  "rand 0.8.5",

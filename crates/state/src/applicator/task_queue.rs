@@ -286,8 +286,8 @@ impl StateApplicator {
         let this_node = tx.get_peer_id()?;
         let queue_empty = !tx.serial_tasks_active(queue_key)?;
         let is_executor = *executor == this_node;
-        let is_wallet_task = popped_task.descriptor.is_wallet_task();
-        Ok(queue_empty && is_executor && is_wallet_task)
+        let is_account_task = popped_task.descriptor.is_account_task();
+        Ok(queue_empty && is_executor && is_account_task)
     }
 
     /// Run the internal matching engine on all of an account's orders that are
