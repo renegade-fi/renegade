@@ -464,10 +464,23 @@ impl RelayerConfig {
     }
 }
 
+#[cfg(any(test, feature = "mocks"))]
 impl Default for RelayerConfig {
     fn default() -> Self {
+        // Set the default addresses for the config
+        let zero_addr = "0x0000000000000000000000000000000000000000".to_string();
+        let args_string = [
+            "relayer".to_string(),
+            "--contract-address".to_string(),
+            zero_addr.clone(),
+            "--relayer-fee-addr".to_string(),
+            zero_addr.clone(),
+            "--permit2-address".to_string(),
+            zero_addr.clone(),
+        ];
+
         // Parse a dummy set of command line args and convert this to a config
-        let cli = Cli::parse_from(Vec::<String>::new());
+        let cli = Cli::parse_from(args_string);
         parse_config_from_args(cli).expect("default config does not parse")
     }
 }

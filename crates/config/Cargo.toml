@@ -6,6 +6,7 @@ edition = "2024"
 [features]
 default = []
 silent = []
+mocks = []
 
 [dependencies]
 # === Networking === #

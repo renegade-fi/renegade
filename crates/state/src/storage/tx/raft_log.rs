@@ -28,8 +28,6 @@ pub const SNAPSHOT_METADATA_KEY: &str = "snapshot-metadata";
 
 /// The error message used when a log entry cannot be found
 const ERR_LOG_NOT_FOUND: &str = "Log entry not found";
-/// Error message when a last log cannot be found
-const ERR_NO_LAST_LOG: &str = "No last log found";
 
 // -----------
 // | Helpers |
@@ -118,7 +116,6 @@ impl<T: TransactionKind> StateTxn<'_, T> {
     pub fn last_raft_log(&self) -> Result<Option<(u64, EntryValue<'_>)>, StorageError> {
         let mut cursor = self.logs_cursor()?;
         cursor.seek_last()?;
-
         let (k, v) = res_some!(cursor.get_current()?);
         let parsed_key = parse_lsn(&k);
         Ok(Some((parsed_key, v)))
@@ -182,19 +179,25 @@ impl StateTxn<'_, RW> {
         Ok(())
     }
 
-    /// Truncate logs in the DB, deleting those beyond the given index
-    /// (inclusive)
+    /// Truncate logs in the DB, deleting those at or beyond the given index
     pub fn truncate_logs(&self, index: u64) -> Result<(), StorageError> {
-        // Fetch the upper bound
-        let idx_lsn = lsn_to_key(index);
-        let last_log =
-            self.last_raft_log_index()?.ok_or_else(|| StorageError::not_found(ERR_NO_LAST_LOG))?;
-
-        // Delete the logs
         let mut log_cursor = self.logs_cursor()?;
-        log_cursor.seek(&idx_lsn)?;
-        for _ in index..=last_log {
-            log_cursor.delete()?;
+
+        // Seek to the first entry >= index, return early if nothing to truncate
+        if !log_cursor.seek(&lsn_to_key(index))? {
+            return Ok(());
+        }
+
+        // Delete all entries from current position to end
+        // Deleting the last entry in a table will cause the cursor to wrap around, so
+        // we have to check for that in the delete loop.
+        loop {
+            match log_cursor.get_current()? {
+                Some((key, _)) if parse_lsn(&key) >= index => {
+                    log_cursor.delete()?;
+                },
+                _ => break,
+            }
         }
 
         Ok(())

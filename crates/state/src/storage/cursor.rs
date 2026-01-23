@@ -7,7 +7,8 @@
 use std::borrow::Cow;
 use std::marker::PhantomData;
 
-use libmdbx::{Cursor, RW, TransactionKind, WriteFlags};
+use libmdbx::{Cursor, Error as MdbxError, RW, TransactionKind, WriteFlags};
+use util::res_some;
 
 use crate::storage::{ArchivedValue, error::StorageError};
 
@@ -65,17 +66,11 @@ impl<'txn, Tx: TransactionKind, K: Key, V: Value> DbCursor<'txn, Tx, K, V> {
 
     /// Get the key/value at the current position
     pub fn get_current(&mut self) -> Result<Option<Self::ArchivedKV>, StorageError> {
-        let res =
-            self.inner.get_current::<Self::TxBytes, Self::TxBytes>().map_err(StorageError::TxOp)?;
+        let (k_buf, v_buf) = res_some!(self.get_current_raw()?);
+        let k_val = ArchivedValue::<'txn, K>::new(k_buf);
+        let v_val = ArchivedValue::<'txn, V>::new(v_buf);
 
-        match res {
-            None => Ok(None),
-            Some((k_buf, v_buf)) => {
-                let k_val = ArchivedValue::<'txn, K>::new(k_buf);
-                let v_val = ArchivedValue::<'txn, V>::new(v_buf);
-                Ok(Some((k_val, v_val)))
-            },
-        }
+        Ok(Some((k_val, v_val)))
     }
 
     /// Get the key/value at the current position, checking prefix if set
@@ -83,14 +78,7 @@ impl<'txn, Tx: TransactionKind, K: Key, V: Value> DbCursor<'txn, Tx, K, V> {
     /// Returns `None` if the current key doesn't match the prefix, signaling
     /// end of iteration for prefix-filtered cursors
     fn get_current_checked(&mut self) -> Result<Option<Self::ArchivedKV>, StorageError> {
-        let (k_buf, v_buf) = match self
-            .inner
-            .get_current::<Self::TxBytes, Self::TxBytes>()
-            .map_err(StorageError::TxOp)?
-        {
-            Some(kv) => kv,
-            None => return Ok(None),
-        };
+        let (k_buf, v_buf) = res_some!(self.get_current_raw()?);
 
         // Check prefix on raw bytes
         if let Some(ref prefix) = self.key_prefix
@@ -109,36 +97,56 @@ impl<'txn, Tx: TransactionKind, K: Key, V: Value> DbCursor<'txn, Tx, K, V> {
     pub fn get_current_raw(
         &mut self,
     ) -> Result<Option<(Self::TxBytes, Self::TxBytes)>, StorageError> {
-        self.inner.get_current::<Self::TxBytes, Self::TxBytes>().map_err(StorageError::TxOp)
+        match self.inner.get_current::<Self::TxBytes, Self::TxBytes>() {
+            Ok(res) => Ok(res),
+            Err(MdbxError::NoData | MdbxError::NotFound) => Ok(None),
+            Err(e) => Err(StorageError::TxOp(e)),
+        }
     }
 
     /// Position the cursor at the next keypair
     ///
     /// Returns `true` if the cursor has reached the end of the table
     pub fn seek_next_raw(&mut self) -> Result<bool, StorageError> {
-        Ok(self.inner.next::<Self::TxBytes, Self::TxBytes>().map_err(StorageError::TxOp)?.is_none())
+        match self.inner.next::<Self::TxBytes, Self::TxBytes>() {
+            Ok(Some(_)) => Ok(false),
+            Ok(None) => Ok(true),
+            Err(MdbxError::NoData | MdbxError::NotFound) => Ok(true),
+            Err(e) => Err(StorageError::TxOp(e)),
+        }
     }
 
     /// Seek to the first key in the table
     pub fn seek_first(&mut self) -> Result<(), StorageError> {
-        self.inner.first::<Self::TxBytes, Self::TxBytes>().map_err(StorageError::TxOp).map(|_| ())
+        match self.inner.first::<Self::TxBytes, Self::TxBytes>() {
+            Ok(_) => Ok(()),
+            Err(MdbxError::NoData | MdbxError::NotFound) => Ok(()),
+            Err(e) => Err(StorageError::TxOp(e)),
+        }
     }
 
     /// Seek to the last key in the table
     pub fn seek_last(&mut self) -> Result<(), StorageError> {
-        self.inner.last::<Self::TxBytes, Self::TxBytes>().map_err(StorageError::TxOp).map(|_| ())
+        match self.inner.last::<Self::TxBytes, Self::TxBytes>() {
+            Ok(_) => Ok(()),
+            Err(MdbxError::NoData | MdbxError::NotFound) => Ok(()),
+            Err(e) => Err(StorageError::TxOp(e)),
+        }
     }
 
-    /// Position the cursor at a specific key
+    /// Position the cursor at the first key >= the given key
     ///
-    /// Note that if the key is not present, the cursor is positioned at an
-    /// empty value
-    pub fn seek(&mut self, k: &K) -> Result<(), StorageError> {
+    /// Uses `set_range` to find the first key that is greater than or equal
+    /// to the given key. Returns true if a matching key was found, false
+    /// otherwise.
+    pub fn seek(&mut self, k: &K) -> Result<bool, StorageError> {
         let k_bytes = k.rkyv_serialize()?;
-        self.inner
-            .set_key::<Self::TxBytes, Self::TxBytes>(&k_bytes)
-            .map_err(StorageError::TxOp)
-            .map(|_| ())
+        match self.inner.set_range::<Self::TxBytes, Self::TxBytes>(&k_bytes) {
+            Ok(Some(_)) => Ok(true),
+            Ok(None) => Ok(false),
+            Err(MdbxError::NoData | MdbxError::NotFound) => Ok(false),
+            Err(e) => Err(StorageError::TxOp(e)),
+        }
     }
 }
 
@@ -157,6 +165,9 @@ impl<K: Key, V: Value> DbCursor<'_, RW, K, V> {
     }
 
     /// Delete the current key/value pair
+    ///
+    /// WARNING: In newer versions of libmdbx, deleting the last entry in a
+    /// table will cause the cursor to wrap around to the first entry.
     pub fn delete(&mut self) -> Result<(), StorageError> {
         self.inner.del(WriteFlags::default()).map_err(StorageError::TxOp)
     }

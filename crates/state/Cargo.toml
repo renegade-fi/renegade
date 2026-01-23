@@ -32,7 +32,7 @@ openraft = { version = "=0.9.13", features = ["serde", "storage-v2"] }
 # === Storage === #
 ciborium = "0.2"
 flate2 = "1.0"
-libmdbx = "0.3"
+libmdbx = { workspace = true }
 
 # === Messaging + Concurrency === #
 crossbeam = { workspace = true }
@@ -96,4 +96,4 @@ types-tasks = { workspace = true, features = ["mocks", "rkyv"] }
 tokio-stream = "0.1"
 
 # Silence config warnings for testing
-config = { workspace = true, features = ["silent"] }
+config = { workspace = true, features = ["silent", "mocks"] }
