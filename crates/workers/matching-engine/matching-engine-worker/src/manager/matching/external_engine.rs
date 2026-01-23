@@ -11,11 +11,11 @@ use std::ops::RangeInclusive;
 
 use circuit_types::{Amount, fixed_point::FixedPoint};
 use crypto::fields::scalar_to_u128;
-use types_core::MatchResult;
 use job_types::matching_engine::ExternalMatchingEngineOptions;
 use system_bus::SystemBusMessage;
 use tracing::{info, instrument};
 use types_account::{account::OrderId, order::Order};
+use types_core::MatchResult;
 
 use crate::{error::MatchingEngineError, executor::MatchingEngineExecutor};
 use matching_engine_core::SuccessfulMatch;
