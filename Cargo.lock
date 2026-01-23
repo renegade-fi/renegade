@@ -5236,8 +5236,7 @@ checksum = "f9fbbcab51052fe104eb5e5d351cf728d30a5be1fe14d9be8a3b097481fb97de"
 [[package]]
 name = "libmdbx"
 version = "0.6.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "feb30bf682079714db3fd0cd9724d56d94b2e829f3395e0bd1c774f2f379d040"
+source = "git+https://github.com/renegade-fi/libmdbx-rs#bc6f7ea401fb3f0f50e854f68ee6f26c3be51a09"
 dependencies = [
  "bitflags 2.10.0",
  "derive_more 2.1.1",
@@ -5245,6 +5244,7 @@ dependencies = [
  "libc",
  "mdbx-sys",
  "parking_lot 0.12.5",
+ "rand 0.9.2",
  "sealed",
  "thiserror 2.0.18",
 ]
@@ -5833,8 +5833,7 @@ dependencies = [
 [[package]]
 name = "mdbx-sys"
 version = "13.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d050c7e6bfa5f9e64a9c60bcdee469ede30d84707cafeff67b52c1c168a2132c"
+source = "git+https://github.com/renegade-fi/libmdbx-rs#bc6f7ea401fb3f0f50e854f68ee6f26c3be51a09"
 dependencies = [
  "bindgen",
  "cc",

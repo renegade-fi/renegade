@@ -32,7 +32,7 @@ openraft = { version = "=0.9.13", features = ["serde", "storage-v2"] }
 # === Storage === #
 ciborium = "0.2"
 flate2 = "1.0"
-libmdbx = "0.6.5"
+libmdbx = { workspace = true }
 
 # === Messaging + Concurrency === #
 crossbeam = { workspace = true }

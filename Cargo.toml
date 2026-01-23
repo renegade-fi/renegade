@@ -75,6 +75,9 @@ dashmap = "6.1"
 futures = "0.3"
 tokio = { version = "1" }
 
+# === Database === #
+libmdbx = { git = "https://github.com/renegade-fi/libmdbx-rs" }
+
 # === Ethereum Libraries === #
 alloy = "1.0.1"
 alloy-contract = "1.0.1"
