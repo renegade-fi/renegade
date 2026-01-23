@@ -15,7 +15,9 @@ use async_trait::async_trait;
 use circuit_types::Nullifier;
 use circuit_types::{elgamal::EncryptionKey, fixed_point::FixedPoint, merkle::MerkleRoot};
 use constants::Scalar;
-use renegade_solidity_abi::v2::IDarkpoolV2::{self, DepositAuth};
+use renegade_solidity_abi::v2::IDarkpoolV2::{
+    self, DepositAuth, ObligationBundle, SettlementBundle,
+};
 use tracing::info;
 use types_proofs::{
     IntentOnlyBoundedSettlementBundle, OrderValidityProofBundle, ValidBalanceCreateBundle,
@@ -107,6 +109,14 @@ pub trait DarkpoolImpl: Clone {
         &self,
         auth: DepositAuth,
         proof_bundle: ValidDepositBundle,
+    ) -> Result<TransactionReceipt, DarkpoolClientError>;
+
+    /// Settle a match
+    async fn settle_match(
+        &self,
+        obligation_bundle: ObligationBundle,
+        settlement_bundle0: SettlementBundle,
+        settlement_bundle1: SettlementBundle,
     ) -> Result<TransactionReceipt, DarkpoolClientError>;
 
     // ----------------

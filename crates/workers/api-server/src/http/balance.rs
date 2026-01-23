@@ -155,7 +155,7 @@ impl TypedHandler for DepositBalanceHandler {
         let has_balance = account.has_balance(&token);
 
         if !has_balance {
-            let fee_addr = self.state.get_relayer_fee_addr().map_err(internal_error)?.unwrap();
+            let fee_addr = self.state.get_relayer_fee_addr().map_err(internal_error)?;
             account.create_balance(token, from_address, fee_addr, authority);
         } else {
             account.deposit_balance(token, amount).map_err(bad_request)?;

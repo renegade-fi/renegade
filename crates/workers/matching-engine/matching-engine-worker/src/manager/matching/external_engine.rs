@@ -11,7 +11,7 @@ use std::ops::RangeInclusive;
 
 use circuit_types::{Amount, fixed_point::FixedPoint};
 use crypto::fields::scalar_to_u128;
-use darkpool_types::settlement_obligation::MatchResult;
+use types_core::MatchResult;
 use job_types::matching_engine::ExternalMatchingEngineOptions;
 use system_bus::SystemBusMessage;
 use tracing::{info, instrument};

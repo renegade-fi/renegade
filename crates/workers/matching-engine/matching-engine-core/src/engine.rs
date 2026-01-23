@@ -4,7 +4,8 @@ use std::{ops::RangeInclusive, sync::Arc};
 
 use circuit_types::{Amount, fixed_point::FixedPoint};
 use crypto::fields::scalar_to_u128;
-use darkpool_types::settlement_obligation::{MatchResult, SettlementObligation};
+use darkpool_types::settlement_obligation::SettlementObligation;
+use types_core::MatchResult;
 use dashmap::DashMap;
 use types_account::{MatchingPoolName, order::Order, pair::Pair};
 use types_core::TimestampedPriceFp;

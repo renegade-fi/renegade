@@ -202,14 +202,13 @@ async fn setup_state(mock_node: &MockNodeController) -> Result<()> {
 fn build_relayer_config() -> RelayerConfig {
     let raft_snapshot_path = tmp_db_path();
     let db_path = tmp_db_path();
-    let relayer_fee_addr = address_to_biguint(&Address::ZERO).unwrap();
     let admin_api_key = HmacKey::random();
     let rpc_url = "https://dummy-rpc-url.com".to_string();
     RelayerConfig {
         admin_api_key: Some(admin_api_key),
         raft_snapshot_path,
         db_path,
-        relayer_fee_addr: Some(relayer_fee_addr),
+        relayer_fee_addr: Address::ZERO,
         rpc_url: Some(rpc_url),
         ..Default::default()
     }

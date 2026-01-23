@@ -390,7 +390,7 @@ impl SettleMalleableExternalMatchTask {
     )> {
         let match_res = &self.match_res;
         let commitments_witness = &self.internal_order_validity_witness.commitment_witness;
-        let relayer_fee_address = self.ctx.state.get_relayer_fee_addr()?.unwrap();
+        let relayer_fee_address = self.ctx.state.get_relayer_fee_addr()?;
 
         // Copy values from the witnesses and statements of the order validity proofs
         let internal_party_order = commitments_witness.order.clone();

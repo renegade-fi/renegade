@@ -10,7 +10,7 @@ pub(crate) mod engine;
 use std::ops::RangeInclusive;
 
 use circuit_types::Amount;
-use darkpool_types::settlement_obligation::MatchResult;
+use types_core::MatchResult;
 pub use engine::MatchingEngine;
 use types_account::OrderId;
 use types_core::TimestampedPriceFp;

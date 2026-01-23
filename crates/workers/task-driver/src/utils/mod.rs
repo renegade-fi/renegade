@@ -29,10 +29,7 @@ const ERR_RELAYER_FEE_ADDR_NOT_CONFIGURED: &str = "relayer fee address not confi
 ///
 /// Returns an error if the relayer fee address is not configured
 pub(crate) fn get_relayer_fee_addr(ctx: &TaskContext) -> Result<Address, String> {
-    ctx.state
-        .get_relayer_fee_addr()
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| ERR_RELAYER_FEE_ADDR_NOT_CONFIGURED.to_string())
+    ctx.state.get_relayer_fee_addr().map_err(|e| e.to_string())
 }
 
 /// Enqueue a job with the proof manager

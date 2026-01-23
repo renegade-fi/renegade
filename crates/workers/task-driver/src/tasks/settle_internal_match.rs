@@ -2,23 +2,43 @@
 
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
+use alloy::signers::local::PrivateKeySigner;
+use ark_mpc::{PARTY0, PARTY1, network::PartyId};
 use async_trait::async_trait;
-use darkpool_types::settlement_obligation::MatchResult;
+use darkpool_client::errors::DarkpoolClientError;
+use renegade_solidity_abi::v2::IDarkpoolV2::{
+    self, FeeRate, ObligationBundle, PublicIntentAuthBundle, PublicIntentPermit, SettlementBundle,
+    SignatureWithNonce, SignedPermitSingle,
+};
 use serde::Serialize;
 use state::error::StateError;
 use tracing::{info, instrument};
-use types_account::OrderId;
+use types_account::{OrderId, order::Order, order_auth::OrderAuth};
+use types_core::MatchResult;
 use types_core::{AccountId, TimestampedPriceFp};
 use types_tasks::SettleInternalMatchTaskDescriptor;
+use util::on_chain::get_chain_id;
 
+use crate::hooks::RunMatchingEngineHook;
 use crate::{
-    hooks::{RefreshAccountHook, RunMatchingEngineHook, TaskHook},
+    hooks::{RefreshAccountHook, TaskHook},
     task_state::TaskStateWrapper,
     traits::{Descriptor, Task, TaskContext, TaskError, TaskState},
 };
 
 /// The task name for the settle internal match task
 const SETTLE_INTERNAL_MATCH_TASK_NAME: &str = "settle-internal-match";
+
+/// A helper to branch on party ID
+macro_rules! branch_party {
+    ($party_id:expr, $expr0:expr, $expr1:expr) => {
+        match $party_id {
+            0 => $expr0,
+            1 => $expr1,
+            _ => unreachable!("invalid party ID: {}", $party_id),
+        }
+    };
+}
 
 // --------------
 // | Task State |
@@ -68,9 +88,48 @@ impl From<SettleInternalMatchTaskState> for TaskStateWrapper {
 /// The error type thrown by the settle internal match task
 #[derive(Clone, Debug, thiserror::Error)]
 pub enum SettleInternalMatchTaskError {
+    /// A darkpool client error
+    #[error("darkpool client error: {0}")]
+    Darkpool(String),
+    /// A signing error
+    #[error("signing error: {0}")]
+    Signing(String),
     /// Error interacting with global state
     #[error("state error: {0}")]
     State(String),
+    /// A miscellaneous error
+    #[error("error: {0}")]
+    Misc(String),
+}
+
+impl SettleInternalMatchTaskError {
+    /// Create a signing error
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn signing<T: ToString>(e: T) -> Self {
+        Self::Signing(e.to_string())
+    }
+
+    /// Create a state error
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn state<T: ToString>(e: T) -> Self {
+        Self::State(e.to_string())
+    }
+
+    /// Create a miscellaneous error
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn misc<T: ToString>(e: T) -> Self {
+        Self::Misc(e.to_string())
+    }
+
+    /// Create an order not found error
+    pub fn order_not_found(order_id: OrderId) -> Self {
+        Self::State(format!("Order not found: {order_id}"))
+    }
+
+    /// Create an order auth not found error
+    pub fn order_auth_not_found(order_id: OrderId) -> Self {
+        Self::State(format!("Order auth not found: {order_id}"))
+    }
 }
 
 impl TaskError for SettleInternalMatchTaskError {
@@ -82,6 +141,12 @@ impl TaskError for SettleInternalMatchTaskError {
 impl From<StateError> for SettleInternalMatchTaskError {
     fn from(e: StateError) -> Self {
         SettleInternalMatchTaskError::State(e.to_string())
+    }
+}
+
+impl From<DarkpoolClientError> for SettleInternalMatchTaskError {
+    fn from(e: DarkpoolClientError) -> Self {
+        SettleInternalMatchTaskError::Darkpool(e.to_string())
     }
 }
 
@@ -182,8 +247,130 @@ impl Descriptor for SettleInternalMatchTaskDescriptor {}
 impl SettleInternalMatchTask {
     /// Submit the transaction to the contract
     async fn submit_tx(&self) -> Result<()> {
-        info!("Got to settlement task");
-        info!("Submitting transaction to the contract");
+        let obligation_bundle = self.create_obligation_bundle();
+        let settlement_bundle0 = self.build_settlement_bundle(PARTY0).await?;
+        let settlement_bundle1 = self.build_settlement_bundle(PARTY1).await?;
+
+        // Submit the transaction
+        let tx = self
+            .ctx
+            .darkpool_client
+            .settle_match(obligation_bundle, settlement_bundle0, settlement_bundle1)
+            .await?;
+
+        info!("Settled match with tx hash: {}", tx.transaction_hash);
         Ok(())
+    }
+}
+
+// -----------
+// | Helpers |
+// -----------
+
+impl SettleInternalMatchTask {
+    // === Bundle Creation === //
+
+    /// Create an obligation bundle for the match
+    fn create_obligation_bundle(&self) -> ObligationBundle {
+        let obligation1 = self.match_result.party0_obligation.clone();
+        let obligation2 = self.match_result.party1_obligation.clone();
+        ObligationBundle::new_public(obligation1.into(), obligation2.into())
+    }
+
+    /// Build the first party's settlement bundle
+    async fn build_settlement_bundle(&self, party_id: PartyId) -> Result<SettlementBundle> {
+        let relayer_fee = self.relayer_fee().await?;
+        let order = self.get_order(party_id).await?;
+
+        // Get signatures from the executor and user
+        let executor = self.get_executor_key().await?;
+        let executor_sig = self.build_executor_signature(party_id, &relayer_fee).await?;
+        let user_sig = self.get_intent_signature(party_id).await?;
+
+        // Build the intent permit
+        let intent_permit = PublicIntentPermit {
+            intent: order.intent().clone().into(),
+            executor: executor.address(),
+        };
+
+        // Build the auth and settlement bundle
+        let auth_bundle = PublicIntentAuthBundle {
+            intentPermit: intent_permit,
+            intentSignature: user_sig,
+            executorSignature: executor_sig,
+            allowancePermit: SignedPermitSingle::default(),
+        };
+        Ok(SettlementBundle::public_intent_settlement(auth_bundle, relayer_fee))
+    }
+
+    /// Build an executor signature for the match
+    async fn build_executor_signature(
+        &self,
+        party_id: PartyId,
+        fee: &FeeRate,
+    ) -> Result<SignatureWithNonce> {
+        let obligation = branch_party!(
+            party_id,
+            &self.match_result.party0_obligation,
+            &self.match_result.party1_obligation
+        );
+        let contract_obligation = IDarkpoolV2::SettlementObligation::from(obligation.clone());
+
+        let chain_id = get_chain_id();
+        let signer = self.get_executor_key().await?;
+        let sig = contract_obligation
+            .create_executor_signature(fee, chain_id, &signer)
+            .map_err(SettleInternalMatchTaskError::signing)?;
+
+        Ok(sig)
+    }
+
+    // === State Access === //
+
+    /// Get the order for an order ID
+    async fn get_order(&self, party_id: PartyId) -> Result<Order> {
+        let order_id = branch_party!(party_id, self.order_id, self.other_order_id);
+        self.ctx
+            .state
+            .get_account_order(&order_id)
+            .await?
+            .ok_or_else(|| SettleInternalMatchTaskError::order_not_found(order_id))
+    }
+
+    /// Get the order authorization for an order ID
+    async fn get_intent_signature(&self, party_id: PartyId) -> Result<SignatureWithNonce> {
+        let order_id = branch_party!(party_id, self.order_id, self.other_order_id);
+        let auth = self
+            .ctx
+            .state
+            .get_order_auth(&order_id)
+            .await?
+            .ok_or_else(|| SettleInternalMatchTaskError::order_auth_not_found(order_id))?;
+
+        let sig = match auth {
+            OrderAuth::PublicOrder { intent_signature } => intent_signature,
+            _ => {
+                return Err(SettleInternalMatchTaskError::state(format!(
+                    "invalid order auth type for party {party_id}"
+                )));
+            },
+        };
+        Ok(sig)
+    }
+
+    /// Get the executor key to sign the match
+    async fn get_executor_key(&self) -> Result<PrivateKeySigner> {
+        self.ctx.state.get_executor_key().map_err(SettleInternalMatchTaskError::from)
+    }
+
+    /// Get the relayer fee for the match
+    async fn relayer_fee(&self) -> Result<FeeRate> {
+        let base = self.match_result.base_token();
+        let ticker = self.ctx.darkpool_client.get_erc20_ticker(base.get_alloy_address()).await?;
+
+        let rate = self.ctx.state.get_relayer_fee(&ticker)?;
+        let recipient = self.ctx.state.get_relayer_fee_addr()?;
+
+        Ok(FeeRate { rate: rate.into(), recipient })
     }
 }

@@ -14,7 +14,7 @@ use crypto::fields::{scalar_to_u256, u256_to_scalar};
 use renegade_solidity_abi::v2::IDarkpoolV2::{
     self, DepositAuth, DepositProofBundle, IDarkpoolV2Instance,
     MerkleInsertion as AbiMerkleInsertion, MerkleOpeningNode as AbiMerkleOpeningNode,
-    NullifierSpent as AbiNullifierSpent,
+    NullifierSpent as AbiNullifierSpent, ObligationBundle, SettlementBundle,
 };
 use types_core::Token;
 use types_proofs::{
@@ -184,6 +184,18 @@ impl DarkpoolImpl for SolidityDarkpool {
             proof,
         };
         let tx = self.darkpool().deposit(auth, calldata_bundle);
+
+        self.send_tx(tx).await
+    }
+
+    async fn settle_match(
+        &self,
+        obligation_bundle: ObligationBundle,
+        settlement_bundle0: SettlementBundle,
+        settlement_bundle1: SettlementBundle,
+    ) -> Result<TransactionReceipt, DarkpoolClientError> {
+        let tx =
+            self.darkpool().settleMatch(obligation_bundle, settlement_bundle0, settlement_bundle1);
 
         self.send_tx(tx).await
     }
