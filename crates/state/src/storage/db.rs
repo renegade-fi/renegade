@@ -4,9 +4,9 @@
 //! `flatbuffers`): https://flatbuffers.dev/flexbuffers.html
 #![allow(mismatched_lifetime_syntaxes)]
 
-use std::{ops::Bound, path::Path};
+use std::path::Path;
 
-use libmdbx::{Database, Geometry, RO, RW, WriteMap};
+use libmdbx::{Database, DatabaseOptions, RO, RW, WriteMap};
 use tracing::instrument;
 
 use crate::{
@@ -18,9 +18,6 @@ use super::{
     error::StorageError,
     tx::{DbTxn, StateTxn},
 };
-
-/// The total maximum size of the DB in bytes
-const MAX_DB_SIZE_BYTES: usize = 1 << 36; // 64 GB
 
 // ------------
 // | Database |
@@ -54,17 +51,11 @@ pub struct DB {
 impl DB {
     /// Constructor
     pub fn new(config: &DbConfig) -> Result<Self, StorageError> {
-        let db_path = Path::new(&config.path);
-        let db_geom = Geometry {
-            size: Some((Bound::Unbounded, Bound::Included(MAX_DB_SIZE_BYTES))),
-            ..Default::default()
-        };
+        let cfg =
+            DatabaseOptions { max_tables: Some(config.num_tables as u64), ..Default::default() };
 
-        let db = Database::new()
-            .set_max_tables(config.num_tables)
-            .set_geometry(db_geom)
-            .open(db_path)
-            .map_err(StorageError::OpenDb)?;
+        let db_path = Path::new(&config.path);
+        let db = Database::open_with_options(db_path, cfg).map_err(StorageError::OpenDb)?;
 
         Ok(Self { path: config.path.clone(), db })
     }

@@ -112,9 +112,12 @@ impl RaftLogReader<TypeConfig> for LogStore {
         self.with_read_tx(move |tx| {
             let mut log_cursor = tx.logs_cursor()?;
 
-            // Read the range
+            // Read the range - seek returns false if no key >= low exists
             let mut res = Vec::new();
-            log_cursor.seek(&lsn_to_key(low))?;
+            if !log_cursor.seek(&lsn_to_key(low))? {
+                return Ok(res);
+            }
+
             for record in log_cursor.into_iter() {
                 let (key, entry) = record?;
                 let index = parse_lsn(&key);
