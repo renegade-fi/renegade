@@ -85,6 +85,16 @@ impl StateInner {
         .await
     }
 
+    /// Get the order authorization for a given order ID
+    pub async fn get_order_auth(&self, id: &OrderId) -> Result<Option<OrderAuth>, StateError> {
+        let id = *id;
+        self.with_read_tx(move |tx| {
+            let auth = res_some!(tx.get_order_auth(&id)?).deserialize()?;
+            Ok(Some(auth))
+        })
+        .await
+    }
+
     /// Get the order for a given order ID and the balance that capitalizes it
     pub async fn get_account_order_and_matchable_amount(
         &self,

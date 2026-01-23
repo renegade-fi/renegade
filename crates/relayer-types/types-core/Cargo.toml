@@ -6,7 +6,7 @@ edition = "2024"
 [features]
 default = []
 hmac = []
-rkyv = ["dep:rkyv", "dep:darkpool-types", "darkpool-types/rkyv"]
+rkyv = ["dep:rkyv", "darkpool-types/rkyv"]
 
 [dependencies]
 # === Core Dependencies === #
@@ -19,7 +19,7 @@ uuid = { version = "1.1.2", features = ["v4", "serde"] }
 # === Workspace Dependencies === #
 circuit-types = { workspace = true }
 constants = { workspace = true, default-features = false }
-darkpool-types = { workspace = true, optional = true }
+darkpool-types = { workspace = true }
 util = { workspace = true, features = ["hex-core", "serde", "concurrency"] }
 
 # === HMAC Dependencies === #

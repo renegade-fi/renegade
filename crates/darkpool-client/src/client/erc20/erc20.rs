@@ -9,6 +9,13 @@ use crate::{
 };
 
 impl<D: DarkpoolImpl> DarkpoolClientInner<D> {
+    /// Get the ticker of a given erc20 token
+    pub async fn get_erc20_ticker(&self, token: Address) -> Result<String, DarkpoolClientError> {
+        let erc20 = self.erc20_client(token);
+        let ticker = erc20.symbol().call().await.map_err(DarkpoolClientError::erc20)?;
+        Ok(ticker)
+    }
+
     /// Get the erc20 balance of a given address
     pub async fn get_erc20_balance(
         &self,

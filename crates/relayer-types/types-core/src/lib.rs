@@ -13,6 +13,7 @@ mod chain;
 mod exchange;
 #[cfg(feature = "hmac")]
 mod hmac;
+mod match_result;
 mod price;
 mod token;
 
@@ -20,6 +21,7 @@ pub use chain::*;
 pub use exchange::*;
 #[cfg(feature = "hmac")]
 pub use hmac::*;
+pub use match_result::*;
 pub use price::*;
 pub use token::*;
 

@@ -88,7 +88,7 @@ pub struct Cli {
     /// 
     /// This is the address at which the relayer collects match fees.
     #[clap(long, value_parser, env = "RELAYER_FEE_ADDR")]
-    pub relayer_fee_addr: Option<String>,
+    pub relayer_fee_addr: String,
 
     // -----------------------
     // | Environment Configs |
@@ -291,7 +291,7 @@ pub struct RelayerConfig {
     /// The address at which the relayer collects match fees
     ///
     /// This is the address at which the relayer collects match fees.
-    pub relayer_fee_addr: Option<Address>,
+    pub relayer_fee_addr: Address,
 
     // ---------------------
     // | External Services |

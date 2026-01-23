@@ -68,9 +68,8 @@ pub(crate) fn parse_config_from_args(cli_args: Cli) -> Result<RelayerConfig, Str
     let executor_private_key = PrivateKeySigner::from_str(&cli_args.executor_private_key)
         .map_err(|e| format!("Failed to parse executor private key: {e}"))?;
     let fee_key = parse_fee_key(cli_args.fee_encryption_key)?;
-    let relayer_fee_addr = cli_args
-        .relayer_fee_addr
-        .map(|a| address_from_hex_string(&a).expect("could not parse relayer fee address"));
+    let relayer_fee_addr = address_from_hex_string(&cli_args.relayer_fee_addr)
+        .map_err(|e| format!("could not parse relayer fee address: {e}"))?;
     let contract_address = address_from_hex_string(&cli_args.contract_address)
         .map_err(|e| format!("could not parse contract address: {e}"))?;
     let permit2_address = address_from_hex_string(&cli_args.permit2_address)

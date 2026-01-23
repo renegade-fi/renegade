@@ -6,7 +6,7 @@ use alloy::{primitives::Address, rpc::types::TransactionReceipt};
 use circuit_types::Nullifier;
 use circuit_types::{elgamal::EncryptionKey, fixed_point::FixedPoint, merkle::MerkleRoot};
 use constants::Scalar;
-use renegade_solidity_abi::v2::IDarkpoolV2::DepositAuth;
+use renegade_solidity_abi::v2::IDarkpoolV2::{DepositAuth, ObligationBundle, SettlementBundle};
 use tracing::{info, instrument};
 use types_proofs::{
     IntentOnlyBoundedSettlementBundle, OrderValidityProofBundle, ValidBalanceCreateBundle,
@@ -110,6 +110,25 @@ impl<D: DarkpoolImpl> DarkpoolClientInner<D> {
         let tx_hash = format!("{:#x}", receipt.transaction_hash);
         backfill_trace_field("tx_hash", &tx_hash);
         info!("`deposit` tx hash: {}", tx_hash);
+
+        Ok(receipt)
+    }
+
+    /// Settle a match
+    pub async fn settle_match(
+        &self,
+        obligation_bundle: ObligationBundle,
+        settlement_bundle0: SettlementBundle,
+        settlement_bundle1: SettlementBundle,
+    ) -> Result<TransactionReceipt, DarkpoolClientError> {
+        let receipt = self
+            .darkpool
+            .settle_match(obligation_bundle, settlement_bundle0, settlement_bundle1)
+            .await?;
+
+        let tx_hash = format!("{:#x}", receipt.transaction_hash);
+        backfill_trace_field("tx_hash", &tx_hash);
+        info!("`settle_match` tx hash: {}", tx_hash);
 
         Ok(receipt)
     }

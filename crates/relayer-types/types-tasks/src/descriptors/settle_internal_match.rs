@@ -1,7 +1,7 @@
 //! Descriptor for the settle internal match task
 
-use darkpool_types::settlement_obligation::MatchResult;
 use types_account::OrderId;
+use types_core::MatchResult;
 use types_core::{AccountId, TimestampedPriceFp};
 
 use super::TaskDescriptor;

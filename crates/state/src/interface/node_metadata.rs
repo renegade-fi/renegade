@@ -47,7 +47,7 @@ impl StateInner {
     }
 
     /// Get the local relayer's fee address
-    pub fn get_relayer_fee_addr(&self) -> Result<Option<Address>, StateError> {
+    pub fn get_relayer_fee_addr(&self) -> Result<Address, StateError> {
         self.with_blocking_read_tx(|tx| tx.get_relayer_fee_addr().map_err(StateError::Db))
     }
 
@@ -119,9 +119,7 @@ impl StateInner {
             }
 
             tx.set_historical_state_enabled(historical_state_enabled)?;
-            if let Some(addr) = relayer_fee_addr {
-                tx.set_relayer_fee_addr(&addr)?;
-            }
+            tx.set_relayer_fee_addr(&relayer_fee_addr)?;
             tx.set_executor_key(&executor_key)?;
 
             Ok(())

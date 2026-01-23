@@ -107,7 +107,7 @@ fn simulate_create_balance(
     state: &State,
 ) -> Result<(), TaskSimulationError> {
     // CreateBalance creates a new balance, similar to deposit but for a new balance
-    let fee_recipient = state.get_relayer_fee_addr().map_err(TaskSimulationError::state)?.unwrap();
+    let fee_recipient = state.get_relayer_fee_addr().map_err(TaskSimulationError::state)?;
     account.create_balance(desc.token, desc.from_address, fee_recipient, desc.authority);
     Ok(())
 }

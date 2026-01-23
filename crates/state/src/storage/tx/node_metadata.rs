@@ -148,11 +148,11 @@ impl<T: TransactionKind> StateTxn<'_, T> {
     }
 
     /// Get the local relayer's fee address
-    pub fn get_relayer_fee_addr(&self) -> Result<Option<Address>, StorageError> {
+    pub fn get_relayer_fee_addr(&self) -> Result<Address, StorageError> {
         self.inner()
             .read::<_, WithAddress>(NODE_METADATA_TABLE, &RELAYER_FEE_ADDR_KEY.to_string())?
-            .map(|a| a.deserialize_with())
-            .transpose()
+            .ok_or_else(|| err_not_found(RELAYER_FEE_ADDR_KEY))?
+            .deserialize_with()
     }
 
     /// Get the local relayer's historical state enabled flag
