@@ -464,7 +464,6 @@ impl RelayerConfig {
     }
 }
 
-#[cfg(any(test, feature = "mocks"))]
 impl Default for RelayerConfig {
     fn default() -> Self {
         // Set the default addresses for the config

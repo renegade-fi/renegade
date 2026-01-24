@@ -1,26 +1,21 @@
 //! API types for external matches
 
 use alloy::rpc::types::TransactionRequest;
+#[cfg(feature = "full-api")]
+use darkpool_types::settlement_obligation::SettlementObligation;
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "full-api")]
 use types_account::order::Order;
 
-#[cfg(feature = "full-api")]
-use crate::error::ApiTypeError;
+use crate::serde_helpers;
 
 #[cfg(feature = "full-api")]
 use {
-    alloy::primitives::Address,
-    circuit_types::Amount,
-    circuit_types::fixed_point::FixedPoint,
-    constants::Scalar,
-    darkpool_types::bounded_match_result::BoundedMatchResult,
-    darkpool_types::fee::FeeTake,
-    darkpool_types::intent::Intent,
-    std::str::FromStr,
-    types_account::order::OrderMetadata,
+    alloy::primitives::Address, circuit_types::Amount, circuit_types::fixed_point::FixedPoint,
+    constants::Scalar, crypto::fields::scalar_to_u128,
+    darkpool_types::bounded_match_result::BoundedMatchResult, darkpool_types::fee::FeeTake,
+    darkpool_types::intent::Intent, types_account::order::OrderMetadata,
     util::get_current_time_millis,
-    util::hex::{address_from_hex_string, address_to_hex_string},
 };
 
 // ------------------
@@ -31,51 +26,54 @@ use {
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct ExternalOrder {
     /// The input token mint address
-    pub input_mint: String,
+    #[serde(with = "serde_helpers::address_as_string")]
+    pub input_mint: Address,
     /// The output token mint address
-    pub output_mint: String,
+    #[serde(with = "serde_helpers::address_as_string")]
+    pub output_mint: Address,
     /// The input amount
-    pub input_amount: String,
+    #[serde(with = "serde_helpers::amount_as_string")]
+    pub input_amount: Amount,
     /// The output amount
-    pub output_amount: String,
+    #[serde(with = "serde_helpers::amount_as_string")]
+    pub output_amount: Amount,
     /// Whether to use exact output amount
     pub use_exact_output_amount: bool,
     /// The minimum fill size
-    pub min_fill_size: String,
+    #[serde(with = "serde_helpers::amount_as_string")]
+    pub min_fill_size: Amount,
 }
 
 #[cfg(feature = "full-api")]
 impl ExternalOrder {
     /// Parse an intent from the external order
-    pub fn parse_intent(&self) -> Result<Intent, ApiTypeError> {
-        let in_token = address_from_hex_string(&self.input_mint).map_err(ApiTypeError::parsing)?;
-        let out_token =
-            address_from_hex_string(&self.output_mint).map_err(ApiTypeError::parsing)?;
-        let amount_in = Amount::from_str(&self.input_amount).map_err(ApiTypeError::parsing)?;
-
+    pub fn intent(&self) -> Intent {
         // External orders have no owner or min price
         let owner = Address::ZERO;
         let min_price = FixedPoint::zero();
 
-        Ok(Intent { in_token, out_token, owner, min_price, amount_in })
+        Intent {
+            in_token: self.input_mint,
+            out_token: self.output_mint,
+            owner,
+            min_price,
+            amount_in: self.input_amount,
+        }
     }
 
     /// Parse the metadata for the order
-    pub fn parse_order_metadata(&self) -> Result<OrderMetadata, ApiTypeError> {
-        let min_fill = Amount::from_str(&self.min_fill_size).map_err(ApiTypeError::parsing)?;
-        Ok(OrderMetadata { min_fill_size: min_fill, allow_external_matches: true })
+    pub fn order_metadata(&self) -> OrderMetadata {
+        OrderMetadata { min_fill_size: self.min_fill_size, allow_external_matches: true }
     }
 }
 
 #[cfg(feature = "full-api")]
-impl TryFrom<ExternalOrder> for Order {
-    type Error = ApiTypeError;
-
-    fn try_from(order: ExternalOrder) -> Result<Self, Self::Error> {
+impl From<ExternalOrder> for Order {
+    fn from(order: ExternalOrder) -> Self {
         use darkpool_types::intent::DarkpoolStateIntent;
 
-        let intent = order.parse_intent()?;
-        let metadata = order.parse_order_metadata()?;
+        let intent = order.intent();
+        let metadata = order.order_metadata();
 
         // An external order has no share or recovery stream, so we default the seeds
         // for compatibility with the matching engine
@@ -84,7 +82,7 @@ impl TryFrom<ExternalOrder> for Order {
         let state_intent =
             DarkpoolStateIntent::new(intent, share_stream_seed, recovery_stream_seed);
 
-        Ok(Order::new(state_intent, metadata))
+        Order::new(state_intent, metadata)
     }
 }
 
@@ -98,7 +96,8 @@ pub struct ApiSignedQuote {
     /// The quote details
     pub quote: ApiExternalQuote,
     /// The signature over the quote
-    pub signature: String,
+    #[serde(with = "serde_helpers::bytes_as_hex_string")]
+    pub signature: Vec<u8>,
     /// The deadline for the quote
     pub deadline: u64,
 }
@@ -109,7 +108,7 @@ pub struct ApiExternalQuote {
     /// The external order
     pub order: ExternalOrder,
     /// The match result
-    pub match_result: ApiBoundedMatchResult,
+    pub match_result: ApiExternalMatchResult,
     /// The fees for the match
     pub fees: ApiFeeTake,
     /// The amount to send
@@ -126,7 +125,8 @@ pub struct ApiExternalQuote {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ApiTimestampedPrice {
     /// The price as a string
-    pub price: String,
+    #[serde(with = "serde_helpers::f64_as_string")]
+    pub price: f64,
     /// The timestamp in milliseconds
     pub timestamp: u64,
 }
@@ -135,9 +135,8 @@ pub struct ApiTimestampedPrice {
 impl ApiTimestampedPrice {
     /// Constructor
     pub fn new(price: FixedPoint) -> Self {
-        let price_str = price.repr.to_string();
-        let timestamp = get_current_time_millis();
-        Self { price: price_str, timestamp }
+        let price = price.to_f64();
+        Self { price, timestamp: get_current_time_millis() }
     }
 }
 
@@ -145,18 +144,17 @@ impl ApiTimestampedPrice {
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct ApiFeeTake {
     /// The relayer fee amount
-    pub relayer_fee: String,
+    #[serde(with = "serde_helpers::amount_as_string")]
+    pub relayer_fee: Amount,
     /// The protocol fee amount
-    pub protocol_fee: String,
+    #[serde(with = "serde_helpers::amount_as_string")]
+    pub protocol_fee: Amount,
 }
 
 #[cfg(feature = "full-api")]
 impl From<FeeTake> for ApiFeeTake {
     fn from(fee_take: FeeTake) -> Self {
-        Self {
-            relayer_fee: fee_take.relayer_fee.to_string(),
-            protocol_fee: fee_take.protocol_fee.to_string(),
-        }
+        Self { relayer_fee: fee_take.relayer_fee, protocol_fee: fee_take.protocol_fee }
     }
 }
 
@@ -164,16 +162,18 @@ impl From<FeeTake> for ApiFeeTake {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ApiExternalAssetTransfer {
     /// The token mint address
-    pub mint: String,
+    #[serde(with = "serde_helpers::address_as_string")]
+    pub mint: Address,
     /// The amount
-    pub amount: String,
+    #[serde(with = "serde_helpers::amount_as_string")]
+    pub amount: Amount,
 }
 
 #[cfg(feature = "full-api")]
 impl ApiExternalAssetTransfer {
     /// Constructor
     pub fn new(mint: Address, amount: Amount) -> Self {
-        Self { mint: address_to_hex_string(&mint), amount: amount.to_string() }
+        Self { mint, amount }
     }
 }
 
@@ -181,41 +181,77 @@ impl ApiExternalAssetTransfer {
 // | Match Bundle Types |
 // ----------------------
 
+/// An API server external match result
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ApiExternalMatchResult {
+    /// The mint of the input token in the matched asset pair
+    #[serde(with = "serde_helpers::address_as_string")]
+    pub input_mint: Address,
+    /// The mint of the output token in the matched asset pair
+    #[serde(with = "serde_helpers::address_as_string")]
+    pub output_mint: Address,
+    /// The amount of the input token exchanged by the match
+    #[serde(with = "serde_helpers::amount_as_string")]
+    pub input_amount: Amount,
+    /// The amount of the output token exchanged by the match
+    #[serde(with = "serde_helpers::amount_as_string")]
+    pub output_amount: Amount,
+}
+
+#[cfg(feature = "full-api")]
+impl From<SettlementObligation> for ApiExternalMatchResult {
+    fn from(obligation: SettlementObligation) -> Self {
+        Self {
+            input_mint: obligation.input_token,
+            output_mint: obligation.output_token,
+            input_amount: obligation.amount_in,
+            output_amount: obligation.amount_out,
+        }
+    }
+}
+
 /// A bounded match result for malleable matches
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ApiBoundedMatchResult {
     /// The input token mint
-    pub input_mint: String,
+    #[serde(with = "serde_helpers::address_as_string")]
+    pub input_mint: Address,
     /// The output token mint
-    pub output_mint: String,
+    #[serde(with = "serde_helpers::address_as_string")]
+    pub output_mint: Address,
     /// The fixed-point price
-    pub price_fp: String,
-    /// The output quoted price in fixed-point
-    pub output_quoted_price_fp: String,
+    ///
+    /// In units of the external party's output per input token
+    #[serde(with = "serde_helpers::fixed_point_as_string")]
+    pub price_fp: FixedPoint,
     /// The minimum input amount
-    pub min_input_amount: String,
+    #[serde(with = "serde_helpers::amount_as_string")]
+    pub min_input_amount: Amount,
     /// The maximum input amount
-    pub max_input_amount: String,
+    #[serde(with = "serde_helpers::amount_as_string")]
+    pub max_input_amount: Amount,
 }
 
 #[cfg(feature = "full-api")]
 impl From<BoundedMatchResult> for ApiBoundedMatchResult {
     fn from(match_result: BoundedMatchResult) -> Self {
-        // This is the price in units of the external party's output per input token
-        let output_quoted_price = match_result.price.inverse().expect("price is zero");
-
-        // Compute the input bounds by multiplying through the price
+        // The price in the bounded match result is in units of the internal party's
+        // output per input token
         let input_quoted_price = match_result.price;
-        let min_input = input_quoted_price.floor_mul_int(match_result.min_internal_party_amount_in);
-        let max_input = input_quoted_price.floor_mul_int(match_result.max_internal_party_amount_in);
+        let output_quoted_price = input_quoted_price.inverse().expect("price is zero");
+
+        // Compute the input amount bounds
+        let min_input_scalar =
+            match_result.price.floor_mul_int(match_result.min_internal_party_amount_in);
+        let max_input_scalar =
+            match_result.price.floor_mul_int(match_result.max_internal_party_amount_in);
 
         Self {
-            input_mint: address_to_hex_string(&match_result.internal_party_output_token),
-            output_mint: address_to_hex_string(&match_result.internal_party_input_token),
-            price_fp: input_quoted_price.repr.to_string(),
-            output_quoted_price_fp: output_quoted_price.repr.to_string(),
-            min_input_amount: min_input.to_string(),
-            max_input_amount: max_input.to_string(),
+            input_mint: match_result.internal_party_output_token,
+            output_mint: match_result.internal_party_input_token,
+            price_fp: output_quoted_price,
+            min_input_amount: scalar_to_u128(&min_input_scalar),
+            max_input_amount: scalar_to_u128(&max_input_scalar),
         }
     }
 }
@@ -224,9 +260,11 @@ impl From<BoundedMatchResult> for ApiBoundedMatchResult {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FeeTakeRate {
     /// The relayer fee rate
-    pub relayer_fee_rate: String,
+    #[serde(with = "serde_helpers::fixed_point_as_string")]
+    pub relayer_fee_rate: FixedPoint,
     /// The protocol fee rate
-    pub protocol_fee_rate: String,
+    #[serde(with = "serde_helpers::fixed_point_as_string")]
+    pub protocol_fee_rate: FixedPoint,
 }
 
 /// A malleable atomic match bundle

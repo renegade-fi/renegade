@@ -15,7 +15,7 @@ use state::State;
 use system_bus::{SystemBus, SystemBusMessage};
 use types_account::order::Order;
 use types_core::HmacKey;
-use util::{get_current_time_millis, hex::bytes_to_hex_string, on_chain::get_external_match_fee};
+use util::{get_current_time_millis, on_chain::get_external_match_fee};
 
 use crate::error::{ApiServerError, internal_error, no_content};
 
@@ -71,10 +71,8 @@ impl ExternalMatchProcessor {
 
         // Sign the quote
         let quote_bytes = serde_json::to_vec(&quote).map_err(internal_error)?;
-        let sig = self.admin_key.compute_mac(&quote_bytes);
-        let sig_encoded = bytes_to_hex_string(&sig);
-
-        Ok(ApiSignedQuote { quote, signature: sig_encoded, deadline })
+        let signature = self.admin_key.compute_mac(&quote_bytes);
+        Ok(ApiSignedQuote { quote, signature, deadline })
     }
 
     /// Fetch a quote for an external order    
@@ -84,7 +82,7 @@ impl ExternalMatchProcessor {
     ) -> Result<ApiExternalQuote, ApiServerError> {
         // Build the matching engine job
         let options = ExternalMatchingEngineOptions::default().with_only_quote(true);
-        let order = Order::try_from(req.external_order.clone())?;
+        let order = Order::from(req.external_order.clone());
         let (job, topic) = MatchingEngineWorkerJob::new_external_match_job(order.clone(), options);
 
         // Send the job to the matching engine
@@ -109,7 +107,7 @@ impl ExternalMatchProcessor {
 
         Ok(ApiExternalQuote {
             order: req.external_order,
-            match_result: match_res.into(),
+            match_result: obligation.into(),
             fees: fee_take.into(),
             send,
             receive,
