@@ -11,11 +11,11 @@ use std::ops::RangeInclusive;
 
 use circuit_types::{Amount, fixed_point::FixedPoint};
 use crypto::fields::scalar_to_u128;
+use darkpool_types::bounded_match_result::BoundedMatchResult;
 use job_types::matching_engine::ExternalMatchingEngineOptions;
 use system_bus::SystemBusMessage;
 use tracing::{info, instrument};
 use types_account::{account::OrderId, order::Order};
-use types_core::MatchResult;
 
 use crate::{error::MatchingEngineError, executor::MatchingEngineExecutor};
 use matching_engine_core::SuccessfulMatch;
@@ -54,7 +54,7 @@ impl MatchingEngineExecutor {
 
         // Handle a successful match
         if options.only_quote {
-            self.forward_quote(response_topic.clone(), successful_match.match_result);
+            self.forward_quote(response_topic.clone(), successful_match);
             Ok(())
         } else {
             self.try_settle_external_match(order.id, successful_match, response_topic, &options)
@@ -107,9 +107,20 @@ impl MatchingEngineExecutor {
 
     /// Forward a quote to the client
     #[allow(clippy::needless_pass_by_value)]
-    fn forward_quote(&self, response_topic: String, quote: MatchResult) {
+    fn forward_quote(&self, response_topic: String, res: SuccessfulMatch) {
         info!("forwarding quote to client");
-        todo!("Forward quote")
+        // TODO: Setup bounds and block deadline
+        let internal_obligation = res.match_result.party0_obligation();
+        let quote = BoundedMatchResult {
+            internal_party_input_token: internal_obligation.input_token,
+            internal_party_output_token: internal_obligation.output_token,
+            min_internal_party_amount_in: internal_obligation.amount_in,
+            max_internal_party_amount_in: internal_obligation.amount_in,
+            price: res.price.price,
+            block_deadline: 0,
+        };
+        let message = SystemBusMessage::ExternalOrderQuote { quote };
+        self.system_bus.publish(response_topic, message);
     }
 
     /// Send a message on the response topic indicating that no match was found

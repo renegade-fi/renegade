@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 pub mod auth;
 pub mod error;
 pub mod http;
+pub mod serde_helpers;
 pub mod types;
 #[cfg(feature = "websocket")]
 pub mod websocket;
