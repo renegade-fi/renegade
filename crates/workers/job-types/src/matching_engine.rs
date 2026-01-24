@@ -1,7 +1,5 @@
 //! Jobs consumed by the matching engine worker
 
-use std::time::Duration;
-
 use circuit_types::{Amount, fixed_point::FixedPoint};
 use constants::GLOBAL_MATCHING_POOL;
 use system_bus::gen_atomic_match_response_topic;
@@ -67,11 +65,8 @@ impl MatchingEngineWorkerJob {
     pub fn get_external_match_bundle_with_price(
         order: Order,
         price: TimestampedPrice,
-        bundle_duration: Duration,
     ) -> (Self, String) {
-        let opt = ExternalMatchingEngineOptions::new()
-            .with_bundle_duration(bundle_duration)
-            .with_price(price);
+        let opt = ExternalMatchingEngineOptions::new().with_price(price);
         Self::new_external_match_job(order, opt)
     }
 
@@ -97,18 +92,6 @@ pub struct ExternalMatchingEngineOptions {
     /// Whether or not to only generate a quote, without proving validity
     /// for the order's match
     pub only_quote: bool,
-    /// Whether or not to emit a bounded match rather than an exact match
-    ///
-    /// A `BoundedMatchResult` is one in which the exact `base_amount` is not
-    /// known at the time the proof is generated. Rather, the submitting
-    /// party will choose a `base_amount` in between the supplied bounds.
-    ///
-    /// The matching engine, then, must find a match but emit a match result
-    /// that has appropriate (and valid) bounds on the `base_amount`.
-    pub bounded_match: bool,
-    /// The duration for which a match bundle is valid; i.e. for which the task
-    /// driver should lock the matched wallet's queue
-    pub bundle_duration: Duration,
     /// The fee take rate for the relayer in the match
     ///
     /// This only applies to the external party
@@ -119,10 +102,8 @@ pub struct ExternalMatchingEngineOptions {
     /// This is used to fulfill a previously committed-to quote at the
     /// api-layer
     pub price: Option<TimestampedPrice>,
-    /// The exact quote amount to use for a full fill
-    pub exact_quote_amount: Option<Amount>,
-    /// The minimum quote amount to use for a full fill
-    pub min_quote_amount: Option<Amount>,
+    /// The minimum input amount to use for a full fill
+    pub min_input_amount: Option<Amount>,
     /// The matching pool to request a quote from
     ///
     /// If specified, the matching engine will only consider crossing orders in
@@ -148,18 +129,6 @@ impl ExternalMatchingEngineOptions {
         self
     }
 
-    /// Set whether to emit a bounded match
-    pub fn with_bounded_match(mut self, bounded_match: bool) -> Self {
-        self.bounded_match = bounded_match;
-        self
-    }
-
-    /// Set the bundle duration
-    pub fn with_bundle_duration(mut self, duration: Duration) -> Self {
-        self.bundle_duration = duration;
-        self
-    }
-
     /// Set the relayer fee rate
     pub fn with_relayer_fee_rate(mut self, rate: FixedPoint) -> Self {
         self.relayer_fee_rate = rate;
@@ -172,15 +141,9 @@ impl ExternalMatchingEngineOptions {
         self
     }
 
-    /// Set the exact quote amount
-    pub fn with_exact_quote_amount(mut self, amount: Amount) -> Self {
-        self.exact_quote_amount = Some(amount);
-        self
-    }
-
-    /// Set the min quote amount
-    pub fn with_min_quote_amount(mut self, amount: Amount) -> Self {
-        self.min_quote_amount = Some(amount);
+    /// Set the min input amount
+    pub fn with_min_input_amount(mut self, amount: Amount) -> Self {
+        self.min_input_amount = Some(amount);
         self
     }
 

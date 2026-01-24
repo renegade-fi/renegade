@@ -51,7 +51,7 @@ use external_api::{
         task::{GET_TASK_BY_ID_ROUTE, GET_TASKS_ROUTE},
     },
 };
-use external_match::{AssembleMatchBundleHandler, GetExternalMatchQuoteHandler};
+use external_match::handlers::{AssembleMatchBundleHandler, GetExternalMatchQuoteHandler};
 use hyper::{
     Error as HyperError, HeaderMap, Method, Request, body::Incoming as IncomingBody,
     server::conn::http1::Builder as Http1Builder, service::service_fn,
@@ -65,13 +65,13 @@ use order::{
     CancelOrderHandler, CreateOrderHandler, GetOrderByIdHandler, GetOrdersHandler,
     UpdateOrderHandler,
 };
-use state::State;
 use std::{net::SocketAddr, sync::Arc};
 use task::{GetTaskByIdHandler, GetTasksHandler};
 use tokio::net::{TcpListener, TcpStream};
+use types_core::HmacKey;
 use util::get_current_time_millis;
 
-use crate::router::QueryParams;
+use crate::{http::external_match::processor::ExternalMatchProcessor, router::QueryParams};
 
 use super::{
     error::ApiServerError,
@@ -95,16 +95,19 @@ pub(super) struct HttpServer {
 
 impl HttpServer {
     /// Create a new http server
-    pub(super) fn new(config: ApiServerConfig, state: &State) -> Result<Self, ApiServerError> {
+    pub(super) fn new(config: ApiServerConfig) -> Result<Self, ApiServerError> {
         // Build the router, server, and register routes
-        let router = Self::build_router(&config, state)?;
+        let router = Self::build_router(&config)?;
         Ok(Self { router: Arc::new(router), config })
     }
 
     /// Build a router and register routes on it
-    fn build_router(config: &ApiServerConfig, state: &State) -> Result<Router, ApiServerError> {
+    fn build_router(config: &ApiServerConfig) -> Result<Router, ApiServerError> {
         // Build the router and register its routes
-        let mut router = Router::new(config.admin_api_key, state.clone());
+        let mut router = Router::new(config.admin_api_key, config.state.clone());
+        let state = &config.state;
+        let bus = &config.system_bus;
+        let matching_engine_worker_queue = &config.matching_engine_worker_queue;
 
         // --- Misc Routes --- //
 
@@ -226,12 +229,21 @@ impl HttpServer {
         );
 
         // --- External Match Routes (v2) --- //
+        // If the admin API key is not set, these endpoints are disabled, so a random
+        // default is used instead
+        let admin_key = config.admin_api_key.unwrap_or_else(HmacKey::random);
+        let processor = ExternalMatchProcessor::new(
+            admin_key,
+            bus.clone(),
+            matching_engine_worker_queue.clone(),
+            state.clone(),
+        );
 
         // POST /v2/external-matches/get-quote
         router.add_admin_authenticated_route(
             &Method::POST,
             GET_EXTERNAL_MATCH_QUOTE_ROUTE.to_string(),
-            GetExternalMatchQuoteHandler::new(),
+            GetExternalMatchQuoteHandler::new(processor.clone()),
         );
 
         // POST /v2/external-matches/assemble-match-bundle

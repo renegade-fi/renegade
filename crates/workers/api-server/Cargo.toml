@@ -52,6 +52,7 @@ alloy = { workspace = true }
 
 # === Renegade Dependencies === #
 darkpool-client = { workspace = true }
+darkpool-types = { workspace = true }
 circuit-types = { workspace = true }
 renegade-compliance-api = { git = "https://github.com/renegade-fi/relayer-extensions", package = "compliance-api" }
 config = { workspace = true }

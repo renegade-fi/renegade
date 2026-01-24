@@ -115,7 +115,7 @@ impl MatchingEngineExecutor {
     /// Send a message on the response topic indicating that no match was found
     fn handle_no_match(&self, response_topic: String) {
         info!("no match found for external order");
-        let response = SystemBusMessage::NoAtomicMatchFound;
+        let response = SystemBusMessage::NoExternalMatchFound;
         self.system_bus.publish(response_topic, response);
     }
 }

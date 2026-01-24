@@ -2,10 +2,9 @@
 //! operations
 
 use serde::{Deserialize, Serialize};
+use types_account::MatchingPoolName;
 
-use crate::types::{
-    ApiSignedQuote, ExternalOrder, GasSponsorshipInfo, MalleableAtomicMatchApiBundle,
-};
+use crate::types::{ApiSignedQuote, BoundedExternalMatchApiBundle, ExternalOrder};
 
 // ---------------
 // | HTTP Routes |
@@ -16,15 +15,18 @@ pub const GET_EXTERNAL_MATCH_QUOTE_ROUTE: &str = "/v2/external-matches/get-quote
 /// Route to assemble a match bundle
 pub const ASSEMBLE_MATCH_BUNDLE_ROUTE: &str = "/v2/external-matches/assemble-match-bundle";
 
-// -------------------
+// --------------------
 // | Request/Response |
-// -------------------
+// --------------------
 
 /// Request to get an external match quote
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ExternalQuoteRequest {
     /// The external order
     pub external_order: ExternalOrder,
+    /// The options for the external matching engine
+    #[serde(default)]
+    pub options: ExternalMatchingEngineOptions,
 }
 
 /// Response for external match quote
@@ -32,9 +34,6 @@ pub struct ExternalQuoteRequest {
 pub struct ExternalQuoteResponse {
     /// The signed quote
     pub signed_quote: ApiSignedQuote,
-    /// Optional gas sponsorship information
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub gas_sponsorship_info: Option<GasSponsorshipInfo>,
 }
 
 /// The assembly type for an external match
@@ -74,8 +73,18 @@ pub struct AssembleExternalMatchRequest {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ExternalMatchResponse {
     /// The match bundle
-    pub match_bundle: MalleableAtomicMatchApiBundle,
-    /// Optional gas sponsorship information
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub gas_sponsorship_info: Option<GasSponsorshipInfo>,
+    pub match_bundle: BoundedExternalMatchApiBundle,
+}
+
+/// Options for the external matching engine
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct ExternalMatchingEngineOptions {
+    /// The relayer fee rate to apply to the match
+    ///
+    /// Defaults to the default relayer fee rate
+    pub relayer_fee_rate: Option<f64>,
+    /// The matching pool to request a quote from
+    ///
+    /// Defaults to all matching pools if not specified
+    pub matching_pool: Option<MatchingPoolName>,
 }

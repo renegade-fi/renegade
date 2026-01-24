@@ -854,6 +854,7 @@ dependencies = [
  "crypto",
  "ctor",
  "darkpool-client",
+ "darkpool-types",
  "ecdsa 0.16.9",
  "external-api",
  "eyre",
