@@ -104,6 +104,7 @@ impl HistoricalTaskDescription {
                 amount: desc.amount,
             }),
             TaskDescriptor::SettleInternalMatch(_) => None,
+            TaskDescriptor::SettleExternalMatch(_) => None,
             TaskDescriptor::NodeStartup(_) => None,
         }
     }

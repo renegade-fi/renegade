@@ -9,7 +9,9 @@ use crate::{
     tasks::{
         create_balance::CreateBalanceTaskState, create_new_account::CreateNewAccountTaskState,
         create_order::CreateOrderTaskState, deposit::DepositTaskState,
-        node_startup::NodeStartupTaskState, settle_internal_match::SettleInternalMatchTaskState,
+        node_startup::NodeStartupTaskState,
+        settle_external_match::SettleExternalMatchTaskState,
+        settle_internal_match::SettleInternalMatchTaskState,
     },
     traits::TaskState,
 };
@@ -35,6 +37,8 @@ pub enum TaskStateWrapper {
     CreateOrder(CreateOrderTaskState),
     /// The state of a settle internal match task
     SettleInternalMatch(SettleInternalMatchTaskState),
+    /// The state of a settle external match task
+    SettleExternalMatch(SettleExternalMatchTaskState),
 }
 
 impl TaskStateWrapper {
@@ -57,6 +61,9 @@ impl TaskStateWrapper {
             TaskStateWrapper::SettleInternalMatch(state) => {
                 <SettleInternalMatchTaskState as TaskState>::committed(state)
             },
+            TaskStateWrapper::SettleExternalMatch(state) => {
+                <SettleExternalMatchTaskState as TaskState>::committed(state)
+            },
         }
     }
 
@@ -75,6 +82,9 @@ impl TaskStateWrapper {
             TaskStateWrapper::CreateOrder(state) => *state == CreateOrderTaskState::commit_point(),
             TaskStateWrapper::SettleInternalMatch(state) => {
                 *state == SettleInternalMatchTaskState::commit_point()
+            },
+            TaskStateWrapper::SettleExternalMatch(state) => {
+                *state == SettleExternalMatchTaskState::commit_point()
             },
         }
     }
@@ -98,6 +108,9 @@ impl TaskStateWrapper {
             TaskStateWrapper::SettleInternalMatch(state) => {
                 <SettleInternalMatchTaskState as TaskState>::completed(state)
             },
+            TaskStateWrapper::SettleExternalMatch(state) => {
+                <SettleExternalMatchTaskState as TaskState>::completed(state)
+            },
         }
     }
 }
@@ -111,6 +124,7 @@ impl Display for TaskStateWrapper {
             TaskStateWrapper::CreateBalance(state) => write!(f, "{state}"),
             TaskStateWrapper::CreateOrder(state) => write!(f, "{state}"),
             TaskStateWrapper::SettleInternalMatch(state) => write!(f, "{state}"),
+            TaskStateWrapper::SettleExternalMatch(state) => write!(f, "{state}"),
         }
     }
 }

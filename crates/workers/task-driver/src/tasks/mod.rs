@@ -16,4 +16,5 @@ pub mod create_balance;
 pub mod create_new_account;
 pub mod create_order;
 pub mod deposit;
+pub mod settle_external_match;
 pub mod settle_internal_match;

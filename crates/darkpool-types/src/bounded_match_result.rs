@@ -16,6 +16,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::settlement_obligation::SettlementObligation;
 
+#[cfg(feature = "rkyv")]
+use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
+
+#[cfg(feature = "rkyv")]
+use crate::rkyv_remotes::{AddressDef, FixedPointDef};
+
 #[cfg(feature = "proof-system-types")]
 use {
     circuit_types::traits::{
@@ -29,11 +35,15 @@ use {
 /// A bounded match result
 #[cfg_attr(feature = "proof-system-types", circuit_type(serde, singleprover_circuit, secret_share))]
 #[cfg_attr(not(feature = "proof-system-types"), circuit_type(serde))]
+#[cfg_attr(feature = "rkyv", derive(Archive, RkyvDeserialize, RkyvSerialize))]
+#[cfg_attr(feature = "rkyv", rkyv(derive(Debug)))]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BoundedMatchResult {
     /// The internal party's input token
+    #[cfg_attr(feature = "rkyv", rkyv(with = AddressDef))]
     pub internal_party_input_token: Address,
     /// The internal party's output token
+    #[cfg_attr(feature = "rkyv", rkyv(with = AddressDef))]
     pub internal_party_output_token: Address,
     /// The minimum amount of the internal party's input token to be traded
     pub min_internal_party_amount_in: Amount,
@@ -41,6 +51,7 @@ pub struct BoundedMatchResult {
     pub max_internal_party_amount_in: Amount,
     /// The price of the match, in units of
     /// `internal_party_output_token/internal_party_input_token`
+    #[cfg_attr(feature = "rkyv", rkyv(with = FixedPointDef))]
     pub price: FixedPoint,
     /// The block deadline of the match
     pub block_deadline: u64,
