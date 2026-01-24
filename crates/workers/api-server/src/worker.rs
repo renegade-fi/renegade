@@ -108,7 +108,7 @@ impl Worker for ApiServer {
             .map_err(|err| ApiServerError::Setup(err.to_string()))?;
 
         // Build the http server
-        let http_server = HttpServer::new(self.config.clone(), &self.config.state)?;
+        let http_server = HttpServer::new(self.config.clone())?;
         let http_thread_handle = tokio_runtime.spawn_blocking(move || {
             let err = block_on(http_server.execution_loop()).err().unwrap();
             ApiServerError::HttpServerFailure(err.to_string())

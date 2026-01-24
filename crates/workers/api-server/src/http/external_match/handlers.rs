@@ -8,28 +8,32 @@ use external_api::http::external_match::{
 use hyper::HeaderMap;
 
 use crate::{
-    error::ApiServerError,
+    error::{ApiServerError, bad_request},
+    http::external_match::processor::ExternalMatchProcessor,
     router::{QueryParams, TypedHandler, UrlParams},
 };
 
-// ------------------
-// | Error Messages |
-// ------------------
+// -------------
+// | Constants |
+// -------------
 
 /// Error message for not implemented
 const ERR_NOT_IMPLEMENTED: &str = "not implemented";
 
-// -----------------------------
-// | External Match Handlers   |
-// -----------------------------
+// ---------------------------
+// | External Match Handlers |
+// ---------------------------
 
 /// Handler for POST /v2/external-matches/get-quote
-pub struct GetExternalMatchQuoteHandler;
+pub struct GetExternalMatchQuoteHandler {
+    /// The external match processor
+    processor: ExternalMatchProcessor,
+}
 
 impl GetExternalMatchQuoteHandler {
     /// Constructor
-    pub fn new() -> Self {
-        Self
+    pub fn new(processor: ExternalMatchProcessor) -> Self {
+        Self { processor }
     }
 }
 
@@ -41,11 +45,18 @@ impl TypedHandler for GetExternalMatchQuoteHandler {
     async fn handle_typed(
         &self,
         _headers: HeaderMap,
-        _req: Self::Request,
+        req: Self::Request,
         _params: UrlParams,
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
-        Err(ApiServerError::not_implemented(ERR_NOT_IMPLEMENTED))
+        // TODO: Support exact output amounts
+        if req.external_order.use_exact_output_amount {
+            return Err(bad_request("`use_exact_output_amount` is not supported"));
+        }
+
+        // Forward to the external match processor
+        let signed_quote = self.processor.fetch_signed_quote(req).await?;
+        Ok(ExternalQuoteResponse { signed_quote })
     }
 }
 

@@ -42,6 +42,18 @@ impl Pair {
         Token::from_alloy_address(&self.out_token)
     }
 
+    /// Get the base token for the pair
+    pub fn base_token(&self) -> Token {
+        let usdc = Token::usdc().get_alloy_address();
+        if self.in_token == usdc { self.out_token() } else { self.in_token() }
+    }
+
+    /// Get the quote token for the pair
+    pub fn quote_token(&self) -> Token {
+        let usdc = Token::usdc().get_alloy_address();
+        if self.in_token == usdc { self.in_token() } else { self.out_token() }
+    }
+
     /// Get a usdc quoted pair wherein input token is the base and output token
     /// is the USDC quote
     pub fn to_usdc_quoted(&self) -> Result<Self, String> {

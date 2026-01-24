@@ -11,7 +11,10 @@ use alloy_primitives::Address;
 use circuit_macros::circuit_type;
 use circuit_types::{Amount, fixed_point::FixedPoint, traits::BaseType};
 use constants::Scalar;
+use crypto::fields::scalar_to_u128;
 use serde::{Deserialize, Serialize};
+
+use crate::settlement_obligation::SettlementObligation;
 
 #[cfg(feature = "proof-system-types")]
 use {
@@ -41,4 +44,33 @@ pub struct BoundedMatchResult {
     pub price: FixedPoint,
     /// The block deadline of the match
     pub block_deadline: u64,
+}
+
+impl BoundedMatchResult {
+    /// Convert to settlement obligation for the internal party
+    ///
+    /// The amount in here refers to the internal party's input amount
+    pub fn to_internal_obligation(&self, amount_in: Amount) -> SettlementObligation {
+        let amount_out = self.price.floor_mul_int(amount_in);
+        SettlementObligation {
+            input_token: self.internal_party_input_token,
+            output_token: self.internal_party_output_token,
+            amount_in,
+            amount_out: scalar_to_u128(&amount_out),
+        }
+    }
+
+    /// Convert to settlement obligation for the external party
+    ///
+    /// The amount in here refers to the external party's input amount
+    pub fn to_external_obligation(&self, amount_in: Amount) -> SettlementObligation {
+        let inverse_price = self.price.inverse().expect("price is zero");
+        let amount_out = inverse_price.floor_mul_int(amount_in);
+        SettlementObligation {
+            input_token: self.internal_party_output_token,
+            output_token: self.internal_party_input_token,
+            amount_in,
+            amount_out: scalar_to_u128(&amount_out),
+        }
+    }
 }

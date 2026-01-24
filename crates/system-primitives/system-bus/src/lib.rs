@@ -25,6 +25,7 @@ use std::{
         atomic::{AtomicU16, Ordering},
     },
     task::{Context, Poll, Waker},
+    time::Duration,
 };
 use tokio::macros::support::poll_fn;
 
@@ -255,6 +256,19 @@ impl<M: Clone + Sync> MessageBus<M> {
     /// Acquire a write lock on the topic mesh
     fn write_topic_mesh(&self) -> RwLockWriteGuard<HashMap<String, Shared<TopicFabric<M>>>> {
         self.topic_mesh.write().expect("topic_mesh lock poisoned")
+    }
+
+    /// Get the next message from a topic
+    pub async fn next_message_with_timeout(
+        &self,
+        topic: String,
+        timeout: Duration,
+    ) -> Result<M, tokio::time::error::Elapsed> {
+        tokio::time::timeout(timeout, async {
+            let mut reader = self.subscribe(topic);
+            reader.next_message().await
+        })
+        .await
     }
 
     /// Publish a message onto a topic; blocks if the buffer is full

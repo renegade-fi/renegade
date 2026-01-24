@@ -101,28 +101,16 @@ pub enum SystemBusMessage {
         /// The new account after update
         account: Box<Account>,
     },
-    /// A message indicating an internal (gossip metadata) update has been
-    /// made to a wallet
-    // InternalWalletUpdate {
-    //     /// The new wallet after update
-    //     wallet: Box<StateWallet>,
-    // },
 
-    // -- Order History Updates -- //
-    // /// A message indicating that an order has been updated
-    // OrderMetadataUpdated {
-    //     /// The new state of the order
-    //     order: OrderMetadata,
-    // },
-
-    // --- Jobs --- //
+    // --- External Match API --- //
     /// A message containing a quote for an external order
     ExternalOrderQuote {
         /// The quote
         quote: BoundedMatchResult,
     },
     /// A message indicating that no atomic match was found for a request
-    NoAtomicMatchFound,
+    NoExternalMatchFound,
+
     // --- Admin -- //
     /// A message indicating that an account has been updated, intended for
     /// consumption by the admin API
