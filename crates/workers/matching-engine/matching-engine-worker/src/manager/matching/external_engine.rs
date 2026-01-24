@@ -109,7 +109,9 @@ impl MatchingEngineExecutor {
     #[allow(clippy::needless_pass_by_value)]
     fn forward_quote(&self, response_topic: String, res: SuccessfulMatch) {
         info!("forwarding quote to client");
-        // TODO: Setup bounds and block deadline
+        // We don't need to expose input bounds for a quote, we just treat the requested
+        // amount as an exact trade amount and return an exact-sized bundle.
+        // The assemble endpoint will generate matchable bounds for a bundle.
         let internal_obligation = res.match_result.party0_obligation();
         let quote = BoundedMatchResult {
             internal_party_input_token: internal_obligation.input_token,
@@ -117,6 +119,8 @@ impl MatchingEngineExecutor {
             min_internal_party_amount_in: internal_obligation.amount_in,
             max_internal_party_amount_in: internal_obligation.amount_in,
             price: res.price.price,
+            // We also don't specify a block deadline for a quote,
+            // Only assembled bundles have a block deadline attached
             block_deadline: 0,
         };
         let message = SystemBusMessage::ExternalOrderQuote { quote };

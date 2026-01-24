@@ -1,6 +1,7 @@
 //! Defines types broadcast onto the system bus and thereby websockets
 
-use darkpool_types::bounded_match_result::BoundedMatchResult;
+use alloy::rpc::types::TransactionRequest;
+use darkpool_types::{bounded_match_result::BoundedMatchResult, fee::FeeRates};
 use types_account::account::{Account, OrderId};
 use types_core::AccountId;
 use types_gossip::{PeerInfo, WrappedPeerId};
@@ -54,6 +55,7 @@ pub struct TaskStatus {
 
 /// A message type for generic system bus messages, broadcast to all modules
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[allow(clippy::large_enum_variant)]
 #[serde(tag = "type")]
 pub enum SystemBusMessage {
     // -- Handshake -- //
@@ -107,6 +109,16 @@ pub enum SystemBusMessage {
     ExternalOrderQuote {
         /// The quote
         quote: BoundedMatchResult,
+    },
+    /// A message containing a match result and transaction to submit the
+    /// bounded match result
+    ExternalOrderBundle {
+        /// The match result
+        match_result: BoundedMatchResult,
+        /// The fee rates used for the match
+        fee_rates: FeeRates,
+        /// The transaction to submit the match result
+        transaction: TransactionRequest,
     },
     /// A message indicating that no atomic match was found for a request
     NoExternalMatchFound,

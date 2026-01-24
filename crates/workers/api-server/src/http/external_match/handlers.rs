@@ -13,13 +13,6 @@ use crate::{
     router::{QueryParams, TypedHandler, UrlParams},
 };
 
-// -------------
-// | Constants |
-// -------------
-
-/// Error message for not implemented
-const ERR_NOT_IMPLEMENTED: &str = "not implemented";
-
 // ---------------------------
 // | External Match Handlers |
 // ---------------------------
@@ -61,12 +54,15 @@ impl TypedHandler for GetExternalMatchQuoteHandler {
 }
 
 /// Handler for POST /v2/external-matches/assemble-match-bundle
-pub struct AssembleMatchBundleHandler;
+pub struct AssembleMatchBundleHandler {
+    /// The external match processor
+    processor: ExternalMatchProcessor,
+}
 
 impl AssembleMatchBundleHandler {
     /// Constructor
-    pub fn new() -> Self {
-        Self
+    pub fn new(processor: ExternalMatchProcessor) -> Self {
+        Self { processor }
     }
 }
 
@@ -78,10 +74,17 @@ impl TypedHandler for AssembleMatchBundleHandler {
     async fn handle_typed(
         &self,
         _headers: HeaderMap,
-        _req: Self::Request,
+        req: Self::Request,
         _params: UrlParams,
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
-        Err(ApiServerError::not_implemented(ERR_NOT_IMPLEMENTED))
+        // TODO: Support exact output amounts
+        if req.order.get_external_order_ref().use_exact_output_amount {
+            return Err(bad_request("`use_exact_output_amount` is not supported"));
+        }
+
+        // Forward the request to the processor
+        let match_bundle = self.processor.assemble_match_bundle(req).await?;
+        Ok(ExternalMatchResponse { match_bundle })
     }
 }

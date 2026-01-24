@@ -56,6 +56,24 @@ pub enum ExternalMatchAssemblyType {
     },
 }
 
+#[cfg(feature = "full-api")]
+impl ExternalMatchAssemblyType {
+    /// Get a reference to the external order from an assembly type
+    pub fn get_external_order_ref(&self) -> &ExternalOrder {
+        match self {
+            Self::QuotedOrder { updated_order, signed_quote } => {
+                updated_order.as_ref().unwrap_or(&signed_quote.quote.order)
+            },
+            Self::DirectOrder { external_order } => external_order,
+        }
+    }
+
+    /// Get the external order from an assembly type
+    pub fn get_external_order(&self) -> ExternalOrder {
+        self.get_external_order_ref().clone()
+    }
+}
+
 /// Request to assemble an external match bundle
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AssembleExternalMatchRequest {
@@ -67,6 +85,9 @@ pub struct AssembleExternalMatchRequest {
     pub receiver_address: Option<String>,
     /// The assembly type
     pub order: ExternalMatchAssemblyType,
+    /// The options for the external matching engine
+    #[serde(default)]
+    pub options: ExternalMatchingEngineOptions,
 }
 
 /// Response for external match
