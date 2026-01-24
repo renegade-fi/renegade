@@ -315,6 +315,14 @@ impl StateTxn<'_, RW> {
         self.inner().write(ACCOUNTS_TABLE, &index_key, account_id)
     }
 
+    /// Update an existing order in an account
+    ///
+    /// This only updates the order data, not the order->account index
+    pub fn update_order(&self, account_id: &AccountId, order: &Order) -> Result<(), StorageError> {
+        let key = order_key(account_id, &order.id);
+        self.inner().write(ACCOUNTS_TABLE, &key, order)
+    }
+
     /// Update (add or modify) a balance for an account
     pub fn update_balance(
         &self,

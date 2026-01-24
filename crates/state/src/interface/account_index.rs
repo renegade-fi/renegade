@@ -199,6 +199,11 @@ impl StateInner {
         self.send_proposal(StateTransition::RemoveOrderFromAccount { account_id, order_id }).await
     }
 
+    /// Update an existing order
+    pub async fn update_order(&self, order: Order) -> Result<ProposalWaiter, StateError> {
+        self.send_proposal(StateTransition::UpdateOrder { order }).await
+    }
+
     /// Update a balance in an account
     pub async fn update_account_balance(
         &self,

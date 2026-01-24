@@ -52,6 +52,8 @@ pub enum StateTransition {
     AddOrderToAccount { account_id: AccountId, order: Order, auth: OrderAuth },
     /// Remove an order from an account
     RemoveOrderFromAccount { account_id: AccountId, order_id: OrderId },
+    /// Update an existing order in an account
+    UpdateOrder { order: Order },
     /// Update a balance in an account
     UpdateAccountBalance { account_id: AccountId, balance: Balance },
 
