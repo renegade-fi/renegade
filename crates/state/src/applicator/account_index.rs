@@ -95,6 +95,38 @@ impl StateApplicator {
         Ok(ApplicatorReturnType::None)
     }
 
+    /// Update an existing order
+    pub fn update_order(&self, order: &Order) -> Result<ApplicatorReturnType> {
+        let tx = self.db().new_write_tx()?;
+
+        // Verify the order exists
+        let order_id = order.id;
+        if tx.get_order(&order_id)?.is_none() {
+            return Err(StateApplicatorError::reject(format!("order {order_id} not found")));
+        }
+
+        // Get the account ID for the order
+        let account_id = tx
+            .get_account_id_for_order(&order_id)?
+            .ok_or_else(|| StateApplicatorError::reject("order not associated with account"))?;
+
+        // Update the order in storage
+        tx.update_order(&account_id, order)?;
+
+        // Get the info needed to update the matching engine
+        let matching_pool = tx.get_matching_pool_for_order(&order_id)?;
+        let matchable_amount = tx.get_order_matchable_amount(&order_id)?.unwrap_or_default();
+        tx.commit()?;
+
+        // Update the matching engine book
+        if matchable_amount > 0 {
+            self.matching_engine().upsert_order(order, matchable_amount, matching_pool);
+        } else {
+            self.matching_engine().cancel_order(order, matching_pool);
+        }
+        Ok(ApplicatorReturnType::None)
+    }
+
     /// Update a balance in an account
     pub fn update_account_balance(
         &self,

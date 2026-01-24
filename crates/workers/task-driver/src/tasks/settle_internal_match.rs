@@ -2,10 +2,12 @@
 
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
+use alloy::primitives::Address;
 use alloy::signers::local::PrivateKeySigner;
 use ark_mpc::{PARTY0, PARTY1, network::PartyId};
 use async_trait::async_trait;
 use darkpool_client::errors::DarkpoolClientError;
+use darkpool_types::settlement_obligation::SettlementObligation;
 use renegade_solidity_abi::v2::IDarkpoolV2::{
     self, FeeRate, ObligationBundle, PublicIntentAuthBundle, PublicIntentPermit, SettlementBundle,
     SignatureWithNonce, SignedPermitSingle,
@@ -13,6 +15,7 @@ use renegade_solidity_abi::v2::IDarkpoolV2::{
 use serde::Serialize;
 use state::error::StateError;
 use tracing::{info, instrument};
+use types_account::balance::Balance;
 use types_account::{OrderId, order::Order, order_auth::OrderAuth};
 use types_core::MatchResult;
 use types_core::{AccountId, TimestampedPriceFp};
@@ -51,6 +54,9 @@ pub enum SettleInternalMatchTaskState {
     Pending,
     /// The task is submitting the transaction
     SubmittingTx,
+    /// The task is updating the account state for the parties involved in the
+    /// match
+    UpdatingState,
     /// The task is completed
     Completed,
 }
@@ -70,6 +76,7 @@ impl Display for SettleInternalMatchTaskState {
         match self {
             SettleInternalMatchTaskState::Pending => write!(f, "Pending"),
             SettleInternalMatchTaskState::SubmittingTx => write!(f, "SubmittingTx"),
+            SettleInternalMatchTaskState::UpdatingState => write!(f, "UpdatingState"),
             SettleInternalMatchTaskState::Completed => write!(f, "Completed"),
         }
     }
@@ -206,8 +213,12 @@ impl Task for SettleInternalMatchTask {
                 self.task_state = SettleInternalMatchTaskState::SubmittingTx;
             },
             SettleInternalMatchTaskState::SubmittingTx => {
-                self.task_state = SettleInternalMatchTaskState::Completed;
                 self.submit_tx().await?;
+                self.task_state = SettleInternalMatchTaskState::UpdatingState;
+            },
+            SettleInternalMatchTaskState::UpdatingState => {
+                self.update_state().await?;
+                self.task_state = SettleInternalMatchTaskState::Completed;
             },
             SettleInternalMatchTaskState::Completed => {
                 unreachable!("step called on task in Completed state")
@@ -261,6 +272,52 @@ impl SettleInternalMatchTask {
         info!("Settled match with tx hash: {}", tx.transaction_hash);
         Ok(())
     }
+
+    /// Update the account state for the parties involved in the match
+    ///
+    /// This involves decreasing the amount remaining on the matched orders and
+    /// the input balances.
+    ///
+    /// The output balances are not updated except by the chain events listener
+    /// as we only update balances for amounts approved to the darkpool for
+    /// matching.
+    async fn update_state(&self) -> Result<()> {
+        self.update_state_for_party(PARTY0).await?;
+        self.update_state_for_party(PARTY1).await?;
+        Ok(())
+    }
+
+    /// Update the state for a given party
+    async fn update_state_for_party(&self, party_id: PartyId) -> Result<()> {
+        self.update_input_balance(party_id).await?;
+        self.update_order_amount_in(party_id).await
+    }
+
+    /// Update the amount remaining on the order for a given party
+    async fn update_order_amount_in(&self, party_id: PartyId) -> Result<()> {
+        let obligation = self.get_obligation(party_id)?;
+        let mut order = self.get_order(party_id).await?;
+        order.decrement_amount_in(obligation.amount_in);
+
+        let waiter = self.ctx.state.update_order(order).await?;
+        waiter.await.map_err(SettleInternalMatchTaskError::state)?;
+        Ok(())
+    }
+
+    /// Update the input balance for a given party
+    async fn update_input_balance(&self, party_id: PartyId) -> Result<()> {
+        let state = &self.ctx.state;
+        let account_id = branch_party!(party_id, self.account_id, self.other_account_id);
+        let obligation = self.get_obligation(party_id)?;
+
+        let mut balance = self.get_input_balance(party_id, obligation.input_token).await?;
+        *balance.amount_mut() -= obligation.amount_in;
+
+        // Write the balance back to the state
+        let waiter = state.update_account_balance(account_id, balance).await?;
+        waiter.await.map_err(SettleInternalMatchTaskError::state)?;
+        Ok(())
+    }
 }
 
 // -----------
@@ -309,11 +366,7 @@ impl SettleInternalMatchTask {
         party_id: PartyId,
         fee: &FeeRate,
     ) -> Result<SignatureWithNonce> {
-        let obligation = branch_party!(
-            party_id,
-            &self.match_result.party0_obligation,
-            &self.match_result.party1_obligation
-        );
+        let obligation = self.get_obligation(party_id)?;
         let contract_obligation = IDarkpoolV2::SettlementObligation::from(obligation.clone());
 
         let chain_id = get_chain_id();
@@ -335,6 +388,17 @@ impl SettleInternalMatchTask {
             .get_account_order(&order_id)
             .await?
             .ok_or_else(|| SettleInternalMatchTaskError::order_not_found(order_id))
+    }
+
+    /// Get the input balance for a given party
+    async fn get_input_balance(&self, party_id: PartyId, token: Address) -> Result<Balance> {
+        let account_id = branch_party!(party_id, self.account_id, self.other_account_id);
+        let balance = self.ctx.state.get_account_balance(&account_id, &token).await?;
+        balance.ok_or_else(|| {
+            SettleInternalMatchTaskError::state(format!(
+                "input balance not found for party {party_id}"
+            ))
+        })
     }
 
     /// Get the order authorization for an order ID
@@ -372,5 +436,17 @@ impl SettleInternalMatchTask {
         let recipient = self.ctx.state.get_relayer_fee_addr()?;
 
         Ok(FeeRate { rate: rate.into(), recipient })
+    }
+
+    // === Misc Helpers === //
+
+    /// Get the obligation for a given party
+    fn get_obligation(&self, party_id: PartyId) -> Result<&SettlementObligation> {
+        let obligation = branch_party!(
+            party_id,
+            &self.match_result.party0_obligation,
+            &self.match_result.party1_obligation
+        );
+        Ok(obligation)
     }
 }

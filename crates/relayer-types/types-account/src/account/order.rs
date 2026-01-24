@@ -82,6 +82,18 @@ impl Order {
         self.intent.inner.amount_in
     }
 
+    /// Decrement the amount remaining for the order
+    pub fn decrement_amount_in(&mut self, amount: Amount) {
+        let new_amount = self
+            .intent
+            .inner
+            .amount_in
+            .checked_sub(amount)
+            .expect("underflow when decrementing amount_in");
+
+        self.intent.inner.amount_in = new_amount;
+    }
+
     /// Whether the order is zero'd out
     ///
     /// This can happen without an order being removed from an account because

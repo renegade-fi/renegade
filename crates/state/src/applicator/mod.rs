@@ -98,6 +98,7 @@ impl StateApplicator {
             StateTransition::RemoveOrderFromAccount { account_id, order_id } => {
                 self.remove_order_from_account(account_id, order_id)
             },
+            StateTransition::UpdateOrder { order } => self.update_order(&order),
             StateTransition::UpdateAccountBalance { account_id, balance } => {
                 self.update_account_balance(account_id, &balance)
             },
