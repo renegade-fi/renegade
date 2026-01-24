@@ -2,11 +2,18 @@
 
 use std::time::Duration;
 
+use alloy::rpc::types::TransactionRequest;
 use circuit_types::fixed_point::FixedPoint;
+use crypto::fields::scalar_to_u128;
 use darkpool_types::{bounded_match_result::BoundedMatchResult, fee::FeeRates};
 use external_api::{
-    http::external_match::ExternalQuoteRequest,
-    types::{ApiExternalAssetTransfer, ApiExternalQuote, ApiSignedQuote, ApiTimestampedPrice},
+    http::external_match::{
+        AssembleExternalMatchRequest, ExternalMatchAssemblyType, ExternalQuoteRequest,
+    },
+    types::{
+        ApiExternalAssetTransfer, ApiExternalQuote, ApiSignedQuote, ApiTimestampedPrice,
+        BoundedExternalMatchApiBundle, ExternalOrder,
+    },
 };
 use job_types::matching_engine::{
     ExternalMatchingEngineOptions, MatchingEngineWorkerJob, MatchingEngineWorkerQueue,
@@ -17,7 +24,7 @@ use types_account::order::Order;
 use types_core::HmacKey;
 use util::{get_current_time_millis, on_chain::get_external_match_fee};
 
-use crate::error::{ApiServerError, internal_error, no_content};
+use crate::error::{ApiServerError, internal_error, no_content, unauthorized};
 
 // -------------
 // | Constants |
@@ -126,6 +133,117 @@ impl ExternalMatchProcessor {
         let msg = self.forward_job_wait_for_response(job, topic).await?;
         match msg {
             SystemBusMessage::ExternalOrderQuote { quote } => Ok(quote),
+            SystemBusMessage::NoExternalMatchFound => Err(no_content(ERR_NO_EXTERNAL_MATCH_FOUND)),
+            _ => Err(internal_error("unexpected system bus message")),
+        }
+    }
+
+    // --- Assemble --- //
+
+    /// Assemble a match bundle
+    pub async fn assemble_match_bundle(
+        &self,
+        req: AssembleExternalMatchRequest,
+    ) -> Result<BoundedExternalMatchApiBundle, ApiServerError> {
+        // First, verify the quote signature if a quote is provided
+        self.verify_quote_signature(&req)?;
+
+        // Build the matching engine job
+        let external_order = req.order.get_external_order();
+        let order = Order::from(external_order.clone());
+        let options = self.assembly_engine_options(&external_order, &req);
+        let (job, topic) = MatchingEngineWorkerJob::new_external_match_job(order.clone(), options);
+
+        // Send the job to the matching engine
+        let (match_res, fee_rates, tx) = self.forward_assemble_request(job, topic).await?;
+
+        // Compute the send bounds
+        let send_mint = match_res.internal_party_output_token;
+        let min_send_amt = match_res.price.floor_mul_int(match_res.min_internal_party_amount_in);
+        let max_send_amt = match_res.price.floor_mul_int(match_res.max_internal_party_amount_in);
+        let min_send = ApiExternalAssetTransfer::new(send_mint, scalar_to_u128(&min_send_amt));
+        let max_send = ApiExternalAssetTransfer::new(send_mint, scalar_to_u128(&max_send_amt));
+
+        // Compute the receive bounds
+        let receive_mint = match_res.internal_party_input_token;
+        let min_receive_amt = match_res.min_internal_party_amount_in;
+        let max_receive_amt = match_res.max_internal_party_amount_in;
+        let min_fee = fee_rates.compute_fee_take(min_receive_amt);
+        let max_fee = fee_rates.compute_fee_take(max_receive_amt);
+        let min_net = min_receive_amt - min_fee.total();
+        let max_net = max_receive_amt - max_fee.total();
+        let min_receive = ApiExternalAssetTransfer::new(receive_mint, min_net);
+        let max_receive = ApiExternalAssetTransfer::new(receive_mint, max_net);
+
+        // Build an API response
+        let bundle = BoundedExternalMatchApiBundle {
+            match_result: match_res.clone().into(),
+            fee_rates: fee_rates.into(),
+            max_receive,
+            min_receive,
+            max_send,
+            min_send,
+            settlement_tx: tx,
+            deadline: match_res.block_deadline,
+        };
+
+        Ok(bundle)
+    }
+
+    /// Verify the quote signature on an assembly request if a quote is provided
+    fn verify_quote_signature(
+        &self,
+        req: &AssembleExternalMatchRequest,
+    ) -> Result<(), ApiServerError> {
+        if let ExternalMatchAssemblyType::QuotedOrder { signed_quote, .. } = &req.order {
+            let quote_bytes = serde_json::to_vec(&signed_quote.quote).map_err(internal_error)?;
+            let sig = signed_quote.signature.clone();
+            let verified = self.admin_key.verify_mac(&quote_bytes, &sig);
+            if !verified {
+                return Err(unauthorized("invalid quote signature"));
+            }
+        };
+
+        Ok(())
+    }
+
+    /// Build the matching engine options for an assembly request
+    fn assembly_engine_options(
+        &self,
+        order: &ExternalOrder,
+        req: &AssembleExternalMatchRequest,
+    ) -> ExternalMatchingEngineOptions {
+        let mut options = ExternalMatchingEngineOptions::default()
+            .with_matching_pool(req.options.matching_pool.clone())
+            .with_min_input_amount(order.min_fill_size);
+
+        // Add a fee rate
+        if let Some(relayer_fee_rate) = req.options.relayer_fee_rate {
+            let fee_rate = FixedPoint::from_f64_round_down(relayer_fee_rate);
+            options = options.with_relayer_fee_rate(fee_rate);
+        }
+
+        // If this order comes from a previously generated quote, use the quoted price
+        if let ExternalMatchAssemblyType::QuotedOrder { signed_quote, .. } = &req.order {
+            let ts_price = signed_quote.quote.price.clone().into();
+            options = options.with_price(ts_price);
+        }
+
+        options
+    }
+
+    /// Forward an assembly request to the matching engine and expect back a
+    /// match result
+    async fn forward_assemble_request(
+        &self,
+        job: MatchingEngineWorkerJob,
+        topic: String,
+    ) -> Result<(BoundedMatchResult, FeeRates, TransactionRequest), ApiServerError> {
+        let msg = self.forward_job_wait_for_response(job, topic).await?;
+        match msg {
+            SystemBusMessage::ExternalOrderBundle { match_result, fee_rates, transaction } => {
+                Ok((match_result, fee_rates, transaction))
+            },
             SystemBusMessage::NoExternalMatchFound => Err(no_content(ERR_NO_EXTERNAL_MATCH_FOUND)),
             _ => Err(internal_error("unexpected system bus message")),
         }

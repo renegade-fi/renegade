@@ -1,11 +1,7 @@
 //! API types for external matches
 
 use alloy::rpc::types::TransactionRequest;
-#[cfg(feature = "full-api")]
-use darkpool_types::settlement_obligation::SettlementObligation;
 use serde::{Deserialize, Serialize};
-#[cfg(feature = "full-api")]
-use types_account::order::Order;
 
 use crate::serde_helpers;
 
@@ -13,8 +9,10 @@ use crate::serde_helpers;
 use {
     alloy::primitives::Address, circuit_types::Amount, circuit_types::fixed_point::FixedPoint,
     constants::Scalar, crypto::fields::scalar_to_u128,
-    darkpool_types::bounded_match_result::BoundedMatchResult, darkpool_types::fee::FeeTake,
-    darkpool_types::intent::Intent, types_account::order::OrderMetadata,
+    darkpool_types::bounded_match_result::BoundedMatchResult, darkpool_types::fee::FeeRates,
+    darkpool_types::fee::FeeTake, darkpool_types::intent::Intent,
+    darkpool_types::settlement_obligation::SettlementObligation, types_account::order::Order,
+    types_account::order::OrderMetadata, types_core::TimestampedPrice,
     util::get_current_time_millis,
 };
 
@@ -137,6 +135,13 @@ impl ApiTimestampedPrice {
     pub fn new(price: FixedPoint) -> Self {
         let price = price.to_f64();
         Self { price, timestamp: get_current_time_millis() }
+    }
+}
+
+#[cfg(feature = "full-api")]
+impl From<ApiTimestampedPrice> for TimestampedPrice {
+    fn from(price: ApiTimestampedPrice) -> Self {
+        Self { price: price.price, timestamp: price.timestamp }
     }
 }
 
@@ -265,6 +270,16 @@ pub struct FeeTakeRate {
     /// The protocol fee rate
     #[serde(with = "serde_helpers::fixed_point_as_string")]
     pub protocol_fee_rate: FixedPoint,
+}
+
+#[cfg(feature = "full-api")]
+impl From<FeeRates> for FeeTakeRate {
+    fn from(fee_rates: FeeRates) -> Self {
+        Self {
+            relayer_fee_rate: fee_rates.relayer_fee_rate,
+            protocol_fee_rate: fee_rates.protocol_fee_rate,
+        }
+    }
 }
 
 /// A malleable atomic match bundle

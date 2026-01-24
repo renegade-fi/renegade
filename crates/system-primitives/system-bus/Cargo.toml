@@ -21,6 +21,7 @@ types-runtime = { workspace = true }
 external-api = { workspace = true, features = ["task-api"] }
 
 # === Misc Dependencies === #
+alloy = { workspace = true }
 uuid = { version = "1.1.2", features = ["v4", "serde"] }
 
 [dev-dependencies]

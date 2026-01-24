@@ -250,7 +250,7 @@ impl HttpServer {
         router.add_admin_authenticated_route(
             &Method::POST,
             ASSEMBLE_MATCH_BUNDLE_ROUTE.to_string(),
-            AssembleMatchBundleHandler::new(),
+            AssembleMatchBundleHandler::new(processor.clone()),
         );
 
         // --- Market Routes (v2) --- //
