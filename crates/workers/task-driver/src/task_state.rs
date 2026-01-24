@@ -9,8 +9,9 @@ use crate::{
     tasks::{
         create_balance::CreateBalanceTaskState, create_new_account::CreateNewAccountTaskState,
         create_order::CreateOrderTaskState, deposit::DepositTaskState,
-        node_startup::NodeStartupTaskState, settle_external_match::SettleExternalMatchTaskState,
-        settle_internal_match::SettleInternalMatchTaskState,
+        node_startup::NodeStartupTaskState,
+        settlement::settle_external_match::SettleExternalMatchTaskState,
+        settlement::settle_internal_match::SettleInternalMatchTaskState,
     },
     traits::TaskState,
 };

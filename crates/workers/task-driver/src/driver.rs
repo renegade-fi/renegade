@@ -20,8 +20,8 @@ use crate::{
     tasks::{
         create_balance::CreateBalanceTask, create_new_account::CreateNewAccountTask,
         create_order::CreateOrderTask, deposit::DepositTask, node_startup::NodeStartupTask,
-        settle_external_match::SettleExternalMatchTask,
-        settle_internal_match::SettleInternalMatchTask,
+        settlement::settle_external_match::SettleExternalMatchTask,
+        settlement::settle_internal_match::SettleInternalMatchTask,
     },
     traits::{Descriptor as _, Task, TaskContext},
     worker::TaskDriverConfig,
