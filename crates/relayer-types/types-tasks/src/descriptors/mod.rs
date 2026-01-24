@@ -7,6 +7,7 @@ mod create_order;
 mod deposit;
 mod new_account;
 mod node_startup;
+mod settle_external_match;
 mod settle_internal_match;
 
 pub use create_balance::*;
@@ -14,6 +15,7 @@ pub use create_order::*;
 pub use deposit::*;
 pub use new_account::*;
 pub use node_startup::*;
+pub use settle_external_match::*;
 pub use settle_internal_match::*;
 
 #[cfg(feature = "rkyv")]
@@ -145,6 +147,8 @@ pub enum TaskDescriptor {
     CreateOrder(CreateOrderTaskDescriptor),
     /// The task descriptor for the `SettleInternalMatch` task
     SettleInternalMatch(SettleInternalMatchTaskDescriptor),
+    /// The task descriptor for the `SettleExternalMatch` task
+    SettleExternalMatch(SettleExternalMatchTaskDescriptor),
 }
 
 impl TaskDescriptor {
@@ -157,6 +161,7 @@ impl TaskDescriptor {
             TaskDescriptor::CreateBalance(task) => task.account_id,
             TaskDescriptor::CreateOrder(task) => task.account_id,
             TaskDescriptor::SettleInternalMatch(task) => task.account_id,
+            TaskDescriptor::SettleExternalMatch(task) => task.account_id,
         }
     }
 
@@ -171,6 +176,7 @@ impl TaskDescriptor {
             TaskDescriptor::SettleInternalMatch(task) => {
                 vec![task.account_id, task.other_account_id]
             },
+            TaskDescriptor::SettleExternalMatch(task) => vec![task.account_id],
         }
     }
 
@@ -183,6 +189,7 @@ impl TaskDescriptor {
             TaskDescriptor::CreateBalance(_) => true,
             TaskDescriptor::CreateOrder(_) => true,
             TaskDescriptor::SettleInternalMatch(_) => true,
+            TaskDescriptor::SettleExternalMatch(_) => true,
         }
     }
 
@@ -195,6 +202,7 @@ impl TaskDescriptor {
             TaskDescriptor::CreateBalance(_) => "Create Balance".to_string(),
             TaskDescriptor::CreateOrder(_) => "Create Order".to_string(),
             TaskDescriptor::SettleInternalMatch(_) => "Settle Internal Match".to_string(),
+            TaskDescriptor::SettleExternalMatch(_) => "Settle External Match".to_string(),
         }
     }
 }
