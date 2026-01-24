@@ -1,7 +1,7 @@
 //! Defines a pair of tokens with an implicit direction
 
 use alloy::primitives::Address;
-use darkpool_types::intent::Intent;
+use darkpool_types::{intent::Intent, settlement_obligation::SettlementObligation};
 use serde::{Deserialize, Serialize};
 use types_core::Token;
 
@@ -30,6 +30,11 @@ impl Pair {
     /// Get the pair of an intent
     pub fn from_intent(intent: &Intent) -> Self {
         Self { in_token: intent.in_token, out_token: intent.out_token }
+    }
+
+    /// Get the pair from a settlement obligation
+    pub fn from_obligation(obligation: &SettlementObligation) -> Self {
+        Self { in_token: obligation.input_token, out_token: obligation.output_token }
     }
 
     /// Get the input token for the pair
