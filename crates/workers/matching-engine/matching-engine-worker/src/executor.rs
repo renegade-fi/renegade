@@ -34,6 +34,8 @@ pub struct MatchingEngineExecutor {
     /// The minimum amount of the quote asset that the relayer should settle
     /// matches on
     pub(crate) min_fill_size: Amount,
+    /// The number of blocks an external match bundle remains valid
+    pub(crate) external_match_validity_window: u64,
     /// The channel on which other workers enqueue jobs for the protocol
     /// executor
     pub(crate) job_channel: DefaultOption<MatchingEngineWorkerReceiver>,
@@ -57,6 +59,7 @@ impl MatchingEngineExecutor {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         min_fill_size: Amount,
+        external_match_validity_window: u64,
         job_channel: MatchingEngineWorkerReceiver,
         price_streams: PriceStreamStates,
         state: State,
@@ -67,6 +70,7 @@ impl MatchingEngineExecutor {
     ) -> Result<Self, MatchingEngineError> {
         Ok(Self {
             min_fill_size,
+            external_match_validity_window,
             job_channel: DefaultOption::new(Some(job_channel)),
             price_streams,
             state,

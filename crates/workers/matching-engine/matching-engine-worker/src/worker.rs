@@ -30,6 +30,8 @@ pub struct MatchingEngineConfig {
     /// The minimum amount of the quote asset that the relayer should settle
     /// matches on
     pub min_fill_size: Amount,
+    /// The number of blocks an external match bundle remains valid
+    pub external_match_validity_window: u64,
     /// The relayer-global state
     pub state: State,
     /// The matching engine instance
@@ -67,6 +69,7 @@ impl Worker for MatchingEngineManager {
         // peers
         let executor = MatchingEngineExecutor::new(
             config.min_fill_size,
+            config.external_match_validity_window,
             config.job_receiver.take().unwrap(),
             config.price_streams.clone(),
             config.state.clone(),

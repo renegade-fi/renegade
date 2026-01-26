@@ -84,6 +84,11 @@ pub struct Cli {
     /// Mapping from ticker to fee rate
     #[clap(long, value_parser, value_parser = parse_cli_map::<f64>, default_value = "")]
     pub per_asset_fees: HashMap<String, f64>,
+    /// The number of blocks an external match bundle remains valid
+    ///
+    /// The block deadline is set to current_block + this value
+    #[clap(long, value_parser, default_value = "50")]
+    pub external_match_validity_window: u64,
     /// The address at which to collect relayer fees
     /// 
     /// This is the address at which the relayer collects match fees.
@@ -288,6 +293,8 @@ pub struct RelayerConfig {
     pub default_match_fee: FixedPoint,
     /// The per-asset match fee that the relayer will charge
     pub per_asset_fees: HashMap<String, FixedPoint>,
+    /// The number of blocks an external match bundle remains valid
+    pub external_match_validity_window: u64,
     /// The address at which the relayer collects match fees
     ///
     /// This is the address at which the relayer collects match fees.

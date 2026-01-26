@@ -121,6 +121,7 @@ pub(crate) fn parse_config_from_args(cli_args: Cli) -> Result<RelayerConfig, Str
         max_match_fee,
         default_match_fee,
         per_asset_fees,
+        external_match_validity_window: cli_args.external_match_validity_window,
         relayer_fee_addr,
         price_reporter_url,
         chain_id: cli_args.chain_id,
