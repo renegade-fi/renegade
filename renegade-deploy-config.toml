@@ -62,3 +62,15 @@ environment = "ethereum-sepolia"
 resource = "relayer"
 cluster_name_override = "ethereum-sepolia-relayer"
 service_name_override = "ethereum-sepolia-relayer-service"
+
+[services.ethereum-mainnet-relayer]
+[services.ethereum-mainnet-relayer.build]
+dockerfile = "docker/release/Dockerfile"
+ecr_repo = "relayer-ethereum-mainnet"
+cargo_features = "default,arbitrum" # TODO: add ethereum feature flag?
+
+[services.ethereum-mainnet-relayer.deploy]
+environment = "ethereum-mainnet"
+resource = "relayer"
+cluster_name_override = "ethereum-mainnet-relayer"
+service_name_override = "ethereum-mainnet-relayer-service"
