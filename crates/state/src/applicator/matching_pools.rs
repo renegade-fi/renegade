@@ -70,13 +70,16 @@ impl StateApplicator {
         let order = tx.get_order(&id)?.ok_or_else(|| reject_order_missing(id))?;
         let order_deser = Order::from_archived(&order)?;
         let matchable_amount = tx.get_order_matchable_amount(&id)?.unwrap_or_default();
+        let account_id = tx
+            .get_account_id_for_order(&id)?
+            .ok_or_else(|| StateApplicatorError::reject("order not associated with account"))?;
 
         // Update the state of the matching engine
         let engine = self.matching_engine();
         if engine.contains_order(&order_deser, old_pool.clone()) {
             engine.cancel_order(&order_deser, old_pool);
         }
-        engine.update_order(&order_deser, matchable_amount, new_pool);
+        engine.update_order(account_id, &order_deser, matchable_amount, new_pool);
         Ok(())
     }
 }

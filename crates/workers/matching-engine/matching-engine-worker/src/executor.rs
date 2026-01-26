@@ -124,8 +124,8 @@ impl MatchingEngineExecutor {
         match job.consume() {
             // An order has been updated, the executor should run the internal engine on the
             // new order to check for matches
-            MatchingEngineWorkerJob::InternalMatchingEngine { order } => {
-                self.run_internal_matching_engine(order).await
+            MatchingEngineWorkerJob::InternalMatchingEngine { account_id, order } => {
+                self.run_internal_matching_engine(account_id, order).await
             },
 
             // A request to run the external matching engine

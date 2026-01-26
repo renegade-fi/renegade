@@ -80,12 +80,15 @@ impl StateApplicator {
         let matchable_amount = tx.get_order_matchable_amount(&order_id)?.unwrap_or_default();
         let order_deser = Order::from_archived(&order)?;
 
-        // Get the matching pool for the order
+        // Get the account ID and matching pool for the order
+        let account_id = tx
+            .get_account_id_for_order(&order_id)?
+            .ok_or_else(|| StateApplicatorError::reject("order not associated with account"))?;
         let matching_pool = tx.get_matching_pool_for_order(&order_id)?;
 
         // Update the matching engine
         let matching_engine = self.matching_engine();
-        matching_engine.upsert_order(&order_deser, matchable_amount, matching_pool);
+        matching_engine.upsert_order(account_id, &order_deser, matchable_amount, matching_pool);
         tx.commit()?;
 
         Ok(ApplicatorReturnType::None)

@@ -3,7 +3,7 @@
 use circuit_types::{Amount, fixed_point::FixedPoint};
 use matching_engine_core::SuccessfulMatch;
 use types_account::{MatchingPoolName, account::order::Order, pair::Pair};
-use types_core::{TimestampedPrice, TimestampedPriceFp};
+use types_core::{AccountId, TimestampedPrice, TimestampedPriceFp};
 use util::get_current_time_millis;
 
 use crate::{error::MatchingEngineError, executor::MatchingEngineExecutor};
@@ -13,16 +13,24 @@ impl MatchingEngineExecutor {
     /// Find an internal match for an order
     pub fn find_internal_match(
         &self,
+        aid: AccountId,
         order: &Order,
-        matchable_amount: Amount,
-        matching_pool: MatchingPoolName,
+        matchable: Amount,
+        pool: MatchingPoolName,
     ) -> Result<Option<SuccessfulMatch>, MatchingEngineError> {
-        self.find_match_in_pool(
-            order,
-            matchable_amount,
-            matching_pool,
-            false, // external_match
-        )
+        // Sample a price to execute the match at
+        let pair = order.pair();
+        let price = self.get_execution_price(&pair)?;
+
+        // Sanity check the input range
+        let input_range = order.min_fill_size()..=matchable;
+        if input_range.is_empty() {
+            return Ok(None);
+        }
+
+        // Forward to the matching engine
+        let res = self.matching_engine.find_match(aid, pair, input_range, pool, price);
+        Ok(res)
     }
 
     /// Find an external match for an order
@@ -38,48 +46,6 @@ impl MatchingEngineExecutor {
         // amount is the same as the intent amount
         let matchable_amount = order.intent().amount_in;
 
-        match matching_pool {
-            Some(pool) => {
-                self.find_match_in_pool(
-                    order,
-                    matchable_amount,
-                    pool,
-                    true, // external_match
-                )
-            },
-            None => self.find_match_all_pools(order, matchable_amount),
-        }
-    }
-
-    /// Find an external match across all pools
-    fn find_match_all_pools(
-        &self,
-        order: &Order,
-        matchable_amount: Amount,
-    ) -> Result<Option<SuccessfulMatch>, MatchingEngineError> {
-        // Sample a price to execute the match at
-        let pair = order.pair();
-        let price = self.get_execution_price(&pair)?;
-
-        // Sanity check the input range
-        let input_range = order.min_fill_size()..=matchable_amount;
-        if input_range.is_empty() {
-            return Ok(None);
-        }
-
-        // Use the all-pools matching method
-        let res = self.matching_engine.find_match_external_all_pools(pair, input_range, price);
-        Ok(res)
-    }
-
-    /// Run a match between two orders
-    fn find_match_in_pool(
-        &self,
-        order: &Order,
-        matchable_amount: Amount,
-        matching_pool: MatchingPoolName,
-        external_match: bool,
-    ) -> Result<Option<SuccessfulMatch>, MatchingEngineError> {
         // Sample a price to execute the match at
         let pair = order.pair();
         let price = self.get_execution_price(&pair)?;
@@ -91,10 +57,9 @@ impl MatchingEngineExecutor {
         }
 
         // Forward to the matching engine
-        let res = if external_match {
-            self.matching_engine.find_match_external(pair, input_range, matching_pool, price)
-        } else {
-            self.matching_engine.find_match(pair, input_range, matching_pool, price)
+        let res = match matching_pool {
+            Some(pool) => self.matching_engine.find_match_external(pair, input_range, pool, price),
+            None => self.matching_engine.find_match_external_all_pools(pair, input_range, price),
         };
 
         Ok(res)

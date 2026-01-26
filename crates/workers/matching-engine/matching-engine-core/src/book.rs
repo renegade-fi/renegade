@@ -8,6 +8,7 @@ use std::{cmp::Ordering, ops::RangeInclusive};
 use circuit_types::{Amount, fixed_point::FixedPoint};
 use rustc_hash::FxHashMap;
 use types_account::{OrderId, order::Order};
+use types_core::AccountId;
 
 /// A key for sorting orders by descending matchable amount
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -55,6 +56,8 @@ pub struct Book {
 
 /// The details of an order on the book
 pub(crate) struct BookOrder {
+    /// The account ID that owns this order
+    pub account_id: AccountId,
     /// The matchable amount of the order
     ///
     /// This may be smaller than the original order's amount if the order's is
@@ -72,8 +75,9 @@ pub(crate) struct BookOrder {
 
 impl BookOrder {
     /// Create a new book order from a given order and matchable amount
-    pub(crate) fn new(order: &Order, matchable_amount: Amount) -> Self {
+    pub(crate) fn new(account_id: AccountId, order: &Order, matchable_amount: Amount) -> Self {
         Self {
+            account_id,
             matchable_amount,
             min_price: order.min_price(),
             min_fill_size: order.min_fill_size(),
@@ -103,8 +107,8 @@ impl Book {
     // --- Setters --- //
 
     /// Add an order to the book
-    pub fn add_order(&mut self, order: &Order, matchable_amount: Amount) {
-        let book_order = BookOrder::new(order, matchable_amount);
+    pub fn add_order(&mut self, account_id: AccountId, order: &Order, matchable_amount: Amount) {
+        let book_order = BookOrder::new(account_id, order, matchable_amount);
         self.order_map.insert(order.id, book_order);
         self.sorted_amounts.insert(ReverseAmountKey::new(matchable_amount, order.id));
     }
@@ -118,15 +122,18 @@ impl Book {
     }
 
     /// Update the matchable amount for an order
-    pub fn update_order(&mut self, order: &Order, matchable_amount: Amount) {
+    pub fn update_order(&mut self, account_id: AccountId, order: &Order, matchable_amount: Amount) {
         // Delete the old entry and re-insert the new one
         self.remove_order(order.id);
-        self.add_order(order, matchable_amount);
+        self.add_order(account_id, order, matchable_amount);
     }
 
     // --- Matching --- //
 
     /// Find a match for a given order
+    ///
+    /// Orders belonging to `exclude_account_id` will be skipped to prevent
+    /// self-matches.
     ///
     /// If `require_externally_matchable` is `true`, only matches against
     /// orders that have `externally_matchable` set to `true`. If `false`, does
@@ -136,6 +143,7 @@ impl Book {
     /// (min and max) of the counterparty.
     pub fn find_match(
         &self,
+        exclude_account_id: AccountId,
         price: FixedPoint,
         amount_range: RangeInclusive<Amount>,
         require_externally_matchable: bool,
@@ -143,6 +151,11 @@ impl Book {
         // Build an iterator over orders sorted by descending matchable amount
         let orders = self.iter();
         for (oid, order) in orders {
+            // Skip orders from the same account (prevent self-matches)
+            if exclude_account_id == order.account_id {
+                continue;
+            }
+
             // Skip orders whose validation conditions are not met
             let order_range = order.min_fill_size..=order.matchable_amount;
             let ranges_intersect = ranges_intersect(&order_range, &amount_range);
@@ -209,9 +222,10 @@ mod tests {
     fn test_add_order() {
         let mut book = Book::new();
         let order = create_test_order(100);
+        let account_id = AccountId::new_v4();
 
         assert!(!book.contains_order(order.id));
-        book.add_order(&order, 100);
+        book.add_order(account_id, &order, 100);
         assert!(book.contains_order(order.id));
     }
 
@@ -219,9 +233,10 @@ mod tests {
     fn test_get_matchable_amount() {
         let mut book = Book::new();
         let order = create_test_order(150);
+        let account_id = AccountId::new_v4();
 
         assert_eq!(book.get_matchable_amount(order.id), None);
-        book.add_order(&order, 150);
+        book.add_order(account_id, &order, 150);
         assert_eq!(book.get_matchable_amount(order.id), Some(150));
     }
 
@@ -229,11 +244,12 @@ mod tests {
     fn test_update_order() {
         let mut book = Book::new();
         let order = create_test_order(100);
+        let account_id = AccountId::new_v4();
 
-        book.add_order(&order, 100);
+        book.add_order(account_id, &order, 100);
         assert_eq!(book.get_matchable_amount(order.id), Some(100));
 
-        book.update_order(&order, 200);
+        book.update_order(account_id, &order, 200);
         assert_eq!(book.get_matchable_amount(order.id), Some(200));
     }
 
@@ -241,8 +257,9 @@ mod tests {
     fn test_remove_order() {
         let mut book = Book::new();
         let order = create_test_order(100);
+        let account_id = AccountId::new_v4();
 
-        book.add_order(&order, 100);
+        book.add_order(account_id, &order, 100);
         assert!(book.contains_order(order.id));
 
         book.remove_order(order.id);
@@ -267,15 +284,16 @@ mod tests {
     #[test]
     fn test_iteration_order_descending() {
         let mut book = Book::new();
+        let account_id = AccountId::new_v4();
 
         // Add orders in random order
         let order1 = create_test_order(300);
         let order2 = create_test_order(100);
         let order3 = create_test_order(200);
 
-        book.add_order(&order1, 300);
-        book.add_order(&order2, 100);
-        book.add_order(&order3, 200);
+        book.add_order(account_id, &order1, 300);
+        book.add_order(account_id, &order2, 100);
+        book.add_order(account_id, &order3, 200);
 
         // Iteration should be in descending order (largest to smallest)
         let amounts: Vec<OrderId> = book.iter().map(|(id, _)| *id).collect();
@@ -285,21 +303,22 @@ mod tests {
     #[test]
     fn test_iteration_order_after_update() {
         let mut book = Book::new();
+        let account_id = AccountId::new_v4();
 
         let order1 = create_test_order(100);
         let order2 = create_test_order(200);
         let order3 = create_test_order(300);
 
-        book.add_order(&order1, 100);
-        book.add_order(&order2, 200);
-        book.add_order(&order3, 300);
+        book.add_order(account_id, &order1, 100);
+        book.add_order(account_id, &order2, 200);
+        book.add_order(account_id, &order3, 300);
 
         // Verify initial order (descending)
         let order_ids: Vec<OrderId> = book.iter().map(|(id, _)| *id).collect();
         assert_eq!(order_ids, vec![order3.id, order2.id, order1.id]);
 
         // Update order2 to have the largest amount
-        book.update_order(&order2, 400);
+        book.update_order(account_id, &order2, 400);
 
         // Verify order is maintained after update (descending)
         let order_ids: Vec<OrderId> = book.iter().map(|(id, _)| *id).collect();
@@ -309,27 +328,28 @@ mod tests {
     #[test]
     fn test_iteration_order_after_multiple_updates() {
         let mut book = Book::new();
+        let account_id = AccountId::new_v4();
 
         let order1 = create_test_order(100);
         let order2 = create_test_order(200);
         let order3 = create_test_order(300);
 
-        book.add_order(&order1, 100);
-        book.add_order(&order2, 200);
-        book.add_order(&order3, 300);
+        book.add_order(account_id, &order1, 100);
+        book.add_order(account_id, &order2, 200);
+        book.add_order(account_id, &order3, 300);
 
         // Update order1 to be largest
-        book.update_order(&order1, 500);
+        book.update_order(account_id, &order1, 500);
         let order_ids: Vec<OrderId> = book.iter().map(|(id, _)| *id).collect();
         assert_eq!(order_ids, vec![order1.id, order3.id, order2.id]);
 
         // Update order3 to be smallest
-        book.update_order(&order3, 50);
+        book.update_order(account_id, &order3, 50);
         let order_ids: Vec<OrderId> = book.iter().map(|(id, _)| *id).collect();
         assert_eq!(order_ids, vec![order1.id, order2.id, order3.id]);
 
         // Update order2 to be middle
-        book.update_order(&order2, 250);
+        book.update_order(account_id, &order2, 250);
         let order_ids: Vec<OrderId> = book.iter().map(|(id, _)| *id).collect();
         assert_eq!(order_ids, vec![order1.id, order2.id, order3.id]);
     }
@@ -337,14 +357,15 @@ mod tests {
     #[test]
     fn test_iteration_order_with_duplicate_amounts() {
         let mut book = Book::new();
+        let account_id = AccountId::new_v4();
 
         let order1 = create_test_order(100);
         let order2 = create_test_order(100);
         let order3 = create_test_order(100);
 
-        book.add_order(&order1, 100);
-        book.add_order(&order2, 100);
-        book.add_order(&order3, 100);
+        book.add_order(account_id, &order1, 100);
+        book.add_order(account_id, &order2, 100);
+        book.add_order(account_id, &order3, 100);
 
         // All orders should be present, sorted by OrderId when amounts are equal
         let order_ids: Vec<OrderId> = book.iter().map(|(id, _)| *id).collect();
@@ -362,14 +383,15 @@ mod tests {
     #[test]
     fn test_iteration_order_after_remove() {
         let mut book = Book::new();
+        let account_id = AccountId::new_v4();
 
         let order1 = create_test_order(100);
         let order2 = create_test_order(200);
         let order3 = create_test_order(300);
 
-        book.add_order(&order1, 100);
-        book.add_order(&order2, 200);
-        book.add_order(&order3, 300);
+        book.add_order(account_id, &order1, 100);
+        book.add_order(account_id, &order2, 200);
+        book.add_order(account_id, &order3, 300);
 
         // Remove middle order
         book.remove_order(order2.id);
@@ -390,10 +412,58 @@ mod tests {
     fn test_iteration_single_order() {
         let mut book = Book::new();
         let order = create_test_order(100);
+        let account_id = AccountId::new_v4();
 
-        book.add_order(&order, 100);
+        book.add_order(account_id, &order, 100);
 
         let order_ids: Vec<OrderId> = book.iter().map(|(id, _)| *id).collect();
         assert_eq!(order_ids, vec![order.id]);
+    }
+
+    // -------------------------------
+    // | Self-Match Prevention Tests |
+    // -------------------------------
+
+    #[test]
+    fn test_find_match_skips_same_account() {
+        let mut book = Book::new();
+        let same_account = AccountId::new_v4();
+
+        // Add an order from the same account
+        let order1 = create_test_order(200);
+        book.add_order(same_account, &order1, 200);
+
+        // Try to find a match excluding the same account
+        let price = FixedPoint::from_integer(1);
+        let amount_range = 0..=100;
+        let result = book.find_match(same_account, price, amount_range, false);
+
+        // Should not find a match (self-match prevention)
+        assert!(result.is_none(), "Should not match orders from the same account");
+    }
+
+    #[test]
+    fn test_find_match_skips_same_account_finds_different() {
+        let mut book = Book::new();
+        let account_a = AccountId::new_v4();
+        let account_b = AccountId::new_v4();
+
+        // Add a larger order from account A (same account as requester)
+        let order1 = create_test_order(300);
+        book.add_order(account_a, &order1, 300);
+
+        // Add a smaller order from account B (different account)
+        let order2 = create_test_order(100);
+        book.add_order(account_b, &order2, 100);
+
+        // Try to find a match as account A
+        let price = FixedPoint::from_integer(1);
+        let amount_range = 0..=50;
+        let result = book.find_match(account_a, price, amount_range, false);
+
+        // Should skip order1 (same account) and match with order2
+        assert!(result.is_some());
+        let (matched_id, _, _) = result.unwrap();
+        assert_eq!(matched_id, order2.id, "Should match order from different account");
     }
 }
