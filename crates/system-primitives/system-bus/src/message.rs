@@ -1,7 +1,7 @@
 //! Defines types broadcast onto the system bus and thereby websockets
 
-use alloy::rpc::types::TransactionRequest;
-use darkpool_types::{bounded_match_result::BoundedMatchResult, fee::FeeRates};
+use darkpool_types::bounded_match_result::BoundedMatchResult;
+use renegade_solidity_abi::v2::IDarkpoolV2::SettlementBundle;
 use types_account::account::{Account, OrderId};
 use types_core::AccountId;
 use types_gossip::{PeerInfo, WrappedPeerId};
@@ -115,10 +115,8 @@ pub enum SystemBusMessage {
     ExternalOrderBundle {
         /// The match result
         match_result: BoundedMatchResult,
-        /// The fee rates used for the match
-        fee_rates: FeeRates,
-        /// The transaction to submit the match result
-        transaction: TransactionRequest,
+        /// The internal party's settlement bundle
+        settlement_bundle: SettlementBundle,
     },
     /// A message indicating that no atomic match was found for a request
     NoExternalMatchFound,

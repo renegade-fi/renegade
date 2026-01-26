@@ -1,6 +1,10 @@
 //! HTTP route definitions and request/response types for external match
 //! operations
 
+use crate::serde_helpers;
+use alloy::primitives::Address;
+#[cfg(feature = "full-api")]
+use circuit_types::Amount;
 use serde::{Deserialize, Serialize};
 use types_account::MatchingPoolName;
 
@@ -58,6 +62,16 @@ pub enum ExternalMatchAssemblyType {
 
 #[cfg(feature = "full-api")]
 impl ExternalMatchAssemblyType {
+    /// Get the amount in for an assembly type
+    pub fn amount_in(&self) -> Amount {
+        match self {
+            Self::QuotedOrder { updated_order, signed_quote } => {
+                updated_order.as_ref().unwrap_or(&signed_quote.quote.order).input_amount
+            },
+            Self::DirectOrder { external_order } => external_order.input_amount,
+        }
+    }
+
     /// Get a reference to the external order from an assembly type
     pub fn get_external_order_ref(&self) -> &ExternalOrder {
         match self {
@@ -82,7 +96,9 @@ pub struct AssembleExternalMatchRequest {
     pub do_gas_estimation: bool,
     /// The receiver address
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub receiver_address: Option<String>,
+    #[serde(default)]
+    #[serde(with = "serde_helpers::option_address_as_string")]
+    pub receiver_address: Option<Address>,
     /// The assembly type
     pub order: ExternalMatchAssemblyType,
     /// The options for the external matching engine

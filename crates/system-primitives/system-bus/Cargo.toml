@@ -19,6 +19,7 @@ types-tasks = { workspace = true }
 types-account = { workspace = true }
 types-runtime = { workspace = true }
 external-api = { workspace = true, features = ["task-api"] }
+renegade-solidity-abi = { workspace = true }
 
 # === Misc Dependencies === #
 alloy = { workspace = true }

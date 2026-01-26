@@ -106,6 +106,7 @@ impl HttpServer {
         // Build the router and register its routes
         let mut router = Router::new(config.admin_api_key, config.state.clone());
         let state = &config.state;
+        let darkpool_client = &config.darkpool_client;
         let bus = &config.system_bus;
         let matching_engine_worker_queue = &config.matching_engine_worker_queue;
 
@@ -234,6 +235,7 @@ impl HttpServer {
         let admin_key = config.admin_api_key.unwrap_or_else(HmacKey::random);
         let processor = ExternalMatchProcessor::new(
             admin_key,
+            darkpool_client.clone(),
             bus.clone(),
             matching_engine_worker_queue.clone(),
             state.clone(),
