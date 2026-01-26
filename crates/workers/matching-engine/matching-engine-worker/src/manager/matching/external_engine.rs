@@ -90,6 +90,7 @@ impl MatchingEngineExecutor {
             amount_in,
             match_result: bounded_match_result,
             response_topic,
+            validity_window_blocks: self.external_match_validity_window,
         };
 
         // Enqueue the task directly with the driver

@@ -23,6 +23,8 @@ pub struct SettleExternalMatchTaskDescriptor {
     pub match_result: BoundedMatchResult,
     /// The system bus topic on which to send the response
     pub response_topic: String,
+    /// The number of blocks the match remains valid from the current block
+    pub validity_window_blocks: u64,
 }
 
 impl From<SettleExternalMatchTaskDescriptor> for TaskDescriptor {

@@ -279,6 +279,7 @@ async fn main() -> Result<(), CoordinatorError> {
     let (handshake_cancel_sender, handshake_cancel_receiver) = new_cancel_channel();
     let mut handshake_manager = MatchingEngineManager::new(MatchingEngineConfig {
         min_fill_size: args.min_fill_size,
+        external_match_validity_window: args.external_match_validity_window,
         state: global_state.clone(),
         matching_engine: matching_engine.clone(),
         price_streams: price_streams.clone(),

@@ -152,6 +152,8 @@ pub struct SettleExternalMatchTask {
     pub match_result: BoundedMatchResult,
     /// The system bus topic on which to send the response
     pub response_topic: String,
+    /// The number of blocks the match remains valid from the current block
+    pub validity_window_blocks: u64,
     /// The internal party's settlement bundle
     pub settlement_bundle: Option<SettlementBundle>,
     /// The state of the task's execution
@@ -176,6 +178,7 @@ impl Task for SettleExternalMatchTask {
             amount_in: descriptor.amount_in,
             match_result: descriptor.match_result,
             response_topic: descriptor.response_topic,
+            validity_window_blocks: descriptor.validity_window_blocks,
             settlement_bundle: None,
             task_state: SettleExternalMatchTaskState::Pending,
             processor,
@@ -239,6 +242,10 @@ impl SettleExternalMatchTask {
         let settlement_bundle =
             self.processor.build_ring0_settlement_bundle(self.order_id, obligation).await?;
         self.settlement_bundle = Some(settlement_bundle);
+
+        // Set a block deadline for the settlement bundle
+        let current_block = self.ctx.darkpool_client.block_number().await?;
+        self.match_result.block_deadline = current_block + self.validity_window_blocks;
 
         Ok(())
     }
