@@ -44,14 +44,16 @@ impl TaskHookError {
 
 /// A hook to run the matching engine on the given orders
 pub struct RunMatchingEngineHook {
+    /// The account ID that owns the orders
+    pub account_id: AccountId,
     /// The orders to run the matching engine on
     pub orders: Vec<OrderId>,
 }
 
 impl RunMatchingEngineHook {
     /// Create a new run matching engine hook
-    pub fn new(orders: Vec<OrderId>) -> Self {
-        Self { orders }
+    pub fn new(account_id: AccountId, orders: Vec<OrderId>) -> Self {
+        Self { account_id, orders }
     }
 }
 
@@ -64,7 +66,7 @@ impl TaskHook for RunMatchingEngineHook {
 
     async fn run(&self, ctx: &TaskContext) -> Result<(), TaskHookError> {
         for order in self.orders.iter().copied() {
-            let job = MatchingEngineWorkerJob::run_internal_engine(order);
+            let job = MatchingEngineWorkerJob::run_internal_engine(self.account_id, order);
             ctx.matching_engine_queue.clone().send(job).map_err(TaskHookError::execution)?;
         }
 
@@ -118,7 +120,7 @@ impl TaskHook for RunMatchingEngineForBalanceHook {
 
         // Queue matching jobs for each order
         for order_id in order_ids {
-            let job = MatchingEngineWorkerJob::run_internal_engine(order_id);
+            let job = MatchingEngineWorkerJob::run_internal_engine(self.account_id, order_id);
             ctx.matching_engine_queue.clone().send(job).map_err(TaskHookError::execution)?;
         }
 

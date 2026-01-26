@@ -7,6 +7,7 @@ use crypto::fields::scalar_to_u128;
 use darkpool_types::settlement_obligation::SettlementObligation;
 use dashmap::DashMap;
 use types_account::{MatchingPoolName, order::Order, pair::Pair};
+use types_core::AccountId;
 use types_core::MatchResult;
 use types_core::TimestampedPriceFp;
 
@@ -66,6 +67,7 @@ impl MatchingEngine {
     /// Add an order to the matching engine
     pub fn upsert_order(
         &self,
+        account_id: AccountId,
         order: &Order,
         matchable_amount: Amount,
         matching_pool: MatchingPoolName,
@@ -75,18 +77,18 @@ impl MatchingEngine {
         // Upsert into the pool-specific book
         let mut book = self.book_map.entry((pair, matching_pool)).or_insert_with(Book::new);
         if book.contains_order(order.id) {
-            book.update_order(order, matchable_amount);
+            book.update_order(account_id, order, matchable_amount);
         } else {
-            book.add_order(order, matchable_amount);
+            book.add_order(account_id, order, matchable_amount);
         }
         drop(book);
 
         // Upsert into the all-pools book
         let mut all_book = self.all_pools_book.entry(pair).or_insert_with(Book::new);
         if all_book.contains_order(order.id) {
-            all_book.update_order(order, matchable_amount);
+            all_book.update_order(account_id, order, matchable_amount);
         } else {
-            all_book.add_order(order, matchable_amount);
+            all_book.add_order(account_id, order, matchable_amount);
         }
     }
 
@@ -108,6 +110,7 @@ impl MatchingEngine {
     /// Update the matchable amount for an order
     pub fn update_order(
         &self,
+        account_id: AccountId,
         order: &Order,
         matchable_amount: Amount,
         matching_pool: MatchingPoolName,
@@ -116,12 +119,12 @@ impl MatchingEngine {
 
         // Update in the pool-specific book
         if let Some(mut book) = self.book_map.get_mut(&(pair, matching_pool)) {
-            book.update_order(order, matchable_amount);
+            book.update_order(account_id, order, matchable_amount);
         }
 
         // Update in the all-pools book
         if let Some(mut all_book) = self.all_pools_book.get_mut(&pair) {
-            all_book.update_order(order, matchable_amount);
+            all_book.update_order(account_id, order, matchable_amount);
         }
     }
 
@@ -137,6 +140,9 @@ impl MatchingEngine {
 
     /// Find an internal match for an order
     ///
+    /// Orders belonging to `exclude_account_id` will be skipped to prevent
+    /// self-matches.
+    ///
     /// The price here is specified in terms of the input order's output token /
     /// input token. I.e. it is in the same units as the input order's min
     /// price.
@@ -148,15 +154,26 @@ impl MatchingEngine {
     /// This method does not filter on externally matchable status.
     pub fn find_match(
         &self,
+        exclude_account_id: AccountId,
         input_pair: Pair,
         input_range: RangeInclusive<Amount>,
         matching_pool: MatchingPoolName,
         ts_price: TimestampedPriceFp,
     ) -> Option<SuccessfulMatch> {
-        self.find_match_helper(input_pair, input_range, matching_pool, ts_price, false)
+        self.find_match_helper(
+            exclude_account_id,
+            input_pair,
+            input_range,
+            matching_pool,
+            ts_price,
+            false,
+        )
     }
 
     /// Find an external match for an order
+    ///
+    /// Orders belonging to `exclude_account_id` will be skipped. For external
+    /// matches, pass a dummy/nil UUID since external parties have no account.
     ///
     /// The price here is specified in terms of the input order's output token /
     /// input token. I.e. it is in the same units as the input order's min
@@ -175,10 +192,22 @@ impl MatchingEngine {
         matching_pool: MatchingPoolName,
         ts_price: TimestampedPriceFp,
     ) -> Option<SuccessfulMatch> {
-        self.find_match_helper(input_pair, input_range, matching_pool, ts_price, true)
+        // External matches have no internal account, so we use a dummy account ID
+        let exclude_account_id = AccountId::nil();
+        self.find_match_helper(
+            exclude_account_id,
+            input_pair,
+            input_range,
+            matching_pool,
+            ts_price,
+            true,
+        )
     }
 
     /// Find an external match for an order across all matching pools
+    ///
+    /// Orders belonging to `exclude_account_id` will be skipped. For external
+    /// matches, pass a dummy/nil UUID since external parties have no account.
     ///
     /// This method searches the all-pools book which contains orders from every
     /// matching pool, allowing external matches to find the best counterparty
@@ -196,6 +225,11 @@ impl MatchingEngine {
         input_range: RangeInclusive<Amount>,
         ts_price: TimestampedPriceFp,
     ) -> Option<SuccessfulMatch> {
+        // External matches have no internal account, so no need to exclude
+        // counterparties
+        let exclude_account_id = AccountId::nil();
+
+        // Build the book inputs
         let price = ts_price.price;
         let counterparty_pair = input_pair.reverse();
         let counterparty_price = price.inverse()?;
@@ -205,6 +239,7 @@ impl MatchingEngine {
         let book = self.all_pools_book.get(&counterparty_pair)?;
         let (counterparty_oid, counterparty_input_amount, matchable_amount_bounds) = book
             .find_match(
+                exclude_account_id,
                 counterparty_price,
                 output_range,
                 true, // require_externally_matchable
@@ -223,6 +258,9 @@ impl MatchingEngine {
 
     /// Common helper for finding matches
     ///
+    /// Orders belonging to `exclude_account_id` will be skipped to prevent
+    /// self-matches.
+    ///
     /// The price here is specified in terms of the input order's output token /
     /// input token. I.e. it is in the same units as the input order's min
     /// price.
@@ -236,6 +274,7 @@ impl MatchingEngine {
     /// not filter on externally matchable status.
     fn find_match_helper(
         &self,
+        exclude_account_id: AccountId,
         input_pair: Pair,
         input_range: RangeInclusive<Amount>,
         matching_pool: MatchingPoolName,
@@ -248,8 +287,13 @@ impl MatchingEngine {
         let output_range = input_range_to_output_range(input_range, price);
 
         let book = self.book_map.get(&(counterparty_pair, matching_pool))?;
-        let (counterparty_oid, counterparty_input_amount, matchable_amount_bounds) =
-            book.find_match(counterparty_price, output_range, require_externally_matchable)?;
+        let (counterparty_oid, counterparty_input_amount, matchable_amount_bounds) = book
+            .find_match(
+                exclude_account_id,
+                counterparty_price,
+                output_range,
+                require_externally_matchable,
+            )?;
         drop(book);
 
         self.build_match_result(
@@ -363,8 +407,9 @@ mod tests {
         let engine = MatchingEngine::new();
         let order = create_test_order(100, FixedPoint::from_integer(1));
         let pool = test_matching_pool();
+        let account_id = AccountId::new_v4();
 
-        engine.upsert_order(&order, 100, pool.clone());
+        engine.upsert_order(account_id, &order, 100, pool.clone());
         assert!(engine.contains_order(&order, pool.clone()));
     }
 
@@ -373,8 +418,9 @@ mod tests {
         let engine = MatchingEngine::new();
         let order = create_test_order(100, FixedPoint::from_integer(1));
         let pool = test_matching_pool();
+        let account_id = AccountId::new_v4();
 
-        engine.upsert_order(&order, 100, pool.clone());
+        engine.upsert_order(account_id, &order, 100, pool.clone());
         engine.cancel_order(&order, pool.clone());
         assert!(!engine.contains_order(&order, pool.clone()));
     }
@@ -395,9 +441,10 @@ mod tests {
         let engine = MatchingEngine::new();
         let order = create_test_order(100, FixedPoint::from_integer(1));
         let pool = test_matching_pool();
+        let account_id = AccountId::new_v4();
 
         // Should not panic
-        engine.update_order(&order, 200, pool);
+        engine.update_order(account_id, &order, 200, pool);
     }
 
     // ------------------
@@ -408,6 +455,8 @@ mod tests {
     fn test_find_match_basic() {
         let engine = MatchingEngine::new();
         let pool = test_matching_pool();
+        let input_account_id = AccountId::new_v4();
+        let counterparty_account_id = AccountId::new_v4();
 
         // Input order wants to trade token A -> token B
         let input_pair = test_pair();
@@ -418,10 +467,15 @@ mod tests {
         // Their min_price is in units of A/B = 1/2 = 0.5
         let counterparty_order =
             create_counterparty_order(500, FixedPoint::from_f64_round_down(0.5));
-        engine.upsert_order(&counterparty_order, 500, pool.clone());
+        engine.upsert_order(counterparty_account_id, &counterparty_order, 500, pool.clone());
 
-        let result =
-            engine.find_match(input_pair, input_range, pool, TimestampedPriceFp::from(price));
+        let result = engine.find_match(
+            input_account_id,
+            input_pair,
+            input_range,
+            pool,
+            TimestampedPriceFp::from(price),
+        );
         assert!(result.is_some(), "Should find a match");
 
         let successful_match = result.unwrap();
@@ -449,13 +503,19 @@ mod tests {
     fn test_find_match_no_counterparty_orders() {
         let engine = MatchingEngine::new();
         let pool = test_matching_pool();
+        let account_id = AccountId::new_v4();
 
         let input_pair = test_pair();
         let price = FixedPoint::from_integer(2);
         let input_range = 0..=100;
 
-        let result =
-            engine.find_match(input_pair, input_range, pool, TimestampedPriceFp::from(price));
+        let result = engine.find_match(
+            account_id,
+            input_pair,
+            input_range,
+            pool,
+            TimestampedPriceFp::from(price),
+        );
         assert!(result.is_none(), "Should not find match when no counterparty orders exist");
     }
 
@@ -463,6 +523,8 @@ mod tests {
     fn test_find_match_price_too_low() {
         let engine = MatchingEngine::new();
         let pool = test_matching_pool();
+        let input_account_id = AccountId::new_v4();
+        let counterparty_account_id = AccountId::new_v4();
 
         let input_pair = test_pair();
         let price = FixedPoint::from_integer(2); // 2 B per A
@@ -473,10 +535,15 @@ mod tests {
         // So 0.5 < 0.6, match should fail
         let counterparty_order =
             create_counterparty_order(500, FixedPoint::from_f64_round_down(0.6));
-        engine.upsert_order(&counterparty_order, 500, pool.clone());
+        engine.upsert_order(counterparty_account_id, &counterparty_order, 500, pool.clone());
 
-        let result =
-            engine.find_match(input_pair, input_range, pool, TimestampedPriceFp::from(price));
+        let result = engine.find_match(
+            input_account_id,
+            input_pair,
+            input_range,
+            pool,
+            TimestampedPriceFp::from(price),
+        );
         assert!(result.is_none(), "Should not match when price is below counterparty's min");
     }
 
@@ -484,6 +551,8 @@ mod tests {
     fn test_find_match_limited_by_max_input() {
         let engine = MatchingEngine::new();
         let pool = test_matching_pool();
+        let input_account_id = AccountId::new_v4();
+        let counterparty_account_id = AccountId::new_v4();
 
         let input_pair = test_pair();
         let price = FixedPoint::from_integer(2); // 2 B per A
@@ -491,10 +560,15 @@ mod tests {
 
         let counterparty_order =
             create_counterparty_order(500, FixedPoint::from_f64_round_down(0.4));
-        engine.upsert_order(&counterparty_order, 500, pool.clone());
+        engine.upsert_order(counterparty_account_id, &counterparty_order, 500, pool.clone());
 
-        let result =
-            engine.find_match(input_pair, input_range, pool, TimestampedPriceFp::from(price));
+        let result = engine.find_match(
+            input_account_id,
+            input_pair,
+            input_range,
+            pool,
+            TimestampedPriceFp::from(price),
+        );
         assert!(result.is_some());
 
         let successful_match = result.unwrap();
@@ -509,6 +583,8 @@ mod tests {
     fn test_find_match_limited_by_counterparty_amount() {
         let engine = MatchingEngine::new();
         let pool = test_matching_pool();
+        let input_account_id = AccountId::new_v4();
+        let counterparty_account_id = AccountId::new_v4();
 
         let input_pair = test_pair();
         let price = FixedPoint::from_integer(2); // 2 B per A
@@ -517,10 +593,15 @@ mod tests {
         // Counterparty only has 100 B available
         let counterparty_order =
             create_counterparty_order(100, FixedPoint::from_f64_round_down(0.4));
-        engine.upsert_order(&counterparty_order, 100, pool.clone());
+        engine.upsert_order(counterparty_account_id, &counterparty_order, 100, pool.clone());
 
-        let result =
-            engine.find_match(input_pair, input_range, pool, TimestampedPriceFp::from(price));
+        let result = engine.find_match(
+            input_account_id,
+            input_pair,
+            input_range,
+            pool,
+            TimestampedPriceFp::from(price),
+        );
         assert!(result.is_some());
 
         let successful_match = result.unwrap();
@@ -535,6 +616,8 @@ mod tests {
     fn test_find_match_multiple_orders_selects_largest() {
         let engine = MatchingEngine::new();
         let pool = test_matching_pool();
+        let input_account_id = AccountId::new_v4();
+        let counterparty_account_id = AccountId::new_v4();
 
         let input_pair = test_pair();
         let price = FixedPoint::from_integer(2);
@@ -545,12 +628,17 @@ mod tests {
         let order2 = create_counterparty_order(500, FixedPoint::from_f64_round_down(0.4));
         let order3 = create_counterparty_order(200, FixedPoint::from_f64_round_down(0.4));
 
-        engine.upsert_order(&order1, 100, pool.clone());
-        engine.upsert_order(&order2, 500, pool.clone());
-        engine.upsert_order(&order3, 200, pool.clone());
+        engine.upsert_order(counterparty_account_id, &order1, 100, pool.clone());
+        engine.upsert_order(counterparty_account_id, &order2, 500, pool.clone());
+        engine.upsert_order(counterparty_account_id, &order3, 200, pool.clone());
 
-        let result =
-            engine.find_match(input_pair, input_range, pool, TimestampedPriceFp::from(price));
+        let result = engine.find_match(
+            input_account_id,
+            input_pair,
+            input_range,
+            pool,
+            TimestampedPriceFp::from(price),
+        );
         assert!(result.is_some());
 
         // Should match with order2 (largest matchable amount = 500)
@@ -568,6 +656,8 @@ mod tests {
         let engine = MatchingEngine::new();
         let pool1 = "pool1".to_string();
         let pool2 = "pool2".to_string();
+        let input_account_id = AccountId::new_v4();
+        let counterparty_account_id = AccountId::new_v4();
 
         let input_pair = test_pair();
         let price = FixedPoint::from_integer(2);
@@ -575,10 +665,11 @@ mod tests {
 
         // Add order to pool1
         let order1 = create_counterparty_order(500, FixedPoint::from_f64_round_down(0.4));
-        engine.upsert_order(&order1, 500, pool1.clone());
+        engine.upsert_order(counterparty_account_id, &order1, 500, pool1.clone());
 
         // Should find match in pool1
         let result1 = engine.find_match(
+            input_account_id,
             input_pair,
             input_range.clone(),
             pool1.clone(),
@@ -589,8 +680,13 @@ mod tests {
         assert_eq!(successful_match1.other_order_id, order1.id);
 
         // Should not find match in pool2
-        let result2 =
-            engine.find_match(input_pair, input_range, pool2, TimestampedPriceFp::from(price));
+        let result2 = engine.find_match(
+            input_account_id,
+            input_pair,
+            input_range,
+            pool2,
+            TimestampedPriceFp::from(price),
+        );
         assert!(result2.is_none());
     }
 
@@ -598,6 +694,8 @@ mod tests {
     fn test_find_match_min_fill_size_constraint() {
         let engine = MatchingEngine::new();
         let pool = test_matching_pool();
+        let input_account_id = AccountId::new_v4();
+        let counterparty_account_id = AccountId::new_v4();
 
         let input_pair = test_pair();
         let price = FixedPoint::from_integer(2);
@@ -607,11 +705,16 @@ mod tests {
         let mut counterparty_order =
             create_counterparty_order(500, FixedPoint::from_f64_round_down(0.4));
         counterparty_order.metadata.min_fill_size = 100; // Requires at least 100 B
-        engine.upsert_order(&counterparty_order, 500, pool.clone());
+        engine.upsert_order(counterparty_account_id, &counterparty_order, 500, pool.clone());
 
         // input_range max of 10 A -> 20 B, but counterparty needs at least 100 B
-        let result =
-            engine.find_match(input_pair, input_range, pool, TimestampedPriceFp::from(price));
+        let result = engine.find_match(
+            input_account_id,
+            input_pair,
+            input_range,
+            pool,
+            TimestampedPriceFp::from(price),
+        );
         assert!(result.is_none(), "Should not match when min_fill_size not met");
     }
 
@@ -619,6 +722,8 @@ mod tests {
     fn test_find_match_fractional_price() {
         let engine = MatchingEngine::new();
         let pool = test_matching_pool();
+        let input_account_id = AccountId::new_v4();
+        let counterparty_account_id = AccountId::new_v4();
 
         let input_pair = test_pair();
         let price = FixedPoint::from_f64_round_down(1.5); // 1.5 B per A
@@ -626,10 +731,15 @@ mod tests {
 
         let counterparty_order =
             create_counterparty_order(500, FixedPoint::from_f64_round_down(0.5));
-        engine.upsert_order(&counterparty_order, 500, pool.clone());
+        engine.upsert_order(counterparty_account_id, &counterparty_order, 500, pool.clone());
 
-        let result =
-            engine.find_match(input_pair, input_range, pool, TimestampedPriceFp::from(price));
+        let result = engine.find_match(
+            input_account_id,
+            input_pair,
+            input_range,
+            pool,
+            TimestampedPriceFp::from(price),
+        );
         assert!(result.is_some());
 
         let successful_match = result.unwrap();
@@ -645,6 +755,8 @@ mod tests {
     fn test_find_match_external_only_matches_externally_matchable() {
         let engine = MatchingEngine::new();
         let pool = test_matching_pool();
+        let input_account_id = AccountId::new_v4();
+        let counterparty_account_id = AccountId::new_v4();
 
         let input_pair = test_pair();
         let price = FixedPoint::from_integer(2); // 2 B per A
@@ -659,11 +771,12 @@ mod tests {
         let mut order2 = create_counterparty_order(300, FixedPoint::from_f64_round_down(0.4));
         order2.metadata.allow_external_matches = false;
 
-        engine.upsert_order(&order1, 300, pool.clone());
-        engine.upsert_order(&order2, 500, pool.clone());
+        engine.upsert_order(counterparty_account_id, &order1, 300, pool.clone());
+        engine.upsert_order(counterparty_account_id, &order2, 500, pool.clone());
 
         // find_match (internal) should match with order2 (largest, 500)
         let result_internal = engine.find_match(
+            input_account_id,
             input_pair,
             input_range.clone(),
             pool.clone(),
@@ -695,6 +808,8 @@ mod tests {
     fn test_find_match_external_no_match_when_no_externally_matchable() {
         let engine = MatchingEngine::new();
         let pool = test_matching_pool();
+        let input_account_id = AccountId::new_v4();
+        let counterparty_account_id = AccountId::new_v4();
 
         let input_pair = test_pair();
         let price = FixedPoint::from_integer(2); // 2 B per A
@@ -703,10 +818,11 @@ mod tests {
         // Create a counterparty order that is NOT externally matchable
         let mut order = create_counterparty_order(500, FixedPoint::from_f64_round_down(0.4));
         order.metadata.allow_external_matches = false;
-        engine.upsert_order(&order, 500, pool.clone());
+        engine.upsert_order(counterparty_account_id, &order, 500, pool.clone());
 
         // find_match (internal) should still match
         let result_internal = engine.find_match(
+            input_account_id,
             input_pair,
             input_range.clone(),
             pool.clone(),
@@ -738,6 +854,8 @@ mod tests {
     fn test_find_match_with_nonzero_minimum() {
         let engine = MatchingEngine::new();
         let pool = test_matching_pool();
+        let input_account_id = AccountId::new_v4();
+        let counterparty_account_id = AccountId::new_v4();
 
         let input_pair = test_pair();
         let price = FixedPoint::from_integer(2); // 2 B per A
@@ -746,10 +864,15 @@ mod tests {
         // Counterparty has 500 B available
         let counterparty_order =
             create_counterparty_order(500, FixedPoint::from_f64_round_down(0.4));
-        engine.upsert_order(&counterparty_order, 500, pool.clone());
+        engine.upsert_order(counterparty_account_id, &counterparty_order, 500, pool.clone());
 
-        let result =
-            engine.find_match(input_pair, input_range, pool, TimestampedPriceFp::from(price));
+        let result = engine.find_match(
+            input_account_id,
+            input_pair,
+            input_range,
+            pool,
+            TimestampedPriceFp::from(price),
+        );
         assert!(result.is_some());
 
         let successful_match = result.unwrap();
@@ -764,6 +887,8 @@ mod tests {
     fn test_find_match_no_intersection_input_min_too_high() {
         let engine = MatchingEngine::new();
         let pool = test_matching_pool();
+        let input_account_id = AccountId::new_v4();
+        let counterparty_account_id = AccountId::new_v4();
 
         let input_pair = test_pair();
         let price = FixedPoint::from_integer(2); // 2 B per A
@@ -776,10 +901,15 @@ mod tests {
         // Counterparty's range: min_fill_size..=100 = 1..=100 B
         let counterparty_order =
             create_counterparty_order(100, FixedPoint::from_f64_round_down(0.4));
-        engine.upsert_order(&counterparty_order, 100, pool.clone());
+        engine.upsert_order(counterparty_account_id, &counterparty_order, 100, pool.clone());
 
-        let result =
-            engine.find_match(input_pair, input_range, pool, TimestampedPriceFp::from(price));
+        let result = engine.find_match(
+            input_account_id,
+            input_pair,
+            input_range,
+            pool,
+            TimestampedPriceFp::from(price),
+        );
         assert!(result.is_none(), "Should not match when ranges don't intersect");
     }
 
@@ -787,6 +917,8 @@ mod tests {
     fn test_find_match_no_intersection_counterparty_min_fill_too_high() {
         let engine = MatchingEngine::new();
         let pool = test_matching_pool();
+        let input_account_id = AccountId::new_v4();
+        let counterparty_account_id = AccountId::new_v4();
 
         let input_pair = test_pair();
         let price = FixedPoint::from_integer(2); // 2 B per A
@@ -800,10 +932,15 @@ mod tests {
         let mut counterparty_order =
             create_counterparty_order(500, FixedPoint::from_f64_round_down(0.4));
         counterparty_order.metadata.min_fill_size = 100;
-        engine.upsert_order(&counterparty_order, 500, pool.clone());
+        engine.upsert_order(counterparty_account_id, &counterparty_order, 500, pool.clone());
 
-        let result =
-            engine.find_match(input_pair, input_range, pool, TimestampedPriceFp::from(price));
+        let result = engine.find_match(
+            input_account_id,
+            input_pair,
+            input_range,
+            pool,
+            TimestampedPriceFp::from(price),
+        );
         assert!(
             result.is_none(),
             "Should not match when counterparty min_fill_size exceeds output"
@@ -814,6 +951,8 @@ mod tests {
     fn test_find_match_partial_range_intersection() {
         let engine = MatchingEngine::new();
         let pool = test_matching_pool();
+        let input_account_id = AccountId::new_v4();
+        let counterparty_account_id = AccountId::new_v4();
 
         let input_pair = test_pair();
         let price = FixedPoint::from_integer(2); // 2 B per A
@@ -827,10 +966,15 @@ mod tests {
         let mut counterparty_order =
             create_counterparty_order(80, FixedPoint::from_f64_round_down(0.4));
         counterparty_order.metadata.min_fill_size = 50;
-        engine.upsert_order(&counterparty_order, 80, pool.clone());
+        engine.upsert_order(counterparty_account_id, &counterparty_order, 80, pool.clone());
 
-        let result =
-            engine.find_match(input_pair, input_range, pool, TimestampedPriceFp::from(price));
+        let result = engine.find_match(
+            input_account_id,
+            input_pair,
+            input_range,
+            pool,
+            TimestampedPriceFp::from(price),
+        );
         assert!(result.is_some(), "Should match when ranges partially intersect");
 
         let successful_match = result.unwrap();
@@ -847,6 +991,8 @@ mod tests {
     fn test_find_match_exact_boundary_intersection() {
         let engine = MatchingEngine::new();
         let pool = test_matching_pool();
+        let input_account_id = AccountId::new_v4();
+        let counterparty_account_id = AccountId::new_v4();
 
         let input_pair = test_pair();
         let price = FixedPoint::from_integer(2); // 2 B per A
@@ -860,10 +1006,15 @@ mod tests {
         let mut counterparty_order =
             create_counterparty_order(200, FixedPoint::from_f64_round_down(0.4));
         counterparty_order.metadata.min_fill_size = 100;
-        engine.upsert_order(&counterparty_order, 200, pool.clone());
+        engine.upsert_order(counterparty_account_id, &counterparty_order, 200, pool.clone());
 
-        let result =
-            engine.find_match(input_pair, input_range, pool, TimestampedPriceFp::from(price));
+        let result = engine.find_match(
+            input_account_id,
+            input_pair,
+            input_range,
+            pool,
+            TimestampedPriceFp::from(price),
+        );
         assert!(result.is_some(), "Should match when ranges touch at boundary");
 
         let successful_match = result.unwrap();
@@ -878,6 +1029,8 @@ mod tests {
     fn test_find_match_skips_non_intersecting_finds_intersecting() {
         let engine = MatchingEngine::new();
         let pool = test_matching_pool();
+        let input_account_id = AccountId::new_v4();
+        let counterparty_account_id = AccountId::new_v4();
 
         let input_pair = test_pair();
         let price = FixedPoint::from_integer(2); // 2 B per A
@@ -894,11 +1047,16 @@ mod tests {
         let mut order2 = create_counterparty_order(100, FixedPoint::from_f64_round_down(0.4));
         order2.metadata.min_fill_size = 50;
 
-        engine.upsert_order(&order1, 500, pool.clone());
-        engine.upsert_order(&order2, 100, pool.clone());
+        engine.upsert_order(counterparty_account_id, &order1, 500, pool.clone());
+        engine.upsert_order(counterparty_account_id, &order2, 100, pool.clone());
 
-        let result =
-            engine.find_match(input_pair, input_range, pool, TimestampedPriceFp::from(price));
+        let result = engine.find_match(
+            input_account_id,
+            input_pair,
+            input_range,
+            pool,
+            TimestampedPriceFp::from(price),
+        );
         assert!(result.is_some());
 
         // Should skip order1 (no intersection) and match with order2
@@ -915,6 +1073,8 @@ mod tests {
     fn test_find_match_range_with_fractional_price() {
         let engine = MatchingEngine::new();
         let pool = test_matching_pool();
+        let input_account_id = AccountId::new_v4();
+        let counterparty_account_id = AccountId::new_v4();
 
         let input_pair = test_pair();
         let price = FixedPoint::from_f64_round_down(1.5); // 1.5 B per A
@@ -928,10 +1088,15 @@ mod tests {
         let mut counterparty_order =
             create_counterparty_order(100, FixedPoint::from_f64_round_down(0.5));
         counterparty_order.metadata.min_fill_size = 50;
-        engine.upsert_order(&counterparty_order, 100, pool.clone());
+        engine.upsert_order(counterparty_account_id, &counterparty_order, 100, pool.clone());
 
-        let result =
-            engine.find_match(input_pair, input_range, pool, TimestampedPriceFp::from(price));
+        let result = engine.find_match(
+            input_account_id,
+            input_pair,
+            input_range,
+            pool,
+            TimestampedPriceFp::from(price),
+        );
         assert!(result.is_some(), "Should match with fractional price");
 
         let successful_match = result.unwrap();
@@ -953,6 +1118,7 @@ mod tests {
         let engine = MatchingEngine::new();
         let pool1 = "pool1".to_string();
         let pool2 = "pool2".to_string();
+        let counterparty_account_id = AccountId::new_v4();
 
         let input_pair = test_pair();
         let price = FixedPoint::from_integer(2); // 2 B per A
@@ -961,12 +1127,12 @@ mod tests {
         // Add an externally matchable order to pool1
         let mut order1 = create_counterparty_order(300, FixedPoint::from_f64_round_down(0.4));
         order1.metadata.allow_external_matches = true;
-        engine.upsert_order(&order1, 300, pool1.clone());
+        engine.upsert_order(counterparty_account_id, &order1, 300, pool1.clone());
 
         // Add an externally matchable order to pool2
         let mut order2 = create_counterparty_order(200, FixedPoint::from_f64_round_down(0.4));
         order2.metadata.allow_external_matches = true;
-        engine.upsert_order(&order2, 200, pool2.clone());
+        engine.upsert_order(counterparty_account_id, &order2, 200, pool2.clone());
 
         // All-pools external match should find the largest order (order1 from pool1)
         let result = engine.find_match_external_all_pools(
@@ -989,6 +1155,7 @@ mod tests {
         let pool1 = "pool1".to_string();
         let pool2 = "pool2".to_string();
         let pool3 = "pool3".to_string();
+        let counterparty_account_id = AccountId::new_v4();
 
         let input_pair = test_pair();
         let price = FixedPoint::from_integer(2);
@@ -997,15 +1164,15 @@ mod tests {
         // Add orders to different pools with varying sizes
         let mut order1 = create_counterparty_order(100, FixedPoint::from_f64_round_down(0.4));
         order1.metadata.allow_external_matches = true;
-        engine.upsert_order(&order1, 100, pool1.clone());
+        engine.upsert_order(counterparty_account_id, &order1, 100, pool1.clone());
 
         let mut order2 = create_counterparty_order(500, FixedPoint::from_f64_round_down(0.4));
         order2.metadata.allow_external_matches = true;
-        engine.upsert_order(&order2, 500, pool2.clone());
+        engine.upsert_order(counterparty_account_id, &order2, 500, pool2.clone());
 
         let mut order3 = create_counterparty_order(300, FixedPoint::from_f64_round_down(0.4));
         order3.metadata.allow_external_matches = true;
-        engine.upsert_order(&order3, 300, pool3.clone());
+        engine.upsert_order(counterparty_account_id, &order3, 300, pool3.clone());
 
         // All-pools match should select order2 (largest at 500)
         let result = engine.find_match_external_all_pools(
@@ -1032,6 +1199,7 @@ mod tests {
         let engine = MatchingEngine::new();
         let pool1 = "pool1".to_string();
         let pool2 = "pool2".to_string();
+        let counterparty_account_id = AccountId::new_v4();
 
         let input_pair = test_pair();
         let price = FixedPoint::from_integer(2);
@@ -1040,12 +1208,12 @@ mod tests {
         // Add a large order that is NOT externally matchable
         let mut order1 = create_counterparty_order(1000, FixedPoint::from_f64_round_down(0.4));
         order1.metadata.allow_external_matches = false;
-        engine.upsert_order(&order1, 1000, pool1.clone());
+        engine.upsert_order(counterparty_account_id, &order1, 1000, pool1.clone());
 
         // Add a smaller order that IS externally matchable
         let mut order2 = create_counterparty_order(200, FixedPoint::from_f64_round_down(0.4));
         order2.metadata.allow_external_matches = true;
-        engine.upsert_order(&order2, 200, pool2.clone());
+        engine.upsert_order(counterparty_account_id, &order2, 200, pool2.clone());
 
         // All-pools external match should only find order2 (externally matchable)
         let result = engine.find_match_external_all_pools(
@@ -1067,6 +1235,7 @@ mod tests {
         let engine = MatchingEngine::new();
         let pool1 = "pool1".to_string();
         let pool2 = "pool2".to_string();
+        let counterparty_account_id = AccountId::new_v4();
 
         let input_pair = test_pair();
         let price = FixedPoint::from_integer(2);
@@ -1075,11 +1244,11 @@ mod tests {
         // Add orders that are NOT externally matchable
         let mut order1 = create_counterparty_order(500, FixedPoint::from_f64_round_down(0.4));
         order1.metadata.allow_external_matches = false;
-        engine.upsert_order(&order1, 500, pool1.clone());
+        engine.upsert_order(counterparty_account_id, &order1, 500, pool1.clone());
 
         let mut order2 = create_counterparty_order(300, FixedPoint::from_f64_round_down(0.4));
         order2.metadata.allow_external_matches = false;
-        engine.upsert_order(&order2, 300, pool2.clone());
+        engine.upsert_order(counterparty_account_id, &order2, 300, pool2.clone());
 
         // All-pools external match should find nothing
         let result = engine.find_match_external_all_pools(

@@ -231,7 +231,7 @@ impl Task for CreateOrderTask {
 
     // Run the matching engine on the order after a successful creation
     fn success_hooks(&self) -> Vec<Box<dyn TaskHook>> {
-        let run_matching_engine = RunMatchingEngineHook::new(vec![self.order_id]);
+        let run_matching_engine = RunMatchingEngineHook::new(self.account_id, vec![self.order_id]);
         vec![Box::new(run_matching_engine)]
     }
 }

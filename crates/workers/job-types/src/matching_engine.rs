@@ -3,7 +3,7 @@
 use circuit_types::{Amount, fixed_point::FixedPoint};
 use system_bus::gen_atomic_match_response_topic;
 use types_account::{MatchingPoolName, OrderId, order::Order};
-use types_core::TimestampedPrice;
+use types_core::{AccountId, TimestampedPrice};
 use util::channels::{TracedTokioReceiver, TracedTokioSender, new_traced_tokio_channel};
 
 /// The job queue for the matching engine worker
@@ -28,6 +28,8 @@ pub enum MatchingEngineWorkerJob {
     /// with a remote peer. Both orders matched are known in the clear to
     /// the local peer
     InternalMatchingEngine {
+        /// The account ID that owns the order
+        account_id: AccountId,
         /// The order to match
         order: OrderId,
     },
@@ -50,8 +52,8 @@ pub enum MatchingEngineWorkerJob {
 
 impl MatchingEngineWorkerJob {
     /// Run the internal matching engine on a given order
-    pub fn run_internal_engine(order: OrderId) -> Self {
-        Self::InternalMatchingEngine { order }
+    pub fn run_internal_engine(account_id: AccountId, order: OrderId) -> Self {
+        Self::InternalMatchingEngine { account_id, order }
     }
 
     /// Get a quote for an external order

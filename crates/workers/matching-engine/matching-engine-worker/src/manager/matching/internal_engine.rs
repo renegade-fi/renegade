@@ -25,6 +25,7 @@ impl MatchingEngineExecutor {
     #[instrument(name = "run_internal_matching_engine", skip_all)]
     pub async fn run_internal_matching_engine(
         &self,
+        account_id: AccountId,
         order_id: OrderId,
     ) -> Result<(), MatchingEngineError> {
         info!("Running internal matching engine on order {order_id}");
@@ -33,7 +34,7 @@ impl MatchingEngineExecutor {
         let matching_pool = self.fetch_matching_pool(&order_id).await?;
 
         // Find a match
-        let res = self.find_internal_match(&order, matchable_amount, matching_pool)?;
+        let res = self.find_internal_match(account_id, &order, matchable_amount, matching_pool)?;
         let successful_match = match res {
             Some(match_res) => match_res,
             None => {

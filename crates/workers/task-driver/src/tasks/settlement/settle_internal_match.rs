@@ -234,8 +234,11 @@ impl Task for SettleInternalMatchTask {
 
     // Re-run the matching engine on both orders for recursive fills
     fn success_hooks(&self) -> Vec<Box<dyn TaskHook>> {
-        let engine_run = RunMatchingEngineHook::new(vec![self.order_id, self.other_order_id]);
-        vec![Box::new(engine_run)]
+        // Create a hook for each order/account pair
+        let engine_run1 = RunMatchingEngineHook::new(self.account_id, vec![self.order_id]);
+        let engine_run2 =
+            RunMatchingEngineHook::new(self.other_account_id, vec![self.other_order_id]);
+        vec![Box::new(engine_run1), Box::new(engine_run2)]
     }
 
     // Refresh both accounts after a failure
