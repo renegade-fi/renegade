@@ -17,6 +17,12 @@ use crate::{SuccessfulMatch, book::Book};
 pub struct MatchingEngine {
     /// A mapping from asset pair and matching pool to the book
     book_map: Arc<DashMap<(Pair, MatchingPoolName), Book>>,
+    /// A book containing all orders across all pools, keyed by pair
+    ///
+    /// This is used for external matching when no specific pool is specified,
+    /// allowing external matches to find the best counterparty across all
+    /// pools.
+    all_pools_book: Arc<DashMap<Pair, Book>>,
 }
 
 impl Default for MatchingEngine {
@@ -28,7 +34,7 @@ impl Default for MatchingEngine {
 impl MatchingEngine {
     /// Create a new matching engine
     pub fn new() -> Self {
-        Self { book_map: Arc::new(DashMap::new()) }
+        Self { book_map: Arc::new(DashMap::new()), all_pools_book: Arc::new(DashMap::new()) }
     }
 
     // --- Order Operations --- //
@@ -65,21 +71,37 @@ impl MatchingEngine {
         matching_pool: MatchingPoolName,
     ) {
         let pair = order.pair();
-        let mut book = self.book_map.entry((pair, matching_pool)).or_insert_with(Book::new);
 
-        // Upsert the order
+        // Upsert into the pool-specific book
+        let mut book = self.book_map.entry((pair, matching_pool)).or_insert_with(Book::new);
         if book.contains_order(order.id) {
             book.update_order(order, matchable_amount);
         } else {
             book.add_order(order, matchable_amount);
+        }
+        drop(book);
+
+        // Upsert into the all-pools book
+        let mut all_book = self.all_pools_book.entry(pair).or_insert_with(Book::new);
+        if all_book.contains_order(order.id) {
+            all_book.update_order(order, matchable_amount);
+        } else {
+            all_book.add_order(order, matchable_amount);
         }
     }
 
     /// Remove an order from the matching engine
     pub fn cancel_order(&self, order: &Order, matching_pool: MatchingPoolName) {
         let pair = order.pair();
+
+        // Remove from the pool-specific book
         if let Some(mut book) = self.book_map.get_mut(&(pair, matching_pool)) {
             book.remove_order(order.id);
+        }
+
+        // Remove from the all-pools book
+        if let Some(mut all_book) = self.all_pools_book.get_mut(&pair) {
+            all_book.remove_order(order.id);
         }
     }
 
@@ -91,8 +113,15 @@ impl MatchingEngine {
         matching_pool: MatchingPoolName,
     ) {
         let pair = order.pair();
+
+        // Update in the pool-specific book
         if let Some(mut book) = self.book_map.get_mut(&(pair, matching_pool)) {
             book.update_order(order, matchable_amount);
+        }
+
+        // Update in the all-pools book
+        if let Some(mut all_book) = self.all_pools_book.get_mut(&pair) {
+            all_book.update_order(order, matchable_amount);
         }
     }
 
@@ -149,6 +178,49 @@ impl MatchingEngine {
         self.find_match_helper(input_pair, input_range, matching_pool, ts_price, true)
     }
 
+    /// Find an external match for an order across all matching pools
+    ///
+    /// This method searches the all-pools book which contains orders from every
+    /// matching pool, allowing external matches to find the best counterparty
+    /// regardless of which pool the order belongs to.
+    ///
+    /// The price here is specified in terms of the input order's output token /
+    /// input token. I.e. it is in the same units as the input order's min
+    /// price.
+    ///
+    /// This method requires any order it matches against to have
+    /// `externally_matchable` set to `true`.
+    pub fn find_match_external_all_pools(
+        &self,
+        input_pair: Pair,
+        input_range: RangeInclusive<Amount>,
+        ts_price: TimestampedPriceFp,
+    ) -> Option<SuccessfulMatch> {
+        let price = ts_price.price;
+        let counterparty_pair = input_pair.reverse();
+        let counterparty_price = price.inverse()?;
+        let output_range = input_range_to_output_range(input_range, price);
+
+        // Query the all-pools book instead of a pool-specific book
+        let book = self.all_pools_book.get(&counterparty_pair)?;
+        let (counterparty_oid, counterparty_input_amount, matchable_amount_bounds) = book
+            .find_match(
+                counterparty_price,
+                output_range,
+                true, // require_externally_matchable
+            )?;
+        drop(book);
+
+        // Build the match result
+        self.build_match_result(
+            input_pair,
+            ts_price,
+            counterparty_oid,
+            counterparty_input_amount,
+            matchable_amount_bounds,
+        )
+    }
+
     /// Common helper for finding matches
     ///
     /// The price here is specified in terms of the input order's output token /
@@ -171,16 +243,34 @@ impl MatchingEngine {
         require_externally_matchable: bool,
     ) -> Option<SuccessfulMatch> {
         let price = ts_price.price;
-        let counterparty_pair = input_pair.reverse(); // Reverse the pair to get the counterparty's book
+        let counterparty_pair = input_pair.reverse();
         let counterparty_price = price.inverse()?;
         let output_range = input_range_to_output_range(input_range, price);
 
         let book = self.book_map.get(&(counterparty_pair, matching_pool))?;
         let (counterparty_oid, counterparty_input_amount, matchable_amount_bounds) =
             book.find_match(counterparty_price, output_range, require_externally_matchable)?;
-        drop(book); // Release the borrow
+        drop(book);
 
-        // Build the match result
+        self.build_match_result(
+            input_pair,
+            ts_price,
+            counterparty_oid,
+            counterparty_input_amount,
+            matchable_amount_bounds,
+        )
+    }
+
+    /// Build a `SuccessfulMatch` from the match parameters
+    fn build_match_result(
+        &self,
+        input_pair: Pair,
+        ts_price: TimestampedPriceFp,
+        counterparty_oid: types_account::OrderId,
+        counterparty_input_amount: Amount,
+        matchable_amount_bounds: RangeInclusive<Amount>,
+    ) -> Option<SuccessfulMatch> {
+        let counterparty_price = ts_price.price.inverse()?;
         let input_amount_scalar = counterparty_price.floor_mul_int(counterparty_input_amount);
         let input_amount = scalar_to_u128(&input_amount_scalar);
 
@@ -201,14 +291,12 @@ impl MatchingEngine {
         };
 
         let match_result = MatchResult::new(obligation1, obligation2);
-        let successful_match = SuccessfulMatch {
+        Some(SuccessfulMatch {
             other_order_id: counterparty_oid,
             price: ts_price,
             match_result,
             matchable_amount_bounds,
-        };
-
-        Some(successful_match)
+        })
     }
 }
 
@@ -854,5 +942,151 @@ mod tests {
         assert_eq!(ob1.amount_out, 100);
         // input_amount = 100 / 1.5 = 66.67, but due to floor rounding ≈ 66
         assert_eq!(ob1.amount_in, 66);
+    }
+
+    // -------------------------------------
+    // | All Pools External Matching Tests |
+    // -------------------------------------
+
+    #[test]
+    fn test_find_match_external_all_pools_finds_orders_across_pools() {
+        let engine = MatchingEngine::new();
+        let pool1 = "pool1".to_string();
+        let pool2 = "pool2".to_string();
+
+        let input_pair = test_pair();
+        let price = FixedPoint::from_integer(2); // 2 B per A
+        let input_range = 0..=100;
+
+        // Add an externally matchable order to pool1
+        let mut order1 = create_counterparty_order(300, FixedPoint::from_f64_round_down(0.4));
+        order1.metadata.allow_external_matches = true;
+        engine.upsert_order(&order1, 300, pool1.clone());
+
+        // Add an externally matchable order to pool2
+        let mut order2 = create_counterparty_order(200, FixedPoint::from_f64_round_down(0.4));
+        order2.metadata.allow_external_matches = true;
+        engine.upsert_order(&order2, 200, pool2.clone());
+
+        // All-pools external match should find the largest order (order1 from pool1)
+        let result = engine.find_match_external_all_pools(
+            input_pair,
+            input_range,
+            TimestampedPriceFp::from(price),
+        );
+        assert!(result.is_some(), "Should find a match across all pools");
+
+        let successful_match = result.unwrap();
+        assert_eq!(
+            successful_match.other_order_id, order1.id,
+            "Should match with the largest order across pools"
+        );
+    }
+
+    #[test]
+    fn test_find_match_external_all_pools_selects_largest_order() {
+        let engine = MatchingEngine::new();
+        let pool1 = "pool1".to_string();
+        let pool2 = "pool2".to_string();
+        let pool3 = "pool3".to_string();
+
+        let input_pair = test_pair();
+        let price = FixedPoint::from_integer(2);
+        let input_range = 0..=1000;
+
+        // Add orders to different pools with varying sizes
+        let mut order1 = create_counterparty_order(100, FixedPoint::from_f64_round_down(0.4));
+        order1.metadata.allow_external_matches = true;
+        engine.upsert_order(&order1, 100, pool1.clone());
+
+        let mut order2 = create_counterparty_order(500, FixedPoint::from_f64_round_down(0.4));
+        order2.metadata.allow_external_matches = true;
+        engine.upsert_order(&order2, 500, pool2.clone());
+
+        let mut order3 = create_counterparty_order(300, FixedPoint::from_f64_round_down(0.4));
+        order3.metadata.allow_external_matches = true;
+        engine.upsert_order(&order3, 300, pool3.clone());
+
+        // All-pools match should select order2 (largest at 500)
+        let result = engine.find_match_external_all_pools(
+            input_pair,
+            input_range,
+            TimestampedPriceFp::from(price),
+        );
+        assert!(result.is_some());
+
+        let successful_match = result.unwrap();
+        assert_eq!(
+            successful_match.other_order_id, order2.id,
+            "Should select the largest order across all pools"
+        );
+
+        // Verify match amount
+        let ob1 = successful_match.match_result.party0_obligation();
+        assert_eq!(ob1.amount_out, 500);
+        assert_eq!(ob1.amount_in, 250);
+    }
+
+    #[test]
+    fn test_find_match_external_all_pools_only_matches_externally_matchable() {
+        let engine = MatchingEngine::new();
+        let pool1 = "pool1".to_string();
+        let pool2 = "pool2".to_string();
+
+        let input_pair = test_pair();
+        let price = FixedPoint::from_integer(2);
+        let input_range = 0..=1000;
+
+        // Add a large order that is NOT externally matchable
+        let mut order1 = create_counterparty_order(1000, FixedPoint::from_f64_round_down(0.4));
+        order1.metadata.allow_external_matches = false;
+        engine.upsert_order(&order1, 1000, pool1.clone());
+
+        // Add a smaller order that IS externally matchable
+        let mut order2 = create_counterparty_order(200, FixedPoint::from_f64_round_down(0.4));
+        order2.metadata.allow_external_matches = true;
+        engine.upsert_order(&order2, 200, pool2.clone());
+
+        // All-pools external match should only find order2 (externally matchable)
+        let result = engine.find_match_external_all_pools(
+            input_pair,
+            input_range,
+            TimestampedPriceFp::from(price),
+        );
+        assert!(result.is_some());
+
+        let successful_match = result.unwrap();
+        assert_eq!(
+            successful_match.other_order_id, order2.id,
+            "Should only match externally matchable orders"
+        );
+    }
+
+    #[test]
+    fn test_find_match_external_all_pools_no_match_when_none_externally_matchable() {
+        let engine = MatchingEngine::new();
+        let pool1 = "pool1".to_string();
+        let pool2 = "pool2".to_string();
+
+        let input_pair = test_pair();
+        let price = FixedPoint::from_integer(2);
+        let input_range = 0..=100;
+
+        // Add orders that are NOT externally matchable
+        let mut order1 = create_counterparty_order(500, FixedPoint::from_f64_round_down(0.4));
+        order1.metadata.allow_external_matches = false;
+        engine.upsert_order(&order1, 500, pool1.clone());
+
+        let mut order2 = create_counterparty_order(300, FixedPoint::from_f64_round_down(0.4));
+        order2.metadata.allow_external_matches = false;
+        engine.upsert_order(&order2, 300, pool2.clone());
+
+        // All-pools external match should find nothing
+        let result = engine.find_match_external_all_pools(
+            input_pair,
+            input_range,
+            TimestampedPriceFp::from(price),
+        );
+        assert!(result.is_none(), "Should not match when no orders are externally matchable");
     }
 }

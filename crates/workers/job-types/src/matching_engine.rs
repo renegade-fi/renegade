@@ -1,7 +1,6 @@
 //! Jobs consumed by the matching engine worker
 
 use circuit_types::{Amount, fixed_point::FixedPoint};
-use constants::GLOBAL_MATCHING_POOL;
 use system_bus::gen_atomic_match_response_topic;
 use types_account::{MatchingPoolName, OrderId, order::Order};
 use types_core::TimestampedPrice;
@@ -151,10 +150,5 @@ impl ExternalMatchingEngineOptions {
     pub fn with_matching_pool(mut self, pool: Option<MatchingPoolName>) -> Self {
         self.matching_pool = pool;
         self
-    }
-
-    /// Get the matching pool
-    pub fn matching_pool(&self) -> MatchingPoolName {
-        self.matching_pool.clone().unwrap_or(GLOBAL_MATCHING_POOL.to_string())
     }
 }

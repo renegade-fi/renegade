@@ -42,7 +42,7 @@ impl MatchingEngineExecutor {
         response_topic: String,
         options: ExternalMatchingEngineOptions,
     ) -> Result<(), MatchingEngineError> {
-        let matching_pool = options.matching_pool();
+        let matching_pool = options.matching_pool.clone();
         let res = self.find_external_match(&order, matching_pool)?;
         let successful_match = match res {
             Some(match_res) => match_res,
