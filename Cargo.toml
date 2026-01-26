@@ -27,7 +27,6 @@ members = [
 	"crates/testing/test-helpers",
 	"crates/util",
 	"crates/workers/api-server",
-	"crates/workers/api-server/benches/api-server-bench-util",
 	"crates/workers/chain-events",
 	"crates/workers/event-manager",
 	"crates/workers/gossip-server",

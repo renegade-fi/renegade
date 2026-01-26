@@ -124,13 +124,12 @@ where
             if let Some(ref span_ref) = ctx.lookup_current() {
                 // Record current span fields, inspired by:
                 // https://github.com/tokio-rs/tracing/blob/tracing-subscriber-0.3.19/tracing-subscriber/src/fmt/format/json.rs#L168-L207
-                if let Some(fmt_fields) = span_ref.extensions().get::<FormattedFields<N>>() {
-                    if let Ok(serde_json::Value::Object(fields)) =
+                if let Some(fmt_fields) = span_ref.extensions().get::<FormattedFields<N>>()
+                    && let Ok(serde_json::Value::Object(fields)) =
                         serde_json::from_str::<serde_json::Value>(fmt_fields)
-                    {
-                        for (key, value) in fields {
-                            serializer.serialize_entry(&key, &value)?;
-                        }
+                {
+                    for (key, value) in fields {
+                        serializer.serialize_entry(&key, &value)?;
                     }
                 }
 
@@ -166,8 +165,7 @@ impl io::Write for WriteAdapter<'_> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let s =
             std::str::from_utf8(buf).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-
-        self.fmt_write.write_str(s).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        self.fmt_write.write_str(s).map_err(io::Error::other)?;
 
         Ok(s.len())
     }

@@ -24,6 +24,7 @@ config = { workspace = true }
 external-api = { workspace = true }
 gossip-api = { workspace = true }
 gossip-server = { workspace = true }
+matching-engine-core = { workspace = true }
 matching-engine-worker = { workspace = true }
 job-types = { workspace = true }
 network-manager = { workspace = true }

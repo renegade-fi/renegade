@@ -2,6 +2,7 @@
 //!
 //! These types are used with `#[rkyv(with = ...)]` to serialize types
 //! that don't natively support rkyv.
+#![allow(clippy::missing_docs_in_private_items)]
 
 use std::{hash::Hash, marker::PhantomData};
 

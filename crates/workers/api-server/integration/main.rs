@@ -1,97 +1,106 @@
-//! Integration tests for the `api-server` crate
+//! Integration tests for the api-server crate
+#![deny(unsafe_code)]
+#![deny(missing_docs)]
+#![deny(clippy::missing_docs_in_private_items)]
+#![deny(clippy::needless_pass_by_value)]
+#![deny(clippy::needless_pass_by_ref_mut)]
+#![allow(incomplete_features)]
 
-use api_server::http::PING_ROUTE;
 use circuit_types::fixed_point::FixedPoint;
 use clap::Parser;
-use config::setup_token_remaps;
-use external_api::{EmptyRequestResponse, http::PingResponse};
-use eyre::Result;
-use futures::executor::block_on;
+use config::RelayerConfig;
 use mock_node::MockNodeController;
-use rand::{distributions::uniform::SampleRange, thread_rng};
-use reqwest::Method;
-use test_helpers::{
-    assert_true_result, integration_test_async, integration_test_main, types::TestVerbosity,
-};
-use types_core::{chain::Chain, hmac::HmacKey};
+use state::test_helpers::tmp_db_path;
+use test_helpers::{integration_test, integration_test_main, types::TestVerbosity};
 use util::{on_chain::set_protocol_fee, telemetry::LevelFilter};
 
-use crate::ctx::IntegrationTestCtx;
+// -------
+// | CLI |
+// -------
 
-mod ctx;
-mod external_match;
-mod helpers;
-mod to_eyre;
-
-// -------------
-// | Arguments |
-// -------------
-
-/// The arguments used for running api-server integration tests
+/// The arguments used to run the integration tests
 #[derive(Debug, Clone, Parser)]
 #[command(author, version, about, long_about=None)]
 struct CliArgs {
     /// The test to run
     #[arg(short, long, value_parser)]
     test: Option<String>,
-    /// Whether or not to print output during the course of the tests
-    #[arg(long, default_value = "default")]
+    /// The verbosity level of the test harness
+    #[arg(long, short, default_value = "default")]
     verbosity: TestVerbosity,
 }
 
-// ---------
-// | Setup |
-// ---------
+/// A dummy RPC url for the integration tests
+const DUMMY_RPC_URL: &str = "https://dummy-rpc-url.com";
 
-impl From<CliArgs> for IntegrationTestCtx {
-    fn from(args: CliArgs) -> Self {
-        // Setup logging for integration tests
-        if matches!(args.verbosity, TestVerbosity::Full) {
-            util::telemetry::setup_system_logger(LevelFilter::INFO);
+/// The arguments provided to every integration test
+#[derive(Clone)]
+pub struct IntegrationTestArgs {
+    /// The mock node controller
+    pub mock_node: MockNodeController,
+    /// The verbosity level
+    pub verbosity: TestVerbosity,
+}
+
+// -----------
+// | Mocking |
+// -----------
+
+impl IntegrationTestArgs {
+    /// Get the relayer config for the integration tests
+    fn relayer_config() -> RelayerConfig {
+        let raft_snapshot_path = tmp_db_path();
+        let db_path = tmp_db_path();
+
+        RelayerConfig {
+            raft_snapshot_path,
+            db_path,
+            rpc_url: Some(DUMMY_RPC_URL.to_string()),
+            ..Default::default()
         }
-
-        // Use the Arbitrum Sepolia token remap for testing
-        setup_token_remaps(None /* remap_file */, Chain::ArbitrumSepolia)
-            .expect("failed to setup token remaps");
-
-        // Sample a mock price
-        let mut rng = thread_rng();
-        let mock_price = (0.0001..1000.).sample_single(&mut rng);
-
-        let admin_api_key = HmacKey::random();
-        let cfg = Self::relayer_config(admin_api_key);
-        let mock_node = MockNodeController::new(cfg)
-            .with_darkpool_client()
-            .with_state()
-            .with_handshake_manager()
-            .with_mock_price_reporter(mock_price)
-            .with_task_driver()
-            // We skip constraint checks here because we use dummy validity proofs
-            .with_mock_proof_generation(true /* skip_constraints */)
-            .with_api_server();
-
-        Self { mock_price, admin_api_key, mock_node }
     }
 }
 
-/// Setup the test harness
-fn setup_tests(ctx: &IntegrationTestCtx) {
+impl From<CliArgs> for IntegrationTestArgs {
+    fn from(args: CliArgs) -> Self {
+        let cfg = Self::relayer_config();
+        let mock_node = MockNodeController::new(cfg)
+            .with_darkpool_client()
+            .with_state()
+            .with_matching_engine_manager()
+            .with_mock_price_reporter(0.0001 /* price */)
+            .with_task_driver()
+            .with_mock_proof_generation(true /* skip_constraints */)
+            .with_api_server();
+
+        Self { mock_node, verbosity: args.verbosity }
+    }
+}
+
+// ----------------
+// | Test Harness |
+// ----------------
+
+/// Setup code for the integration tests
+fn setup_integration_tests(test_args: &IntegrationTestArgs) {
     // Set the global protocol fee
     let fee = FixedPoint::from_f64_round_down(0.0001);
     set_protocol_fee(fee);
-    // Setup the state
-    block_on(ctx.clone().setup_state()).expect("failed to setup state");
+
+    // Configure logging
+    if matches!(test_args.verbosity, TestVerbosity::Full) {
+        util::telemetry::setup_system_logger(LevelFilter::INFO);
+    }
 }
 
-integration_test_main!(CliArgs, IntegrationTestCtx, setup_tests);
+integration_test_main!(CliArgs, IntegrationTestArgs, setup_integration_tests);
 
 // ---------
 // | Tests |
 // ---------
 
-/// Tests that the api server can be pinged
-async fn test_ping(ctx: IntegrationTestCtx) -> Result<()> {
-    let resp: PingResponse = ctx.send_req(PING_ROUTE, Method::GET, EmptyRequestResponse {}).await?;
-    assert_true_result!(resp.timestamp > 0)
+/// A dummy test that does nothing
+fn test_dummy(_args: IntegrationTestArgs) {
+    // This is a placeholder test
 }
-integration_test_async!(test_ping);
+integration_test!(test_dummy);

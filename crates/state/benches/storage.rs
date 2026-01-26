@@ -97,7 +97,7 @@ pub fn bench_read_account(c: &mut Criterion) {
     for _ in 0..N_ACCOUNTS {
         let account = mock_empty_account();
         account_ids.push(account.id);
-        tx.write_account(&account).unwrap();
+        tx.new_account(&account).unwrap();
     }
     tx.commit().unwrap();
 
@@ -111,8 +111,7 @@ pub fn bench_read_account(c: &mut Criterion) {
             let account_id = account_ids[random_idx];
 
             let tx = db.new_read_tx().unwrap();
-            let account_value = tx.get_account(&account_id).unwrap().unwrap();
-            let account: Account = account_value.deserialize().unwrap();
+            let account: Account = tx.get_account(&account_id).unwrap().unwrap();
             tx.commit().unwrap();
 
             black_box(account);
@@ -130,7 +129,7 @@ pub fn bench_write_account(c: &mut Criterion) {
     group.bench_function("write_account", |b| {
         b.iter(|| {
             let tx = db.new_write_tx().unwrap();
-            tx.write_account(&account).unwrap();
+            tx.new_account(&account).unwrap();
             tx.commit().unwrap();
 
             black_box(());

@@ -11,8 +11,8 @@ use types_core::AccountId;
 
 use super::TaskDescriptor;
 
-/// The task descriptor containing only the parameterization of the `CreateBalance`
-/// task
+/// The task descriptor containing only the parameterization of the
+/// `CreateBalance` task
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "rkyv", derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize))]
 #[cfg_attr(feature = "rkyv", rkyv(derive(Debug)))]

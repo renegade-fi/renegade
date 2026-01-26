@@ -36,7 +36,8 @@ use job_types::{
     task_driver::{TaskDriverJob, TaskDriverQueue, TaskDriverReceiver, new_task_driver_queue},
 };
 use libp2p::Multiaddr;
-use matching_engine_worker::{executor::HandshakeManager, worker::HandshakeManagerConfig};
+use matching_engine_core::MatchingEngine;
+use matching_engine_worker::worker::{MatchingEngineConfig, MatchingEngineManager};
 use network_manager::worker::{NetworkManager, NetworkManagerConfig};
 use price_reporter::{
     mock::MockPriceReporter,
@@ -51,14 +52,13 @@ use reqwest::{Client, Method, Response, header::HeaderMap};
 use serde::{Serialize, de::DeserializeOwned};
 use state::{State, create_global_state};
 use system_bus::SystemBus;
-use system_bus::SystemBusMessage;
 use system_clock::SystemClock;
 use task_driver::worker::{TaskDriver, TaskDriverConfig};
 use test_helpers::mocks::mock_cancel;
 use tokio::runtime::Handle;
-use types_core::price::Price;
-use types_runtime::worker::{Worker, new_worker_failure_channel};
-use util::default_wrapper::{DefaultOption, default_option};
+use types_core::Price;
+use types_runtime::{Worker, new_worker_failure_channel};
+use util::{DefaultOption, default_option};
 
 /// A helper that creates a dummy runtime and blocks a task on it
 ///
@@ -197,7 +197,7 @@ impl MockNodeController {
     }
 
     /// Get a copy of the system bus
-    pub fn bus(&self) -> SystemBus<SystemBusMessage> {
+    pub fn bus(&self) -> SystemBus {
         self.bus.clone()
     }
 
@@ -265,9 +265,9 @@ impl MockNodeController {
         self.gossip_queue.0.send(job).map_err(|e| eyre::eyre!(e))
     }
 
-    /// Send a job to the handshake manager
-    pub fn send_handshake_job(&self, job: MatchingEngineWorkerJob) -> Result<()> {
-        self.handshake_queue.0.send(job).map_err(|e| eyre::eyre!(e))
+    /// Send a job to the matching engine worker
+    pub fn send_matching_engine_job(&self, job: MatchingEngineWorkerJob) -> Result<()> {
+        self.matching_engine_worker_queue.0.send(job).map_err(|e| eyre::eyre!(e))
     }
 
     /// Send a job to the proof manager
@@ -315,7 +315,8 @@ impl MockNodeController {
     /// Add a darkpool client to the mock node
     pub fn with_darkpool_client(mut self) -> Self {
         let conf = DarkpoolClientConfig {
-            darkpool_addr: self.config.contract_address.clone(),
+            darkpool_addr: self.config.contract_address,
+            permit2_addr: self.config.permit2_address,
             chain: self.config.chain_id,
             rpc_url: self.config.rpc_url.clone().unwrap(),
             private_key: self.config.relayer_wallet_key().clone(),
@@ -334,13 +335,13 @@ impl MockNodeController {
         // Create a global state instance
         let network_queue = self.network_queue.0.clone();
         let task_sender = self.task_queue.0.clone();
-        let matching_engine_worker_queue = self.handshake_queue.0.clone();
+        let matching_engine_worker_queue = self.matching_engine_worker_queue.0.clone();
         let event_queue = self.event_queue.0.clone();
         let bus = self.bus.clone();
         let clock = self.clock.clone();
         let (failure_send, failure_recv) = new_worker_failure_channel();
 
-        let matching_engine = matching_engine_core::MatchingEngine::new();
+        let matching_engine = MatchingEngine::new();
         let state = run_fut(create_global_state(
             &self.config,
             network_queue,
@@ -393,7 +394,6 @@ impl MockNodeController {
         let config = &self.config;
         let network_recv = self.network_queue.1.take().unwrap();
         let gossip_sender = self.gossip_queue.0.clone();
-        let handshake_send = self.handshake_queue.0.clone();
         let cancel_channel = mock_cancel();
 
         let conf = NetworkManagerConfig {
@@ -406,7 +406,6 @@ impl MockNodeController {
             cluster_symmetric_key: self.config.cluster_symmetric_key,
             send_channel: default_option(network_recv),
             gossip_work_queue: gossip_sender,
-            handshake_work_queue: handshake_send,
             system_bus: self.bus.clone(),
             global_state: self.state.clone().expect("State not initialized"),
             cancel_channel,
@@ -451,32 +450,29 @@ impl MockNodeController {
         self
     }
 
-    /// Add a handshake manager to the mock node
-    pub fn with_handshake_manager(mut self) -> Self {
+    /// Add a matching engine manager to the mock node
+    pub fn with_matching_engine_manager(mut self) -> Self {
         let state = self.state.clone().expect("State not initialized");
-        let network_channel = self.network_queue.0.clone();
         let price_streams = self.price_streams.clone();
-        let job_sender = self.handshake_queue.0.clone();
-        let job_receiver = self.handshake_queue.1.take().unwrap();
+        let job_receiver = self.matching_engine_worker_queue.1.take().unwrap();
         let cancel_channel = mock_cancel();
         let system_bus = self.bus.clone();
         let task_queue = self.task_queue.0.clone();
 
-        let conf = HandshakeManagerConfig {
+        let conf = MatchingEngineConfig {
             min_fill_size: self.config.min_fill_size,
+            external_match_validity_window: self.config.external_match_validity_window,
             state: state.clone(),
             matching_engine: state.matching_engine().clone(),
-            network_channel,
             price_streams,
-            job_sender,
             job_receiver: Some(job_receiver),
             task_queue,
             system_bus,
             cancel_channel,
         };
-        let mut manager =
-            run_fut(HandshakeManager::new(conf)).expect("Failed to create handshake manager");
-        manager.start().expect("Failed to start handshake manager");
+        let mut manager = run_fut(MatchingEngineManager::new(conf))
+            .expect("Failed to create matching engine manager");
+        manager.start().expect("Failed to start matching engine manager");
 
         self
     }
@@ -491,20 +487,18 @@ impl MockNodeController {
         self
     }
 
-    /// Add a chain even listener to the mock node
+    /// Add a chain event listener to the mock node
     pub fn with_chain_event_listener(self) -> Self {
         let config = &self.config;
         let darkpool_client =
             self.darkpool_client.clone().expect("Darkpool client not initialized");
         let global_state = self.state.clone().expect("State not initialized");
-        let handshake_manager_job_queue = self.handshake_queue.0.clone();
         let cancel_channel = mock_cancel();
 
         let conf = OnChainEventListenerConfig {
             websocket_addr: config.eth_websocket_addr.clone(),
             darkpool_client,
             global_state,
-            handshake_manager_job_queue,
             cancel_channel,
             event_queue: self.event_queue.0.clone(),
         };
@@ -526,7 +520,7 @@ impl MockNodeController {
         let system_bus = self.bus.clone();
         let price_streams = self.price_streams.clone();
         let proof_generation_work_queue = self.proof_queue.0.clone();
-        let handshake_manager_work_queue = self.handshake_queue.0.clone();
+        let matching_engine_worker_queue = self.matching_engine_worker_queue.0.clone();
         let cancel_channel = mock_cancel();
 
         let conf = ApiServerConfig {
@@ -544,7 +538,7 @@ impl MockNodeController {
             system_bus,
             price_streams,
             proof_generation_work_queue,
-            handshake_manager_work_queue,
+            matching_engine_worker_queue,
             cancel_channel,
         };
 

@@ -25,13 +25,13 @@ async fn mock_raft(network_delay_ms: u64) -> State {
     mock_state_with_task_queue(network_delay_ms, task_sender, &config).await
 }
 
-/// Benchmark updating an account through the raft
-fn bench_update_account(c: &mut Criterion) {
+/// Benchmark creating an account through the raft
+fn bench_create_account(c: &mut Criterion) {
     let mut group = c.benchmark_group("state_interface");
     group.throughput(Throughput::Elements(1));
 
     for delay in BENCHMARK_DELAYS_MS {
-        group.bench_function(BenchmarkId::new("update_account", delay), |b| {
+        group.bench_function(BenchmarkId::new("create_account", delay), |b| {
             // Build a Tokio runtime and spawn benchmarks in it
             let runtime = RuntimeBuilder::new_multi_thread().enable_all().build().unwrap();
             let mut async_bencher = b.to_async(runtime);
@@ -46,7 +46,7 @@ fn bench_update_account(c: &mut Criterion) {
                     let mut total_time = std::time::Duration::default();
                     for _ in 0..n_iters {
                         let start = std::time::Instant::now();
-                        let waiter = state.update_account(account.clone()).await.unwrap();
+                        let waiter = state.new_account(account.clone()).await.unwrap();
                         black_box(waiter.await.unwrap());
 
                         total_time += start.elapsed();
@@ -98,6 +98,6 @@ fn bench_append_task(c: &mut Criterion) {
 criterion_group!(
     name = storage;
     config = Criterion::default().sample_size(10);
-    targets = bench_update_account, bench_append_task
+    targets = bench_create_account, bench_append_task
 );
 criterion_main!(storage);

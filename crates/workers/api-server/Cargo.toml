@@ -9,16 +9,6 @@ path = "integration/main.rs"
 harness = false
 required-features = ["test_helpers"]
 
-[[bench]]
-name = "quote_endpoint"
-harness = false
-required_features = ["test_helpers"]
-
-[[bench]]
-name = "book_depth"
-harness = false
-required_features = ["test_helpers"]
-
 [features]
 test_helpers = ["darkpool-client/arbitrum"]
 
@@ -88,13 +78,9 @@ ecdsa = "0.16"
 rand = { workspace = true }
 util = { workspace = true }
 
-# === Bench Utils === #
-api-server-bench-util = { path = "benches/api-server-bench-util" }
-
 # === Integration Test Dependencies === #
 clap = { version = "4.0", features = ["derive"] }
 colored = "2"
-criterion = { version = "0.5", features = ["async", "async_tokio"] }
 ctor = "0.1"
 eyre = { workspace = true }
 inventory = "0.3"

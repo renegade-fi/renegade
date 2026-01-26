@@ -79,34 +79,34 @@ mod tests {
     #[tokio::test]
     async fn test_rate_limit_success_and_failure() {
         let limiter = WalletTaskRateLimiter::new(2, Duration::from_secs(1));
-        let wallet = WalletIdentifier::new_v4();
+        let account = AccountId::new_v4();
 
-        assert!(limiter.check_rate_limit(wallet).await.is_ok());
-        assert!(limiter.check_rate_limit(wallet).await.is_ok());
-        assert!(limiter.check_rate_limit(wallet).await.is_err());
+        assert!(limiter.check_rate_limit(account).await.is_ok());
+        assert!(limiter.check_rate_limit(account).await.is_ok());
+        assert!(limiter.check_rate_limit(account).await.is_err());
     }
 
     /// Test the rate limiter after its duration has passed
     #[tokio::test]
     async fn test_rate_limit_reset() {
         let limiter = WalletTaskRateLimiter::new(1, Duration::from_millis(100));
-        let wallet = WalletIdentifier::new_v4();
+        let account = AccountId::new_v4();
 
-        assert!(limiter.check_rate_limit(wallet).await.is_ok());
-        assert!(limiter.check_rate_limit(wallet).await.is_err());
+        assert!(limiter.check_rate_limit(account).await.is_ok());
+        assert!(limiter.check_rate_limit(account).await.is_err());
         sleep(Duration::from_millis(100)).await;
-        assert!(limiter.check_rate_limit(wallet).await.is_ok());
+        assert!(limiter.check_rate_limit(account).await.is_ok());
     }
 
-    /// Test the rate limiter with multiple wallets
+    /// Test the rate limiter with multiple accounts
     #[tokio::test]
-    async fn test_multiple_wallets() {
+    async fn test_multiple_accounts() {
         let limiter = WalletTaskRateLimiter::new(1, Duration::from_secs(1));
-        let wallet1 = WalletIdentifier::new_v4();
-        let wallet2 = WalletIdentifier::new_v4();
+        let account1 = AccountId::new_v4();
+        let account2 = AccountId::new_v4();
 
-        assert!(limiter.check_rate_limit(wallet1).await.is_ok());
-        assert!(limiter.check_rate_limit(wallet1).await.is_err());
-        assert!(limiter.check_rate_limit(wallet2).await.is_ok());
+        assert!(limiter.check_rate_limit(account1).await.is_ok());
+        assert!(limiter.check_rate_limit(account1).await.is_err());
+        assert!(limiter.check_rate_limit(account2).await.is_ok());
     }
 }

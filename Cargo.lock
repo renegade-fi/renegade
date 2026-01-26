@@ -840,7 +840,6 @@ version = "0.1.0"
 dependencies = [
  "abi",
  "alloy",
- "api-server-bench-util",
  "async-trait",
  "base64 0.21.7",
  "circuit-types",
@@ -849,7 +848,6 @@ dependencies = [
  "compliance-api",
  "config",
  "constants",
- "criterion",
  "crossbeam",
  "crypto",
  "ctor",
@@ -897,31 +895,6 @@ dependencies = [
  "types-tasks",
  "util",
  "uuid",
-]
-
-[[package]]
-name = "api-server-bench-util"
-version = "0.1.0"
-dependencies = [
- "alloy",
- "circuit-types",
- "config",
- "darkpool-client",
- "external-api",
- "eyre",
- "mock-node",
- "num-bigint",
- "reqwest",
- "serde",
- "serde_json",
- "state",
- "tokio",
- "types-account",
- "types-core",
- "types-gossip",
- "types-runtime",
- "types-tasks",
- "util",
 ]
 
 [[package]]
@@ -5985,6 +5958,7 @@ dependencies = [
  "gossip-server",
  "job-types",
  "libp2p",
+ "matching-engine-core",
  "matching-engine-worker",
  "network-manager",
  "price-reporter",
