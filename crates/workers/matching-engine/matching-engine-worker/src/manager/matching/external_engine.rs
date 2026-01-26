@@ -77,11 +77,17 @@ impl MatchingEngineExecutor {
                 ))
             })?;
 
+        // Extract the amount in from the match result
+        let internal_obligation = match_result.match_result.party1_obligation();
+        let amount_in = internal_obligation.amount_in;
+
         // Compute the bounded match result and build a task descriptor
         let bounded_match_result = self.compute_bounded_match_result(&match_result).await?;
         let descriptor = SettleExternalMatchTaskDescriptor {
             account_id,
             order_id: internal_order_id,
+            // This is the amount in for the internal party at the requested trade size
+            amount_in,
             match_result: bounded_match_result,
             response_topic,
         };

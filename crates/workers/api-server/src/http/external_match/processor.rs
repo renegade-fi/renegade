@@ -2,9 +2,13 @@
 
 use std::time::Duration;
 
-use alloy::rpc::types::TransactionRequest;
+use alloy::{
+    network::TransactionBuilder, primitives::U256, rpc::types::TransactionRequest,
+    sol_types::SolCall,
+};
 use circuit_types::fixed_point::FixedPoint;
 use crypto::fields::scalar_to_u128;
+use darkpool_client::DarkpoolClient;
 use darkpool_types::{bounded_match_result::BoundedMatchResult, fee::FeeRates};
 use external_api::{
     http::external_match::{
@@ -18,6 +22,7 @@ use external_api::{
 use job_types::matching_engine::{
     ExternalMatchingEngineOptions, MatchingEngineWorkerJob, MatchingEngineWorkerQueue,
 };
+use renegade_solidity_abi::v2::IDarkpoolV2::{self, SettlementBundle};
 use state::State;
 use system_bus::{SystemBus, SystemBusMessage};
 use types_account::order::Order;
@@ -47,6 +52,8 @@ const ERR_NO_EXTERNAL_MATCH_FOUND: &str = "no external match found";
 pub struct ExternalMatchProcessor {
     /// The admin API key, used to sign quotes
     admin_key: HmacKey,
+    /// The darkpool client
+    darkpool_client: DarkpoolClient,
     /// The system bus
     bus: SystemBus,
     /// The work queue for the matching engine
@@ -59,11 +66,12 @@ impl ExternalMatchProcessor {
     /// Constructor
     pub fn new(
         admin_key: HmacKey,
+        darkpool_client: DarkpoolClient,
         bus: SystemBus,
         matching_engine_worker_queue: MatchingEngineWorkerQueue,
         state: State,
     ) -> Self {
-        Self { admin_key, bus, matching_engine_worker_queue, state }
+        Self { admin_key, darkpool_client, bus, matching_engine_worker_queue, state }
     }
 
     // --- Quote --- //
@@ -155,7 +163,9 @@ impl ExternalMatchProcessor {
         let (job, topic) = MatchingEngineWorkerJob::new_external_match_job(order.clone(), options);
 
         // Send the job to the matching engine
-        let (match_res, fee_rates, tx) = self.forward_assemble_request(job, topic).await?;
+        let (match_res, settlement_bundle) = self.forward_assemble_request(job, topic).await?;
+        let fee_override = req.options.relayer_fee_rate.map(FixedPoint::from_f64_round_down);
+        let fee_rates = self.get_fee_rates(&order, fee_override).await?;
 
         // Compute the send bounds
         let send_mint = match_res.internal_party_output_token;
@@ -175,6 +185,10 @@ impl ExternalMatchProcessor {
         let min_receive = ApiExternalAssetTransfer::new(receive_mint, min_net);
         let max_receive = ApiExternalAssetTransfer::new(receive_mint, max_net);
 
+        // Build the settlement transaction
+        let settlement_tx =
+            self.build_settlement_transaction(match_res.clone(), settlement_bundle, &req);
+
         // Build an API response
         let bundle = BoundedExternalMatchApiBundle {
             match_result: match_res.clone().into(),
@@ -183,7 +197,7 @@ impl ExternalMatchProcessor {
             min_receive,
             max_send,
             min_send,
-            settlement_tx: tx,
+            settlement_tx,
             deadline: match_res.block_deadline,
         };
 
@@ -238,11 +252,11 @@ impl ExternalMatchProcessor {
         &self,
         job: MatchingEngineWorkerJob,
         topic: String,
-    ) -> Result<(BoundedMatchResult, FeeRates, TransactionRequest), ApiServerError> {
+    ) -> Result<(BoundedMatchResult, SettlementBundle), ApiServerError> {
         let msg = self.forward_job_wait_for_response(job, topic).await?;
         match msg {
-            SystemBusMessage::ExternalOrderBundle { match_result, fee_rates, transaction } => {
-                Ok((match_result, fee_rates, transaction))
+            SystemBusMessage::ExternalOrderBundle { match_result, settlement_bundle } => {
+                Ok((match_result, settlement_bundle))
             },
             SystemBusMessage::NoExternalMatchFound => Err(no_content(ERR_NO_EXTERNAL_MATCH_FOUND)),
             _ => Err(internal_error("unexpected system bus message")),
@@ -284,5 +298,26 @@ impl ExternalMatchProcessor {
         };
 
         Ok(FeeRates::new(relayer_fee, protocol_fee))
+    }
+
+    /// Build a settlement transaction from a settlement bundle
+    fn build_settlement_transaction(
+        &self,
+        match_res: BoundedMatchResult,
+        settlement_bundle: SettlementBundle,
+        req: &AssembleExternalMatchRequest,
+    ) -> TransactionRequest {
+        let amount_in = req.order.amount_in();
+        let call = IDarkpoolV2::settleExternalMatchCall {
+            externalPartyAmountIn: U256::from(amount_in),
+            recipient: req.receiver_address.unwrap_or_default(),
+            matchResult: match_res.into(),
+            internalPartySettlementBundle: settlement_bundle,
+        };
+
+        // Encode the call data and build a transaction request
+        let calldata = call.abi_encode();
+        let darkpool_address = self.darkpool_client.darkpool_addr();
+        TransactionRequest::default().with_to(darkpool_address).with_input(calldata)
     }
 }

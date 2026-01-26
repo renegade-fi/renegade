@@ -9100,6 +9100,7 @@ dependencies = [
 name = "system-bus"
 version = "0.1.0"
 dependencies = [
+ "abi",
  "alloy",
  "bus",
  "circuit-types",

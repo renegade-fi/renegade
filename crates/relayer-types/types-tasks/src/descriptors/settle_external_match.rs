@@ -1,5 +1,6 @@
 //! Descriptor for the settle external match task
 
+use circuit_types::Amount;
 use darkpool_types::bounded_match_result::BoundedMatchResult;
 use types_account::OrderId;
 use types_core::AccountId;
@@ -16,6 +17,8 @@ pub struct SettleExternalMatchTaskDescriptor {
     pub account_id: AccountId,
     /// The ID of the internal order
     pub order_id: OrderId,
+    /// The requested amount in, separate from the bounds on the match
+    pub amount_in: Amount,
     /// The bounded match result
     pub match_result: BoundedMatchResult,
     /// The system bus topic on which to send the response
