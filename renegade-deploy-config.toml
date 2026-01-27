@@ -55,7 +55,7 @@ service_name_override = "base-mainnet-relayer-service"
 [services.ethereum-sepolia-relayer.build]
 dockerfile = "docker/release/Dockerfile"
 ecr_repo = "relayer-ethereum-sepolia"
-cargo_features = "default,arbitrum" # TODO: add ethereum feature flag?
+cargo_features = "default,base"
 
 [services.ethereum-sepolia-relayer.deploy]
 environment = "ethereum-sepolia"
@@ -67,7 +67,7 @@ service_name_override = "ethereum-sepolia-relayer-service"
 [services.ethereum-mainnet-relayer.build]
 dockerfile = "docker/release/Dockerfile"
 ecr_repo = "relayer-ethereum-mainnet"
-cargo_features = "default,arbitrum" # TODO: add ethereum feature flag?
+cargo_features = "default,base"
 
 [services.ethereum-mainnet-relayer.deploy]
 environment = "ethereum-mainnet"

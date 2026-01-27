@@ -83,3 +83,4 @@ required-features = ["matching-engine"]
 [dev-dependencies]
 lazy_static = { workspace = true }
 criterion = { version = "0.5", features = ["async", "async_tokio"] }
+ark-std = "0.4"

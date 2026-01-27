@@ -118,9 +118,9 @@ pub fn jubjub_from_hex_string(hex: &str) -> Result<BabyJubJubPoint, String> {
 
 #[cfg(test)]
 mod tests {
-    use rand::{RngCore, thread_rng};
-
     use super::*;
+    use ark_ec::twisted_edwards::Affine;
+    use rand::{RngCore, thread_rng};
 
     #[test]
     fn test_bytes_serialize_deserialize() {
@@ -146,5 +146,71 @@ mod tests {
         let addr_biguint_rec = biguint_from_hex_string(&addr_hex).unwrap();
 
         assert_eq!(addr_biguint, addr_biguint_rec)
+    }
+
+    #[test]
+    fn test_jubjub_from_hex_string() {
+        use ark_std::UniformRand;
+
+        let mut rng = thread_rng();
+
+        // 1. Generate a random point
+        let random_point_proj = Projective::<EmbeddedCurveConfig>::rand(&mut rng);
+        let random_point: BabyJubJubPoint = random_point_proj.into();
+
+        // 2. Convert it to hex
+        let hex = jubjub_to_hex_string(&random_point);
+
+        // 3. Convert it back from hex
+        let point_recovered = jubjub_from_hex_string(&hex).unwrap();
+
+        // 4. Compare the result
+        assert_eq!(random_point, point_recovered);
+    }
+
+    #[test]
+    fn test_jubjub_generator_point_hex() {
+        // Illustrates that the hex representation of a point encodes the X and Y values in
+        // little-endian.
+
+        // Generator point coordinates (in numeric form)
+        let x_str = "19698561148652590122159747500897617769866003486955115824547446575314762165298";
+        let y_str = "19298250018296453272277890825869354524455968081175474282777126169995084727839";
+
+        let expected_hex = "0x326c87820d81d2594d347ead9a42bce37e924adfdee7411de3ca05b991fd8c2b1f861a672cfc76c26ae1c0db15117c2a767b27101fedac909e2058a7246caa2a";
+
+        // Convert numeric strings to BigUint
+        let x_biguint = BigUint::from_str_radix(x_str, 10).unwrap();
+        let y_biguint = BigUint::from_str_radix(y_str, 10).unwrap();
+
+        // Convert to little-endian bytes (32 bytes each)
+        let x_vec = x_biguint.to_bytes_le();
+        let y_vec = y_biguint.to_bytes_le();
+
+        let mut x_bytes = [0u8; 32];
+        let mut y_bytes = [0u8; 32];
+
+        x_bytes[..x_vec.len()].copy_from_slice(&x_vec);
+        y_bytes[..y_vec.len()].copy_from_slice(&y_vec);
+
+        // Construct affine point from serialized coordinates
+        let mut point_bytes = vec![];
+        point_bytes.extend_from_slice(&x_bytes);
+        point_bytes.extend_from_slice(&y_bytes);
+
+        let affine_point =
+            Affine::<EmbeddedCurveConfig>::deserialize_uncompressed(&point_bytes[..]).unwrap();
+        let projective_point = Projective::<EmbeddedCurveConfig>::from(affine_point);
+        let point: BabyJubJubPoint = projective_point.into();
+
+        // Convert to hex
+        let hex = jubjub_to_hex_string(&point);
+        assert_eq!(hex, expected_hex);
+
+        // Convert back from hex
+        let point_recovered = jubjub_from_hex_string(&hex).unwrap();
+
+        // Verify they match
+        assert_eq!(point, point_recovered);
     }
 }
