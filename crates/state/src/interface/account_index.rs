@@ -169,6 +169,23 @@ impl StateInner {
         .await
     }
 
+    /// Get the account ID for a given owner and token
+    ///
+    /// Used to route balance update events to the correct account
+    pub async fn get_account_for_owner(
+        &self,
+        owner: &Address,
+        token: &Address,
+    ) -> Result<Option<AccountId>, StateError> {
+        let owner = *owner;
+        let token = *token;
+        self.with_read_tx(move |tx| {
+            let account_id = tx.get_account_for_owner(&owner, &token)?;
+            Ok(account_id)
+        })
+        .await
+    }
+
     // -----------
     // | Setters |
     // -----------

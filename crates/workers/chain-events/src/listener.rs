@@ -4,31 +4,30 @@ use std::{thread::JoinHandle, time::Duration};
 
 use super::error::OnChainEventListenerError;
 use alloy::{
-    primitives::TxHash,
+    primitives::{Address, keccak256},
     providers::{DynProvider, Provider, ProviderBuilder, WsConnect},
-    rpc::types::Filter,
+    rpc::types::{Filter, Log},
     sol_types::SolEvent,
 };
-use circuit_types::Nullifier;
 use constants::in_bootstrap_mode;
 use darkpool_client::DarkpoolClient;
+use darkpool_client::client::erc20::abis::erc20::IERC20;
 use futures_util::StreamExt;
-use job_types::event_manager::EventManagerQueue;
-use job_types::matching_engine::{MatchingEngineWorkerJob, MatchingEngineWorkerQueue};
+use job_types::{
+    event_manager::EventManagerQueue,
+    matching_engine::{MatchingEngineWorkerJob, MatchingEngineWorkerQueue},
+};
 use rand::Rng;
 use state::State;
-use tracing::{error, info};
-use types_account::account::OrderId;
+use tracing::{Instrument, error, info, info_span, warn};
+use types_core::{AccountId, get_all_tokens};
 use types_runtime::CancelChannel;
 use util::concurrency::runtime::sleep_forever_async;
 
-/// The minimum delay in seconds for wallet refresh
-const MIN_NULLIFIER_REFRESH_DELAY_S: u64 = 20; // 20 seconds
-/// The maximum delay in seconds for wallet refresh
-const MAX_NULLIFIER_REFRESH_DELAY_S: u64 = 40; // 40 seconds
-/// The delay to wait for a task to complete before attempting to refresh a
-/// nullifier's wallet
-const TASK_COMPLETION_DELAY_S: u64 = 10; // 10 seconds
+/// The minimum delay in seconds for balance update (crash recovery)
+const MIN_BALANCE_UPDATE_DELAY_S: u64 = 20;
+/// The maximum delay in seconds for balance update (crash recovery)
+const MAX_BALANCE_UPDATE_DELAY_S: u64 = 40;
 
 // ----------
 // | Worker |
@@ -49,6 +48,8 @@ pub struct OnChainEventListenerConfig {
     pub cancel_channel: CancelChannel,
     /// A sender to the event manager's queue
     pub event_queue: EventManagerQueue,
+    /// A sender to the matching engine worker's queue
+    pub matching_engine_queue: MatchingEngineWorkerQueue,
 }
 
 impl OnChainEventListenerConfig {
@@ -114,294 +115,221 @@ impl OnChainEventListenerExecutor {
     /// The main execution loop for the executor
     pub async fn execute(self) -> Result<(), OnChainEventListenerError> {
         // If the node is running in bootstrap mode, sleep forever
-        // TODO: Remove this
+        // TODO: Remove `|| true` to enable the event listener
         #[allow(clippy::overly_complex_bool_expr)]
         if in_bootstrap_mode() || true {
             sleep_forever_async().await;
         }
 
-        // // Get the current block number to start from
-        // let starting_block_number = self
-        //     .darkpool_client()
-        //     .block_number()
-        //     .await
-        //     .map_err(OnChainEventListenerError::darkpool)?;
-        // info!("Starting on-chain event listener from current block
-        // {starting_block_number}");
+        info!("Starting on-chain event listener");
 
         // Begin the watch loop
-        let res = self.watch_nullifiers().await.unwrap_err();
+        let res = self.watch_transfers().await.unwrap_err();
         error!("on-chain event listener stream ended unexpectedly: {res}");
         Err(res)
     }
 
-    /// Nullifier watch loop
-    async fn watch_nullifiers(&self) -> Result<(), OnChainEventListenerError> {
+    /// Transfer event watch loop
+    async fn watch_transfers(&self) -> Result<(), OnChainEventListenerError> {
         if self.config.has_websocket_listener() {
-            self.watch_nullifiers_ws().await
+            self.watch_transfers_ws().await
         } else {
-            self.watch_nullifiers_http().await
+            self.watch_transfers_http().await
         }
     }
 
-    /// Watch for nullifiers via a websocket stream
-    async fn watch_nullifiers_ws(&self) -> Result<(), OnChainEventListenerError> {
-        return Ok(());
-        // info!("listening for nullifiers via websocket");
-        // // Create the contract instance and the event stream
-        // let client = self.config.ws_client().await?;
-        // let contract_addr = self.darkpool_client().darkpool_addr();
-        // let filter =
-        // Filter::new().address(contract_addr).event(NullifierSpentEvent::SIGNATURE);
-        // let mut stream = client.subscribe_logs(&filter).await?.into_stream();
+    /// Watch for Transfer events via a websocket stream
+    async fn watch_transfers_ws(&self) -> Result<(), OnChainEventListenerError> {
+        info!("Listening for Transfer events via websocket");
 
-        // // Listen for events in a loop
-        // while let Some(log) = stream.next().await {
-        //     let tx_hash = log
-        //         .transaction_hash
-        //         .ok_or_else(|| OnChainEventListenerError::darkpool("no tx hash"))?;
+        let client = self.config.ws_client().await?;
+        let token_addresses = self.get_tracked_token_addresses();
+        if token_addresses.is_empty() {
+            return Err(OnChainEventListenerError::State("No tokens configured".into()));
+        }
 
-        //     let event = log.log_decode::<NullifierSpentEvent>()?;
-        //     let nullifier = u256_to_scalar(event.data().nullifier);
-        //     let self_clone = self.clone();
-        //     tokio::task::spawn(async move {
-        //         if let Err(e) = self_clone.handle_nullifier_spent(tx_hash,
-        // nullifier).await {
-        // self_clone.handle_nullifier_spent_error(nullifier, e).await;
-        //         }
-        //     });
-        // }
+        let filter = Filter::new().address(token_addresses).event(IERC20::Transfer::SIGNATURE);
 
-        unreachable!()
+        let mut stream = client.subscribe_logs(&filter).await?.into_stream();
+
+        while let Some(log) = stream.next().await {
+            let self_clone = self.clone();
+            tokio::task::spawn(
+                async move {
+                    if let Err(e) = self_clone.handle_transfer_event(log).await {
+                        warn!("Error handling transfer event: {e}");
+                    }
+                }
+                .instrument(info_span!("handle_transfer_event")),
+            );
+        }
+
+        Err(OnChainEventListenerError::StreamEnded)
     }
 
-    /// Watch for nullifiers via HTTP polling
-    async fn watch_nullifiers_http(&self) -> Result<(), OnChainEventListenerError> {
-        return Ok(());
-        // info!("listening for nullifiers via HTTP polling");
-        // // Build a filtered stream on events that the chain-events worker listens for
-        // let filter = self.darkpool_client().event_filter::<NullifierSpentEvent>();
-        // let mut event_stream =
-        //     filter.subscribe().await.map_err(OnChainEventListenerError::darkpool)?.
-        // into_stream();
+    /// Watch for Transfer events via HTTP polling
+    async fn watch_transfers_http(&self) -> Result<(), OnChainEventListenerError> {
+        info!("Listening for Transfer events via HTTP polling");
 
-        // // Listen for events in a loop
-        // while let Some(res) = event_stream.next().await {
-        //     let (event, meta) = res.map_err(OnChainEventListenerError::darkpool)?;
-        //     let tx_hash = meta.transaction_hash.expect("no tx hash for log");
-        //     let nullifier = u256_to_scalar(event.nullifier);
+        let token_addresses = self.get_tracked_token_addresses();
+        if token_addresses.is_empty() {
+            return Err(OnChainEventListenerError::State("No tokens configured".into()));
+        }
 
-        //     // Handle the nullifier spent event
-        //     let self_clone = self.clone();
-        //     tokio::task::spawn(async move {
-        //         if let Err(e) = self_clone.handle_nullifier_spent(tx_hash,
-        // nullifier).await {
-        // self_clone.handle_nullifier_spent_error(nullifier, e).await;
-        //         }
-        //     });
-        // }
+        // TODO: Implement HTTP polling loop
+        let _filter = Filter::new().address(token_addresses).event(IERC20::Transfer::SIGNATURE);
 
-        unreachable!()
+        Err(OnChainEventListenerError::State("HTTP polling not yet implemented".into()))
     }
 
-    // ----------------------
-    // | Nullifier Handlers |
-    // ----------------------
+    // -------------------
+    // | Transfer Events |
+    // -------------------
 
-    // /// Handle a nullifier spent event
-    // async fn handle_nullifier_spent(
-    //     &self,
-    //     tx: TxHash,
-    //     nullifier: Nullifier,
-    // ) -> Result<(), OnChainEventListenerError> {
-    //     info!("Handling spend of nullifier {nullifier} in tx {tx:#x}");
+    /// Handle a Transfer event
+    async fn handle_transfer_event(&self, log: Log) -> Result<(), OnChainEventListenerError> {
+        let token = log.address();
+        let tx_hash = match log.transaction_hash {
+            Some(h) => h,
+            None => {
+                warn!("Transfer event missing transaction hash, skipping");
+                return Ok(());
+            },
+        };
 
-    //     // Send an MPC shootdown request to the handshake manager
-    //     self.config
-    //         .handshake_manager_job_queue
-    //         .send(HandshakeManagerJob::MpcShootdown { nullifier })
-    //         .map_err(|err|
-    // OnChainEventListenerError::SendMessage(err.to_string()))?;
+        let event = log.log_decode::<IERC20::Transfer>()?;
+        let from = event.inner.from;
+        let to = event.inner.to;
 
-    //     self.state().nullify_orders(nullifier).await?;
+        // Look up affected accounts for both from and to addresses
+        let from_account = self.state().get_account_for_owner(&from, &token).await?;
+        let to_account = self.state().get_account_for_owner(&to, &token).await?;
 
-    //     // Update internal state
-    //     self.handle_nullifier_wallet_updates(nullifier, tx).await
-    // }
+        // Process each affected account
+        if let Some(account_id) = from_account {
+            self.handle_balance_update(account_id, from, token, tx_hash).await?;
+        }
+        if let Some(account_id) = to_account {
+            self.handle_balance_update(account_id, to, token, tx_hash).await?;
+        }
 
-    // /// Handle an error processing a nullifier spent event
-    // async fn handle_nullifier_spent_error(
-    //     &self,
-    //     nullifier: Nullifier,
-    //     err: OnChainEventListenerError,
-    // ) {
-    //     // Clear the wallet's queue and refresh to sync with on-chain state
-    //     error!("error handling nullifier spent event: {err}");
-    //     if let Err(e) = self.clear_queue_for_nullifier(nullifier).await {
-    //         error!("error clearing queue for nullifier {nullifier}: {e}");
-    //     }
-    // }
+        Ok(())
+    }
 
-    // /// Handle the internal wallet updates resulting from a nullifier spend
-    // async fn handle_nullifier_wallet_updates(
-    //     &self,
-    //     nullifier: Nullifier,
-    //     tx: TxHash,
-    // ) -> Result<(), OnChainEventListenerError> {
-    //     // If the current node is not the update handler, sleep for a random
-    // timeout     // then check that the nullifier state updates have been
-    // processed.     // We do this as a crash recovery mechanism to ensure that
-    // the updates are     // processed even if the selected node is crashed
-    //     if !self.should_execute_wallet_updates(nullifier).await? {
-    //         let timeout = rand::thread_rng()
-    //
-    // .gen_range(MIN_NULLIFIER_REFRESH_DELAY_S..=MAX_NULLIFIER_REFRESH_DELAY_S);
-    //         tokio::time::sleep(Duration::from_secs(timeout)).await;
-    //     }
+    /// Handle the balance update for an account affected by a transfer event
+    async fn handle_balance_update(
+        &self,
+        account_id: AccountId,
+        owner: Address,
+        token: Address,
+        tx_hash: alloy::primitives::TxHash,
+    ) -> Result<(), OnChainEventListenerError> {
+        // If the current node is not the update handler, sleep for a random
+        // timeout then check that the balance state updates have been processed.
+        // We do this as a crash recovery mechanism to ensure that the updates are
+        // processed even if the selected node is crashed
+        if !self.should_execute_balance_updates(&owner, &token, &tx_hash).await? {
+            let timeout = rand::thread_rng()
+                .gen_range(MIN_BALANCE_UPDATE_DELAY_S..=MAX_BALANCE_UPDATE_DELAY_S);
+            tokio::time::sleep(Duration::from_secs(timeout)).await;
+        }
 
-    //     // Check whether any wallet is indexed by the nullifier
-    //     let maybe_wallet =
-    // self.state().get_wallet_for_nullifier(&nullifier).await?;     let wallet
-    // = match maybe_wallet {         Some(w) => w,
-    //         None => {
-    //             info!("No wallet found for nullifier {nullifier}, skipping");
-    //             return Ok(());
-    //         },
-    //     };
+        self.update_balance_for_account(account_id, owner, token).await?;
+        self.run_matching_engine_for_account_and_balance(account_id, token).await
+    }
 
-    //     // Record metrics for any external matches in the transaction
-    //     let external_match = self.check_external_match_settlement(tx,
-    // wallet).await?;
+    /// Update the balance for a specific account from on-chain state
+    async fn update_balance_for_account(
+        &self,
+        account_id: AccountId,
+        owner: Address,
+        token: Address,
+    ) -> Result<(), OnChainEventListenerError> {
+        // Fetch on-chain balance
+        let on_chain_balance = self.darkpool_client().get_erc20_balance(token, owner).await?;
 
-    //     // External matches will not automatically update the wallet, so we
-    // should     // enqueue a wallet refresh immediately. Otherwise, we wait
-    // some time     // for an ongoing task to finish after it spends a
-    // nullifier -- this may     // clear the nullifier indexed into the state
-    // naturally     if !external_match {
-    //         let duration = Duration::from_secs(TASK_COMPLETION_DELAY_S);
-    //         tokio::time::sleep(duration).await;
-    //     }
+        // Get existing balance from state
+        let mut balance = match self.state().get_account_balance(&account_id, &token).await? {
+            Some(b) => b,
+            None => {
+                warn!(
+                    "No balance found for account={account_id:?}, token={token:?}, skipping update"
+                );
+                return Ok(());
+            },
+        };
 
-    //     // Clear the wallet's queue and refresh it if the nullifier is still
-    // present     self.clear_queue_for_nullifier(nullifier).await
-    // }
+        // Update the amount
+        let on_chain_amount: u128 = on_chain_balance
+            .try_into()
+            .map_err(|_| OnChainEventListenerError::State("Balance overflow".into()))?;
+        *balance.amount_mut() = on_chain_amount;
 
-    // /// Decides the node in a cluster that should execute wallet updates for a
-    // /// given nullifier
-    // ///
-    // /// This is done to prevent multiple nodes from enqueuing wallet refreshes
-    // /// or otherwise updating the same wallet state
-    // ///
-    // /// To select a node, we sort the nodes then take (nullifier_lsb % n_nodes)
-    // /// as the selected node. The nullifier is the result of a cryptographic
-    // /// hash function, so this should give a roughly uniform distribution
-    // ///
-    // /// Returns true if the current node should execute wallet updates for the
-    // /// given nullifier
-    // async fn should_execute_wallet_updates(
-    //     &self,
-    //     nullifier: Nullifier,
-    // ) -> Result<bool, OnChainEventListenerError> {
-    //     // Fetch cluster state
-    //     let state = self.state();
-    //     let my_id = state.get_peer_id()?;
-    //     let cluster_id = state.get_cluster_id()?;
-    //     let mut peers = state.get_cluster_peers(&cluster_id).await?;
-    //     peers.sort();
+        // TODO: Update matching engine cache here (before raft) for lower latency.
+        // Currently the cache is updated when the raft proposal is applied, which
+        // adds consensus latency before matching can begin. See PR2c.
 
-    //     // Compute the selected node
-    //     let n_peers = peers.len();
-    //     let nullifier_bytes = nullifier.to_bytes_be();
-    //     let nullifier_lsb = *nullifier_bytes.last().unwrap();
-    //     let peer = usize::from(nullifier_lsb) % n_peers;
-    //     let peer_id = peers[peer];
+        // Propose the balance update (this also updates matching engine cache via
+        // applicator)
+        self.state().update_account_balance(account_id, balance).await?.await?;
 
-    //     Ok(peer_id == my_id)
-    // }
+        Ok(())
+    }
 
-    // /// Clear a wallet's task queue and enqueue a wallet refresh task
-    // async fn clear_queue_for_nullifier(
-    //     &self,
-    //     nullifier: Nullifier,
-    // ) -> Result<(), OnChainEventListenerError> {
-    //     // Get the wallet ID that this nullifier belongs to
-    //     let maybe_wallet =
-    // self.state().get_wallet_for_nullifier(&nullifier).await?;
-    //     if maybe_wallet.is_none() {
-    //         info!("No wallet found for nullifier {nullifier}, skipping");
-    //         return Ok(());
-    //     }
-    //     let id = maybe_wallet.unwrap();
-    //     info!("refreshing wallet {id} after nullifier spend");
+    /// Run the matching engine on orders that use the given token as input
+    async fn run_matching_engine_for_account_and_balance(
+        &self,
+        account_id: AccountId,
+        token: Address,
+    ) -> Result<(), OnChainEventListenerError> {
+        // Get all order IDs that use this token as input
+        let order_ids = self.state().get_orders_with_input_token(&account_id, &token).await?;
 
-    //     // Clear the queue
-    //     let waiter = self.state().clear_task_queue(&id).await?;
-    //     waiter.await.map_err(OnChainEventListenerError::darkpool)?;
+        for order_id in order_ids {
+            // Note: When private orders (Ring 2/3) are enabled, filter to only enqueue
+            // orders that use public balance - private orders aren't affected by ERC20
+            // changes
+            let job = MatchingEngineWorkerJob::run_internal_engine(account_id, order_id);
+            self.config
+                .matching_engine_queue
+                .clone()
+                .send(job)
+                .map_err(|e| OnChainEventListenerError::SendMessage(e.to_string()))?;
+        }
 
-    //     // Refresh the wallet
-    //     self.state().append_wallet_refresh_task(id).await?;
-    //     Ok(())
-    // }
+        Ok(())
+    }
 
-    // /// Check for an external match settlement on the given transaction hash. If
-    // /// one is present, record metrics for it
-    // ///
-    // /// Returns whether the tx settled an external match
-    // async fn check_external_match_settlement(
-    //     &self,
-    //     tx: TxHash,
-    //     wallet_id: WalletIdentifier,
-    // ) -> Result<bool, OnChainEventListenerError> {
-    //     let matches =
-    // self.darkpool_client().find_external_matches_in_tx(tx).await?;
-    //     let external_match = !matches.is_empty();
+    /// Decides the node in a cluster that should execute balance updates for a
+    /// given transfer event
+    async fn should_execute_balance_updates(
+        &self,
+        owner: &Address,
+        token: &Address,
+        tx_hash: &alloy::primitives::TxHash,
+    ) -> Result<bool, OnChainEventListenerError> {
+        // Fetch cluster state
+        let state = self.state();
+        let my_id = state.get_peer_id()?;
+        let cluster_id = state.get_cluster_id()?;
+        let mut peers = state.get_cluster_peers(&cluster_id).await?;
+        peers.sort();
 
-    //     for external_match_result in matches {
-    //         let ctx = PostSettlementCtx::new(wallet_id,
-    // external_match_result.clone());         // Record metrics for the match
-    //         self.record_metrics(&ctx);
+        // Compute the selected node
+        let n_peers = peers.len();
+        let mut input = Vec::with_capacity(72);
+        input.extend_from_slice(owner.as_slice());
+        input.extend_from_slice(token.as_slice());
+        input.extend_from_slice(tx_hash.as_slice());
+        let hash = keccak256(&input);
+        let peer = usize::from(hash[31]) % n_peers;
+        let peer_id = peers[peer];
 
-    //         // Update the wallet state
-    //         let order_id = self.find_internal_order(wallet_id,
-    // &external_match_result).await?;         self.record_order_fill(order_id,
-    // &ctx).await?;
+        Ok(peer_id == my_id)
+    }
 
-    //         // Emit the external fill event to the event manager
-    //         self.emit_event(order_id, &ctx)?;
-    //     }
-
-    //     Ok(external_match)
-    // }
-
-    // // -----------
-    // // | Helpers |
-    // // -----------
-
-    // /// Find the internal order in the given wallet that matches the external
-    // /// match result
-    // ///
-    // /// This will return the first order that matches the external match result.
-    // /// While it is possible for multiple orders to match the same external
-    // /// match, this is not expected to happen in practice.
-    // async fn find_internal_order(
-    //     &self,
-    //     wallet_id: WalletIdentifier,
-    //     ext_match: &ExternalMatchResult,
-    // ) -> Result<OrderId, OnChainEventListenerError> {
-    //     let wallet = self
-    //         .state()
-    //         .get_wallet(&wallet_id)
-    //         .await?
-    //         .ok_or_else(|| OnChainEventListenerError::state("wallet not
-    // found"))?;     let desired_side = ext_match.internal_party_side();
-    //     for (id, order) in wallet.get_nonzero_orders().into_iter() {
-    //         if order.base_mint == ext_match.base_mint
-    //             && order.quote_mint == ext_match.quote_mint
-    //             && order.side == desired_side
-    //         {
-    //             return Ok(id);
-    //         }
-    //     }
-    //     Err(OnChainEventListenerError::state("matching order not found"))
-    // }
+    /// Get the list of token addresses to watch for transfers
+    fn get_tracked_token_addresses(&self) -> Vec<Address> {
+        get_all_tokens().into_iter().map(|t: types_core::Token| t.get_alloy_address()).collect()
+    }
 }
