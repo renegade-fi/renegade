@@ -1,5 +1,8 @@
 //! Applicator methods for the account index, separated out for discoverability
 
+use alloy_primitives::Address;
+use circuit_types::Amount;
+use matching_engine_core::MatchingEngine;
 use types_account::{
     account::{Account, OrderId},
     balance::Balance,
@@ -8,9 +11,44 @@ use types_account::{
 };
 use types_core::AccountId;
 
-use crate::{applicator::error::StateApplicatorError, storage::traits::RkyvValue};
+use crate::{
+    applicator::error::StateApplicatorError,
+    storage::{traits::RkyvValue, tx::StateTxn},
+};
 
 use super::{Result, StateApplicator, return_type::ApplicatorReturnType};
+
+/// Update the matching engine cache for orders affected by a balance change
+pub fn update_matchable_amounts<T: libmdbx::TransactionKind>(
+    engine: &MatchingEngine,
+    tx: &StateTxn<'_, T>,
+    account_id: AccountId,
+    token: &Address,
+    balance_amount: Amount,
+) -> Result<()> {
+    let affected_order_ids = tx.get_orders_with_input_token(&account_id, token)?;
+
+    for order_id in affected_order_ids {
+        let order = match tx.get_order(&order_id)? {
+            Some(archived_order) => Order::from_archived(&archived_order)?,
+            None => {
+                tracing::warn!("order {order_id} not found, skipping matching engine cache update");
+                continue;
+            },
+        };
+
+        let matching_pool = tx.get_matching_pool_for_order(&order_id)?;
+        let matchable_amount = Amount::min(balance_amount, order.amount_in());
+
+        if matchable_amount > 0 {
+            engine.upsert_order(account_id, &order, matchable_amount, matching_pool);
+        } else {
+            engine.cancel_order(&order, matching_pool);
+        }
+    }
+
+    Ok(())
+}
 
 impl StateApplicator {
     // -------------
@@ -148,26 +186,7 @@ impl StateApplicator {
         // We do this after committing to ensure the balance state is durable
         let engine = self.matching_engine();
         let tx = self.db().new_read_tx()?;
-
-        let affected_order_ids = tx.get_orders_with_input_token(&account_id, &balance.mint())?;
-        for order_id in affected_order_ids {
-            let order = match tx.get_order(&order_id)? {
-                Some(archived_order) => Order::from_archived(&archived_order)?,
-                None => {
-                    tracing::warn!("order {order_id} not found, skipping matchable amount update");
-                    continue;
-                },
-            };
-
-            // Fetch the information the matching engine needs to update
-            let matching_pool = tx.get_matching_pool_for_order(&order_id)?;
-            let matchable_amount = tx.get_order_matchable_amount(&order_id)?.unwrap_or_default();
-            if matchable_amount > 0 {
-                engine.upsert_order(account_id, &order, matchable_amount, matching_pool);
-            } else {
-                engine.cancel_order(&order, matching_pool);
-            }
-        }
+        update_matchable_amounts(&engine, &tx, account_id, &balance.mint(), balance.amount())?;
 
         Ok(ApplicatorReturnType::None)
     }
@@ -247,7 +266,8 @@ pub(crate) mod test {
         // Check that the order is not in the matching engine
         let matching_pool = tx.get_matching_pool_for_order(&order.id).unwrap();
         let contains_order = applicator.matching_engine().contains_order(&order, matching_pool);
-        assert!(!contains_order); // zero matchable amount, so not in the matching engine
+        assert!(!contains_order); // zero matchable amount, so not in the
+        // matching engine
     }
 
     /// Test adding an order to an account with a balance

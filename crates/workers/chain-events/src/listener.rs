@@ -224,53 +224,27 @@ impl OnChainEventListenerExecutor {
         token: Address,
         tx_hash: alloy::primitives::TxHash,
     ) -> Result<(), OnChainEventListenerError> {
-        // If the current node is not the update handler, sleep for a random
-        // timeout then check that the balance state updates have been processed.
-        // We do this as a crash recovery mechanism to ensure that the updates are
-        // processed even if the selected node is crashed
+        // Fetch balance and update this node's matching engine cache
+        let on_chain_balance = self.darkpool_client().get_erc20_balance(token, owner).await?;
+        let Some(mut balance) = self.state().get_account_balance(&account_id, &token).await? else {
+            warn!("No balance found for account={account_id:?}, token={token:?}, skipping");
+            return Ok(());
+        };
+
+        *balance.amount_mut() = on_chain_balance
+            .try_into()
+            .map_err(|_| OnChainEventListenerError::State("Balance overflow".into()))?;
+
+        self.state().update_matching_engine_for_balance(account_id, &balance).await?;
+
+        // Select one node to propose raft update and enqueue jobs (with crash recovery)
         if !self.should_execute_balance_updates(&owner, &token, &tx_hash).await? {
             let timeout = rand::thread_rng()
                 .gen_range(MIN_BALANCE_UPDATE_DELAY_S..=MAX_BALANCE_UPDATE_DELAY_S);
             tokio::time::sleep(Duration::from_secs(timeout)).await;
         }
 
-        self.update_balance_for_account(account_id, owner, token).await?;
-        self.run_matching_engine_for_account_and_balance(account_id, token).await
-    }
-
-    /// Update the balance for a specific account from on-chain state
-    async fn update_balance_for_account(
-        &self,
-        account_id: AccountId,
-        owner: Address,
-        token: Address,
-    ) -> Result<(), OnChainEventListenerError> {
-        // Fetch on-chain balance
-        let on_chain_balance = self.darkpool_client().get_erc20_balance(token, owner).await?;
-
-        // Get existing balance from state
-        let mut balance = match self.state().get_account_balance(&account_id, &token).await? {
-            Some(b) => b,
-            None => {
-                warn!(
-                    "No balance found for account={account_id:?}, token={token:?}, skipping update"
-                );
-                return Ok(());
-            },
-        };
-
-        // Update the amount
-        let on_chain_amount: u128 = on_chain_balance
-            .try_into()
-            .map_err(|_| OnChainEventListenerError::State("Balance overflow".into()))?;
-        *balance.amount_mut() = on_chain_amount;
-
-        // TODO: Update matching engine cache here (before raft) for lower latency.
-        // Currently the cache is updated when the raft proposal is applied, which
-        // adds consensus latency before matching can begin. See PR2c.
-
-        // Propose the balance update (this also updates matching engine cache via
-        // applicator)
+        self.run_matching_engine_for_account_and_balance(account_id, token).await?;
         self.state().update_account_balance(account_id, balance).await?.await?;
 
         Ok(())
