@@ -291,7 +291,7 @@ impl HttpServer {
         router.add_unauthenticated_route(
             &Method::GET,
             GET_EXCHANGE_METADATA_ROUTE.to_string(),
-            GetExchangeMetadataHandler::new(),
+            GetExchangeMetadataHandler::new(state.clone(), darkpool_client.clone()),
         );
 
         // --- Admin Routes --- //
