@@ -1,8 +1,10 @@
 //! API types for markets
 
+use alloy::primitives::Address;
 use serde::{Deserialize, Serialize};
 
 use super::external_match::{ApiTimestampedPrice, FeeTakeRate};
+use crate::serde_helpers::address_as_string;
 
 // ---------------
 // | Token Types |
@@ -12,14 +14,15 @@ use super::external_match::{ApiTimestampedPrice, FeeTakeRate};
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ApiToken {
     /// The token address
-    pub address: String,
+    #[serde(with = "address_as_string")]
+    pub address: Address,
     /// The token symbol
     pub symbol: String,
 }
 
 impl ApiToken {
     /// Constructor
-    pub fn new(addr: String, sym: String) -> Self {
+    pub fn new(addr: Address, sym: String) -> Self {
         Self { address: addr, symbol: sym }
     }
 }

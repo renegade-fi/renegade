@@ -19,6 +19,9 @@ rustc-ice-*
 .vscode
 *.sw[a-p]
 .cursor/commands
+.cursor/rules
+.cursor/hooks
+.cursor/hooks.json
 secrets.env
 /.gitattributes
 
