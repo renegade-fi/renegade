@@ -118,9 +118,9 @@ pub fn jubjub_from_hex_string(hex: &str) -> Result<BabyJubJubPoint, String> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use ark_ec::twisted_edwards::Affine;
     use rand::{RngCore, thread_rng};
-    use super::*;
 
     #[test]
     fn test_bytes_serialize_deserialize() {
@@ -198,7 +198,8 @@ mod tests {
         point_bytes.extend_from_slice(&x_bytes);
         point_bytes.extend_from_slice(&y_bytes);
 
-        let affine_point = Affine::<EmbeddedCurveConfig>::deserialize_uncompressed(&point_bytes[..]).unwrap();
+        let affine_point =
+            Affine::<EmbeddedCurveConfig>::deserialize_uncompressed(&point_bytes[..]).unwrap();
         let projective_point = Projective::<EmbeddedCurveConfig>::from(affine_point);
         let point: BabyJubJubPoint = projective_point.into();
 
