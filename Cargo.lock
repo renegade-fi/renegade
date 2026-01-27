@@ -10216,6 +10216,7 @@ dependencies = [
  "alloy",
  "ark-ec",
  "ark-serialize 0.4.2",
+ "ark-std 0.4.0",
  "chrono",
  "circuit-types 0.1.0",
  "constants 0.1.0",
