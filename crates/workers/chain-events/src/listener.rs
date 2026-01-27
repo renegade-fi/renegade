@@ -1,24 +1,33 @@
 //! Defines the core implementation of the on-chain event listener
 
-use std::thread::JoinHandle;
+use std::{thread::JoinHandle, time::Duration};
 
 use super::error::OnChainEventListenerError;
 use alloy::{
-    primitives::Address,
+    primitives::{Address, keccak256},
     providers::{DynProvider, Provider, ProviderBuilder, WsConnect},
     rpc::types::{Filter, Log},
     sol_types::SolEvent,
 };
 use constants::in_bootstrap_mode;
-use darkpool_client::client::erc20::abis::erc20::IERC20;
 use darkpool_client::DarkpoolClient;
+use darkpool_client::client::erc20::abis::erc20::IERC20;
 use futures_util::StreamExt;
-use job_types::event_manager::EventManagerQueue;
+use job_types::{
+    event_manager::EventManagerQueue,
+    matching_engine::{MatchingEngineWorkerJob, MatchingEngineWorkerQueue},
+};
+use rand::Rng;
 use state::State;
-use tracing::{error, info, warn};
-use types_core::get_all_tokens;
+use tracing::{Instrument, error, info, info_span, warn};
+use types_core::{AccountId, get_all_tokens};
 use types_runtime::CancelChannel;
 use util::concurrency::runtime::sleep_forever_async;
+
+/// The minimum delay in seconds for balance update (crash recovery)
+const MIN_BALANCE_UPDATE_DELAY_S: u64 = 20;
+/// The maximum delay in seconds for balance update (crash recovery)
+const MAX_BALANCE_UPDATE_DELAY_S: u64 = 40;
 
 // ----------
 // | Worker |
@@ -39,6 +48,8 @@ pub struct OnChainEventListenerConfig {
     pub cancel_channel: CancelChannel,
     /// A sender to the event manager's queue
     pub event_queue: EventManagerQueue,
+    /// A sender to the matching engine worker's queue
+    pub matching_engine_queue: MatchingEngineWorkerQueue,
 }
 
 impl OnChainEventListenerConfig {
@@ -88,13 +99,11 @@ impl OnChainEventListenerExecutor {
     }
 
     /// Shorthand for fetching a reference to the darkpool client
-    #[allow(dead_code)] // Will be used for balance queries
     fn darkpool_client(&self) -> &DarkpoolClient {
         &self.config.darkpool_client
     }
 
     /// Shorthand for fetching a reference to the global state
-    #[allow(dead_code)] // Will be used for owner index lookups
     pub(crate) fn state(&self) -> &State {
         &self.config.global_state
     }
@@ -106,6 +115,7 @@ impl OnChainEventListenerExecutor {
     /// The main execution loop for the executor
     pub async fn execute(self) -> Result<(), OnChainEventListenerError> {
         // If the node is running in bootstrap mode, sleep forever
+        // TODO: Remove `|| true` to enable the event listener
         #[allow(clippy::overly_complex_bool_expr)]
         if in_bootstrap_mode() || true {
             sleep_forever_async().await;
@@ -138,22 +148,23 @@ impl OnChainEventListenerExecutor {
             return Err(OnChainEventListenerError::State("No tokens configured".into()));
         }
 
-        let filter = Filter::new()
-            .address(token_addresses)
-            .event(IERC20::Transfer::SIGNATURE);
+        let filter = Filter::new().address(token_addresses).event(IERC20::Transfer::SIGNATURE);
 
         let mut stream = client.subscribe_logs(&filter).await?.into_stream();
 
         while let Some(log) = stream.next().await {
             let self_clone = self.clone();
-            tokio::task::spawn(async move {
-                if let Err(e) = self_clone.handle_transfer_event(log).await {
-                    warn!("Error handling transfer event: {e}");
+            tokio::task::spawn(
+                async move {
+                    if let Err(e) = self_clone.handle_transfer_event(log).await {
+                        warn!("Error handling transfer event: {e}");
+                    }
                 }
-            });
+                .instrument(info_span!("handle_transfer_event")),
+            );
         }
 
-        Err(OnChainEventListenerError::State("Transfer stream ended".into()))
+        Err(OnChainEventListenerError::StreamEnded)
     }
 
     /// Watch for Transfer events via HTTP polling
@@ -166,9 +177,7 @@ impl OnChainEventListenerExecutor {
         }
 
         // TODO: Implement HTTP polling loop
-        let _filter = Filter::new()
-            .address(token_addresses)
-            .event(IERC20::Transfer::SIGNATURE);
+        let _filter = Filter::new().address(token_addresses).event(IERC20::Transfer::SIGNATURE);
 
         Err(OnChainEventListenerError::State("HTTP polling not yet implemented".into()))
     }
@@ -177,22 +186,150 @@ impl OnChainEventListenerExecutor {
     // | Transfer Events |
     // -------------------
 
+    /// Handle a Transfer event
+    async fn handle_transfer_event(&self, log: Log) -> Result<(), OnChainEventListenerError> {
+        let token = log.address();
+        let tx_hash = match log.transaction_hash {
+            Some(h) => h,
+            None => {
+                warn!("Transfer event missing transaction hash, skipping");
+                return Ok(());
+            },
+        };
+
+        let event = log.log_decode::<IERC20::Transfer>()?;
+        let from = event.inner.from;
+        let to = event.inner.to;
+
+        // Look up affected accounts for both from and to addresses
+        let from_account = self.state().get_account_for_owner(&from, &token).await?;
+        let to_account = self.state().get_account_for_owner(&to, &token).await?;
+
+        // Process each affected account
+        if let Some(account_id) = from_account {
+            self.handle_balance_update(account_id, from, token, tx_hash).await?;
+        }
+        if let Some(account_id) = to_account {
+            self.handle_balance_update(account_id, to, token, tx_hash).await?;
+        }
+
+        Ok(())
+    }
+
+    /// Handle the balance update for an account affected by a transfer event
+    async fn handle_balance_update(
+        &self,
+        account_id: AccountId,
+        owner: Address,
+        token: Address,
+        tx_hash: alloy::primitives::TxHash,
+    ) -> Result<(), OnChainEventListenerError> {
+        // If the current node is not the update handler, sleep for a random
+        // timeout then check that the balance state updates have been processed.
+        // We do this as a crash recovery mechanism to ensure that the updates are
+        // processed even if the selected node is crashed
+        if !self.should_execute_balance_updates(&owner, &token, &tx_hash).await? {
+            let timeout = rand::thread_rng()
+                .gen_range(MIN_BALANCE_UPDATE_DELAY_S..=MAX_BALANCE_UPDATE_DELAY_S);
+            tokio::time::sleep(Duration::from_secs(timeout)).await;
+        }
+
+        self.update_balance_for_account(account_id, owner, token).await?;
+        self.run_matching_engine_for_account_and_balance(account_id, token).await
+    }
+
+    /// Update the balance for a specific account from on-chain state
+    async fn update_balance_for_account(
+        &self,
+        account_id: AccountId,
+        owner: Address,
+        token: Address,
+    ) -> Result<(), OnChainEventListenerError> {
+        // Fetch on-chain balance
+        let on_chain_balance = self.darkpool_client().get_erc20_balance(token, owner).await?;
+
+        // Get existing balance from state
+        let mut balance = match self.state().get_account_balance(&account_id, &token).await? {
+            Some(b) => b,
+            None => {
+                warn!(
+                    "No balance found for account={account_id:?}, token={token:?}, skipping update"
+                );
+                return Ok(());
+            },
+        };
+
+        // Update the amount
+        let on_chain_amount: u128 = on_chain_balance
+            .try_into()
+            .map_err(|_| OnChainEventListenerError::State("Balance overflow".into()))?;
+        *balance.amount_mut() = on_chain_amount;
+
+        // TODO: Update matching engine cache here (before raft) for lower latency.
+        // Currently the cache is updated when the raft proposal is applied, which
+        // adds consensus latency before matching can begin. See PR2c.
+
+        // Propose the balance update (this also updates matching engine cache via
+        // applicator)
+        self.state().update_account_balance(account_id, balance).await?.await?;
+
+        Ok(())
+    }
+
+    /// Run the matching engine on orders that use the given token as input
+    async fn run_matching_engine_for_account_and_balance(
+        &self,
+        account_id: AccountId,
+        token: Address,
+    ) -> Result<(), OnChainEventListenerError> {
+        // Get all order IDs that use this token as input
+        let order_ids = self.state().get_orders_with_input_token(&account_id, &token).await?;
+
+        for order_id in order_ids {
+            // Note: When private orders (Ring 2/3) are enabled, filter to only enqueue
+            // orders that use public balance - private orders aren't affected by ERC20
+            // changes
+            let job = MatchingEngineWorkerJob::run_internal_engine(account_id, order_id);
+            self.config
+                .matching_engine_queue
+                .clone()
+                .send(job)
+                .map_err(|e| OnChainEventListenerError::SendMessage(e.to_string()))?;
+        }
+
+        Ok(())
+    }
+
+    /// Decides the node in a cluster that should execute balance updates for a
+    /// given transfer event
+    async fn should_execute_balance_updates(
+        &self,
+        owner: &Address,
+        token: &Address,
+        tx_hash: &alloy::primitives::TxHash,
+    ) -> Result<bool, OnChainEventListenerError> {
+        // Fetch cluster state
+        let state = self.state();
+        let my_id = state.get_peer_id()?;
+        let cluster_id = state.get_cluster_id()?;
+        let mut peers = state.get_cluster_peers(&cluster_id).await?;
+        peers.sort();
+
+        // Compute the selected node
+        let n_peers = peers.len();
+        let mut input = Vec::with_capacity(72);
+        input.extend_from_slice(owner.as_slice());
+        input.extend_from_slice(token.as_slice());
+        input.extend_from_slice(tx_hash.as_slice());
+        let hash = keccak256(&input);
+        let peer = usize::from(hash[31]) % n_peers;
+        let peer_id = peers[peer];
+
+        Ok(peer_id == my_id)
+    }
+
     /// Get the list of token addresses to watch for transfers
     fn get_tracked_token_addresses(&self) -> Vec<Address> {
         get_all_tokens().into_iter().map(|t: types_core::Token| t.get_alloy_address()).collect()
-    }
-
-    /// Handle a Transfer event
-    async fn handle_transfer_event(&self, _log: Log) -> Result<(), OnChainEventListenerError> {
-        // TODO: Decode event, lookup affected accounts, update balances
-        // let event = log.log_decode::<IERC20::Transfer>()?;
-        // let from = event.data().from;
-        // let to = event.data().to;
-        // let token = log.address();
-        //
-        // Look up accounts for from/to addresses
-        // Fetch on-chain balance
-        // Update state via update_account_balance()
-        Ok(())
     }
 }
