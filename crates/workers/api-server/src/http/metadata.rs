@@ -54,9 +54,7 @@ impl TypedHandler for GetExchangeMetadataHandler {
 
         let supported_tokens = get_all_base_tokens()
             .into_iter()
-            .filter_map(|t| {
-                t.get_ticker().map(|sym| ApiToken::new(t.get_alloy_address(), sym))
-            })
+            .filter_map(|t| t.get_ticker().map(|sym| ApiToken::new(t.get_alloy_address(), sym)))
             .collect();
 
         Ok(ExchangeMetadataResponse {
