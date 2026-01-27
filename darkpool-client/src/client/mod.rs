@@ -6,7 +6,7 @@ use std::{str::FromStr, time::Duration};
 use alloy::{
     providers::{
         DynProvider, Provider, ProviderBuilder,
-        fillers::{BlobGasFiller, BlobGasEstimator, ChainIdFiller, GasFiller},
+        fillers::{BlobGasFiller, ChainIdFiller, GasFiller},
     },
     signers::local::PrivateKeySigner,
     transports::http::reqwest::Url,
@@ -81,7 +81,7 @@ impl DarkpoolClientConfig {
             .with_simple_nonce_management()
             .filler(ChainIdFiller::default())
             .filler(GasFiller)
-            .filler(BlobGasFiller { estimator: BlobGasEstimator::default() } )
+            .filler(BlobGasFiller::default())
             .wallet(key)
             .connect_http(url);
         provider.client().set_poll_interval(self.block_polling_interval);
