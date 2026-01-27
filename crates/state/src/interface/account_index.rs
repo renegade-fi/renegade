@@ -16,8 +16,8 @@ use types_core::{AccountId, HmacKey};
 use util::res_some;
 
 use crate::{
-    StateInner, error::StateError, notifications::ProposalWaiter,
-    state_transition::StateTransition, storage::traits::RkyvValue,
+    StateInner, applicator::account_index::update_matchable_amounts, error::StateError,
+    notifications::ProposalWaiter, state_transition::StateTransition, storage::traits::RkyvValue,
 };
 
 impl StateInner {
@@ -228,6 +228,28 @@ impl StateInner {
         balance: types_account::balance::Balance,
     ) -> Result<ProposalWaiter, StateError> {
         self.send_proposal(StateTransition::UpdateAccountBalance { account_id, balance }).await
+    }
+
+    /// Update the matching engine cache for orders affected by a balance change
+    ///
+    /// This method updates the matching engine's in-memory cache without
+    /// persisting to DB or going through raft consensus. It should be called
+    /// before `update_account_balance` to enable low-latency matching while
+    /// the raft proposal is in flight.
+    pub async fn update_matching_engine_for_balance(
+        &self,
+        account_id: AccountId,
+        balance: &Balance,
+    ) -> Result<(), StateError> {
+        let token = balance.mint();
+        let balance_amount = balance.amount();
+        let engine = self.matching_engine.clone();
+
+        self.with_read_tx(move |tx| {
+            update_matchable_amounts(&engine, tx, account_id, &token, balance_amount)?;
+            Ok(())
+        })
+        .await
     }
 }
 
