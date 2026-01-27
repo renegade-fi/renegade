@@ -139,6 +139,9 @@ impl StateApplicator {
             return Err(StateApplicatorError::reject("account not found"));
         }
         tx.update_balance(&account_id, balance)?;
+
+        // Index the balance for owner lookup (enables routing balance update events)
+        tx.set_owner_index(&balance.owner(), &balance.mint(), &account_id)?;
         tx.commit()?;
 
         // Open a read transaction to get order info for matching engine updates
