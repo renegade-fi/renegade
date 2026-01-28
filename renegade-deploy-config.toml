@@ -1,7 +1,7 @@
 
-################
+###############
 ### Relayer ###
-################
+###############
 
 [services.arbitrum-sepolia-relayer]
 [services.arbitrum-sepolia-relayer.build]
@@ -30,14 +30,14 @@ service_name_override = "arbitrum-one-relayer-service"
 [services.base-sepolia-relayer]
 [services.base-sepolia-relayer.build]
 dockerfile = "docker/release/Dockerfile"
-ecr_repo = "relayer-base-sepolia"
-cargo_features = "default,base"
+ecr_repo = "relayer-base-sepolia-v2"
+cargo_features = "default"
 
 [services.base-sepolia-relayer.deploy]
 environment = "base-sepolia"
 resource = "relayer"
-cluster_name_override = "base-sepolia-relayer"
-service_name_override = "base-sepolia-relayer-service"
+cluster_name_override = "base-sepolia-relayer-v2"
+service_name_override = "base-sepolia-relayer-v2-service"
 
 [services.base-mainnet-relayer]
 [services.base-mainnet-relayer.build]

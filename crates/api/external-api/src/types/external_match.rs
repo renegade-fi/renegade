@@ -1,16 +1,17 @@
 //! API types for external matches
 
+use alloy::primitives::Address;
 use alloy::rpc::types::TransactionRequest;
+use circuit_types::{Amount, fixed_point::FixedPoint};
+use constants::Scalar;
 use serde::{Deserialize, Serialize};
 
 use crate::serde_helpers;
 
 #[cfg(feature = "full-api")]
 use {
-    alloy::primitives::Address, circuit_types::Amount, circuit_types::fixed_point::FixedPoint,
-    constants::Scalar, crypto::fields::scalar_to_u128,
-    darkpool_types::bounded_match_result::BoundedMatchResult, darkpool_types::fee::FeeRates,
-    darkpool_types::fee::FeeTake, darkpool_types::intent::Intent,
+    crypto::fields::scalar_to_u128, darkpool_types::bounded_match_result::BoundedMatchResult,
+    darkpool_types::fee::FeeRates, darkpool_types::fee::FeeTake, darkpool_types::intent::Intent,
     darkpool_types::settlement_obligation::SettlementObligation, types_account::order::Order,
     types_account::order::OrderMetadata, types_core::TimestampedPrice,
     util::get_current_time_millis,

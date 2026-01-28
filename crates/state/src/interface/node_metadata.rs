@@ -2,7 +2,7 @@
 
 use alloy::signers::local::PrivateKeySigner;
 use alloy_primitives::Address;
-use circuit_types::{elgamal::EncryptionKey, fixed_point::FixedPoint};
+use circuit_types::fixed_point::FixedPoint;
 use config::RelayerConfig;
 use libp2p::{core::Multiaddr, identity::Keypair};
 use tracing::warn;
@@ -28,11 +28,6 @@ impl StateInner {
     /// Get the libp2p keypair of the local node
     pub fn get_node_keypair(&self) -> Result<Keypair, StateError> {
         self.with_blocking_read_tx(|tx| tx.get_node_keypair().map_err(StateError::Db))
-    }
-
-    /// Get the encryption key used to encrypt fee payments
-    pub fn get_fee_key(&self) -> Result<EncryptionKey, StateError> {
-        self.with_blocking_read_tx(|tx| tx.get_fee_key().map_err(StateError::Db))
     }
 
     /// Get the local relayer's maximum match fee
@@ -94,7 +89,6 @@ impl StateInner {
         let peer_id = config.peer_id();
         let cluster_id = config.cluster_id.clone();
         let p2p_key = config.p2p_key.clone();
-        let fee_key = config.fee_key;
         let max_match_fee = config.max_match_fee;
         let default_relayer_fee = config.default_match_fee;
         let per_asset_fees = config.per_asset_fees.clone();
@@ -111,7 +105,6 @@ impl StateInner {
             tx.set_peer_id(&peer_id)?;
             tx.set_cluster_id(&cluster_id)?;
             tx.set_node_keypair(&p2p_key)?;
-            tx.set_fee_key(&fee_key)?;
             tx.set_max_relayer_fee(&max_match_fee)?;
             tx.set_default_relayer_fee(&default_relayer_fee)?;
             for (ticker, fee) in per_asset_fees.into_iter() {

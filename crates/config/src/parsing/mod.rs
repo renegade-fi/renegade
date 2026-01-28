@@ -14,7 +14,7 @@ use crate::{
     Cli, RelayerConfig,
     parsing::{
         config_file::config_file_args,
-        utils::{parse_cluster_keys, parse_fee_key, parse_symmetric_key},
+        utils::{parse_cluster_keys, parse_symmetric_key},
     },
     setup_token_remaps,
     validation::validate_config,
@@ -67,7 +67,6 @@ pub(crate) fn parse_config_from_args(cli_args: Cli) -> Result<RelayerConfig, Str
         PrivateKeySigner::from_str(&cli_args.private_key).map_err(|e| e.to_string())?;
     let executor_private_key = PrivateKeySigner::from_str(&cli_args.executor_private_key)
         .map_err(|e| format!("Failed to parse executor private key: {e}"))?;
-    let fee_key = parse_fee_key(cli_args.fee_encryption_key)?;
     let relayer_fee_addr = address_from_hex_string(&cli_args.relayer_fee_addr)
         .map_err(|e| format!("could not parse relayer fee address: {e}"))?;
     let contract_address = address_from_hex_string(&cli_args.contract_address)
@@ -158,7 +157,6 @@ pub(crate) fn parse_config_from_args(cli_args: Cli) -> Result<RelayerConfig, Str
         rpc_url: cli_args.rpc_url,
         private_key,
         executor_private_key,
-        fee_key,
         eth_websocket_addr: cli_args.eth_websocket_addr,
         otlp_enabled: cli_args.otlp_enabled,
         otlp_collector_url: cli_args.otlp_collector_url,

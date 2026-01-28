@@ -2,11 +2,8 @@
 
 use std::{collections::HashMap, str::FromStr};
 
-use circuit_types::elgamal::{DecryptionKey, EncryptionKey};
-use rand::thread_rng;
 use types_core::HmacKey;
 use types_gossip::ClusterAsymmetricKeypair;
-use util::hex::jubjub_from_hex_string;
 
 use crate::Cli;
 
@@ -38,24 +35,6 @@ pub(crate) fn parse_symmetric_key(key_str: String) -> Result<HmacKey, String> {
         .try_into()
         .map(HmacKey)
         .map_err(|_| "Invalid symmetric key".to_string())
-}
-
-/// Parse the relayer's fee encryption key from a string
-pub(crate) fn parse_fee_key(encryption_key: Option<String>) -> Result<EncryptionKey, String> {
-    if let Some(k) = encryption_key {
-        jubjub_from_hex_string(&k)
-    } else {
-        #[cfg(not(feature = "silent"))]
-        {
-            // Must print here as logger is not yet setup
-            use colored::*;
-            println!("{}\n", "WARN: No fee encryption key provided, generating one".yellow());
-        }
-
-        let mut rng = thread_rng();
-        let key = DecryptionKey::random(&mut rng);
-        Ok(key.public_key())
-    }
 }
 
 /// Parse a string keyed map into a hashmap
