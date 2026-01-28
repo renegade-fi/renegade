@@ -1,10 +1,8 @@
 //! Storage access methods for the local node's metadata
 use alloy::signers::local::PrivateKeySigner;
 use alloy_primitives::Address;
-use circuit_types::{
-    baby_jubjub::BabyJubJubPoint, elgamal::EncryptionKey, fixed_point::FixedPoint,
-};
-use darkpool_types::rkyv_remotes::{AddressDef, BabyJubJubPointDef, FixedPointDef};
+use circuit_types::fixed_point::FixedPoint;
+use darkpool_types::rkyv_remotes::{AddressDef, FixedPointDef};
 use libmdbx::{RW, TransactionKind};
 use libp2p::core::Multiaddr;
 use libp2p::identity::Keypair;
@@ -34,9 +32,6 @@ const NODE_KEYPAIR_KEY: &str = "node-keypair";
 const LOCAL_ADDR_KEY: &str = "local-addr";
 /// The key for the local relayer's account ID in the node metadata table
 const LOCAL_ACCOUNT_ID_KEY: &str = "local-account-id";
-/// The key for the local relayer's fee encryption key in the node metadata
-/// table
-const LOCAL_RELAYER_FEE_KEY: &str = "local-relayer-fee-key";
 /// The key for the local relayer's maximum match fee in the node metadata table
 const MAX_RELAYER_FEE_KEY: &str = "max-relayer-fee";
 /// The key for the local relayer's default match fee in the node metadata table
@@ -49,8 +44,6 @@ const HISTORICAL_STATE_ENABLED_KEY: &str = "historical-state-enabled";
 /// The key for the executor private key in the node metadata table
 const EXECUTOR_KEY: &str = "executor-key";
 
-/// A type alias for a with-wrapped baby jubjub point
-type WithBabyJubJubPoint = RkyvWith<BabyJubJubPoint, BabyJubJubPointDef>;
 /// A type alias for a with-wrapped fixed point
 type WithFixedPoint = RkyvWith<FixedPoint, FixedPointDef>;
 /// A type alias for a with-wrapped address
@@ -118,17 +111,6 @@ impl<T: TransactionKind> StateTxn<'_, T> {
             .read::<_, AccountId>(NODE_METADATA_TABLE, &LOCAL_ACCOUNT_ID_KEY.to_string())?
             .map(|a| a.deserialize())
             .transpose()
-    }
-
-    /// Get the local relayer's fee encryption key
-    pub fn get_fee_key(&self) -> Result<EncryptionKey, StorageError> {
-        self.inner()
-            .read::<_, WithBabyJubJubPoint>(
-                NODE_METADATA_TABLE,
-                &LOCAL_RELAYER_FEE_KEY.to_string(),
-            )?
-            .ok_or_else(|| err_not_found(LOCAL_RELAYER_FEE_KEY))?
-            .deserialize_with()
     }
 
     /// Get the local relayer's maximum match fee
@@ -204,12 +186,6 @@ impl StateTxn<'_, RW> {
     /// Set the account ID of the local relayer's account
     pub fn set_local_node_wallet(&self, account_id: AccountId) -> Result<(), StorageError> {
         self.inner().write(NODE_METADATA_TABLE, &LOCAL_ACCOUNT_ID_KEY.to_string(), &account_id)
-    }
-
-    /// Set the local relayer's fee encryption key
-    pub fn set_fee_key(&self, fee_key: &EncryptionKey) -> Result<(), StorageError> {
-        let wrapped = WithBabyJubJubPoint::cast(fee_key);
-        self.inner().write(NODE_METADATA_TABLE, &LOCAL_RELAYER_FEE_KEY.to_string(), wrapped)
     }
 
     /// Set the local relayer's maximum match fee
