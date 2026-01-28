@@ -3,6 +3,7 @@
 
 use std::sync::Arc;
 
+use alloy_primitives::Address;
 use job_types::{
     event_manager::EventManagerQueue, matching_engine::MatchingEngineWorkerQueue,
     task_driver::TaskDriverQueue,
@@ -52,6 +53,11 @@ pub struct StateApplicatorConfig {
     pub allow_local: bool,
     /// The local peer's cluster ID
     pub cluster_id: ClusterId,
+    /// The executor address for signing public intents
+    ///
+    /// This is the relayer's settlement wallet address, used to compute intent
+    /// hashes for Ring 0/1 orders.
+    pub executor_address: Address,
     /// A sender to the task driver's work queue
     pub task_queue: TaskDriverQueue,
     /// The handshake manager's work queue
@@ -145,6 +151,11 @@ impl StateApplicator {
     pub(crate) fn matching_engine(&self) -> MatchingEngine {
         self.config.matching_engine.clone()
     }
+
+    /// Get the executor address for public intents
+    pub fn executor_address(&self) -> Address {
+        self.config.executor_address
+    }
 }
 
 /// Test helpers for mock state applicator
@@ -152,6 +163,7 @@ impl StateApplicator {
 pub mod test_helpers {
     use std::{mem, str::FromStr, sync::Arc};
 
+    use alloy_primitives::Address;
     use job_types::{
         event_manager::new_event_manager_queue,
         matching_engine::new_matching_engine_worker_queue,
@@ -184,6 +196,7 @@ pub mod test_helpers {
         let config = StateApplicatorConfig {
             allow_local: true,
             task_queue,
+            executor_address: Address::ZERO,
             matching_engine: MatchingEngine::new(),
             db: Arc::new(mock_db()),
             matching_engine_worker_queue,

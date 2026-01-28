@@ -1,8 +1,11 @@
 //! Applicator methods for the account index, separated out for discoverability
 
-use alloy_primitives::Address;
+use alloy::sol_types::SolValue;
+use alloy_primitives::{Address, B256, keccak256};
 use circuit_types::Amount;
+use darkpool_types::intent::Intent;
 use matching_engine_core::MatchingEngine;
+use renegade_solidity_abi::v2::IDarkpoolV2;
 use types_account::{
     account::{Account, OrderId},
     balance::Balance,
@@ -17,6 +20,21 @@ use crate::{
 };
 
 use super::{Result, StateApplicator, return_type::ApplicatorReturnType};
+
+/// Compute the intent hash for a public intent permit
+///
+/// This matches the contract's `PublicIntentPermit.computeHash()` which computes:
+/// `keccak256(abi.encode(PublicIntentPermit { intent, executor }))`
+pub fn compute_intent_hash(intent: &Intent, executor: Address) -> B256 {
+    // Convert the circuit intent to the contract's Intent type
+    let contract_intent: IDarkpoolV2::Intent = intent.clone().into();
+
+    // Create the PublicIntentPermit struct
+    let permit = IDarkpoolV2::PublicIntentPermit { intent: contract_intent, executor };
+
+    // ABI-encode and hash to match the contract's computation
+    keccak256(permit.abi_encode())
+}
 
 /// Update the matching engine cache for orders affected by a balance change
 pub fn update_matchable_amounts<T: libmdbx::TransactionKind>(
@@ -89,6 +107,20 @@ impl StateApplicator {
         tx.add_order(&account_id, order)?;
         tx.write_order_auth(&order.id, auth)?;
 
+        // For Ring 0/1 orders, index the intent hash for on-chain event correlation
+        if order.uses_public_balance() {
+            // Verify the auth type matches the ring
+            if !matches!(auth, OrderAuth::PublicOrder { .. }) {
+                return Err(StateApplicatorError::reject(
+                    "Ring 0/1 order must have PublicOrder auth",
+                ));
+            }
+
+            let intent_hash =
+                compute_intent_hash(order.intent(), self.config.executor_address);
+            tx.set_intent_index(&intent_hash, &account_id, &order.id)?;
+        }
+
         // Get the info needed to update the matching engine
         let matching_pool = tx.get_matching_pool_for_order(&order.id)?;
         let matchable_amount = tx.get_order_matchable_amount(&order.id)?.unwrap_or_default();
@@ -121,6 +153,13 @@ impl StateApplicator {
             .ok_or_else(|| StateApplicatorError::reject(format!("order {order_id} not found")))?;
         let order = Order::from_archived(&archived_order)?;
         let matching_pool = tx.get_matching_pool_for_order(&order_id)?;
+
+        // For Ring 0/1 orders, delete the intent hash index
+        if order.uses_public_balance() {
+            let intent_hash =
+                compute_intent_hash(order.intent(), self.config.executor_address);
+            tx.delete_intent_index(&intent_hash)?;
+        }
 
         // Remove order from account storage
         tx.remove_order(&account_id, &order_id)?;
