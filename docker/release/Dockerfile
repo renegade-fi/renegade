@@ -1,6 +1,4 @@
-# Used for running integration tests on a simulated MPC network
-
-FROM --platform=arm64 rust:1.89-trixie AS chef
+FROM --platform=arm64 rust:1.89-trixie AS builder
 
 # Create a build dir and add local dependencies
 WORKDIR /build
@@ -9,16 +7,6 @@ WORKDIR /build
 # step and we would like to cache it before anything else
 COPY ./rust-toolchain ./rust-toolchain
 RUN cat rust-toolchain | xargs rustup toolchain install
-
-# Install cargo-chef
-RUN cargo install cargo-chef
-
-FROM chef AS planner
-COPY . .
-RUN cargo chef prepare --recipe-path recipe.json
-
-FROM chef AS builder
-COPY --from=planner /build/recipe.json recipe.json
 
 # Install protoc, openssl, and pkg-config
 RUN apt-get update && \
@@ -34,9 +22,11 @@ ENV RUST_BACKTRACE=1
 
 ARG CARGO_FEATURES="default"
 
-# Build only the dependencies to cache them in this layer
-RUN cargo chef cook --release --recipe-path recipe.json --features "$CARGO_FEATURES"
-
+# Copy the source code
+# We don't use cargo chef here because the dependencies are too complex to be effectively cached.
+# In particular, the contracts abi relies recursively on the circuits, darkpool-types, etc
+# `cargo chef cook` will overwrite these dependencies locally, so imports from them in the contracts will fail.
+# We should write a simple Renegade-specific version of `cargo chef` instead.
 COPY . .
 
 # Build the bootloader

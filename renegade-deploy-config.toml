@@ -1,19 +1,19 @@
 
-################
+###############
 ### Relayer ###
-################
+###############
 
 [services.arbitrum-sepolia-relayer]
 [services.arbitrum-sepolia-relayer.build]
 dockerfile = "docker/release/Dockerfile"
-ecr_repo = "relayer-arbitrum-sepolia"
-cargo_features = "default,arbitrum"
+ecr_repo = "relayer-arbitrum-sepolia-v2"
+cargo_features = "default"
 
 [services.arbitrum-sepolia-relayer.deploy]
 environment = "arbitrum-sepolia"
 resource = "relayer"
-cluster_name_override = "arbitrum-sepolia-relayer"
-service_name_override = "arbitrum-sepolia-relayer-service"
+cluster_name_override = "arbitrum-sepolia-relayer-v2"
+service_name_override = "arbitrum-sepolia-relayer-v2-service"
 
 [services.arbitrum-one-relayer]
 [services.arbitrum-one-relayer.build]
@@ -30,14 +30,14 @@ service_name_override = "arbitrum-one-relayer-service"
 [services.base-sepolia-relayer]
 [services.base-sepolia-relayer.build]
 dockerfile = "docker/release/Dockerfile"
-ecr_repo = "relayer-base-sepolia"
-cargo_features = "default,base"
+ecr_repo = "relayer-base-sepolia-v2"
+cargo_features = "default"
 
 [services.base-sepolia-relayer.deploy]
 environment = "base-sepolia"
 resource = "relayer"
-cluster_name_override = "base-sepolia-relayer"
-service_name_override = "base-sepolia-relayer-service"
+cluster_name_override = "base-sepolia-v2-relayer"
+service_name_override = "base-sepolia-v2-relayer-service"
 
 [services.base-mainnet-relayer]
 [services.base-mainnet-relayer.build]
@@ -50,3 +50,27 @@ environment = "base-mainnet"
 resource = "relayer"
 cluster_name_override = "base-mainnet-relayer"
 service_name_override = "base-mainnet-relayer-service"
+
+[services.ethereum-sepolia-relayer]
+[services.ethereum-sepolia-relayer.build]
+dockerfile = "docker/release/Dockerfile"
+ecr_repo = "relayer-ethereum-sepolia"
+cargo_features = "default,base"
+
+[services.ethereum-sepolia-relayer.deploy]
+environment = "ethereum-sepolia"
+resource = "relayer"
+cluster_name_override = "ethereum-sepolia-relayer"
+service_name_override = "ethereum-sepolia-relayer-service"
+
+[services.ethereum-mainnet-relayer]
+[services.ethereum-mainnet-relayer.build]
+dockerfile = "docker/release/Dockerfile"
+ecr_repo = "relayer-ethereum-mainnet"
+cargo_features = "default"
+
+[services.ethereum-mainnet-relayer.deploy]
+environment = "ethereum-mainnet"
+resource = "relayer"
+cluster_name_override = "ethereum-mainnet-relayer"
+service_name_override = "ethereum-mainnet-relayer-service"

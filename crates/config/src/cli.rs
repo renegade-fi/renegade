@@ -2,7 +2,7 @@
 
 use alloy::primitives::Address;
 use alloy::signers::local::PrivateKeySigner;
-use circuit_types::{Amount, elgamal::EncryptionKey, fixed_point::FixedPoint};
+use circuit_types::{Amount, fixed_point::FixedPoint};
 use clap::Parser;
 use libp2p::{Multiaddr, identity::Keypair};
 use serde::{Deserialize, Serialize};
@@ -242,9 +242,6 @@ pub struct Cli {
         default_value = "0xb6b15c8cb491557369f3c7d2c287b053eb229daa9c22138887752191c9520659",
     )]
     pub executor_private_key: String,
-    /// The key used to encrypt fee payments
-    #[clap(long = "fee-encryption-key", value_parser, env = "FEE_ENCRYPTION_KEY")]
-    pub fee_encryption_key: Option<String>,
 
     // -------------
     // | Telemetry |
@@ -415,8 +412,6 @@ pub struct RelayerConfig {
     pub executor_private_key: PrivateKeySigner,
     /// The Ethereum RPC node websocket address to dial for on-chain data
     pub eth_websocket_addr: Option<String>,
-    /// The key used to encrypt fee payments
-    pub fee_key: EncryptionKey,
 
     // -------------
     // | Telemetry |
