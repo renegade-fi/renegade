@@ -3,7 +3,7 @@ use alloy::signers::local::PrivateKeySigner;
 use alloy_primitives::Address;
 use circuit_types::fixed_point::FixedPoint;
 use darkpool_types::rkyv_remotes::{AddressDef, FixedPointDef};
-use libmdbx::{TransactionKind, RW};
+use libmdbx::{RW, TransactionKind};
 use libp2p::core::Multiaddr;
 use libp2p::identity::Keypair;
 use std::str::FromStr;
@@ -12,8 +12,8 @@ use types_gossip::{ClusterId, MultiaddrDef, WrappedPeerId};
 use util::err_str;
 
 use crate::{
-    storage::{error::StorageError, traits::RkyvWith},
     NODE_METADATA_TABLE,
+    storage::{error::StorageError, traits::RkyvWith},
 };
 
 use super::StateTxn;
