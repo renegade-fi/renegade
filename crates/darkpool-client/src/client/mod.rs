@@ -17,6 +17,7 @@ use alloy_sol_types::SolEvent;
 use constants::{
     ARBITRUM_ONE_DEPLOY_BLOCK, ARBITRUM_SEPOLIA_DEPLOY_BLOCK, BASE_MAINNET_DEPLOY_BLOCK,
     BASE_SEPOLIA_DEPLOY_BLOCK, DEVNET_DEPLOY_BLOCK,
+    ETHEREUM_SEPOLIA_DEPLOY_BLOCK, ETHEREUM_MAINNET_DEPLOY_BLOCK,
 };
 use types_core::Chain;
 use util::err_str;
@@ -67,6 +68,8 @@ impl DarkpoolClientConfig {
             Chain::ArbitrumOne => ARBITRUM_ONE_DEPLOY_BLOCK,
             Chain::BaseSepolia => BASE_SEPOLIA_DEPLOY_BLOCK,
             Chain::BaseMainnet => BASE_MAINNET_DEPLOY_BLOCK,
+            Chain::EthereumSepolia => ETHEREUM_SEPOLIA_DEPLOY_BLOCK,
+            Chain::EthereumMainnet => ETHEREUM_MAINNET_DEPLOY_BLOCK,
             Chain::Devnet => DEVNET_DEPLOY_BLOCK,
         }
     }
