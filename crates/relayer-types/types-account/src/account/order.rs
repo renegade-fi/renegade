@@ -129,14 +129,6 @@ impl Order {
         let implied_price = FixedPoint::from_integer_ratio(output_amount, input_amount);
         implied_price >= self.intent.inner.min_price
     }
-
-    /// Whether this order uses a public (EOA) balance
-    ///
-    /// Ring 0 and Ring 1 orders use public ERC20 balances held in an EOA,
-    /// while Ring 2 and Ring 3 orders use private Merklized balances.
-    pub fn uses_public_balance(&self) -> bool {
-        matches!(self.ring, PrivacyRing::Ring0 | PrivacyRing::Ring1)
-    }
 }
 
 #[cfg(feature = "rkyv")]
@@ -149,14 +141,6 @@ impl ArchivedOrder {
     /// Get the amount in for the order
     pub fn amount_in(&self) -> Amount {
         self.intent.inner.amount_in.to_native()
-    }
-
-    /// Whether this order uses a public (EOA) balance
-    ///
-    /// Ring 0 and Ring 1 orders use public ERC20 balances held in an EOA,
-    /// while Ring 2 and Ring 3 orders use private Merklized balances.
-    pub fn uses_public_balance(&self) -> bool {
-        matches!(self.ring, ArchivedPrivacyRing::Ring0 | ArchivedPrivacyRing::Ring1)
     }
 }
 

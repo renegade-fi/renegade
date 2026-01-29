@@ -5,6 +5,17 @@ use std::{error::Error, fmt::Display};
 use darkpool_client::errors::DarkpoolClientError;
 use state::error::StateError;
 
+// -----------
+// | Errors  |
+// -----------
+
+/// Error message for balance overflow
+pub const ERR_BALANCE_OVERFLOW: &str = "Balance overflow";
+/// Error message for amount remaining overflow
+pub const ERR_AMOUNT_REMAINING_OVERFLOW: &str = "Amount remaining overflow";
+/// Error message for missing topic0 in log
+pub const ERR_LOG_MISSING_TOPIC: &str = "Log missing topic0";
+
 /// The error type that the event listener emits
 #[derive(Clone, Debug)]
 pub enum OnChainEventListenerError {
@@ -20,6 +31,8 @@ pub enum OnChainEventListenerError {
     StreamEnded,
     /// An error starting up a task
     TaskStartup(String),
+    /// The listener was cancelled
+    Cancelled,
 }
 
 impl OnChainEventListenerError {

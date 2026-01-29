@@ -2,13 +2,17 @@
 
 use std::{thread::JoinHandle, time::Duration};
 
-use super::error::OnChainEventListenerError;
+use super::error::{
+    ERR_AMOUNT_REMAINING_OVERFLOW, ERR_BALANCE_OVERFLOW, ERR_LOG_MISSING_TOPIC,
+    OnChainEventListenerError,
+};
 use alloy::{
     primitives::{Address, keccak256},
     providers::{DynProvider, Provider, ProviderBuilder, WsConnect},
     rpc::types::{Filter, Log},
     sol_types::SolEvent,
 };
+use circuit_types::Amount;
 use constants::in_bootstrap_mode;
 use darkpool_client::DarkpoolClient;
 use darkpool_client::client::erc20::abis::erc20::IERC20;
@@ -18,16 +22,19 @@ use job_types::{
     matching_engine::{MatchingEngineWorkerJob, MatchingEngineWorkerQueue},
 };
 use rand::Rng;
+use renegade_solidity_abi::v2::IDarkpoolV2::{PublicIntentCancelled, PublicIntentUpdated};
 use state::State;
-use tracing::{Instrument, error, info, info_span, warn};
+use tracing::{error, info, warn};
 use types_core::{AccountId, get_all_tokens};
 use types_runtime::CancelChannel;
 use util::concurrency::runtime::sleep_forever_async;
 
-/// The minimum delay in seconds for balance update (crash recovery)
-const MIN_BALANCE_UPDATE_DELAY_S: u64 = 20;
-/// The maximum delay in seconds for balance update (crash recovery)
-const MAX_BALANCE_UPDATE_DELAY_S: u64 = 40;
+/// The minimum delay in seconds before non-selected nodes process an event
+/// (crash recovery)
+const MIN_CRASH_RECOVERY_DELAY_S: u64 = 20;
+/// The maximum delay in seconds before non-selected nodes process an event
+/// (crash recovery)
+const MAX_CRASH_RECOVERY_DELAY_S: u64 = 40;
 
 // ----------
 // | Worker |
@@ -123,63 +130,65 @@ impl OnChainEventListenerExecutor {
 
         info!("Starting on-chain event listener");
 
-        // Begin the watch loop
-        let res = self.watch_transfers().await.unwrap_err();
+        // Begin the unified event loop
+        let res = self.watch_all_events_ws().await.unwrap_err();
         error!("on-chain event listener stream ended unexpectedly: {res}");
         Err(res)
     }
 
-    /// Transfer event watch loop
-    async fn watch_transfers(&self) -> Result<(), OnChainEventListenerError> {
-        if self.config.has_websocket_listener() {
-            self.watch_transfers_ws().await
-        } else {
-            self.watch_transfers_http().await
-        }
-    }
-
-    /// Watch for Transfer events via a websocket stream
-    async fn watch_transfers_ws(&self) -> Result<(), OnChainEventListenerError> {
-        info!("Listening for Transfer events via websocket");
-
+    /// Unified event loop that watches all chain events via websocket
+    ///
+    /// Uses the multiplexer pattern with two streams:
+    /// 1. ERC20 Transfer events from token contracts
+    /// 2. Darkpool events (PublicIntentUpdated + PublicIntentCancelled)
+    async fn watch_all_events_ws(&self) -> Result<(), OnChainEventListenerError> {
+        info!("listening for chain events via websocket");
         let client = self.config.ws_client().await?;
-        let token_addresses = self.get_tracked_token_addresses();
-        if token_addresses.is_empty() {
-            return Err(OnChainEventListenerError::State("No tokens configured".into()));
-        }
+        let darkpool_address = self.darkpool_client().darkpool_addr();
+        let token_addresses: Vec<Address> =
+            get_all_tokens().into_iter().map(|t| t.get_alloy_address()).collect();
 
-        let filter = Filter::new().address(token_addresses).event(IERC20::Transfer::SIGNATURE);
+        // Stream 1: ERC20 transfers
+        let transfer_filter = Filter::new()
+            .address(token_addresses)
+            .event_signature(IERC20::Transfer::SIGNATURE_HASH);
+        let mut transfer_stream = client.subscribe_logs(&transfer_filter).await?.into_stream();
 
-        let mut stream = client.subscribe_logs(&filter).await?.into_stream();
+        // Stream 2: Darkpool events (PublicIntentUpdated + PublicIntentCancelled)
+        let darkpool_filter = Filter::new().address(darkpool_address).event_signature(vec![
+            PublicIntentUpdated::SIGNATURE_HASH,
+            PublicIntentCancelled::SIGNATURE_HASH,
+        ]);
+        let mut darkpool_stream = client.subscribe_logs(&darkpool_filter).await?.into_stream();
 
-        while let Some(log) = stream.next().await {
-            let self_clone = self.clone();
-            tokio::task::spawn(
-                async move {
-                    if let Err(e) = self_clone.handle_transfer_event(log).await {
-                        warn!("Error handling transfer event: {e}");
-                    }
+        let mut cancel_channel = self.config.cancel_channel.clone();
+        loop {
+            tokio::select! {
+                Some(log) = transfer_stream.next() => {
+                    let self_clone = self.clone();
+                    tokio::task::spawn(async move {
+                        if let Err(e) = self_clone.handle_transfer_event(log).await {
+                            error!("error handling transfer event: {e}");
+                        }
+                    });
                 }
-                .instrument(info_span!("handle_transfer_event")),
-            );
+                Some(log) = darkpool_stream.next() => {
+                    let self_clone = self.clone();
+                    tokio::task::spawn(async move {
+                        if let Err(e) = self_clone.dispatch_darkpool_event(log).await {
+                            error!("error handling darkpool event: {e}");
+                        }
+                    });
+                }
+                _ = cancel_channel.changed() => {
+                    info!("on-chain event listener received cancel signal");
+                    return Err(OnChainEventListenerError::Cancelled);
+                }
+                else => break,
+            }
         }
 
         Err(OnChainEventListenerError::StreamEnded)
-    }
-
-    /// Watch for Transfer events via HTTP polling
-    async fn watch_transfers_http(&self) -> Result<(), OnChainEventListenerError> {
-        info!("Listening for Transfer events via HTTP polling");
-
-        let token_addresses = self.get_tracked_token_addresses();
-        if token_addresses.is_empty() {
-            return Err(OnChainEventListenerError::State("No tokens configured".into()));
-        }
-
-        // TODO: Implement HTTP polling loop
-        let _filter = Filter::new().address(token_addresses).event(IERC20::Transfer::SIGNATURE);
-
-        Err(OnChainEventListenerError::State("HTTP polling not yet implemented".into()))
     }
 
     // -------------------
@@ -200,6 +209,9 @@ impl OnChainEventListenerExecutor {
         let event = log.log_decode::<IERC20::Transfer>()?;
         let from = event.inner.from;
         let to = event.inner.to;
+        info!(
+            "Handling ERC20 transfer: token={token:#x}, from={from:#x}, to={to:#x}, tx={tx_hash:#x}"
+        );
 
         // Look up affected accounts for both from and to addresses
         let from_account = self.state().get_account_for_owner(&from, &token).await?;
@@ -227,20 +239,23 @@ impl OnChainEventListenerExecutor {
         // Fetch balance and update this node's matching engine cache
         let on_chain_balance = self.darkpool_client().get_erc20_balance(token, owner).await?;
         let Some(mut balance) = self.state().get_account_balance(&account_id, &token).await? else {
-            warn!("No balance found for account={account_id:?}, token={token:?}, skipping");
+            info!("No balance found for account={account_id:?}, token={token:?}, skipping");
             return Ok(());
         };
 
         *balance.amount_mut() = on_chain_balance
             .try_into()
-            .map_err(|_| OnChainEventListenerError::State("Balance overflow".into()))?;
+            .map_err(|_| OnChainEventListenerError::State(ERR_BALANCE_OVERFLOW.into()))?;
 
         self.state().update_matching_engine_for_balance(account_id, &balance).await?;
 
         // Select one node to propose raft update and enqueue jobs (with crash recovery)
-        if !self.should_execute_balance_updates(&owner, &token, &tx_hash).await? {
+        if !self
+            .is_selected_for_event(&[owner.as_slice(), token.as_slice(), tx_hash.as_slice()])
+            .await?
+        {
             let timeout = rand::thread_rng()
-                .gen_range(MIN_BALANCE_UPDATE_DELAY_S..=MAX_BALANCE_UPDATE_DELAY_S);
+                .gen_range(MIN_CRASH_RECOVERY_DELAY_S..=MAX_CRASH_RECOVERY_DELAY_S);
             tokio::time::sleep(Duration::from_secs(timeout)).await;
         }
 
@@ -274,36 +289,176 @@ impl OnChainEventListenerExecutor {
         Ok(())
     }
 
-    /// Decides the node in a cluster that should execute balance updates for a
-    /// given transfer event
-    async fn should_execute_balance_updates(
+    // ------------------------
+    // | Public Intent Events |
+    // ------------------------
+
+    /// Dispatch darkpool events by topic0 to the appropriate handler
+    async fn dispatch_darkpool_event(&self, log: Log) -> Result<(), OnChainEventListenerError> {
+        let topic0 = log
+            .topics()
+            .first()
+            .ok_or_else(|| OnChainEventListenerError::State(ERR_LOG_MISSING_TOPIC.into()))?;
+
+        match *topic0 {
+            t if t == PublicIntentUpdated::SIGNATURE_HASH => {
+                self.handle_public_intent_updated(log).await
+            },
+            t if t == PublicIntentCancelled::SIGNATURE_HASH => {
+                self.handle_public_intent_cancelled(log).await
+            },
+            _ => {
+                tracing::debug!("Unknown darkpool event: topic={topic0}");
+                Ok(())
+            },
+        }
+    }
+
+    /// Handle a PublicIntentUpdated event emitted when a public intent is
+    /// partially or fully filled on-chain
+    ///
+    /// Updates the order's remaining amount or removes it if fully filled.
+    async fn handle_public_intent_updated(
         &self,
-        owner: &Address,
-        token: &Address,
-        tx_hash: &alloy::primitives::TxHash,
+        log: Log,
+    ) -> Result<(), OnChainEventListenerError> {
+        let tx_hash = match log.transaction_hash {
+            Some(h) => h,
+            None => {
+                warn!("PublicIntentUpdated event missing transaction hash, skipping");
+                return Ok(());
+            },
+        };
+
+        let event = log.log_decode::<PublicIntentUpdated>()?;
+        let intent_hash = event.inner.intentHash;
+        let owner = event.inner.owner;
+        let amount_remaining: Amount =
+            event.inner.amountRemaining.try_into().map_err(|_| {
+                OnChainEventListenerError::State(ERR_AMOUNT_REMAINING_OVERFLOW.into())
+            })?;
+
+        // Look up the order by intent hash
+        let Some((account_id, order_id)) =
+            self.state().get_order_for_intent_hash(&intent_hash).await?
+        else {
+            // Unknown intent - not managed by this relayer
+            return Ok(());
+        };
+        info!(
+            "Handling PublicIntentUpdated: owner={owner:#x}, intent_hash={intent_hash:#x}, amount_remaining={amount_remaining}, tx={tx_hash:#x}"
+        );
+
+        // Node selection with crash recovery
+        if !self
+            .is_selected_for_event(&[owner.as_slice(), intent_hash.as_slice(), tx_hash.as_slice()])
+            .await?
+        {
+            let timeout = rand::thread_rng()
+                .gen_range(MIN_CRASH_RECOVERY_DELAY_S..=MAX_CRASH_RECOVERY_DELAY_S);
+            tokio::time::sleep(Duration::from_secs(timeout)).await;
+
+            // Check if already processed by another node
+            if self.state().get_order_for_intent_hash(&intent_hash).await?.is_none() {
+                return Ok(());
+            }
+        }
+
+        if amount_remaining == 0 {
+            // Order fully filled - remove it
+            self.state().remove_order_from_account(account_id, order_id).await?.await?;
+        } else {
+            // Partial fill - update the order's amount
+            let Some(mut order) = self.state().get_account_order(&order_id).await? else {
+                return Ok(()); // Order already removed
+            };
+            order.intent.inner.amount_in = amount_remaining;
+            self.state().update_order(order).await?.await?;
+        }
+
+        // TODO: Emit ExternalFillEvent to notify clients
+
+        Ok(())
+    }
+
+    /// Handle a PublicIntentCancelled event emitted when a user cancels their
+    /// public intent on-chain
+    ///
+    /// Removes the order from the account.
+    async fn handle_public_intent_cancelled(
+        &self,
+        log: Log,
+    ) -> Result<(), OnChainEventListenerError> {
+        let tx_hash = match log.transaction_hash {
+            Some(h) => h,
+            None => {
+                warn!("PublicIntentCancelled event missing transaction hash, skipping");
+                return Ok(());
+            },
+        };
+
+        let event = log.log_decode::<PublicIntentCancelled>()?;
+        let intent_hash = event.inner.intentHash;
+        let owner = event.inner.owner;
+
+        // Look up the order by intent hash
+        let Some((account_id, order_id)) =
+            self.state().get_order_for_intent_hash(&intent_hash).await?
+        else {
+            // Unknown intent - not managed by this relayer
+            return Ok(());
+        };
+        info!(
+            "Handling PublicIntentCancelled: owner={owner:#x}, intent_hash={intent_hash:#x}, tx={tx_hash:#x}"
+        );
+
+        // Node selection with crash recovery
+        if !self
+            .is_selected_for_event(&[owner.as_slice(), intent_hash.as_slice(), tx_hash.as_slice()])
+            .await?
+        {
+            let timeout = rand::thread_rng()
+                .gen_range(MIN_CRASH_RECOVERY_DELAY_S..=MAX_CRASH_RECOVERY_DELAY_S);
+            tokio::time::sleep(Duration::from_secs(timeout)).await;
+
+            // Check if already processed by another node
+            if self.state().get_order_for_intent_hash(&intent_hash).await?.is_none() {
+                return Ok(());
+            }
+        }
+
+        // Remove the cancelled order
+        self.state().remove_order_from_account(account_id, order_id).await?.await?;
+
+        // TODO: Emit cancellation event to notify clients
+
+        Ok(())
+    }
+
+    // ------------------
+    // | Node Selection |
+    // ------------------
+
+    /// Selects one node in the cluster to handle an event using consistent
+    /// hashing
+    ///
+    /// Takes input components that uniquely identify the event, hashes them,
+    /// and deterministically selects a peer. Returns true if this node is
+    /// selected.
+    async fn is_selected_for_event(
+        &self,
+        components: &[&[u8]],
     ) -> Result<bool, OnChainEventListenerError> {
-        // Fetch cluster state
         let state = self.state();
         let my_id = state.get_peer_id()?;
         let cluster_id = state.get_cluster_id()?;
         let mut peers = state.get_cluster_peers(&cluster_id).await?;
         peers.sort();
 
-        // Compute the selected node
-        let n_peers = peers.len();
-        let mut input = Vec::with_capacity(72);
-        input.extend_from_slice(owner.as_slice());
-        input.extend_from_slice(token.as_slice());
-        input.extend_from_slice(tx_hash.as_slice());
+        let input: Vec<u8> = components.iter().flat_map(|c| c.iter().copied()).collect();
         let hash = keccak256(&input);
-        let peer = usize::from(hash[31]) % n_peers;
-        let peer_id = peers[peer];
+        let peer_idx = usize::from(hash[31]) % peers.len();
 
-        Ok(peer_id == my_id)
-    }
-
-    /// Get the list of token addresses to watch for transfers
-    fn get_tracked_token_addresses(&self) -> Vec<Address> {
-        get_all_tokens().into_iter().map(|t: types_core::Token| t.get_alloy_address()).collect()
+        Ok(peers[peer_idx] == my_id)
     }
 }

@@ -23,8 +23,8 @@ use super::{Result, StateApplicator, return_type::ApplicatorReturnType};
 
 /// Compute the intent hash for a public intent permit
 ///
-/// This matches the contract's `PublicIntentPermit.computeHash()` which computes:
-/// `keccak256(abi.encode(PublicIntentPermit { intent, executor }))`
+/// This matches the contract's `PublicIntentPermit.computeHash()` which
+/// computes: `keccak256(abi.encode(PublicIntentPermit { intent, executor }))`
 pub fn compute_intent_hash(intent: &Intent, executor: Address) -> B256 {
     // Convert the circuit intent to the contract's Intent type
     let contract_intent: IDarkpoolV2::Intent = intent.clone().into();
@@ -107,19 +107,13 @@ impl StateApplicator {
         tx.add_order(&account_id, order)?;
         tx.write_order_auth(&order.id, auth)?;
 
-        // For Ring 0/1 orders, index the intent hash for on-chain event correlation
-        if order.uses_public_balance() {
-            // Verify the auth type matches the ring
-            if !matches!(auth, OrderAuth::PublicOrder { .. }) {
-                return Err(StateApplicatorError::reject(
-                    "Ring 0/1 order must have PublicOrder auth",
-                ));
-            }
-
-            let intent_hash =
-                compute_intent_hash(order.intent(), self.config.executor_address);
-            tx.set_intent_index(&intent_hash, &account_id, &order.id)?;
+        // Index the intent hash for on-chain event correlation
+        // TODO: When multiple rings are enabled, only index Ring 0/1 orders
+        if !matches!(auth, OrderAuth::PublicOrder { .. }) {
+            return Err(StateApplicatorError::reject("Ring 0/1 order must have PublicOrder auth"));
         }
+        let intent_hash = compute_intent_hash(order.intent(), self.config.executor_address);
+        tx.set_intent_index(&intent_hash, &account_id, &order.id)?;
 
         // Get the info needed to update the matching engine
         let matching_pool = tx.get_matching_pool_for_order(&order.id)?;
@@ -154,12 +148,10 @@ impl StateApplicator {
         let order = Order::from_archived(&archived_order)?;
         let matching_pool = tx.get_matching_pool_for_order(&order_id)?;
 
-        // For Ring 0/1 orders, delete the intent hash index
-        if order.uses_public_balance() {
-            let intent_hash =
-                compute_intent_hash(order.intent(), self.config.executor_address);
-            tx.delete_intent_index(&intent_hash)?;
-        }
+        // Delete the intent hash index
+        // TODO: When multiple rings are enabled, only delete for Ring 0/1 orders
+        let intent_hash = compute_intent_hash(order.intent(), self.config.executor_address);
+        tx.delete_intent_index(&intent_hash)?;
 
         // Remove order from account storage
         tx.remove_order(&account_id, &order_id)?;

@@ -53,10 +53,8 @@ pub struct StateApplicatorConfig {
     pub allow_local: bool,
     /// The local peer's cluster ID
     pub cluster_id: ClusterId,
-    /// The executor address for signing public intents
-    ///
-    /// This is the relayer's settlement wallet address, used to compute intent
-    /// hashes for Ring 0/1 orders.
+    /// The executor address, used to verify the executor's signature on the
+    /// settlement obligation at fill time
     pub executor_address: Address,
     /// A sender to the task driver's work queue
     pub task_queue: TaskDriverQueue,
