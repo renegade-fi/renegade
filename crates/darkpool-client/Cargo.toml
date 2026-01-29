@@ -5,15 +5,12 @@ edition = "2024"
 
 [features]
 default = []
-arbitrum = []
-base = []
-all-chains = ["arbitrum", "base"]
 integration = [
     "dep:rand",
     "circuit-types/test-helpers",
     "circuits-core/test_helpers",
     "types-account/mocks",
-    "test-helpers/arbitrum",
+    "test-helpers/blockchain",
 ]
 transfer-auth = ["dep:rand"]
 
