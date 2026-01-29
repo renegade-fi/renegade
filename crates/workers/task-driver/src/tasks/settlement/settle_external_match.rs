@@ -238,14 +238,24 @@ impl SettleExternalMatchTask {
     /// Generate calldata for the match settlement
     async fn generate_calldata(&mut self) -> Result<()> {
         info!("generating calldata for match settlement...");
-        let obligation = self.match_result.to_internal_obligation(self.amount_in);
-        let settlement_bundle =
-            self.processor.build_ring0_settlement_bundle(self.order_id, obligation).await?;
-        self.settlement_bundle = Some(settlement_bundle);
 
-        // Set a block deadline for the settlement bundle
+        // Set a block deadline for the match result
+        // This must be done before generating calldata as the executor must sign the
+        // finalized bounded match result.
         let current_block = self.ctx.darkpool_client.block_number().await?;
         self.match_result.block_deadline = current_block + self.validity_window_blocks;
+
+        // Generate the settlement bundle
+        let obligation = self.match_result.to_internal_obligation(self.amount_in);
+        let settlement_bundle = self
+            .processor
+            .build_ring0_external_settlement_bundle(
+                self.order_id,
+                obligation,
+                self.match_result.clone(),
+            )
+            .await?;
+        self.settlement_bundle = Some(settlement_bundle);
 
         Ok(())
     }
