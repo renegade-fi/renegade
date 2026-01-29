@@ -12,7 +12,7 @@ use job_types::event_manager::{ExternalFillEvent, RelayerEventType};
 use renegade_metrics;
 use types_account::account::OrderId;
 use types_core::{AccountId, TimestampedPrice};
-use util::on_chain::get_external_match_fee;
+use util::on_chain::get_protocol_fee_for_pair;
 
 /// The error message emitted when metadata for an order cannot be found
 const ERR_NO_ORDER_METADATA: &str = "order metadata not found";
@@ -116,7 +116,10 @@ fn execution_price(external_match_result: &ExternalMatchResult) -> TimestampedPr
 /// Compute internal party fee take
 fn internal_fee_take(external_match_result: &ExternalMatchResult) -> FeeTake {
     let relayer_fee = FixedPoint::from_f64_round_down(DEFAULT_EXTERNAL_MATCH_RELAYER_FEE);
-    let protocol_fee = get_external_match_fee(&external_match_result.base_mint);
+    let protocol_fee = get_protocol_fee_for_pair(
+        &external_match_result.base_mint,
+        &external_match_result.quote_mint,
+    );
     let side = external_match_result.internal_party_side();
     compute_fee_obligation_with_protocol_fee(
         relayer_fee,

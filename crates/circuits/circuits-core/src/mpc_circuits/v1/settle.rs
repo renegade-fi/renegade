@@ -3,12 +3,11 @@
 use circuit_types::{
     Fabric,
     fees::AuthenticatedFeeTake,
-    fixed_point::AuthenticatedFixedPoint,
+    fixed_point::{AuthenticatedFixedPoint, FixedPoint},
     r#match::{AuthenticatedMatchResult, OrderSettlementIndices},
     wallet::AuthenticatedWalletShare,
 };
 use constants::AuthenticatedScalar;
-use util::on_chain::get_protocol_fee;
 
 use crate::mpc_gadgets::{comparators::cond_select_vec, fixed_point::FixedPointMpcGadget};
 
@@ -21,6 +20,7 @@ use crate::mpc_gadgets::{comparators::cond_select_vec, fixed_point::FixedPointMp
 pub fn settle_match<const MAX_BALANCES: usize, const MAX_ORDERS: usize>(
     relayer_fee0: &AuthenticatedFixedPoint,
     relayer_fee1: &AuthenticatedFixedPoint,
+    protocol_fee: FixedPoint,
     party0_settle_indices: OrderSettlementIndices,
     party1_settle_indices: OrderSettlementIndices,
     party0_public_share: &AuthenticatedWalletShare<MAX_BALANCES, MAX_ORDERS>,
@@ -53,8 +53,14 @@ pub fn settle_match<const MAX_BALANCES: usize, const MAX_ORDERS: usize>(
     let party0_sell = amounts.remove(0);
 
     // Compute the fees paid by each party
-    let (party0_fees, party1_fees) =
-        compute_settlement_fees(relayer_fee0, relayer_fee1, &party0_buy, &party0_sell, fabric);
+    let (party0_fees, party1_fees) = compute_settlement_fees(
+        relayer_fee0,
+        relayer_fee1,
+        protocol_fee,
+        &party0_buy,
+        &party0_sell,
+        fabric,
+    );
 
     // Update the balances of the two parties
     let party0_net = &party0_buy - party0_fees.total();
@@ -86,6 +92,7 @@ pub fn settle_match<const MAX_BALANCES: usize, const MAX_ORDERS: usize>(
 fn compute_settlement_fees(
     relayer_fee0: &AuthenticatedFixedPoint,
     relayer_fee1: &AuthenticatedFixedPoint,
+    protocol_fee: FixedPoint,
     party0_buy_amount: &AuthenticatedScalar,
     party1_buy_amount: &AuthenticatedScalar,
     fabric: &Fabric,
@@ -97,7 +104,6 @@ fn compute_settlement_fees(
     let party1_relayer_fee = FixedPointMpcGadget::as_integer(&party1_relayer_fee_fp, fabric);
 
     // Protocol fees
-    let protocol_fee = get_protocol_fee();
     let party0_protocol_fee_fp = protocol_fee * party0_buy_amount;
     let party0_protocol_fee = FixedPointMpcGadget::as_integer(&party0_protocol_fee_fp, fabric);
     let party1_protocol_fee_fp = protocol_fee * party1_buy_amount;
@@ -124,7 +130,7 @@ mod test {
     };
     use constants::Scalar;
     use crypto::fields::scalar_to_biguint;
-    use matching_engine_core::{apply_match_to_shares, compute_fee_obligation};
+    use matching_engine_core::apply_match_to_shares;
     use rand::{Rng, thread_rng};
     use test_helpers::mpc_network::execute_mock_mpc;
 
@@ -144,6 +150,8 @@ mod test {
         relayer_fee0: FixedPoint,
         /// The relayer fee for the second party
         relayer_fee1: FixedPoint,
+        /// The protocol fee for this pair
+        protocol_fee: FixedPoint,
         /// The shares of the first party before settlement
         party0_pre_shares: SizedWalletShare,
         /// The indices of the first party's order and balances to settle
@@ -160,9 +168,12 @@ mod test {
 
     /// Get a dummy set of inputs for a settlement circuit
     fn generate_test_params() -> SettlementTest {
+        use matching_engine_core::compute_fee_obligation_with_protocol_fee;
+
         let mut rng = thread_rng();
         let relayer_fee0 = FixedPoint::from_f64_round_down(rng.gen_range(0.0001..0.01));
         let relayer_fee1 = FixedPoint::from_f64_round_down(rng.gen_range(0.0001..0.01));
+        let protocol_fee = FixedPoint::from_f64_round_down(rng.gen_range(0.0001..0.01));
         let quote_mint = scalar_to_biguint(&Scalar::random(&mut rng));
         let base_mint = scalar_to_biguint(&Scalar::random(&mut rng));
 
@@ -179,7 +190,12 @@ mod test {
         let party0_indices = random_indices();
         let party0_side = OrderSide::from(match_res.direction as u64);
         let mut party0_post_shares = party0_pre_shares.clone();
-        let party0_fees = compute_fee_obligation(relayer_fee0, party0_side, &match_res);
+        let party0_fees = compute_fee_obligation_with_protocol_fee(
+            relayer_fee0,
+            protocol_fee,
+            party0_side,
+            &match_res,
+        );
         apply_match_to_shares(
             &mut party0_post_shares,
             &party0_indices,
@@ -192,7 +208,12 @@ mod test {
         let party1_indices = random_indices();
         let party1_side = party0_side.opposite();
         let mut party1_post_shares = party1_pre_shares.clone();
-        let party1_fees = compute_fee_obligation(relayer_fee1, party1_side, &match_res);
+        let party1_fees = compute_fee_obligation_with_protocol_fee(
+            relayer_fee1,
+            protocol_fee,
+            party1_side,
+            &match_res,
+        );
         apply_match_to_shares(
             &mut party1_post_shares,
             &party1_indices,
@@ -207,6 +228,7 @@ mod test {
             fee_obligation1: party1_fees,
             relayer_fee0,
             relayer_fee1,
+            protocol_fee,
             party0_pre_shares,
             party0_indices,
             party0_post_shares,
@@ -242,6 +264,7 @@ mod test {
                     settle_match(
                         &relayer_fee0,
                         &relayer_fee1,
+                        params.protocol_fee,
                         params.party0_indices,
                         params.party1_indices,
                         &party0_shares,

@@ -29,12 +29,14 @@ pub const DUMMY_ERC20_1_TICKER: &str = "DUMMY2";
 /// The permit2 contract key in a `deployments.json` file
 #[cfg(feature = "mocks")]
 pub const PERMIT2_CONTRACT_KEY: &str = "permit2_contract";
-/// The protocol fee that the contract charges on a match
-static PROTOCOL_FEE: RwStatic<FixedPoint> = RwStatic::new(|| RwLock::new(FixedPoint::zero()));
-/// The protocol fee overrides for an external match
+/// The default protocol fee rate, used when no per-pair fee is cached
+static DEFAULT_PROTOCOL_FEE: RwStatic<FixedPoint> =
+    RwStatic::new(|| RwLock::new(FixedPoint::zero()));
+/// Per-pair protocol fee overrides
 ///
-/// Maps a mint to the fee override if one exists
-pub static PROTOCOL_FEE_OVERRIDES: RwStatic<HashMap<Address, FixedPoint>> =
+/// Maps (asset0, asset1) to the protocol fee override for that pair.
+/// Falls back to DEFAULT_PROTOCOL_FEE when a pair is not present.
+static PROTOCOL_FEE_PAIR_OVERRIDES: RwStatic<HashMap<(Address, Address), FixedPoint>> =
     RwStatic::new(|| RwLock::new(HashMap::new()));
 /// The protocol's public encryption key used for paying fees
 pub static PROTOCOL_PUBKEY: OnceLock<EncryptionKey> = OnceLock::new();
@@ -66,10 +68,16 @@ pub fn parse_erc20_addr_from_deployments_file(file_path: &str, ticker: &str) -> 
         .ok_or_else(|| eyre!("Could not parse {ticker} address from deployments file"))
 }
 
-/// Get the protocol fee from the static variable
+/// Get the key for a trading pair
 ///
-/// Panics if the protocol fee has not been set
-pub fn get_protocol_fee() -> FixedPoint {
+/// This ensures consistent key ordering so that `(A, B)` and `(B, A)` map to
+/// the same key, matching the contract's `_getPairKey` behavior.
+fn get_pair_key(asset0: &Address, asset1: &Address) -> (Address, Address) {
+    if asset0 < asset1 { (*asset0, *asset1) } else { (*asset1, *asset0) }
+}
+
+/// Get the default protocol fee
+pub fn get_default_protocol_fee() -> FixedPoint {
     #[cfg(feature = "mocks")]
     {
         FixedPoint::from_f64_round_down(0.0006) // 6 bps
@@ -77,27 +85,41 @@ pub fn get_protocol_fee() -> FixedPoint {
 
     #[cfg(not(feature = "mocks"))]
     {
-        *PROTOCOL_FEE.read().expect("fee lock poisoned")
+        *DEFAULT_PROTOCOL_FEE.read().expect("default fee lock poisoned")
     }
 }
 
-/// Set the protocol fee
-pub fn set_protocol_fee(fee: FixedPoint) {
-    *PROTOCOL_FEE.write().expect("fee lock poisoned") = fee;
+/// Set the default protocol fee
+pub fn set_default_protocol_fee(fee: FixedPoint) {
+    *DEFAULT_PROTOCOL_FEE.write().expect("default fee lock poisoned") = fee;
 }
 
-/// Get the external match fee override for the given mint
+/// Get the protocol fee for a given asset pair
 ///
-/// Defaults to the protocol base fee if no override exists
-pub fn get_external_match_fee(mint: &Address) -> FixedPoint {
-    let fee_override =
-        PROTOCOL_FEE_OVERRIDES.read().expect("fee override lock poisoned").get(mint).cloned();
-    fee_override.unwrap_or(get_protocol_fee())
+/// Falls back to the default protocol fee if the pair is not cached.
+pub fn get_protocol_fee_for_pair(asset0: &Address, asset1: &Address) -> FixedPoint {
+    #[cfg(feature = "mocks")]
+    {
+        let _ = (asset0, asset1);
+        FixedPoint::from_f64_round_down(0.0006) // 6 bps
+    }
+
+    #[cfg(not(feature = "mocks"))]
+    {
+        let key = get_pair_key(asset0, asset1);
+        PROTOCOL_FEE_PAIR_OVERRIDES
+            .read()
+            .expect("fee overrides lock poisoned")
+            .get(&key)
+            .cloned()
+            .unwrap_or_else(get_default_protocol_fee)
+    }
 }
 
-/// Set the external match fee override for the given mint
-pub fn set_external_match_fee(mint: &Address, fee: FixedPoint) {
-    PROTOCOL_FEE_OVERRIDES.write().expect("fee override lock poisoned").insert(*mint, fee);
+/// Set the protocol fee override for a given asset pair
+pub fn set_protocol_fee_for_pair(asset0: &Address, asset1: &Address, fee: FixedPoint) {
+    let key = get_pair_key(asset0, asset1);
+    PROTOCOL_FEE_PAIR_OVERRIDES.write().expect("fee overrides lock poisoned").insert(key, fee);
 }
 
 /// Get the protocol encryption key from the static variable

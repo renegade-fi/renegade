@@ -8,7 +8,6 @@
 use std::{error::Error, fmt::Display, iter, time::Duration};
 
 use async_trait::async_trait;
-use circuit_types::fixed_point::FixedPoint;
 use constants::{NATIVE_ASSET_ADDRESS, in_bootstrap_mode};
 use darkpool_client::{DarkpoolClient, errors::DarkpoolClientError};
 use job_types::{
@@ -23,7 +22,7 @@ use types_core::{AccountId, Token, get_all_tokens};
 use types_tasks::NodeStartupTaskDescriptor;
 use util::{
     err_str,
-    on_chain::{set_chain_id, set_external_match_fee},
+    on_chain::{set_chain_id, set_default_protocol_fee, set_protocol_fee_for_pair},
 };
 
 use crate::{
@@ -421,23 +420,32 @@ impl NodeStartupTask {
         // Ok(())
     }
 
-    /// Setup the external match fee overrides for all tokens
+    /// Setup the protocol fee cache for all USDC pairs
     async fn setup_external_match_fees(&self) -> Result<(), NodeStartupTaskError> {
+        // Fetch and cache the default protocol fee
+        let default_fee = self.darkpool_client.get_default_protocol_fee().await?;
+        set_default_protocol_fee(default_fee);
+
+        // Fetch per-pair fees for all USDC pairs in parallel
+        let usdc = Token::usdc().get_alloy_address();
         let tokens: Vec<Token> = get_all_tokens()
             .into_iter()
             .chain(iter::once(Token::from_addr(NATIVE_ASSET_ADDRESS)))
             .collect();
 
-        for token in tokens {
-            // Fetch the fee override from the contract
-            let addr = token.get_alloy_address();
-            // TODO: Add back contract fetch
-            // let fee = self.darkpool_client.get_external_match_fee(addr).await?;
-            let fee = FixedPoint::from_f64_round_down(0.01);
+        let futures = tokens.into_iter().map(|token| {
+            let client = self.darkpool_client.clone();
+            async move {
+                let asset = token.get_alloy_address();
+                let fee = client.get_protocol_fee(asset, usdc).await?;
+                Ok::<_, NodeStartupTaskError>((asset, fee))
+            }
+        });
 
-            // Write the fee into the mapping
-            let addr_bigint = token.get_alloy_address();
-            set_external_match_fee(&addr_bigint, fee);
+        let results = futures::future::join_all(futures).await;
+        for result in results {
+            let (asset, fee) = result?;
+            set_protocol_fee_for_pair(&asset, &usdc, fee);
         }
 
         Ok(())

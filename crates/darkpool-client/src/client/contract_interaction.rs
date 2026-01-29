@@ -40,13 +40,10 @@ impl<D: DarkpoolImpl> DarkpoolClientInner<D> {
         self.darkpool.get_protocol_fee(in_token, out_token).await
     }
 
-    /// Get the external match fee charged by the contract for the given mint
-    #[instrument(skip_all, err, fields(mint = %mint))]
-    pub async fn get_external_match_fee(
-        &self,
-        mint: Address,
-    ) -> Result<FixedPoint, DarkpoolClientError> {
-        self.darkpool.get_external_match_fee(mint).await
+    /// Get the default protocol fee rate
+    #[instrument(skip_all, err)]
+    pub async fn get_default_protocol_fee(&self) -> Result<FixedPoint, DarkpoolClientError> {
+        self.darkpool.get_default_protocol_fee().await
     }
 
     /// Get the protocol pubkey

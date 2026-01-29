@@ -99,13 +99,9 @@ impl DarkpoolImpl for SolidityDarkpool {
             .map(|r| r.into())
     }
 
-    async fn get_external_match_fee(
-        &self,
-        mint: Address,
-    ) -> Result<FixedPoint, DarkpoolClientError> {
-        let usdc = Token::usdc().get_alloy_address();
+    async fn get_default_protocol_fee(&self) -> Result<FixedPoint, DarkpoolClientError> {
         self.darkpool
-            .getProtocolFee(mint, usdc)
+            .getDefaultProtocolFee()
             .call()
             .await
             .map_err(DarkpoolClientError::contract_interaction)

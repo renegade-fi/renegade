@@ -12,7 +12,11 @@ use config::RelayerConfig;
 use mock_node::MockNodeController;
 use state::test_helpers::tmp_db_path;
 use test_helpers::{integration_test, integration_test_main, types::TestVerbosity};
-use util::{on_chain::set_protocol_fee, telemetry::LevelFilter};
+use types_core::{Token, get_all_tokens};
+use util::{
+    on_chain::{set_default_protocol_fee, set_protocol_fee_for_pair},
+    telemetry::LevelFilter,
+};
 
 // -------
 // | CLI |
@@ -83,9 +87,14 @@ impl From<CliArgs> for IntegrationTestArgs {
 
 /// Setup code for the integration tests
 fn setup_integration_tests(test_args: &IntegrationTestArgs) {
-    // Set the global protocol fee
+    // Set the default and per-pair protocol fees
     let fee = FixedPoint::from_f64_round_down(0.0001);
-    set_protocol_fee(fee);
+    set_default_protocol_fee(fee);
+    let usdc = Token::usdc().get_alloy_address();
+    for token in get_all_tokens() {
+        let addr = token.get_alloy_address();
+        set_protocol_fee_for_pair(&addr, &usdc, fee);
+    }
 
     // Configure logging
     if matches!(test_args.verbosity, TestVerbosity::Full) {

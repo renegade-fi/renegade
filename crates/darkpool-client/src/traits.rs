@@ -71,11 +71,8 @@ pub trait DarkpoolImpl: Clone {
         out_token: Address,
     ) -> Result<FixedPoint, DarkpoolClientError>;
 
-    /// Get the external match fee charged by the contract for the given mint
-    async fn get_external_match_fee(
-        &self,
-        mint: Address,
-    ) -> Result<FixedPoint, DarkpoolClientError>;
+    /// Get the default protocol fee rate
+    async fn get_default_protocol_fee(&self) -> Result<FixedPoint, DarkpoolClientError>;
 
     /// Get the protocol pubkey
     async fn get_protocol_pubkey(&self) -> Result<EncryptionKey, DarkpoolClientError>;

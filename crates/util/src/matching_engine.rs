@@ -16,7 +16,7 @@ use constants::Scalar;
 use crypto::fields::scalar_to_u128;
 
 #[cfg(feature = "v1")]
-use crate::on_chain::get_protocol_fee;
+use crate::on_chain::get_protocol_fee_for_pair;
 
 // ------------
 // | Matching |
@@ -212,7 +212,9 @@ pub fn compute_fee_obligation(
     side: OrderSide,
     match_res: &MatchResult,
 ) -> FeeTake {
-    let protocol_fee = get_protocol_fee();
+    let asset0 = match_res.party0_obligation.input_token;
+    let asset1 = match_res.party0_obligation.output_token;
+    let protocol_fee = get_protocol_fee_for_pair(&asset0, &asset1);
     compute_fee_obligation_with_protocol_fee(relayer_fee, protocol_fee, side, match_res)
 }
 
