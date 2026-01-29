@@ -3,7 +3,7 @@
 //! Account index updates must go through raft consensus so that the leader may
 //! order them
 
-use alloy_primitives::Address;
+use alloy_primitives::{Address, B256};
 use circuit_types::Amount;
 use types_account::{
     account::{Account, OrderId},
@@ -182,6 +182,21 @@ impl StateInner {
         self.with_read_tx(move |tx| {
             let account_id = tx.get_account_for_owner(&owner, &token)?;
             Ok(account_id)
+        })
+        .await
+    }
+
+    /// Get the order for a given intent hash
+    ///
+    /// Used to route public intent events to the correct order
+    pub async fn get_order_for_intent_hash(
+        &self,
+        intent_hash: &B256,
+    ) -> Result<Option<(AccountId, OrderId)>, StateError> {
+        let intent_hash = *intent_hash;
+        self.with_read_tx(move |tx| {
+            let result = tx.get_order_for_intent_hash(&intent_hash)?;
+            Ok(result)
         })
         .await
     }

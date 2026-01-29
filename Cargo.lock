@@ -5,7 +5,7 @@ version = 4
 [[package]]
 name = "abi"
 version = "0.1.0"
-source = "git+https://github.com/renegade-fi/renegade-contracts#6e2af32068a8cdebfa65c69b6136cffdb4215653"
+source = "git+https://github.com/renegade-fi/renegade-contracts#1382bd2e940d359858bc750474ca79cbc3cdfad1"
 dependencies = [
  "alloy",
  "ark-bn254",
@@ -2459,6 +2459,7 @@ dependencies = [
 name = "chain-events"
 version = "0.1.0"
 dependencies = [
+ "abi",
  "alloy",
  "async-trait",
  "circuit-types",
