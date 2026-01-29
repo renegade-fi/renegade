@@ -14,15 +14,17 @@ use alloy_contract::Event;
 use alloy_primitives::{Log, TxHash};
 use alloy_sol_types::SolEvent;
 use constants::{MERKLE_HEIGHT, Scalar};
-use crypto::fields::scalar_to_u256;
+use crypto::fields::{scalar_to_u256, u256_to_scalar};
 use itertools::Itertools;
+use renegade_solidity_abi::v2::IDarkpoolV2::{
+    MerkleInsertion as AbiMerkleInsertion, MerkleOpeningNode as AbiMerkleOpeningNode,
+};
 use tracing::instrument;
 use types_account::MerkleAuthenticationPath;
 
 use crate::errors::DarkpoolClientError;
-use crate::traits::{DarkpoolImpl, MerkleInsertionEvent, MerkleOpeningNodeEvent};
 
-use super::{DarkpoolClientInner, RenegadeProvider};
+use super::{DarkpoolClient, RenegadeProvider};
 
 /// The starting range of blocks to query for events
 const STARTING_BLOCK_RANGE: u64 = 10;
@@ -34,7 +36,7 @@ const ERR_MERKLE_PATH_SIBLINGS: &str = "not enough Merkle path siblings found";
 /// The error message emitted when a TX hash is not found in a log
 const ERR_NO_TX_HASH: &str = "no tx hash for log";
 
-impl<D: DarkpoolImpl> DarkpoolClientInner<D> {
+impl DarkpoolClient {
     /// Searches on-chain state for the insertion of the given commitment, then
     /// finds the most recent updates of the path's siblings and creates a
     /// Merkle authentication path
@@ -74,22 +76,24 @@ impl<D: DarkpoolImpl> DarkpoolClientInner<D> {
                 None => continue,
             };
 
-            // Matches cannot depend on associated constants, so we if-else
-            if topic0 == D::MerkleInsertion::SIGNATURE_HASH {
-                // Track the number of Merkle insertions in the tx, so that we may properly find
-                // our commitment in the log stream
-                let event = D::MerkleInsertion::decode_log(&log)
+            if topic0 == AbiMerkleInsertion::SIGNATURE_HASH {
+                // Track the number of Merkle insertions in the tx, so that we may properly
+                // find our commitment in the log stream
+                let event = AbiMerkleInsertion::decode_log(&log)
                     .map_err(DarkpoolClientError::event_querying)?;
 
-                if event.value() == commitment {
+                let value = u256_to_scalar(event.value);
+                if value == commitment {
                     insertion_idx = n_insertions;
-                    leaf_index = Some(event.index() as u64);
+                    leaf_index = Some(event.index as u64);
                 }
                 n_insertions += 1;
-            } else if topic0 == D::MerkleOpening::SIGNATURE_HASH {
-                let event = D::MerkleOpening::decode_log(&log)
+            } else if topic0 == AbiMerkleOpeningNode::SIGNATURE_HASH {
+                let event = AbiMerkleOpeningNode::decode_log(&log)
                     .map_err(DarkpoolClientError::event_querying)?;
-                all_insertion_events.push((event.depth(), event.new_value()));
+                let depth = event.depth as u64;
+                let new_value = u256_to_scalar(event.new_value);
+                all_insertion_events.push((depth, new_value));
             } else {
                 // Ignore other events and unknown events
                 continue;
@@ -120,7 +124,7 @@ impl<D: DarkpoolImpl> DarkpoolClientInner<D> {
         commitment: Scalar,
     ) -> Result<(u128, TxHash), DarkpoolClientError> {
         let filter = self
-            .event_filter::<D::MerkleInsertion>()
+            .event_filter::<AbiMerkleInsertion>()
             .topic2(scalar_to_u256(&commitment))
             .from_block(self.deploy_block);
         let (event, log) = self
@@ -128,7 +132,7 @@ impl<D: DarkpoolImpl> DarkpoolClientInner<D> {
             .await?
             .ok_or(DarkpoolClientError::CommitmentNotFound)?;
 
-        Ok((event.index(), log.transaction_hash.expect(ERR_NO_TX_HASH)))
+        Ok((event.index, log.transaction_hash.expect(ERR_NO_TX_HASH)))
     }
 
     // /// Fetch all external matches in a given transaction

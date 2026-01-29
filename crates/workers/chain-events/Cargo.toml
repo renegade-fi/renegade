@@ -4,8 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [features]
-arbitrum = ["darkpool-client/arbitrum"]
-base = ["darkpool-client/base"]
 
 [dependencies]
 # === Concurrency + Runtime === #

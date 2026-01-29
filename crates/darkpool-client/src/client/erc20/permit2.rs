@@ -3,14 +3,11 @@
 use alloy_primitives::{Address, U256};
 
 use crate::{
-    client::{
-        DarkpoolClientInner, RenegadeProvider, erc20::abis::permit2::IPermit2::IPermit2Instance,
-    },
+    client::{DarkpoolClient, RenegadeProvider, erc20::abis::permit2::IPermit2::IPermit2Instance},
     errors::DarkpoolClientError,
-    traits::DarkpoolImpl,
 };
 
-impl<D: DarkpoolImpl> DarkpoolClientInner<D> {
+impl DarkpoolClient {
     /// Get the allowance of a given token to the darkpool contract
     pub async fn get_darkpool_allowance(
         &self,
@@ -39,6 +36,7 @@ impl<D: DarkpoolImpl> DarkpoolClientInner<D> {
         let amount = U256::from(allowance.amount);
         Ok(amount)
     }
+
     /// Get an instance of a permit2 contract client
     pub(crate) fn permit2_client(&self) -> IPermit2Instance<&RenegadeProvider> {
         let provider = self.provider();

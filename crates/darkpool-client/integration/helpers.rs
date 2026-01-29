@@ -3,7 +3,7 @@
 use circuit_types::{SizedWalletShare, traits::BaseType, wallet::WalletShareStateCommitment};
 use common::types::proof_bundles::mocks::dummy_valid_wallet_create_bundle;
 use constants::Scalar;
-use darkpool_client::{DarkpoolClient, traits::DarkpoolImpl};
+use darkpool_client::DarkpoolClient;
 use eyre::{Result, eyre};
 use rand::thread_rng;
 use std::iter;
@@ -58,5 +58,5 @@ pub async fn setup_pre_allocated_state(client: &mut DarkpoolClient) -> Result<Pr
 /// w/ the default values for the leaves
 pub async fn clear_merkle(client: &DarkpoolClient) -> Result<()> {
     warn!("Clearing Merkle contract state");
-    client.darkpool().clear_merkle_tree().await.map(|_| ()).map_err(|e| eyre!(e.to_string()))
+    client.clear_merkle_tree().await.map(|_| ()).map_err(|e| eyre!(e.to_string()))
 }
