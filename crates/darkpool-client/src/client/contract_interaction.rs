@@ -2,7 +2,7 @@
 //! darkpool contract
 
 use alloy::consensus::constants::SELECTOR_LEN;
-use alloy::rpc::types::{TransactionReceipt, TransactionRequest};
+use alloy::rpc::types::TransactionReceipt;
 use alloy_primitives::{Address, Selector};
 use circuit_types::Nullifier;
 use circuit_types::{elgamal::EncryptionKey, fixed_point::FixedPoint, merkle::MerkleRoot};
@@ -12,11 +12,7 @@ use renegade_solidity_abi::v2::IDarkpoolV2::{
     self, DepositAuth, DepositProofBundle, ObligationBundle, SettlementBundle,
 };
 use tracing::{info, instrument};
-use types_core::Token;
-use types_proofs::{
-    IntentOnlyBoundedSettlementBundle, OrderValidityProofBundle, ValidBalanceCreateBundle,
-    ValidDepositBundle,
-};
+use types_proofs::{ValidBalanceCreateBundle, ValidDepositBundle};
 use util::telemetry::helpers::backfill_trace_field;
 
 use crate::errors::DarkpoolClientError;
@@ -44,6 +40,17 @@ impl DarkpoolClient {
             .map(u256_to_scalar)
     }
 
+    /// Get the default protocol fee
+    #[instrument(skip_all, err)]
+    pub async fn get_default_protocol_fee(&self) -> Result<FixedPoint, DarkpoolClientError> {
+        self.darkpool
+            .getDefaultProtocolFee()
+            .call()
+            .await
+            .map_err(DarkpoolClientError::contract_interaction)
+            .map(|r| r.into())
+    }
+
     /// Get the base fee charged by the contract
     #[instrument(skip_all, err, fields(in_token = %in_token, out_token = %out_token))]
     pub async fn get_protocol_fee(
@@ -53,21 +60,6 @@ impl DarkpoolClient {
     ) -> Result<FixedPoint, DarkpoolClientError> {
         self.darkpool
             .getProtocolFee(in_token, out_token)
-            .call()
-            .await
-            .map_err(DarkpoolClientError::contract_interaction)
-            .map(|r| r.into())
-    }
-
-    /// Get the external match fee charged by the contract for the given mint
-    #[instrument(skip_all, err, fields(mint = %mint))]
-    pub async fn get_external_match_fee(
-        &self,
-        mint: Address,
-    ) -> Result<FixedPoint, DarkpoolClientError> {
-        let usdc = Token::usdc().get_alloy_address();
-        self.darkpool
-            .getProtocolFee(mint, usdc)
             .call()
             .await
             .map_err(DarkpoolClientError::contract_interaction)
@@ -87,6 +79,16 @@ impl DarkpoolClient {
         let x = u256_to_scalar(pubkey.point.x);
         let y = u256_to_scalar(pubkey.point.y);
         Ok(EncryptionKey { x, y })
+    }
+
+    /// Get the protocol fee address
+    #[instrument(skip_all, err)]
+    pub async fn get_protocol_fee_addr(&self) -> Result<Address, DarkpoolClientError> {
+        self.darkpool
+            .getProtocolFeeRecipient()
+            .call()
+            .await
+            .map_err(DarkpoolClientError::contract_interaction)
     }
 
     /// Check whether a given root is in the contract's history
@@ -205,22 +207,6 @@ impl DarkpoolClient {
         info!("`settle_match` tx hash: {tx_hash}");
 
         Ok(receipt)
-    }
-
-    // ----------------
-    // | Calldata Gen |
-    // ----------------
-
-    /// Generate calldata for a `processAtomicMatchSettle` call
-    pub fn gen_atomic_match_settle_calldata(
-        &self,
-        _receiver_address: Option<Address>,
-        _internal_party_validity_proofs: &OrderValidityProofBundle,
-        _match_atomic_bundle: IntentOnlyBoundedSettlementBundle,
-    ) -> Result<TransactionRequest, DarkpoolClientError> {
-        unimplemented!(
-            "gen_atomic_match_settle_calldata needs to be adapted for IntentOnlyBoundedSettlementBundle"
-        )
     }
 
     // -----------

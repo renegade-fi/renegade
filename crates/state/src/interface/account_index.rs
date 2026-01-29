@@ -169,6 +169,15 @@ impl StateInner {
         .await
     }
 
+    /// Get all account IDs in the state
+    pub async fn get_all_account_ids(&self) -> Result<Vec<AccountId>, StateError> {
+        self.with_read_tx(move |tx| {
+            let account_ids = tx.get_all_account_ids()?;
+            Ok(account_ids)
+        })
+        .await
+    }
+
     // -----------
     // | Setters |
     // -----------
