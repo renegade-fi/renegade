@@ -23,6 +23,7 @@ use util::res_some;
 
 use crate::{
     ACCOUNTS_TABLE,
+    cursor::EventCursor,
     storage::{
         ArchivedValue,
         error::StorageError,
@@ -111,6 +112,21 @@ fn owner_index_key(owner: &Address, token: &Address) -> String {
 /// Maps intent_hash to (account_id, order_id) for routing public intent events
 fn intent_hash_key(intent_hash: &B256) -> String {
     format!("intent_index:{intent_hash:?}")
+}
+
+/// Build the key for a balance cursor
+///
+/// Stores the last processed event cursor for a (account, token) pair
+fn balance_cursor_key(account_id: &AccountId, token: &Address) -> String {
+    // Use lowercase hex for stable serialization (not Debug format)
+    format!("{account_id}:balance_cursor:{token:#x}")
+}
+
+/// Build the key for an order cursor
+///
+/// Stores the last processed event cursor for an intent hash
+fn order_cursor_key(intent_hash: &B256) -> String {
+    format!("order_cursor:{intent_hash:#x}")
 }
 
 // -----------
@@ -356,6 +372,35 @@ impl<T: TransactionKind> StateTxn<'_, T> {
             .read::<_, (AccountId, OrderId)>(ACCOUNTS_TABLE, &key)
             .map(|opt| opt.map(|archived| archived.deserialize()).transpose())?
     }
+
+    // --- Event Cursors --- //
+
+    /// Get the last processed event cursor for a balance
+    ///
+    /// Used to reject stale balance updates from out-of-order events
+    pub fn get_balance_cursor(
+        &self,
+        account_id: &AccountId,
+        token: &Address,
+    ) -> Result<Option<EventCursor>, StorageError> {
+        let key = balance_cursor_key(account_id, token);
+        self.inner()
+            .read::<_, EventCursor>(ACCOUNTS_TABLE, &key)
+            .map(|opt| opt.map(|archived| archived.deserialize()).transpose())?
+    }
+
+    /// Get the last processed event cursor for an order
+    ///
+    /// Used to reject stale order updates from out-of-order events
+    pub fn get_order_cursor(
+        &self,
+        intent_hash: &B256,
+    ) -> Result<Option<EventCursor>, StorageError> {
+        let key = order_cursor_key(intent_hash);
+        self.inner()
+            .read::<_, EventCursor>(ACCOUNTS_TABLE, &key)
+            .map(|opt| opt.map(|archived| archived.deserialize()).transpose())?
+    }
 }
 
 // -----------
@@ -458,6 +503,33 @@ impl StateTxn<'_, RW> {
         let key = intent_hash_key(intent_hash);
         self.inner().delete(ACCOUNTS_TABLE, &key)?;
         Ok(())
+    }
+
+    // --- Event Cursors --- //
+
+    /// Set the last processed event cursor for a balance
+    ///
+    /// Used to track which event was last processed for a (account, token) pair
+    pub fn set_balance_cursor(
+        &self,
+        account_id: &AccountId,
+        token: &Address,
+        cursor: &EventCursor,
+    ) -> Result<(), StorageError> {
+        let key = balance_cursor_key(account_id, token);
+        self.inner().write(ACCOUNTS_TABLE, &key, cursor)
+    }
+
+    /// Set the last processed event cursor for an order
+    ///
+    /// Used to track which event was last processed for an intent hash
+    pub fn set_order_cursor(
+        &self,
+        intent_hash: &B256,
+        cursor: &EventCursor,
+    ) -> Result<(), StorageError> {
+        let key = order_cursor_key(intent_hash);
+        self.inner().write(ACCOUNTS_TABLE, &key, cursor)
     }
 }
 
@@ -896,5 +968,112 @@ mod test {
 
         let tx = db.new_read_tx().unwrap();
         assert!(tx.get_order_for_intent_hash(&intent_hash).unwrap().is_none());
+    }
+
+    // --- Event Cursor Storage Tests ---
+
+    use crate::cursor::EventCursor;
+
+    /// Tests setting and getting balance cursor
+    #[test]
+    fn test_balance_cursor_set_get() {
+        let db = mock_db();
+        db.create_table(ACCOUNTS_TABLE).unwrap();
+
+        let account = mock_account();
+        let token = Address::from([0xAA; 20]);
+        let cursor = EventCursor::new(12345, 42, 7);
+
+        // Set balance cursor
+        let tx = db.new_write_tx().unwrap();
+        tx.new_account(&account).unwrap();
+        tx.set_balance_cursor(&account.id, &token, &cursor).unwrap();
+        tx.commit().unwrap();
+
+        // Get balance cursor
+        let tx = db.new_read_tx().unwrap();
+        let result = tx.get_balance_cursor(&account.id, &token).unwrap();
+        assert_eq!(result, Some(cursor));
+    }
+
+    /// Tests that nonexistent balance cursor returns None
+    #[test]
+    fn test_balance_cursor_nonexistent() {
+        let db = mock_db();
+        db.create_table(ACCOUNTS_TABLE).unwrap();
+
+        let account = mock_account();
+        let token = Address::from([0xAA; 20]);
+
+        let tx = db.new_write_tx().unwrap();
+        tx.new_account(&account).unwrap();
+        tx.commit().unwrap();
+
+        // Get nonexistent balance cursor
+        let tx = db.new_read_tx().unwrap();
+        let result = tx.get_balance_cursor(&account.id, &token).unwrap();
+        assert_eq!(result, None);
+    }
+
+    /// Tests setting and getting order cursor
+    #[test]
+    fn test_order_cursor_set_get() {
+        let db = mock_db();
+        db.create_table(ACCOUNTS_TABLE).unwrap();
+
+        let intent_hash = B256::repeat_byte(0xDD);
+        let cursor = EventCursor::new(100, 5, 3);
+
+        // Set order cursor
+        let tx = db.new_write_tx().unwrap();
+        tx.set_order_cursor(&intent_hash, &cursor).unwrap();
+        tx.commit().unwrap();
+
+        // Get order cursor
+        let tx = db.new_read_tx().unwrap();
+        let result = tx.get_order_cursor(&intent_hash).unwrap();
+        assert_eq!(result, Some(cursor));
+    }
+
+    /// Tests that nonexistent order cursor returns None
+    #[test]
+    fn test_order_cursor_nonexistent() {
+        let db = mock_db();
+        db.create_table(ACCOUNTS_TABLE).unwrap();
+
+        let intent_hash = B256::repeat_byte(0xDD);
+
+        // Get nonexistent order cursor
+        let tx = db.new_read_tx().unwrap();
+        let result = tx.get_order_cursor(&intent_hash).unwrap();
+        assert_eq!(result, None);
+    }
+
+    /// Tests updating balance cursor to higher value
+    #[test]
+    fn test_balance_cursor_update() {
+        let db = mock_db();
+        db.create_table(ACCOUNTS_TABLE).unwrap();
+
+        let account = mock_account();
+        let token = Address::from([0xAA; 20]);
+
+        // Set initial cursor
+        let cursor1 = EventCursor::new(100, 0, 5);
+        let tx = db.new_write_tx().unwrap();
+        tx.new_account(&account).unwrap();
+        tx.set_balance_cursor(&account.id, &token, &cursor1).unwrap();
+        tx.commit().unwrap();
+
+        // Update to higher cursor
+        let cursor2 = EventCursor::new(100, 0, 6);
+        let tx = db.new_write_tx().unwrap();
+        tx.set_balance_cursor(&account.id, &token, &cursor2).unwrap();
+        tx.commit().unwrap();
+
+        // Verify updated cursor
+        let tx = db.new_read_tx().unwrap();
+        let result = tx.get_balance_cursor(&account.id, &token).unwrap();
+        assert_eq!(result, Some(cursor2));
     }
 }

@@ -6,6 +6,7 @@ use circuit_types::Amount;
 use darkpool_types::intent::Intent;
 use matching_engine_core::MatchingEngine;
 use renegade_solidity_abi::v2::IDarkpoolV2;
+use tracing::debug;
 use types_account::{
     account::{Account, OrderId},
     balance::Balance,
@@ -16,6 +17,7 @@ use types_core::AccountId;
 
 use crate::{
     applicator::error::StateApplicatorError,
+    cursor::EventCursor,
     storage::{traits::RkyvValue, tx::StateTxn},
 };
 
@@ -128,10 +130,19 @@ impl StateApplicator {
     }
 
     /// Remove an order from an account
+    ///
+    /// When `cursor` is `Some`, rejects removals where the cursor is not newer
+    /// than the stored cursor (prevents stale writes from out-of-order events).
+    /// When `cursor` is `None`, the cursor check is skipped (for non-event
+    /// callers).
+    ///
+    /// Note: The cursor is retained after removal to prevent reorg replay of
+    /// stale events.
     pub fn remove_order_from_account(
         &self,
         account_id: AccountId,
         order_id: OrderId,
+        cursor: Option<&EventCursor>,
     ) -> Result<ApplicatorReturnType> {
         // Create write transaction
         let tx = self.db().new_write_tx()?;
@@ -141,22 +152,45 @@ impl StateApplicator {
             return Err(StateApplicatorError::reject("account not found"));
         }
 
-        // Get the order and matching pool before removing
-        let archived_order = tx
-            .get_order(&order_id)?
-            .ok_or_else(|| StateApplicatorError::reject(format!("order {order_id} not found")))?;
+        // If order already removed, no-op without checking cursor
+        // (Order non-existence is sufficient idempotency guard for removals)
+        let archived_order = match tx.get_order(&order_id)? {
+            Some(o) => o,
+            None => {
+                tx.commit()?;
+                return Ok(ApplicatorReturnType::None);
+            },
+        };
         let order = Order::from_archived(&archived_order)?;
+        let intent_hash = compute_intent_hash(order.intent(), self.config.executor_address);
+
+        // Reject stale or duplicate proposals when cursor is provided
+        if let Some(cursor) = cursor {
+            if let Some(stored) = tx.get_order_cursor(&intent_hash)? {
+                if cursor <= &stored {
+                    debug!(
+                        order_id = ?order_id,
+                        intent_hash = %intent_hash,
+                        incoming = %cursor,
+                        stored = %stored,
+                        "Rejected stale/duplicate order removal"
+                    );
+                    tx.commit()?;
+                    return Ok(ApplicatorReturnType::None);
+                }
+            }
+        }
+
         let matching_pool = tx.get_matching_pool_for_order(&order_id)?;
 
-        // Delete the intent hash index
-        // TODO: When multiple rings are enabled, only delete for Ring 0/1 orders
-        let intent_hash = compute_intent_hash(order.intent(), self.config.executor_address);
+        // Remove order + retain cursor (prevents reorg replay of stale events)
         tx.delete_intent_index(&intent_hash)?;
-
-        // Remove order from account storage
         tx.remove_order(&account_id, &order_id)?;
         tx.delete_order_auth(&order_id)?;
         tx.remove_order_from_matching_pool(&order_id)?;
+        if let Some(cursor) = cursor {
+            tx.set_order_cursor(&intent_hash, cursor)?;
+        }
         tx.commit()?;
 
         // Remove from the matching engine
@@ -165,7 +199,16 @@ impl StateApplicator {
     }
 
     /// Update an existing order
-    pub fn update_order(&self, order: &Order) -> Result<ApplicatorReturnType> {
+    ///
+    /// When `cursor` is `Some`, rejects updates where the cursor is not newer
+    /// than the stored cursor (prevents stale writes from out-of-order events).
+    /// When `cursor` is `None`, the cursor check is skipped (for non-event
+    /// callers).
+    pub fn update_order(
+        &self,
+        order: &Order,
+        cursor: Option<&EventCursor>,
+    ) -> Result<ApplicatorReturnType> {
         let tx = self.db().new_write_tx()?;
 
         // Verify the order exists
@@ -174,13 +217,35 @@ impl StateApplicator {
             return Err(StateApplicatorError::reject(format!("order {order_id} not found")));
         }
 
+        let intent_hash = compute_intent_hash(order.intent(), self.config.executor_address);
+
+        // Reject stale or duplicate proposals when cursor is provided
+        if let Some(cursor) = cursor {
+            if let Some(stored) = tx.get_order_cursor(&intent_hash)? {
+                if cursor <= &stored {
+                    debug!(
+                        order_id = ?order_id,
+                        intent_hash = %intent_hash,
+                        incoming = %cursor,
+                        stored = %stored,
+                        "Rejected stale/duplicate order update"
+                    );
+                    tx.commit()?;
+                    return Ok(ApplicatorReturnType::None);
+                }
+            }
+        }
+
         // Get the account ID for the order
         let account_id = tx
             .get_account_id_for_order(&order_id)?
             .ok_or_else(|| StateApplicatorError::reject("order not associated with account"))?;
 
-        // Update the order in storage
+        // Update the order in storage + advance cursor atomically
         tx.update_order(&account_id, order)?;
+        if let Some(cursor) = cursor {
+            tx.set_order_cursor(&intent_hash, cursor)?;
+        }
 
         // Get the info needed to update the matching engine
         let matching_pool = tx.get_matching_pool_for_order(&order_id)?;
@@ -197,20 +262,48 @@ impl StateApplicator {
     }
 
     /// Update a balance in an account
+    ///
+    /// When `cursor` is `Some`, rejects updates where the cursor is not newer
+    /// than the stored cursor (prevents stale writes from out-of-order events).
+    /// When `cursor` is `None`, the cursor check is skipped (for non-event
+    /// callers).
     pub fn update_account_balance(
         &self,
         account_id: AccountId,
         balance: &Balance,
+        cursor: Option<&EventCursor>,
     ) -> Result<ApplicatorReturnType> {
         // Create write transaction
         let tx = self.db().new_write_tx()?;
         if !tx.contains_account(&account_id)? {
             return Err(StateApplicatorError::reject("account not found"));
         }
-        tx.update_balance(&account_id, balance)?;
 
-        // Index the balance for owner lookup (enables routing balance update events)
+        // Reject stale or duplicate proposals when cursor is provided
+        // - cursor < stored: stale (older event)
+        // - cursor == stored: duplicate (same event, idempotent no-op)
+        if let Some(cursor) = cursor {
+            if let Some(stored) = tx.get_balance_cursor(&account_id, &balance.mint())? {
+                if cursor <= &stored {
+                    debug!(
+                        account_id = ?account_id,
+                        token = %balance.mint(),
+                        incoming = %cursor,
+                        stored = %stored,
+                        "Rejected stale/duplicate balance update"
+                    );
+                    tx.commit()?;
+                    return Ok(ApplicatorReturnType::None);
+                }
+            }
+        }
+
+        // Apply update + advance cursor atomically
+        tx.update_balance(&account_id, balance)?;
         tx.set_owner_index(&balance.owner(), &balance.mint(), &account_id)?;
+        if let Some(cursor) = cursor {
+            tx.set_balance_cursor(&account_id, &balance.mint(), cursor)?;
+        }
         tx.commit()?;
 
         // Open a read transaction to get order info for matching engine updates
@@ -316,7 +409,7 @@ pub(crate) mod test {
         applicator.create_account(&account).unwrap();
 
         // Add a balance, then an order
-        applicator.update_account_balance(account.id, &balance).unwrap();
+        applicator.update_account_balance(account.id, &balance, None).unwrap();
         applicator.add_order_to_account(account.id, &order, &auth).unwrap();
 
         // Check that the order is stored in the account
@@ -345,7 +438,7 @@ pub(crate) mod test {
         applicator.create_account(&account).unwrap();
 
         // Add a balance, then an order
-        applicator.update_account_balance(account.id, &balance).unwrap();
+        applicator.update_account_balance(account.id, &balance, None).unwrap();
         applicator.add_order_to_account(account.id, &order, &auth).unwrap();
 
         // Verify the order exists before removal
@@ -360,7 +453,7 @@ pub(crate) mod test {
         drop(tx);
 
         // Remove the order from the account
-        applicator.remove_order_from_account(account.id, order.id).unwrap();
+        applicator.remove_order_from_account(account.id, order.id, None).unwrap();
 
         // Verify the order is removed from the account
         let tx = applicator.db().new_read_tx().unwrap();
@@ -430,7 +523,7 @@ pub(crate) mod test {
         // Update the balance (increase amount)
         const AMOUNT_ADDED: Amount = 1000;
         *balance.amount_mut() = AMOUNT_ADDED;
-        applicator.update_account_balance(account.id, &balance).unwrap();
+        applicator.update_account_balance(account.id, &balance, None).unwrap();
 
         // Verify balance was updated
         let tx = applicator.db().new_read_tx().unwrap();
@@ -460,5 +553,110 @@ pub(crate) mod test {
         assert!(matching_engine.contains_order(&order1, matching_pool1));
         assert!(matching_engine.contains_order(&order2, matching_pool2));
         assert!(!matching_engine.contains_order(&order3, matching_pool3));
+    }
+
+    // -----------------------------------
+    // | Event Cursor Rejection Tests |
+    // -----------------------------------
+
+    use crate::cursor::EventCursor;
+
+    /// Test that stale balance updates are rejected when cursor is provided
+    #[test]
+    fn test_balance_cursor_rejects_stale() {
+        let applicator = mock_applicator();
+
+        // Add an account
+        let account = mock_empty_account();
+        applicator.create_account(&account).unwrap();
+
+        // Create a balance
+        let mut balance = mock_balance();
+
+        // First update with cursor (100, 0, 5) - should succeed
+        let cursor1 = EventCursor::new(100, 0, 5);
+        *balance.amount_mut() = 1000;
+        applicator.update_account_balance(account.id, &balance, Some(&cursor1)).unwrap();
+
+        // Verify balance was written
+        let tx = applicator.db().new_read_tx().unwrap();
+        let retrieved = tx.get_balance(&account.id, &balance.mint()).unwrap().unwrap();
+        assert_eq!(retrieved.amount(), 1000);
+        drop(tx);
+
+        // Stale update with cursor (100, 0, 4) - should be rejected (silently no-op)
+        let cursor2 = EventCursor::new(100, 0, 4);
+        *balance.amount_mut() = 500;
+        applicator.update_account_balance(account.id, &balance, Some(&cursor2)).unwrap();
+
+        // Verify balance was NOT updated (still 1000)
+        let tx = applicator.db().new_read_tx().unwrap();
+        let retrieved = tx.get_balance(&account.id, &balance.mint()).unwrap().unwrap();
+        assert_eq!(retrieved.amount(), 1000);
+        drop(tx);
+
+        // Fresh update with cursor (100, 0, 6) - should succeed
+        let cursor3 = EventCursor::new(100, 0, 6);
+        *balance.amount_mut() = 2000;
+        applicator.update_account_balance(account.id, &balance, Some(&cursor3)).unwrap();
+
+        // Verify balance was updated
+        let tx = applicator.db().new_read_tx().unwrap();
+        let retrieved = tx.get_balance(&account.id, &balance.mint()).unwrap().unwrap();
+        assert_eq!(retrieved.amount(), 2000);
+    }
+
+    /// Test that duplicate balance updates are rejected (same cursor)
+    #[test]
+    fn test_balance_cursor_rejects_duplicate() {
+        let applicator = mock_applicator();
+
+        // Add an account
+        let account = mock_empty_account();
+        applicator.create_account(&account).unwrap();
+
+        // Create a balance
+        let mut balance = mock_balance();
+        let cursor = EventCursor::new(100, 0, 5);
+
+        // First update
+        *balance.amount_mut() = 1000;
+        applicator.update_account_balance(account.id, &balance, Some(&cursor)).unwrap();
+
+        // Duplicate update with same cursor - should be rejected
+        *balance.amount_mut() = 500;
+        applicator.update_account_balance(account.id, &balance, Some(&cursor)).unwrap();
+
+        // Verify balance was NOT updated (still 1000)
+        let tx = applicator.db().new_read_tx().unwrap();
+        let retrieved = tx.get_balance(&account.id, &balance.mint()).unwrap().unwrap();
+        assert_eq!(retrieved.amount(), 1000);
+    }
+
+    /// Test that balance updates without cursor bypass the check
+    #[test]
+    fn test_balance_cursor_none_bypasses_check() {
+        let applicator = mock_applicator();
+
+        // Add an account
+        let account = mock_empty_account();
+        applicator.create_account(&account).unwrap();
+
+        // Create a balance
+        let mut balance = mock_balance();
+
+        // First update with cursor
+        let cursor = EventCursor::new(100, 0, 5);
+        *balance.amount_mut() = 1000;
+        applicator.update_account_balance(account.id, &balance, Some(&cursor)).unwrap();
+
+        // Update without cursor (bypasses check) - should succeed even with lower value
+        *balance.amount_mut() = 500;
+        applicator.update_account_balance(account.id, &balance, None).unwrap();
+
+        // Verify balance was updated
+        let tx = applicator.db().new_read_tx().unwrap();
+        let retrieved = tx.get_balance(&account.id, &balance.mint()).unwrap().unwrap();
+        assert_eq!(retrieved.amount(), 500);
     }
 }

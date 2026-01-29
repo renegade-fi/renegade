@@ -99,12 +99,14 @@ impl StateApplicator {
             StateTransition::AddOrderToAccount { account_id, order, auth } => {
                 self.add_order_to_account(account_id, &order, &auth)
             },
-            StateTransition::RemoveOrderFromAccount { account_id, order_id } => {
-                self.remove_order_from_account(account_id, order_id)
+            StateTransition::RemoveOrderFromAccount { account_id, order_id, cursor } => {
+                self.remove_order_from_account(account_id, order_id, cursor.as_ref())
             },
-            StateTransition::UpdateOrder { order } => self.update_order(&order),
-            StateTransition::UpdateAccountBalance { account_id, balance } => {
-                self.update_account_balance(account_id, &balance)
+            StateTransition::UpdateOrder { order, cursor } => {
+                self.update_order(&order, cursor.as_ref())
+            },
+            StateTransition::UpdateAccountBalance { account_id, balance, cursor } => {
+                self.update_account_balance(account_id, &balance, cursor.as_ref())
             },
             StateTransition::AddOrderValidityProof { order_id, proof } => {
                 self.add_order_validity_proof(order_id, proof)

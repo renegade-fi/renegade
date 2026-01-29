@@ -291,7 +291,8 @@ impl CreateOrderTask {
         info!("Found usable balance of {amt} on chain, updating account balance");
 
         let bal = create_ring0_balance(in_token, owner, relayer_fee_addr, amt);
-        let waiter = self.state().update_account_balance(self.account_id, bal).await?;
+        // Pass None for cursor - this is an internal update, not from an on-chain event
+        let waiter = self.state().update_account_balance(self.account_id, bal, None).await?;
         waiter.await.map_err(CreateOrderTaskError::state)?;
         Ok(())
     }

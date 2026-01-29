@@ -17,6 +17,7 @@ use types_tasks::{QueuedTask, QueuedTaskState, TaskIdentifier, TaskQueueKey};
 use uuid::Uuid;
 
 use crate::{
+    cursor::EventCursor,
     replication::{NodeId, RaftNode},
     storage::tx::merkle_proofs::MerkleProofType,
 };
@@ -51,11 +52,23 @@ pub enum StateTransition {
     /// Update an account by adding an order, marking it as local, and storing its auth
     AddOrderToAccount { account_id: AccountId, order: Order, auth: OrderAuth },
     /// Remove an order from an account
-    RemoveOrderFromAccount { account_id: AccountId, order_id: OrderId },
+    ///
+    /// When triggered by an on-chain event, `cursor` should be `Some` to enable
+    /// stale write prevention. When triggered by internal logic (e.g., task
+    /// driver), `cursor` should be `None`.
+    RemoveOrderFromAccount { account_id: AccountId, order_id: OrderId, cursor: Option<EventCursor> },
     /// Update an existing order in an account
-    UpdateOrder { order: Order },
+    ///
+    /// When triggered by an on-chain event, `cursor` should be `Some` to enable
+    /// stale write prevention. When triggered by internal logic (e.g., task
+    /// driver), `cursor` should be `None`.
+    UpdateOrder { order: Order, cursor: Option<EventCursor> },
     /// Update a balance in an account
-    UpdateAccountBalance { account_id: AccountId, balance: Balance },
+    ///
+    /// When triggered by an on-chain event, `cursor` should be `Some` to enable
+    /// stale write prevention. When triggered by internal logic (e.g., task
+    /// driver), `cursor` should be `None`.
+    UpdateAccountBalance { account_id: AccountId, balance: Balance, cursor: Option<EventCursor> },
 
     // --- Orders --- //
     /// Add a validity proof to an order

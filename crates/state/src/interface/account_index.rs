@@ -16,8 +16,9 @@ use types_core::{AccountId, HmacKey};
 use util::res_some;
 
 use crate::{
-    StateInner, applicator::account_index::update_matchable_amounts, error::StateError,
-    notifications::ProposalWaiter, state_transition::StateTransition, storage::traits::RkyvValue,
+    StateInner, applicator::account_index::update_matchable_amounts, cursor::EventCursor,
+    error::StateError, notifications::ProposalWaiter, state_transition::StateTransition,
+    storage::traits::RkyvValue,
 };
 
 impl StateInner {
@@ -223,26 +224,43 @@ impl StateInner {
     }
 
     /// Remove an order from an account
+    ///
+    /// When triggered by an on-chain event, pass `Some(cursor)` to enable stale
+    /// write prevention. Pass `None` when called from internal logic.
     pub async fn remove_order_from_account(
         &self,
         account_id: AccountId,
         order_id: OrderId,
+        cursor: Option<EventCursor>,
     ) -> Result<ProposalWaiter, StateError> {
-        self.send_proposal(StateTransition::RemoveOrderFromAccount { account_id, order_id }).await
+        self.send_proposal(StateTransition::RemoveOrderFromAccount { account_id, order_id, cursor })
+            .await
     }
 
     /// Update an existing order
-    pub async fn update_order(&self, order: Order) -> Result<ProposalWaiter, StateError> {
-        self.send_proposal(StateTransition::UpdateOrder { order }).await
+    ///
+    /// When triggered by an on-chain event, pass `Some(cursor)` to enable stale
+    /// write prevention. Pass `None` when called from internal logic.
+    pub async fn update_order(
+        &self,
+        order: Order,
+        cursor: Option<EventCursor>,
+    ) -> Result<ProposalWaiter, StateError> {
+        self.send_proposal(StateTransition::UpdateOrder { order, cursor }).await
     }
 
     /// Update a balance in an account
+    ///
+    /// When triggered by an on-chain event, pass `Some(cursor)` to enable stale
+    /// write prevention. Pass `None` when called from internal logic.
     pub async fn update_account_balance(
         &self,
         account_id: AccountId,
         balance: types_account::balance::Balance,
+        cursor: Option<EventCursor>,
     ) -> Result<ProposalWaiter, StateError> {
-        self.send_proposal(StateTransition::UpdateAccountBalance { account_id, balance }).await
+        self.send_proposal(StateTransition::UpdateAccountBalance { account_id, balance, cursor })
+            .await
     }
 
     /// Update the matching engine cache for orders affected by a balance change
@@ -331,8 +349,8 @@ mod test {
         let retrieved_account = state.get_account(&account.id).await.unwrap().unwrap();
         assert!(retrieved_account.orders.contains_key(&order.id));
 
-        // Remove the order from the account
-        let waiter = state.remove_order_from_account(account.id, order.id).await.unwrap();
+        // Remove the order from the account (pass None for cursor - test context)
+        let waiter = state.remove_order_from_account(account.id, order.id, None).await.unwrap();
         waiter.await.unwrap();
 
         // Verify the order was removed

@@ -90,7 +90,8 @@ impl SettlementProcessor {
         let mut order = self.get_order(order_id).await?;
         order.decrement_amount_in(obligation.amount_in);
 
-        let waiter = self.ctx.state.update_order(order).await?;
+        // Pass None for cursor - this is an internal update, not from an on-chain event
+        let waiter = self.ctx.state.update_order(order, None).await?;
         waiter.await.map_err(SettlementError::from)?;
         Ok(())
     }
@@ -107,7 +108,8 @@ impl SettlementProcessor {
         *balance.amount_mut() -= obligation.amount_in;
 
         // Write the balance back to the state
-        let waiter = state.update_account_balance(account_id, balance).await?;
+        // Pass None for cursor - this is an internal update, not from an on-chain event
+        let waiter = state.update_account_balance(account_id, balance, None).await?;
         waiter.await.map_err(SettlementError::from)?;
         Ok(())
     }

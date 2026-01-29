@@ -23,7 +23,7 @@ use job_types::{
 };
 use rand::Rng;
 use renegade_solidity_abi::v2::IDarkpoolV2::{PublicIntentCancelled, PublicIntentUpdated};
-use state::State;
+use state::{EventCursor, State};
 use tracing::{error, info, warn};
 use types_core::{AccountId, get_all_tokens};
 use types_runtime::CancelChannel;
@@ -35,6 +35,28 @@ const MIN_CRASH_RECOVERY_DELAY_S: u64 = 20;
 /// The maximum delay in seconds before non-selected nodes process an event
 /// (crash recovery)
 const MAX_CRASH_RECOVERY_DELAY_S: u64 = 40;
+
+// -----------
+// | Helpers |
+// -----------
+
+/// Extract an event cursor from a log
+///
+/// The cursor uniquely identifies the event's position in the chain for
+/// stale write prevention.
+fn cursor_from_log(log: &Log) -> Result<EventCursor, OnChainEventListenerError> {
+    Ok(EventCursor {
+        block_number: log
+            .block_number
+            .ok_or_else(|| OnChainEventListenerError::State("log missing block_number".into()))?,
+        tx_index: log.transaction_index.ok_or_else(|| {
+            OnChainEventListenerError::State("log missing transaction_index".into())
+        })?,
+        log_index: log
+            .log_index
+            .ok_or_else(|| OnChainEventListenerError::State("log missing log_index".into()))?,
+    })
+}
 
 // ----------
 // | Worker |
@@ -219,10 +241,10 @@ impl OnChainEventListenerExecutor {
 
         // Process each affected account
         if let Some(account_id) = from_account {
-            self.handle_balance_update(account_id, from, token, tx_hash).await?;
+            self.handle_balance_update(account_id, from, token, &log).await?;
         }
         if let Some(account_id) = to_account {
-            self.handle_balance_update(account_id, to, token, tx_hash).await?;
+            self.handle_balance_update(account_id, to, token, &log).await?;
         }
 
         Ok(())
@@ -234,8 +256,13 @@ impl OnChainEventListenerExecutor {
         account_id: AccountId,
         owner: Address,
         token: Address,
-        tx_hash: alloy::primitives::TxHash,
+        log: &Log,
     ) -> Result<(), OnChainEventListenerError> {
+        let cursor = cursor_from_log(log)?;
+        let tx_hash = log
+            .transaction_hash
+            .ok_or_else(|| OnChainEventListenerError::State("log missing tx_hash".into()))?;
+
         // Fetch balance and update this node's matching engine cache
         let on_chain_balance = self.darkpool_client().get_erc20_balance(token, owner).await?;
         let Some(mut balance) = self.state().get_account_balance(&account_id, &token).await? else {
@@ -257,10 +284,13 @@ impl OnChainEventListenerExecutor {
             let timeout = rand::thread_rng()
                 .gen_range(MIN_CRASH_RECOVERY_DELAY_S..=MAX_CRASH_RECOVERY_DELAY_S);
             tokio::time::sleep(Duration::from_secs(timeout)).await;
+            // No re-fetch needed: cursor guarantees correctness regardless of
+            // value staleness
         }
 
         self.run_matching_engine_for_account_and_balance(account_id, token).await?;
-        self.state().update_account_balance(account_id, balance).await?.await?;
+        // Pass cursor for stale write prevention - applicator rejects if stale
+        self.state().update_account_balance(account_id, balance, Some(cursor)).await?.await?;
 
         Ok(())
     }
@@ -322,6 +352,7 @@ impl OnChainEventListenerExecutor {
         &self,
         log: Log,
     ) -> Result<(), OnChainEventListenerError> {
+        let cursor = cursor_from_log(&log)?;
         let tx_hash = match log.transaction_hash {
             Some(h) => h,
             None => {
@@ -357,23 +388,24 @@ impl OnChainEventListenerExecutor {
             let timeout = rand::thread_rng()
                 .gen_range(MIN_CRASH_RECOVERY_DELAY_S..=MAX_CRASH_RECOVERY_DELAY_S);
             tokio::time::sleep(Duration::from_secs(timeout)).await;
-
-            // Check if already processed by another node
-            if self.state().get_order_for_intent_hash(&intent_hash).await?.is_none() {
-                return Ok(());
-            }
+            // No re-fetch/re-check needed: cursor guarantees correctness
         }
 
         if amount_remaining == 0 {
             // Order fully filled - remove it
-            self.state().remove_order_from_account(account_id, order_id).await?.await?;
+            // Pass cursor for stale write prevention - applicator rejects if stale
+            self.state()
+                .remove_order_from_account(account_id, order_id, Some(cursor))
+                .await?
+                .await?;
         } else {
             // Partial fill - update the order's amount
             let Some(mut order) = self.state().get_account_order(&order_id).await? else {
                 return Ok(()); // Order already removed
             };
             order.intent.inner.amount_in = amount_remaining;
-            self.state().update_order(order).await?.await?;
+            // Pass cursor for stale write prevention - applicator rejects if stale
+            self.state().update_order(order, Some(cursor)).await?.await?;
         }
 
         // TODO: Emit ExternalFillEvent to notify clients
@@ -389,6 +421,7 @@ impl OnChainEventListenerExecutor {
         &self,
         log: Log,
     ) -> Result<(), OnChainEventListenerError> {
+        let cursor = cursor_from_log(&log)?;
         let tx_hash = match log.transaction_hash {
             Some(h) => h,
             None => {
@@ -420,15 +453,12 @@ impl OnChainEventListenerExecutor {
             let timeout = rand::thread_rng()
                 .gen_range(MIN_CRASH_RECOVERY_DELAY_S..=MAX_CRASH_RECOVERY_DELAY_S);
             tokio::time::sleep(Duration::from_secs(timeout)).await;
-
-            // Check if already processed by another node
-            if self.state().get_order_for_intent_hash(&intent_hash).await?.is_none() {
-                return Ok(());
-            }
+            // No re-fetch/re-check needed: cursor guarantees correctness
         }
 
         // Remove the cancelled order
-        self.state().remove_order_from_account(account_id, order_id).await?.await?;
+        // Pass cursor for stale write prevention - applicator rejects if stale
+        self.state().remove_order_from_account(account_id, order_id, Some(cursor)).await?.await?;
 
         // TODO: Emit cancellation event to notify clients
 

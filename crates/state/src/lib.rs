@@ -17,12 +17,16 @@
 use crate::error::StateError;
 
 pub mod applicator;
+pub mod cursor;
 pub mod error;
 mod interface;
 pub mod notifications;
 pub mod replication;
 pub mod state_transition;
 pub mod storage;
+
+// Re-export EventCursor for convenience
+pub use cursor::EventCursor;
 
 // Re-export the state interface
 pub use interface::*;
