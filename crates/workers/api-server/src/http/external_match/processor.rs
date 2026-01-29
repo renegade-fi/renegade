@@ -27,7 +27,7 @@ use state::State;
 use system_bus::{SystemBus, SystemBusMessage};
 use types_account::order::Order;
 use types_core::HmacKey;
-use util::{get_current_time_millis, on_chain::get_external_match_fee};
+use util::{get_current_time_millis, on_chain::get_protocol_fee};
 
 use crate::error::{ApiServerError, internal_error, no_content, unauthorized};
 
@@ -287,8 +287,9 @@ impl ExternalMatchProcessor {
         order: &Order,
         relayer_fee_override: Option<FixedPoint>,
     ) -> Result<FeeRates, ApiServerError> {
-        let base = order.pair().base_token();
-        let protocol_fee = get_external_match_fee(&base.get_alloy_address());
+        let pair = order.pair();
+        let (base, quote) = (pair.base_token(), pair.quote_token());
+        let protocol_fee = get_protocol_fee(&base.get_alloy_address(), &quote.get_alloy_address());
         let relayer_fee = match relayer_fee_override {
             Some(fee) => fee,
             None => {

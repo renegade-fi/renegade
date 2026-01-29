@@ -157,34 +157,6 @@ impl DarkpoolClient {
     // | Helpers |
     // -----------
 
-    // // --- Fetch Shares --- //
-
-    // /// Fetch the public shares from a transaction that has an unknown selector
-    // async fn fetch_public_shares_for_unknown_selector(
-    //     &self,
-    //     tx_hash: TxHash,
-    //     public_blinder_share: Scalar,
-    // ) -> Result<SizedWalletShare, DarkpoolClientError> {
-    //     // Parse the call trace for calls to the darkpool contract
-    //     let calls = self.fetch_tx_darkpool_calls(tx_hash).await?;
-    //     if calls.is_empty() {
-    //         let hash_str = format!("{tx_hash:#x}");
-    //         return Err(DarkpoolClientError::DarkpoolSubcallNotFound(hash_str));
-    //     }
-
-    //     // Attempt to parse public shares from the calldata of each call
-    //     for call in calls {
-    //         let data = call.input;
-    //         let selector = data[..SELECTOR_LEN].try_into().unwrap();
-    //         let public_share = D::parse_shares(selector, &data,
-    // public_blinder_share)?;         if public_share.blinder ==
-    // public_blinder_share {             return Ok(public_share);
-    //         }
-    //     }
-
-    //     Err(DarkpoolClientError::InvalidSelector)
-    // }
-
     // --- Call Tracing --- //
 
     /// Fetch the darkpool calls from a given transaction

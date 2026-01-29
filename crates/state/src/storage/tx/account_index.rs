@@ -218,12 +218,12 @@ impl<T: TransactionKind> StateTxn<'_, T> {
         Ok(Some(Account { id: header.id, orders, balances, keychain: header.keychain }))
     }
 
-    /// Get all accounts in the database
+    /// Get all account IDs in the database
     ///
-    /// Iterates over all account headers, collects their IDs, and reconstructs
-    /// each full account. Accounts for which reconstruction fails are filtered
-    /// out.
-    pub fn get_all_accounts(&self) -> Result<Vec<Account>, StorageError> {
+    /// Iterates over all account headers and collects their IDs without
+    /// reconstructing full accounts. This is more efficient when only the IDs
+    /// are needed.
+    pub fn get_all_account_ids(&self) -> Result<Vec<AccountId>, StorageError> {
         let header_cursor = self.inner().cursor::<String, AccountHeader>(ACCOUNTS_TABLE)?;
         let account_ids: Vec<AccountId> = header_cursor
             .into_iter()
@@ -238,6 +238,17 @@ impl<T: TransactionKind> StateTxn<'_, T> {
                 }
             })
             .collect();
+
+        Ok(account_ids)
+    }
+
+    /// Get all accounts in the database
+    ///
+    /// Iterates over all account headers, collects their IDs, and reconstructs
+    /// each full account. Accounts for which reconstruction fails are filtered
+    /// out.
+    pub fn get_all_accounts(&self) -> Result<Vec<Account>, StorageError> {
+        let account_ids = self.get_all_account_ids()?;
 
         // Call get_account for each account ID and filter out None results
         let mut accounts = Vec::new();

@@ -2,74 +2,35 @@
 
 use std::{
     collections::HashMap,
-    fs::File,
-    io::Read,
     sync::{OnceLock, RwLock},
 };
 
 use alloy::primitives::Address;
 use circuit_types::{elgamal::EncryptionKey, fixed_point::FixedPoint};
-use eyre::{Result, eyre};
 
 use crate::concurrency::RwStatic;
 
-/// The deployments key in the `deployments.json` file
-pub const DEPLOYMENTS_KEY: &str = "deployments";
-/// The ERC-20s sub-key in the `deployments.json` file
-#[cfg(feature = "mocks")]
-pub const ERC20S_KEY: &str = "erc20s";
-/// The darkpool proxy contract key in the `deployments.json` file
-pub const DARKPOOL_PROXY_CONTRACT_KEY: &str = "darkpool_proxy_contract";
-/// The first dummy erc20 ticker
-#[cfg(feature = "mocks")]
-pub const DUMMY_ERC20_0_TICKER: &str = "DUMMY1";
-/// The second dummy erc20 ticker
-#[cfg(feature = "mocks")]
-pub const DUMMY_ERC20_1_TICKER: &str = "DUMMY2";
-/// The permit2 contract key in a `deployments.json` file
-#[cfg(feature = "mocks")]
-pub const PERMIT2_CONTRACT_KEY: &str = "permit2_contract";
+/// A type alias for a pair of addresses used in the fee override mapping
+type PairFeeKey = (Address, Address);
+
 /// The protocol fee that the contract charges on a match
 static PROTOCOL_FEE: RwStatic<FixedPoint> = RwStatic::new(|| RwLock::new(FixedPoint::zero()));
 /// The protocol fee overrides for an external match
 ///
 /// Maps a mint to the fee override if one exists
-pub static PROTOCOL_FEE_OVERRIDES: RwStatic<HashMap<Address, FixedPoint>> =
+pub static PROTOCOL_FEE_OVERRIDES: RwStatic<HashMap<PairFeeKey, FixedPoint>> =
     RwStatic::new(|| RwLock::new(HashMap::new()));
 /// The protocol's public encryption key used for paying fees
 pub static PROTOCOL_PUBKEY: OnceLock<EncryptionKey> = OnceLock::new();
+/// The address at which the protocol collects fees
+pub static PROTOCOL_FEE_ADDR: OnceLock<Address> = OnceLock::new();
 /// The chain ID for the blockchain network
-static CHAIN_ID: RwStatic<u64> = RwStatic::new(|| RwLock::new(0));
-
-/// Parse the address of the deployed contract from the `deployments.json` file
-pub fn parse_addr_from_deployments_file(file_path: &str, contract_key: &str) -> Result<String> {
-    let mut file_contents = String::new();
-    File::open(file_path)?.read_to_string(&mut file_contents)?;
-
-    let parsed_json = json::parse(&file_contents)?;
-    parsed_json[DEPLOYMENTS_KEY][contract_key]
-        .as_str()
-        .map(|s| s.to_string())
-        .ok_or_else(|| eyre!("Could not parse {contract_key} address from deployments file"))
-}
-
-/// Parse the address of an ERC-20 contract from the `deployments.json` file
-#[cfg(feature = "mocks")]
-pub fn parse_erc20_addr_from_deployments_file(file_path: &str, ticker: &str) -> Result<String> {
-    let mut file_contents = String::new();
-    File::open(file_path)?.read_to_string(&mut file_contents)?;
-
-    let parsed_json = json::parse(&file_contents)?;
-    parsed_json[DEPLOYMENTS_KEY][ERC20S_KEY][ticker]
-        .as_str()
-        .map(|s| s.to_string())
-        .ok_or_else(|| eyre!("Could not parse {ticker} address from deployments file"))
-}
+static CHAIN_ID: OnceLock<u64> = OnceLock::new();
 
 /// Get the protocol fee from the static variable
 ///
 /// Panics if the protocol fee has not been set
-pub fn get_protocol_fee() -> FixedPoint {
+pub fn get_default_protocol_fee() -> FixedPoint {
     #[cfg(feature = "mocks")]
     {
         FixedPoint::from_f64_round_down(0.0006) // 6 bps
@@ -82,22 +43,30 @@ pub fn get_protocol_fee() -> FixedPoint {
 }
 
 /// Set the protocol fee
-pub fn set_protocol_fee(fee: FixedPoint) {
+pub fn set_default_protocol_fee(fee: FixedPoint) {
     *PROTOCOL_FEE.write().expect("fee lock poisoned") = fee;
 }
 
-/// Get the external match fee override for the given mint
-///
-/// Defaults to the protocol base fee if no override exists
-pub fn get_external_match_fee(mint: &Address) -> FixedPoint {
-    let fee_override =
-        PROTOCOL_FEE_OVERRIDES.read().expect("fee override lock poisoned").get(mint).cloned();
-    fee_override.unwrap_or(get_protocol_fee())
+/// Get the protocol fee override for the given pair
+pub fn get_protocol_fee(asset0: &Address, asset1: &Address) -> FixedPoint {
+    let key = fee_pair_key(asset0, asset1);
+    PROTOCOL_FEE_OVERRIDES
+        .read()
+        .expect("fee override lock poisoned")
+        .get(&key)
+        .cloned()
+        .unwrap_or(get_default_protocol_fee())
 }
 
-/// Set the external match fee override for the given mint
-pub fn set_external_match_fee(mint: &Address, fee: FixedPoint) {
-    PROTOCOL_FEE_OVERRIDES.write().expect("fee override lock poisoned").insert(*mint, fee);
+/// Set the protocol fee override for the given pair
+pub fn set_protocol_fee(asset0: &Address, asset1: &Address, fee: FixedPoint) {
+    let key = fee_pair_key(asset0, asset1);
+    PROTOCOL_FEE_OVERRIDES.write().expect("fee override lock poisoned").insert(key, fee);
+}
+
+/// Get the fee key for the given pair
+fn fee_pair_key(asset0: &Address, asset1: &Address) -> PairFeeKey {
+    if asset0 < asset1 { (*asset0, *asset1) } else { (*asset1, *asset0) }
 }
 
 /// Get the protocol encryption key from the static variable
@@ -120,12 +89,29 @@ pub fn get_protocol_pubkey() -> EncryptionKey {
     }
 }
 
+/// Set the protocol encryption key
+pub fn set_protocol_pubkey(key: EncryptionKey) {
+    PROTOCOL_PUBKEY.set(key).expect("protocol pubkey has already been set");
+}
+
+/// Get the protocol fee address from the static variable
+pub fn get_protocol_fee_addr() -> Address {
+    *PROTOCOL_FEE_ADDR.get().expect("protocol fee address has not been set")
+}
+
+/// Set the protocol fee address
+pub fn set_protocol_fee_addr(addr: Address) {
+    PROTOCOL_FEE_ADDR.set(addr).expect("protocol fee address has already been set");
+}
+
 /// Get the chain ID from the static variable
+///
+/// Panics if the chain ID has not been set
 pub fn get_chain_id() -> u64 {
-    *CHAIN_ID.read().expect("chain ID lock poisoned")
+    *CHAIN_ID.get().expect("chain ID has not been set")
 }
 
 /// Set the chain ID
 pub fn set_chain_id(chain_id: u64) {
-    *CHAIN_ID.write().expect("chain ID lock poisoned") = chain_id;
+    CHAIN_ID.set(chain_id).expect("chain ID has already been set");
 }

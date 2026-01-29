@@ -8,7 +8,6 @@
 use std::{error::Error, fmt::Display, iter, time::Duration};
 
 use async_trait::async_trait;
-use circuit_types::fixed_point::FixedPoint;
 use constants::{NATIVE_ASSET_ADDRESS, in_bootstrap_mode};
 use darkpool_client::{DarkpoolClient, errors::DarkpoolClientError};
 use job_types::{
@@ -23,7 +22,7 @@ use types_core::{AccountId, Token, get_all_tokens};
 use types_tasks::NodeStartupTaskDescriptor;
 use util::{
     err_str,
-    on_chain::{set_chain_id, set_external_match_fee},
+    on_chain::{set_chain_id, set_default_protocol_fee, set_protocol_fee, set_protocol_pubkey},
 };
 
 use crate::{
@@ -266,19 +265,16 @@ impl NodeStartupTask {
         }
 
         // Fetch the values from the contract
-        // TODO: Fetch fees
-        // let protocol_fee = self
-        //     .darkpool_client
-        //     .get_protocol_fee()
-        //     .await
-        //     .map_err(err_str!(NodeStartupTaskError::FetchConstants))?;
-        // let protocol_key = self
-        //     .darkpool_client
-        //     .get_protocol_pubkey()
-        //     .await
-        //     .map_err(err_str!(NodeStartupTaskError::FetchConstants))?;
-        // let protocol_fee = FixedPoint::from_f64_round_down(0.01);
-        // let protocol_key = DecryptionKey::random(&mut thread_rng()).public_key();
+        let protocol_fee = self
+            .darkpool_client
+            .get_default_protocol_fee()
+            .await
+            .map_err(err_str!(NodeStartupTaskError::FetchConstants))?;
+        let protocol_key = self
+            .darkpool_client
+            .get_protocol_pubkey()
+            .await
+            .map_err(err_str!(NodeStartupTaskError::FetchConstants))?;
         info!("Fetched protocol fee and protocol pubkey from on-chain");
 
         // Fetch the external match fee overrides for each mint
@@ -289,8 +285,8 @@ impl NodeStartupTask {
         set_chain_id(chain_id);
 
         // Set the values in their constant refs
-        // set_protocol_fee(protocol_fee);
-        // PROTOCOL_PUBKEY.set(protocol_key).expect("protocol pubkey already set");
+        set_default_protocol_fee(protocol_fee);
+        set_protocol_pubkey(protocol_key);
         Ok(())
     }
 
@@ -355,14 +351,11 @@ impl NodeStartupTask {
             return Ok(());
         }
 
-        // For each wallet, check if a newer version is known on-chain
-        // TODO: Add back wallet refresh
-        // for wallet in self.state.get_all_wallets().await?.into_iter() {
-        //     let nullifier = wallet.get_wallet_nullifier();
-        //     if self.darkpool_client.check_nullifier_used(nullifier).await? {
-        //         self.refresh_wallet(&wallet).await?;
-        //     }
-        // }
+        // For each account, refresh the account from on-chain state
+        let account_ids = self.state.get_all_account_ids().await?;
+        for account_id in account_ids {
+            self.refresh_account(account_id).await?;
+        }
 
         Ok(())
     }
@@ -395,30 +388,10 @@ impl NodeStartupTask {
     // | Helpers |
     // -----------
 
-    /// Enqueue a wallet lookup task to refresh a wallet
-    /// TODO: Re-implement this
-    async fn refresh_wallet(&self, account_id: AccountId) -> Result<(), NodeStartupTaskError> {
-        return Ok(());
-        // // The seeds for the lookup wallet task may be taken as the last
-        // known values in // their respective CSPRNGs:
-        // // - The blinder seed is the private share of the blinder
-        // // - The secret share seed is the last private share of the wallet
-        // let blinder_seed = wallet.private_blinder_share();
-        // let share_seed = wallet.get_last_private_share();
-
-        // let descriptor = LookupWalletTaskDescriptor::new(
-        //     wallet.wallet_id,
-        //     blinder_seed,
-        //     share_seed,
-        //     wallet.key_chain.secret_keys.clone(),
-        // )
-        // .expect("infallible");
-
-        // // Enqueue the task and wait for the log entry to be persisted
-        // let (_id, waiter) = self.state.append_task(descriptor.into()).await?;
-        // waiter.await?;
-
-        // Ok(())
+    /// Enqueue a account lookup task to refresh an account
+    async fn refresh_account(&self, _account_id: AccountId) -> Result<(), NodeStartupTaskError> {
+        // TODO(@akirillo): Re-implement this
+        Ok(())
     }
 
     /// Setup the external match fee overrides for all tokens
@@ -428,16 +401,18 @@ impl NodeStartupTask {
             .chain(iter::once(Token::from_addr(NATIVE_ASSET_ADDRESS)))
             .collect();
 
+        let usdc = Token::usdc().get_alloy_address();
         for token in tokens {
+            if token.get_alloy_address() == usdc {
+                continue;
+            }
+
             // Fetch the fee override from the contract
             let addr = token.get_alloy_address();
-            // TODO: Add back contract fetch
-            // let fee = self.darkpool_client.get_external_match_fee(addr).await?;
-            let fee = FixedPoint::from_f64_round_down(0.01);
+            let fee = self.darkpool_client.get_protocol_fee(addr, usdc).await?;
 
             // Write the fee into the mapping
-            let addr_bigint = token.get_alloy_address();
-            set_external_match_fee(&addr_bigint, fee);
+            set_protocol_fee(&addr, &usdc, fee);
         }
 
         Ok(())
