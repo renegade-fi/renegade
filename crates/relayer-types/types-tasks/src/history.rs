@@ -106,6 +106,7 @@ impl HistoricalTaskDescription {
             TaskDescriptor::SettleInternalMatch(_) => None,
             TaskDescriptor::SettleExternalMatch(_) => None,
             TaskDescriptor::NodeStartup(_) => None,
+            TaskDescriptor::Withdraw(_) => None,
         }
     }
 }

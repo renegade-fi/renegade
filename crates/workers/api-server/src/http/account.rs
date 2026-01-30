@@ -103,12 +103,15 @@ impl TypedHandler for CreateAccountHandler {
 }
 
 /// Handler for GET /v2/account/:account_id/seeds
-pub struct GetAccountSeedsHandler;
+pub struct GetAccountSeedsHandler {
+    /// A handle to the relayer's state
+    state: State,
+}
 
 impl GetAccountSeedsHandler {
     /// Constructor
-    pub fn new() -> Self {
-        Self
+    pub fn new(state: State) -> Self {
+        Self { state }
     }
 }
 
@@ -121,10 +124,18 @@ impl TypedHandler for GetAccountSeedsHandler {
         &self,
         _headers: HeaderMap,
         _req: Self::Request,
-        _params: UrlParams,
+        params: UrlParams,
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
-        Err(ApiServerError::not_implemented(ERR_NOT_IMPLEMENTED))
+        let account_id = parse_account_id_from_params(&params)?;
+        let acct =
+            self.state.get_account(&account_id).await?.ok_or(not_found(ERR_ACCOUNT_NOT_FOUND))?;
+
+        let secret_keys = acct.keychain.secret_keys;
+        Ok(GetAccountSeedsResponse {
+            recovery_seed_csprng: secret_keys.master_recovery_seed_csprng.into(),
+            share_seed_csprng: secret_keys.master_share_seed_csprng.into(),
+        })
     }
 }
 

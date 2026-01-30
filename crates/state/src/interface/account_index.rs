@@ -6,6 +6,7 @@
 use alloy_primitives::Address;
 use circuit_types::Amount;
 use types_account::{
+    MatchingPoolName,
     account::{Account, OrderId},
     balance::Balance,
     keychain::KeyChain,
@@ -34,6 +35,8 @@ impl StateInner {
         })
         .await
     }
+
+    // --- Keychain --- //
 
     /// Get the symmetric key for an account
     pub async fn get_account_symmetric_key(
@@ -65,6 +68,8 @@ impl StateInner {
         .await
     }
 
+    // --- Accounts --- //
+
     /// Get the account with the given id
     pub async fn get_account(&self, id: &AccountId) -> Result<Option<Account>, StateError> {
         let id = *id;
@@ -74,6 +79,17 @@ impl StateInner {
         })
         .await
     }
+
+    /// Get all account IDs in the state
+    pub async fn get_all_account_ids(&self) -> Result<Vec<AccountId>, StateError> {
+        self.with_read_tx(move |tx| {
+            let account_ids = tx.get_all_account_ids()?;
+            Ok(account_ids)
+        })
+        .await
+    }
+
+    // --- Orders --- //
 
     /// Get the plaintext order for a locally managed order ID
     pub async fn get_account_order(&self, id: &OrderId) -> Result<Option<Order>, StateError> {
@@ -122,6 +138,69 @@ impl StateInner {
         .await
     }
 
+    /// Get all order IDs for an account that use the given token as input
+    pub async fn get_orders_with_input_token(
+        &self,
+        account_id: &AccountId,
+        token: &Address,
+    ) -> Result<Vec<OrderId>, StateError> {
+        let account_id = *account_id;
+        let token = *token;
+        self.with_read_tx(move |tx| {
+            let orders = tx.get_orders_with_input_token(&account_id, &token)?;
+            Ok(orders)
+        })
+        .await
+    }
+
+    /// Get all orders for an account without deserializing the full account
+    ///
+    /// This is more efficient than calling `get_account` when only orders are
+    /// needed
+    pub async fn get_account_orders(
+        &self,
+        account_id: &AccountId,
+    ) -> Result<Vec<Order>, StateError> {
+        let account_id = *account_id;
+        self.with_read_tx(move |tx| {
+            let orders = tx.get_account_orders(&account_id)?;
+            Ok(orders)
+        })
+        .await
+    }
+
+    /// Get all orders across all accounts with their matching pool
+    ///
+    /// Returns a vector of tuples containing (AccountId, Order,
+    /// MatchingPoolName) for each order in the state. MatchingPoolName) for
+    /// each order in the state.
+    ///
+    /// Warning: this can be slow when the state has many orders
+    pub async fn get_all_orders_with_matching_pool(
+        &self,
+    ) -> Result<Vec<(Order, AccountId, MatchingPoolName)>, StateError> {
+        self.with_read_tx(move |tx| {
+            let mut result = Vec::new();
+
+            // Get all account IDs
+            let account_ids = tx.get_all_account_ids()?;
+
+            // For each account, get all orders with their metadata
+            for account_id in account_ids {
+                let orders = tx.get_account_orders(&account_id)?;
+                for order in orders {
+                    let matching_pool = tx.get_matching_pool_for_order(&order.id)?;
+                    result.push((order, account_id, matching_pool));
+                }
+            }
+
+            Ok(result)
+        })
+        .await
+    }
+
+    // --- Balances --- //
+
     /// Get the balance amount for an account and token
     pub async fn get_account_balance_value(
         &self,
@@ -154,26 +233,15 @@ impl StateInner {
         .await
     }
 
-    /// Get all order IDs for an account that use the given token as input
-    pub async fn get_orders_with_input_token(
+    /// Get all balances for an account without deserializing the full account
+    pub async fn get_account_balances(
         &self,
         account_id: &AccountId,
-        token: &Address,
-    ) -> Result<Vec<OrderId>, StateError> {
+    ) -> Result<Vec<Balance>, StateError> {
         let account_id = *account_id;
-        let token = *token;
         self.with_read_tx(move |tx| {
-            let orders = tx.get_orders_with_input_token(&account_id, &token)?;
-            Ok(orders)
-        })
-        .await
-    }
-
-    /// Get all account IDs in the state
-    pub async fn get_all_account_ids(&self) -> Result<Vec<AccountId>, StateError> {
-        self.with_read_tx(move |tx| {
-            let account_ids = tx.get_all_account_ids()?;
-            Ok(account_ids)
+            let balances = tx.get_account_balances(&account_id)?;
+            Ok(balances)
         })
         .await
     }

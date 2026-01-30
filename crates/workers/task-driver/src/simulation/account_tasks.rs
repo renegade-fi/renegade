@@ -6,6 +6,7 @@ use types_account::Account;
 use types_tasks::{
     CreateBalanceTaskDescriptor, CreateOrderTaskDescriptor, DepositTaskDescriptor,
     NewAccountTaskDescriptor, QueuedTask, SettleInternalMatchTaskDescriptor, TaskDescriptor,
+    WithdrawTaskDescriptor,
 };
 
 use super::error::TaskSimulationError;
@@ -47,6 +48,7 @@ fn should_simulate(task: &QueuedTask) -> bool {
         TaskDescriptor::Deposit(_) => true,
         TaskDescriptor::CreateBalance(_) => true,
         TaskDescriptor::SettleInternalMatch(_) => true,
+        TaskDescriptor::Withdraw(_) => true,
         // External matches bypass the task queue and are not simulated
         TaskDescriptor::SettleExternalMatch(_) => false,
         TaskDescriptor::NodeStartup(_) => false,
@@ -65,6 +67,7 @@ fn simulate_single_account_task(
         TaskDescriptor::Deposit(t) => simulate_deposit(account, &t),
         TaskDescriptor::CreateBalance(t) => simulate_create_balance(account, &t, state),
         TaskDescriptor::SettleInternalMatch(t) => simulate_settle_internal_match(account, &t),
+        TaskDescriptor::Withdraw(t) => simulate_withdraw(account, &t),
         // Ignore all non-wallet tasks
         TaskDescriptor::SettleExternalMatch(_) => Ok(()),
         TaskDescriptor::NodeStartup(_) => Ok(()),
@@ -122,4 +125,14 @@ fn simulate_settle_internal_match(
     _desc: &SettleInternalMatchTaskDescriptor,
 ) -> Result<(), TaskSimulationError> {
     todo!("Implement settle internal match simulation");
+}
+
+/// Simulate a `Withdraw` task applied to a wallet
+#[allow(clippy::needless_pass_by_ref_mut)]
+fn simulate_withdraw(
+    _account: &mut Account,
+    _desc: &WithdrawTaskDescriptor,
+) -> Result<(), TaskSimulationError> {
+    warn!("TODO: Implement withdraw simulation");
+    Ok(())
 }

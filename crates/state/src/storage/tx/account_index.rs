@@ -260,6 +260,21 @@ impl<T: TransactionKind> StateTxn<'_, T> {
         Ok(accounts)
     }
 
+    /// Get all orders for an account without deserializing the full account
+    pub fn get_account_orders(&self, account_id: &AccountId) -> Result<Vec<Order>, StorageError> {
+        let orders = self.fetch_orders_for_account(account_id)?;
+        Ok(orders.into_values().collect())
+    }
+
+    /// Get all balances for an account without deserializing the full account
+    pub fn get_account_balances(
+        &self,
+        account_id: &AccountId,
+    ) -> Result<Vec<Balance>, StorageError> {
+        let balances = self.fetch_balances_for_account(account_id)?;
+        Ok(balances.into_values().collect())
+    }
+
     // --- Private Helpers --- //
 
     /// Fetch all orders for an account
