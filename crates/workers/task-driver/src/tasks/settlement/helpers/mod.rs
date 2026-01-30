@@ -3,7 +3,11 @@
 use alloy::{primitives::Address, signers::local::PrivateKeySigner};
 use darkpool_types::settlement_obligation::SettlementObligation;
 use renegade_solidity_abi::v2::IDarkpoolV2::FeeRate;
-use types_account::{OrderId, balance::Balance, order::Order};
+use types_account::{
+    OrderId,
+    balance::{Balance, BalanceLocation},
+    order::Order,
+};
 use types_core::{AccountId, Token};
 
 use crate::{tasks::settlement::helpers::error::SettlementError, traits::TaskContext};
@@ -55,8 +59,9 @@ impl SettlementProcessor {
         &self,
         account_id: AccountId,
         token: Address,
+        location: BalanceLocation,
     ) -> Result<Balance, SettlementError> {
-        let balance = self.ctx.state.get_account_balance(&account_id, &token).await?;
+        let balance = self.ctx.state.get_account_balance(&account_id, &token, location).await?;
         balance.ok_or_else(|| {
             SettlementError::state(format!("input balance not found for account {account_id}"))
         })
@@ -99,11 +104,12 @@ impl SettlementProcessor {
     pub async fn update_input_balance(
         &self,
         account_id: AccountId,
-        token: Address,
+        location: BalanceLocation,
         obligation: &SettlementObligation,
     ) -> Result<(), SettlementError> {
         let state = &self.ctx.state;
-        let mut balance = self.get_input_balance(account_id, obligation.input_token).await?;
+        let mut balance =
+            self.get_input_balance(account_id, obligation.input_token, location).await?;
         *balance.amount_mut() -= obligation.amount_in;
 
         // Write the balance back to the state

@@ -12,7 +12,9 @@ use darkpool_types::{intent::Intent, state_wrapper::StateWrapper};
 use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
 use serde::{Deserialize, Serialize};
 
-use crate::{OrderId, pair::Pair};
+#[cfg(feature = "rkyv")]
+use crate::balance::ArchivedBalanceLocation;
+use crate::{OrderId, balance::BalanceLocation, pair::Pair};
 
 /// The order type for an account
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -207,6 +209,31 @@ pub enum PrivacyRing {
     Ring2,
     /// Ring 3: Private intent, private balance (private fill)
     Ring3,
+}
+
+impl PrivacyRing {
+    /// Get the balance location from which an order in the privacy ring is
+    /// capitalized
+    pub fn balance_location(&self) -> BalanceLocation {
+        match self {
+            PrivacyRing::Ring0 | PrivacyRing::Ring1 => BalanceLocation::EOA,
+            PrivacyRing::Ring2 | PrivacyRing::Ring3 => BalanceLocation::Darkpool,
+        }
+    }
+}
+
+#[cfg(feature = "rkyv")]
+impl ArchivedPrivacyRing {
+    /// Get the balance location from which an order in the privacy ring is
+    /// capitalized
+    pub fn balance_location(&self) -> ArchivedBalanceLocation {
+        match self {
+            ArchivedPrivacyRing::Ring0 | ArchivedPrivacyRing::Ring1 => ArchivedBalanceLocation::EOA,
+            ArchivedPrivacyRing::Ring2 | ArchivedPrivacyRing::Ring3 => {
+                ArchivedBalanceLocation::Darkpool
+            },
+        }
+    }
 }
 
 #[cfg(feature = "mocks")]

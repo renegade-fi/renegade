@@ -6,15 +6,13 @@
 //! - Balances are stored as separate KV entries
 //! - Order->account mapping is stored for quick order lookups
 
-use std::collections::HashMap;
-
 use alloy_primitives::Address;
 use circuit_types::Amount;
 use libmdbx::{RW, TransactionKind};
 use serde::{Deserialize, Serialize};
 use types_account::{
     account::{Account, OrderId},
-    balance::Balance,
+    balance::{Balance, BalanceLocation},
     keychain::KeyChain,
     order::Order,
 };
@@ -85,8 +83,8 @@ fn orders_prefix(account_id: &AccountId) -> String {
 }
 
 /// Build the key for a balance
-fn balance_key(account_id: &AccountId, token: &Address) -> String {
-    format!("{account_id}:balances:{token:?}")
+fn balance_key(account_id: &AccountId, token: &Address, location: BalanceLocation) -> String {
+    format!("{account_id}:balances:{location}:{token:?}")
 }
 
 /// Build the prefix for scanning all balances of an account
@@ -144,8 +142,9 @@ impl<T: TransactionKind> StateTxn<'_, T> {
         &self,
         account_id: &AccountId,
         token: &Address,
+        location: BalanceLocation,
     ) -> Result<Option<BalanceValue<'_>>, StorageError> {
-        let key = balance_key(account_id, token);
+        let key = balance_key(account_id, token, location);
         self.inner().read(ACCOUNTS_TABLE, &key)
     }
 
@@ -163,7 +162,8 @@ impl<T: TransactionKind> StateTxn<'_, T> {
         let in_token = WithAddress::from_archived(order.input_token())?;
 
         // Fetch the capitalizing balance
-        let balance = match self.get_balance(&account, in_token.inner())? {
+        let location = BalanceLocation::from_archived(&order.ring.balance_location())?;
+        let balance = match self.get_balance(&account, in_token.inner(), location)? {
             Some(balance) => balance,
             None => return Ok(Some(0)),
         };
@@ -351,7 +351,8 @@ impl StateTxn<'_, RW> {
         account_id: &AccountId,
         balance: &Balance,
     ) -> Result<(), StorageError> {
-        let key = balance_key(account_id, &balance.mint());
+        let location = balance.location;
+        let key = balance_key(account_id, &balance.mint(), location);
         self.inner().write(ACCOUNTS_TABLE, &key, balance)
     }
 
@@ -480,6 +481,7 @@ mod test {
         let account = mock_account();
         let balance = mock_balance();
         let mint = balance.mint();
+        let location = balance.location;
 
         // Create account and add balance
         let tx = db.new_write_tx().unwrap();
@@ -489,7 +491,7 @@ mod test {
 
         // Retrieve balance
         let tx = db.new_read_tx().unwrap();
-        let retrieved = tx.get_balance(&account.id, &mint).unwrap();
+        let retrieved = tx.get_balance(&account.id, &mint, location).unwrap();
         assert!(retrieved.is_some());
         let retrieved = retrieved.unwrap().deserialize().unwrap();
         assert_eq!(retrieved.mint(), mint);
