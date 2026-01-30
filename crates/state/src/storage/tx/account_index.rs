@@ -6,7 +6,7 @@
 //! - Balances are stored as separate KV entries
 //! - Order->account mapping is stored for quick order lookups
 
-use alloy_primitives::Address;
+use alloy_primitives::{Address, B256};
 use circuit_types::Amount;
 use libmdbx::{RW, TransactionKind};
 use serde::{Deserialize, Serialize};
@@ -95,6 +95,20 @@ fn balances_prefix(account_id: &AccountId) -> String {
 /// Build the key for the order -> account index
 fn order_index_key(order_id: &OrderId) -> String {
     format!("order_index:{order_id}")
+}
+
+/// Build the key for the owner -> account index
+///
+/// Maps (owner, token) to account_id for routing balance update events
+fn owner_index_key(owner: &Address, token: &Address) -> String {
+    format!("owner_index:{owner:?}:{token:?}")
+}
+
+/// Build the key for the intent hash -> order index
+///
+/// Maps intent_hash to (account_id, order_id) for routing public intent events
+fn intent_hash_key(intent_hash: &B256) -> String {
+    format!("intent_index:{intent_hash:?}")
 }
 
 // -----------
@@ -310,6 +324,60 @@ impl<T: TransactionKind> StateTxn<'_, T> {
             })
             .collect::<Result<_, StorageError>>()
     }
+
+    /// Get the account ID for a given owner address and token
+    ///
+    /// Used to route balance update events to the correct account
+    pub fn get_account_for_owner(
+        &self,
+        owner: &Address,
+        token: &Address,
+    ) -> Result<Option<AccountId>, StorageError> {
+        let key = owner_index_key(owner, token);
+        self.inner()
+            .read::<_, AccountId>(ACCOUNTS_TABLE, &key)
+            .map(|opt| opt.map(|archived| archived.deserialize()).transpose())?
+    }
+
+    /// Get all owner index entries
+    ///
+    /// Returns all (owner, token, account_id) tuples for state-based sync
+    pub fn get_all_owner_index_entries(
+        &self,
+    ) -> Result<Vec<(Address, Address, AccountId)>, StorageError> {
+        let prefix = "owner_index:";
+        let cursor =
+            self.inner().cursor::<String, AccountId>(ACCOUNTS_TABLE)?.with_key_prefix(prefix);
+
+        cursor
+            .into_iter()
+            .filter_map(|res| {
+                let (key, val) = res.ok()?;
+                // Parse key format: "owner_index:{owner:?}:{token:?}"
+                let parts: Vec<&str> = key.splitn(3, ':').collect();
+                if parts.len() != 3 {
+                    return None;
+                }
+                let owner = parts[1].parse::<Address>().ok()?;
+                let token = parts[2].parse::<Address>().ok()?;
+                let account_id = val.deserialize().ok()?;
+                Some(Ok((owner, token, account_id)))
+            })
+            .collect()
+    }
+
+    /// Get the order for a given intent hash
+    ///
+    /// Used to route public intent events to the correct order
+    pub fn get_order_for_intent_hash(
+        &self,
+        intent_hash: &B256,
+    ) -> Result<Option<(AccountId, OrderId)>, StorageError> {
+        let key = intent_hash_key(intent_hash);
+        self.inner()
+            .read::<_, (AccountId, OrderId)>(ACCOUNTS_TABLE, &key)
+            .map(|opt| opt.map(|archived| archived.deserialize()).transpose())?
+    }
 }
 
 // -----------
@@ -373,6 +441,47 @@ impl StateTxn<'_, RW> {
         self.inner().delete(ACCOUNTS_TABLE, &index_key)?;
         Ok(())
     }
+
+    /// Set the owner index mapping for a (owner, token) pair
+    ///
+    /// Maps owner address + token to the account that holds the balance
+    pub fn set_owner_index(
+        &self,
+        owner: &Address,
+        token: &Address,
+        account_id: &AccountId,
+    ) -> Result<(), StorageError> {
+        let key = owner_index_key(owner, token);
+        self.inner().write(ACCOUNTS_TABLE, &key, account_id)
+    }
+
+    /// Delete the owner index mapping for a (owner, token) pair
+    pub fn delete_owner_index(&self, owner: &Address, token: &Address) -> Result<(), StorageError> {
+        let key = owner_index_key(owner, token);
+        self.inner().delete(ACCOUNTS_TABLE, &key)?;
+        Ok(())
+    }
+
+    /// Set the intent hash index mapping
+    ///
+    /// Maps intent_hash to (account_id, order_id) for routing public intent
+    /// events
+    pub fn set_intent_index(
+        &self,
+        intent_hash: &B256,
+        account_id: &AccountId,
+        order_id: &OrderId,
+    ) -> Result<(), StorageError> {
+        let key = intent_hash_key(intent_hash);
+        self.inner().write(ACCOUNTS_TABLE, &key, &(*account_id, *order_id))
+    }
+
+    /// Delete the intent hash index mapping
+    pub fn delete_intent_index(&self, intent_hash: &B256) -> Result<(), StorageError> {
+        let key = intent_hash_key(intent_hash);
+        self.inner().delete(ACCOUNTS_TABLE, &key)?;
+        Ok(())
+    }
 }
 
 // ---------
@@ -381,7 +490,7 @@ impl StateTxn<'_, RW> {
 
 #[cfg(test)]
 mod test {
-    use alloy_primitives::Address;
+    use alloy_primitives::{Address, B256};
     use types_account::{
         Account,
         balance::mocks::mock_balance,
@@ -670,5 +779,146 @@ mod test {
         let acc3 = all_accounts.iter().find(|a| a.id == account3.id).unwrap();
         assert_eq!(acc3.orders.len(), 0);
         assert_eq!(acc3.balances.len(), 0);
+    }
+
+    // --- Owner Index Tests ---
+
+    /// Tests setting and getting owner index
+    #[test]
+    fn test_owner_index_set_get() {
+        let db = mock_db();
+        db.create_table(ACCOUNTS_TABLE).unwrap();
+
+        let account = mock_account();
+        let owner = Address::from([0xAA; 20]);
+        let token = Address::from([0xBB; 20]);
+
+        // Set owner index
+        let tx = db.new_write_tx().unwrap();
+        tx.new_account(&account).unwrap();
+        tx.set_owner_index(&owner, &token, &account.id).unwrap();
+        tx.commit().unwrap();
+
+        // Get owner index
+        let tx = db.new_read_tx().unwrap();
+        let result = tx.get_account_for_owner(&owner, &token).unwrap();
+        assert_eq!(result, Some(account.id));
+    }
+
+    /// Tests deleting owner index
+    #[test]
+    fn test_owner_index_delete() {
+        let db = mock_db();
+        db.create_table(ACCOUNTS_TABLE).unwrap();
+
+        let account = mock_account();
+        let owner = Address::from([0xAA; 20]);
+        let token = Address::from([0xBB; 20]);
+
+        // Set and verify
+        let tx = db.new_write_tx().unwrap();
+        tx.new_account(&account).unwrap();
+        tx.set_owner_index(&owner, &token, &account.id).unwrap();
+        tx.commit().unwrap();
+
+        let tx = db.new_read_tx().unwrap();
+        assert!(tx.get_account_for_owner(&owner, &token).unwrap().is_some());
+        drop(tx);
+
+        // Delete and verify
+        let tx = db.new_write_tx().unwrap();
+        tx.delete_owner_index(&owner, &token).unwrap();
+        tx.commit().unwrap();
+
+        let tx = db.new_read_tx().unwrap();
+        assert!(tx.get_account_for_owner(&owner, &token).unwrap().is_none());
+    }
+
+    /// Tests getting all owner index entries
+    #[test]
+    fn test_owner_index_get_all() {
+        let db = mock_db();
+        db.create_table(ACCOUNTS_TABLE).unwrap();
+
+        let account1 = mock_account();
+        let account2 = mock_account();
+        let owner1 = Address::from([0xAA; 20]);
+        let owner2 = Address::from([0xBB; 20]);
+        let token1 = Address::from([0x11; 20]);
+        let token2 = Address::from([0x22; 20]);
+
+        // Set multiple owner indices
+        let tx = db.new_write_tx().unwrap();
+        tx.new_account(&account1).unwrap();
+        tx.new_account(&account2).unwrap();
+        tx.set_owner_index(&owner1, &token1, &account1.id).unwrap();
+        tx.set_owner_index(&owner1, &token2, &account1.id).unwrap();
+        tx.set_owner_index(&owner2, &token1, &account2.id).unwrap();
+        tx.commit().unwrap();
+
+        // Get all entries
+        let tx = db.new_read_tx().unwrap();
+        let entries = tx.get_all_owner_index_entries().unwrap();
+        assert_eq!(entries.len(), 3);
+
+        // Verify entries contain expected mappings
+        assert!(entries.contains(&(owner1, token1, account1.id)));
+        assert!(entries.contains(&(owner1, token2, account1.id)));
+        assert!(entries.contains(&(owner2, token1, account2.id)));
+    }
+
+    // --- Intent Hash Index Tests ---
+
+    /// Tests setting and getting intent hash index
+    #[test]
+    fn test_intent_index_set_get() {
+        let db = mock_db();
+        db.create_table(ACCOUNTS_TABLE).unwrap();
+
+        let account = mock_account();
+        let order = mock_order();
+        let intent_hash = B256::repeat_byte(0xCC);
+
+        // Set intent index
+        let tx = db.new_write_tx().unwrap();
+        tx.new_account(&account).unwrap();
+        tx.add_order(&account.id, &order).unwrap();
+        tx.set_intent_index(&intent_hash, &account.id, &order.id).unwrap();
+        tx.commit().unwrap();
+
+        // Get intent index
+        let tx = db.new_read_tx().unwrap();
+        let result = tx.get_order_for_intent_hash(&intent_hash).unwrap();
+        assert_eq!(result, Some((account.id, order.id)));
+    }
+
+    /// Tests deleting intent hash index
+    #[test]
+    fn test_intent_index_delete() {
+        let db = mock_db();
+        db.create_table(ACCOUNTS_TABLE).unwrap();
+
+        let account = mock_account();
+        let order = mock_order();
+        let intent_hash = B256::repeat_byte(0xCC);
+
+        // Set and verify
+        let tx = db.new_write_tx().unwrap();
+        tx.new_account(&account).unwrap();
+        tx.add_order(&account.id, &order).unwrap();
+        tx.set_intent_index(&intent_hash, &account.id, &order.id).unwrap();
+        tx.commit().unwrap();
+
+        let tx = db.new_read_tx().unwrap();
+        assert!(tx.get_order_for_intent_hash(&intent_hash).unwrap().is_some());
+        drop(tx);
+
+        // Delete and verify
+        let tx = db.new_write_tx().unwrap();
+        tx.delete_intent_index(&intent_hash).unwrap();
+        tx.commit().unwrap();
+
+        let tx = db.new_read_tx().unwrap();
+        assert!(tx.get_order_for_intent_hash(&intent_hash).unwrap().is_none());
     }
 }

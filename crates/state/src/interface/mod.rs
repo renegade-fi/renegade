@@ -215,6 +215,7 @@ impl StateInner {
         let applicator_config = StateApplicatorConfig {
             allow_local: relayer_config.allow_local,
             cluster_id: relayer_config.cluster_id.clone(),
+            executor_address: relayer_config.relayer_wallet_key().address(),
             task_queue,
             matching_engine_worker_queue,
             event_queue,

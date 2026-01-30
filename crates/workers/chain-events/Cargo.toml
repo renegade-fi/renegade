@@ -26,7 +26,9 @@ renegade-metrics = { workspace = true }
 gossip-api = { workspace = true }
 job-types = { workspace = true }
 matching-engine-core = { workspace = true }
+renegade-solidity-abi = { workspace = true }
 state = { workspace = true }
+system-bus = { workspace = true }
 util = { workspace = true }
 
 # === Misc Dependencies === #
