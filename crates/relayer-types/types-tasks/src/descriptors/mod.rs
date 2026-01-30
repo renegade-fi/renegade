@@ -9,6 +9,7 @@ mod new_account;
 mod node_startup;
 mod settle_external_match;
 mod settle_internal_match;
+mod withdraw;
 
 pub use create_balance::*;
 pub use create_order::*;
@@ -17,6 +18,7 @@ pub use new_account::*;
 pub use node_startup::*;
 pub use settle_external_match::*;
 pub use settle_internal_match::*;
+pub use withdraw::*;
 
 #[cfg(feature = "rkyv")]
 use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize, with::Skip};
@@ -149,6 +151,8 @@ pub enum TaskDescriptor {
     SettleInternalMatch(SettleInternalMatchTaskDescriptor),
     /// The task descriptor for the `SettleExternalMatch` task
     SettleExternalMatch(SettleExternalMatchTaskDescriptor),
+    /// The task descriptor for the `Withdraw` task
+    Withdraw(WithdrawTaskDescriptor),
 }
 
 impl TaskDescriptor {
@@ -162,6 +166,7 @@ impl TaskDescriptor {
             TaskDescriptor::CreateOrder(task) => task.account_id,
             TaskDescriptor::SettleInternalMatch(task) => task.account_id,
             TaskDescriptor::SettleExternalMatch(task) => task.account_id,
+            TaskDescriptor::Withdraw(task) => task.account_id,
         }
     }
 
@@ -177,6 +182,7 @@ impl TaskDescriptor {
                 vec![task.account_id, task.other_account_id]
             },
             TaskDescriptor::SettleExternalMatch(task) => vec![task.account_id],
+            TaskDescriptor::Withdraw(task) => vec![task.account_id],
         }
     }
 
@@ -190,6 +196,7 @@ impl TaskDescriptor {
             TaskDescriptor::CreateOrder(_) => true,
             TaskDescriptor::SettleInternalMatch(_) => true,
             TaskDescriptor::SettleExternalMatch(_) => true,
+            TaskDescriptor::Withdraw(_) => true,
         }
     }
 
@@ -203,6 +210,7 @@ impl TaskDescriptor {
             TaskDescriptor::CreateOrder(_) => "Create Order".to_string(),
             TaskDescriptor::SettleInternalMatch(_) => "Settle Internal Match".to_string(),
             TaskDescriptor::SettleExternalMatch(_) => "Settle External Match".to_string(),
+            TaskDescriptor::Withdraw(_) => "Withdraw".to_string(),
         }
     }
 }

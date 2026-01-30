@@ -1,8 +1,10 @@
 //! HTTP route definitions and request/response types for balance operations
 
+use circuit_types::Amount;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::serde_helpers;
 use crate::types::{ApiBalance, ApiDepositPermit, ApiSchnorrPublicKey};
 
 // ---------------
@@ -64,9 +66,11 @@ pub struct DepositBalanceResponse {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct WithdrawBalanceRequest {
     /// The amount to withdraw
-    pub amount: String,
-    /// The signature authorizing the withdrawal (base64 encoded)
-    pub signature: String,
+    #[serde(with = "serde_helpers::amount_as_string")]
+    pub amount: Amount,
+    /// The signature authorizing the withdrawal
+    #[serde(with = "serde_helpers::bytes_as_base64_string")]
+    pub signature: Vec<u8>,
 }
 
 /// Response for withdraw balance
@@ -74,8 +78,6 @@ pub struct WithdrawBalanceRequest {
 pub struct WithdrawBalanceResponse {
     /// The task ID for the withdrawal
     pub task_id: Uuid,
-    /// The balance after withdrawal
-    pub balance: ApiBalance,
     /// Whether the operation has completed
     pub completed: bool,
 }

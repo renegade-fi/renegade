@@ -21,7 +21,7 @@ use crate::{
         create_balance::CreateBalanceTask, create_new_account::CreateNewAccountTask,
         create_order::CreateOrderTask, deposit::DepositTask, node_startup::NodeStartupTask,
         settlement::settle_external_match::SettleExternalMatchTask,
-        settlement::settle_internal_match::SettleInternalMatchTask,
+        settlement::settle_internal_match::SettleInternalMatchTask, withdraw::WithdrawTask,
     },
     traits::{Descriptor as _, Task, TaskContext},
     worker::TaskDriverConfig,
@@ -239,6 +239,9 @@ impl TaskExecutor {
             },
             TaskDescriptor::SettleExternalMatch(desc) => {
                 self.start_task_helper::<SettleExternalMatchTask>(id, desc, affected_accounts).await
+            },
+            TaskDescriptor::Withdraw(desc) => {
+                self.start_task_helper::<WithdrawTask>(id, desc, affected_accounts).await
             },
         };
 

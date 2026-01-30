@@ -21,7 +21,7 @@ use state::{State, error::StateError};
 use tracing::{info, instrument};
 use types_account::{
     OrderId,
-    balance::Balance,
+    balance::{Balance, BalanceLocation},
     order::{Order, OrderMetadata, PrivacyRing},
     order_auth::OrderAuth,
 };
@@ -262,7 +262,8 @@ impl CreateOrderTask {
         // keep its value up to date as new permits and erc20 transfers happen
         let in_token = self.intent.in_token;
         let state = self.state();
-        let bal = state.get_account_balance_value(&self.account_id, &in_token).await?;
+        let loc = BalanceLocation::EOA;
+        let bal = state.get_account_balance_value(&self.account_id, &in_token, loc).await?;
         if bal > 0 {
             return Ok(());
         }
@@ -339,5 +340,5 @@ fn create_ring0_balance(
     let share_stream_seed = Scalar::zero();
     let recovery_stream_seed = Scalar::zero();
     let state_wrapper = StateWrapper::new(bal, share_stream_seed, recovery_stream_seed);
-    Balance::new(state_wrapper)
+    Balance::new_eoa(state_wrapper)
 }

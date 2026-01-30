@@ -71,8 +71,6 @@ impl MatchingEngineExecutor {
         user_order: OrderId,
         match_result: SuccessfulMatch,
     ) -> Result<(), MatchingEngineError> {
-        info!("Found match for {user_order}: {match_result:?}");
-
         // Lookup account IDs for both orders
         let account_id = self.get_account_id_for_order(&user_order).await?;
         let other_account_id = self.get_account_id_for_order(&match_result.other_order_id).await?;

@@ -11,6 +11,7 @@ use external_api::{
     types::OrderType,
 };
 use hyper::HeaderMap;
+use itertools::Itertools;
 use state::State;
 use types_account::order_auth::OrderAuth;
 use types_tasks::CreateOrderTaskDescriptor;
@@ -36,12 +37,15 @@ const ERR_ORDER_NOT_FOUND: &str = "order not found";
 // -------------------
 
 /// Handler for GET /v2/account/:account_id/orders
-pub struct GetOrdersHandler;
+pub struct GetOrdersHandler {
+    /// A handle to the relayer's state
+    state: State,
+}
 
 impl GetOrdersHandler {
     /// Constructor
-    pub fn new() -> Self {
-        Self
+    pub fn new(state: State) -> Self {
+        Self { state }
     }
 }
 
@@ -54,10 +58,15 @@ impl TypedHandler for GetOrdersHandler {
         &self,
         _headers: HeaderMap,
         _req: Self::Request,
-        _params: UrlParams,
+        params: UrlParams,
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
-        Err(ApiServerError::not_implemented(ERR_NOT_IMPLEMENTED))
+        let account_id = parse_account_id_from_params(&params)?;
+        let orders = self.state.get_account_orders(&account_id).await?;
+        let orders = orders.into_iter().map(Into::into).collect_vec();
+
+        // TODO: Paginate
+        Ok(GetOrdersResponse { orders, next_page_token: None })
     }
 }
 

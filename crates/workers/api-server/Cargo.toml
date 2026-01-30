@@ -10,7 +10,7 @@ harness = false
 required-features = ["test_helpers"]
 
 [features]
-test_helpers = ["darkpool-client/arbitrum"]
+test_helpers = []
 
 [dependencies]
 # === Cryptography + Arithmetic === #

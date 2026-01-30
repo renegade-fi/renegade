@@ -2,6 +2,7 @@
 
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
+use alloy::primitives::Address;
 use darkpool_client::errors::DarkpoolClientError;
 use external_api::{auth::AuthError, error::ApiTypeError};
 use hyper::{Response, StatusCode};
@@ -53,6 +54,11 @@ impl ApiServerError {
     /// Create an order not found error
     pub fn order_not_found(id: OrderId) -> Self {
         not_found(format!("order not found: {id}"))
+    }
+
+    /// Create a balance not found error
+    pub fn balance_not_found(token: Address) -> Self {
+        not_found(format!("balance not found: {token}"))
     }
 }
 

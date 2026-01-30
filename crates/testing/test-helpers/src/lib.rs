@@ -3,11 +3,9 @@
 #![deny(clippy::missing_docs_in_private_items)]
 #![deny(unsafe_code)]
 
-#[cfg(feature = "arbitrum")]
-pub mod arbitrum;
 pub mod assertions;
-// #[cfg(feature = "blockchain")]
-// pub mod contract_interaction;
+#[cfg(feature = "blockchain")]
+pub mod blockchain;
 #[cfg(feature = "test-harness")]
 pub mod macros;
 #[cfg(feature = "mocks")]

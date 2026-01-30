@@ -6,15 +6,13 @@
 //! - Balances are stored as separate KV entries
 //! - Order->account mapping is stored for quick order lookups
 
-use std::collections::HashMap;
-
 use alloy_primitives::Address;
 use circuit_types::Amount;
 use libmdbx::{RW, TransactionKind};
 use serde::{Deserialize, Serialize};
 use types_account::{
     account::{Account, OrderId},
-    balance::Balance,
+    balance::{Balance, BalanceLocation},
     keychain::KeyChain,
     order::Order,
 };
@@ -85,8 +83,8 @@ fn orders_prefix(account_id: &AccountId) -> String {
 }
 
 /// Build the key for a balance
-fn balance_key(account_id: &AccountId, token: &Address) -> String {
-    format!("{account_id}:balances:{token:?}")
+fn balance_key(account_id: &AccountId, token: &Address, location: BalanceLocation) -> String {
+    format!("{account_id}:balances:{location}:{token:?}")
 }
 
 /// Build the prefix for scanning all balances of an account
@@ -144,8 +142,9 @@ impl<T: TransactionKind> StateTxn<'_, T> {
         &self,
         account_id: &AccountId,
         token: &Address,
+        location: BalanceLocation,
     ) -> Result<Option<BalanceValue<'_>>, StorageError> {
-        let key = balance_key(account_id, token);
+        let key = balance_key(account_id, token, location);
         self.inner().read(ACCOUNTS_TABLE, &key)
     }
 
@@ -163,7 +162,8 @@ impl<T: TransactionKind> StateTxn<'_, T> {
         let in_token = WithAddress::from_archived(order.input_token())?;
 
         // Fetch the capitalizing balance
-        let balance = match self.get_balance(&account, in_token.inner())? {
+        let location = BalanceLocation::from_archived(&order.ring.balance_location())?;
+        let balance = match self.get_balance(&account, in_token.inner(), location)? {
             Some(balance) => balance,
             None => return Ok(Some(0)),
         };
@@ -215,15 +215,16 @@ impl<T: TransactionKind> StateTxn<'_, T> {
         let balances = self.fetch_balances_for_account(account_id)?;
 
         // Reconstruct the account struct
-        Ok(Some(Account { id: header.id, orders, balances, keychain: header.keychain }))
+        let account = Account::new(header.id, orders, balances, header.keychain);
+        Ok(Some(account))
     }
 
-    /// Get all accounts in the database
+    /// Get all account IDs in the database
     ///
-    /// Iterates over all account headers, collects their IDs, and reconstructs
-    /// each full account. Accounts for which reconstruction fails are filtered
-    /// out.
-    pub fn get_all_accounts(&self) -> Result<Vec<Account>, StorageError> {
+    /// Iterates over all account headers and collects their IDs without
+    /// reconstructing full accounts. This is more efficient when only the IDs
+    /// are needed.
+    pub fn get_all_account_ids(&self) -> Result<Vec<AccountId>, StorageError> {
         let header_cursor = self.inner().cursor::<String, AccountHeader>(ACCOUNTS_TABLE)?;
         let account_ids: Vec<AccountId> = header_cursor
             .into_iter()
@@ -239,6 +240,17 @@ impl<T: TransactionKind> StateTxn<'_, T> {
             })
             .collect();
 
+        Ok(account_ids)
+    }
+
+    /// Get all accounts in the database
+    ///
+    /// Iterates over all account headers, collects their IDs, and reconstructs
+    /// each full account. Accounts for which reconstruction fails are filtered
+    /// out.
+    pub fn get_all_accounts(&self) -> Result<Vec<Account>, StorageError> {
+        let account_ids = self.get_all_account_ids()?;
+
         // Call get_account for each account ID and filter out None results
         let mut accounts = Vec::new();
         for account_id in account_ids {
@@ -249,13 +261,23 @@ impl<T: TransactionKind> StateTxn<'_, T> {
         Ok(accounts)
     }
 
+    /// Get all orders for an account without deserializing the full account
+    pub fn get_account_orders(&self, account_id: &AccountId) -> Result<Vec<Order>, StorageError> {
+        self.fetch_orders_for_account(account_id)
+    }
+
+    /// Get all balances for an account without deserializing the full account
+    pub fn get_account_balances(
+        &self,
+        account_id: &AccountId,
+    ) -> Result<Vec<Balance>, StorageError> {
+        self.fetch_balances_for_account(account_id)
+    }
+
     // --- Private Helpers --- //
 
     /// Fetch all orders for an account
-    fn fetch_orders_for_account(
-        &self,
-        account_id: &AccountId,
-    ) -> Result<HashMap<OrderId, Order>, StorageError> {
+    fn fetch_orders_for_account(&self, account_id: &AccountId) -> Result<Vec<Order>, StorageError> {
         let order_prefix = orders_prefix(account_id);
         let order_cursor =
             self.inner().cursor::<String, Order>(ACCOUNTS_TABLE)?.with_key_prefix(&order_prefix);
@@ -264,7 +286,7 @@ impl<T: TransactionKind> StateTxn<'_, T> {
             .map(|res| {
                 let (_key, val) = res?;
                 let order = val.deserialize()?;
-                Ok((order.id, order))
+                Ok(order)
             })
             .collect::<Result<_, StorageError>>()
     }
@@ -273,7 +295,7 @@ impl<T: TransactionKind> StateTxn<'_, T> {
     fn fetch_balances_for_account(
         &self,
         account_id: &AccountId,
-    ) -> Result<HashMap<Address, Balance>, StorageError> {
+    ) -> Result<Vec<Balance>, StorageError> {
         let balance_prefix = balances_prefix(account_id);
         let balance_cursor = self
             .inner()
@@ -284,7 +306,7 @@ impl<T: TransactionKind> StateTxn<'_, T> {
             .map(|res| {
                 let (_key, val) = res?;
                 let balance = val.deserialize()?;
-                Ok((balance.mint(), balance))
+                Ok(balance)
             })
             .collect::<Result<_, StorageError>>()
     }
@@ -329,7 +351,8 @@ impl StateTxn<'_, RW> {
         account_id: &AccountId,
         balance: &Balance,
     ) -> Result<(), StorageError> {
-        let key = balance_key(account_id, &balance.mint());
+        let location = balance.location;
+        let key = balance_key(account_id, &balance.mint(), location);
         self.inner().write(ACCOUNTS_TABLE, &key, balance)
     }
 
@@ -458,6 +481,7 @@ mod test {
         let account = mock_account();
         let balance = mock_balance();
         let mint = balance.mint();
+        let location = balance.location;
 
         // Create account and add balance
         let tx = db.new_write_tx().unwrap();
@@ -467,7 +491,7 @@ mod test {
 
         // Retrieve balance
         let tx = db.new_read_tx().unwrap();
-        let retrieved = tx.get_balance(&account.id, &mint).unwrap();
+        let retrieved = tx.get_balance(&account.id, &mint, location).unwrap();
         assert!(retrieved.is_some());
         let retrieved = retrieved.unwrap().deserialize().unwrap();
         assert_eq!(retrieved.mint(), mint);

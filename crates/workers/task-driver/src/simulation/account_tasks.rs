@@ -2,10 +2,11 @@
 
 use state::State;
 use tracing::warn;
-use types_account::Account;
+use types_account::{Account, balance::BalanceLocation};
 use types_tasks::{
     CreateBalanceTaskDescriptor, CreateOrderTaskDescriptor, DepositTaskDescriptor,
     NewAccountTaskDescriptor, QueuedTask, SettleInternalMatchTaskDescriptor, TaskDescriptor,
+    WithdrawTaskDescriptor,
 };
 
 use super::error::TaskSimulationError;
@@ -47,6 +48,7 @@ fn should_simulate(task: &QueuedTask) -> bool {
         TaskDescriptor::Deposit(_) => true,
         TaskDescriptor::CreateBalance(_) => true,
         TaskDescriptor::SettleInternalMatch(_) => true,
+        TaskDescriptor::Withdraw(_) => true,
         // External matches bypass the task queue and are not simulated
         TaskDescriptor::SettleExternalMatch(_) => false,
         TaskDescriptor::NodeStartup(_) => false,
@@ -65,6 +67,7 @@ fn simulate_single_account_task(
         TaskDescriptor::Deposit(t) => simulate_deposit(account, &t),
         TaskDescriptor::CreateBalance(t) => simulate_create_balance(account, &t, state),
         TaskDescriptor::SettleInternalMatch(t) => simulate_settle_internal_match(account, &t),
+        TaskDescriptor::Withdraw(t) => simulate_withdraw(account, &t),
         // Ignore all non-wallet tasks
         TaskDescriptor::SettleExternalMatch(_) => Ok(()),
         TaskDescriptor::NodeStartup(_) => Ok(()),
@@ -99,7 +102,7 @@ fn simulate_deposit(
     account: &mut Account,
     desc: &DepositTaskDescriptor,
 ) -> Result<(), TaskSimulationError> {
-    account.deposit_balance(desc.token, desc.amount)?;
+    account.deposit_balance(desc.token, desc.amount, BalanceLocation::Darkpool)?;
     Ok(())
 }
 
@@ -111,7 +114,13 @@ fn simulate_create_balance(
 ) -> Result<(), TaskSimulationError> {
     // CreateBalance creates a new balance, similar to deposit but for a new balance
     let fee_recipient = state.get_relayer_fee_addr().map_err(TaskSimulationError::state)?;
-    account.create_balance(desc.token, desc.from_address, fee_recipient, desc.authority);
+    account.create_balance(
+        desc.token,
+        desc.from_address,
+        fee_recipient,
+        desc.authority,
+        BalanceLocation::Darkpool,
+    );
     Ok(())
 }
 
@@ -122,4 +131,14 @@ fn simulate_settle_internal_match(
     _desc: &SettleInternalMatchTaskDescriptor,
 ) -> Result<(), TaskSimulationError> {
     todo!("Implement settle internal match simulation");
+}
+
+/// Simulate a `Withdraw` task applied to a wallet
+#[allow(clippy::needless_pass_by_ref_mut)]
+fn simulate_withdraw(
+    _account: &mut Account,
+    _desc: &WithdrawTaskDescriptor,
+) -> Result<(), TaskSimulationError> {
+    warn!("TODO: Implement withdraw simulation");
+    Ok(())
 }

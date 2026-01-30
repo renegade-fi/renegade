@@ -6,24 +6,19 @@ use darkpool_client::DarkpoolClient;
 use external_api::{
     EmptyRequestResponse,
     http::admin::IsLeaderResponse,
-    types::{GetOrderAdminResponse, GetOrdersAdminResponse},
+    types::{ApiAdminOrder, GetOrderAdminResponse, GetOrdersAdminResponse, order::ApiOrder},
 };
 use hyper::HeaderMap;
 use state::State;
 use tracing::info;
-use types_core::Chain;
+use types_core::{Chain, Token, get_all_tokens};
+use util::on_chain::{set_default_protocol_fee, set_protocol_fee};
 
 use crate::{
     error::{ApiServerError, internal_error},
+    param_parsing::parse_order_id_from_params,
     router::{QueryParams, TypedHandler, UrlParams},
 };
-
-// ------------------
-// | Error Messages |
-// ------------------
-
-/// Error message for not implemented
-const ERR_NOT_IMPLEMENTED: &str = "not implemented";
 
 // -----------------------
 // | Preserved Handlers  |
@@ -151,9 +146,29 @@ impl TypedHandler for AdminRefreshMatchFeesHandler {
         _params: UrlParams,
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
-        info!("Refreshing external match fees from contract");
+        info!("Refreshing match fees from contract");
 
-        Err(ApiServerError::not_implemented(ERR_NOT_IMPLEMENTED))
+        // Fetch the default protocol fee from the contract
+        let protocol_fee = self.darkpool_client.get_default_protocol_fee().await?;
+        set_default_protocol_fee(protocol_fee);
+
+        // Fetch the external match fee overrides for each mint
+        let usdc = Token::usdc().get_alloy_address();
+        let tokens = get_all_tokens().into_iter().filter(|t| t.get_alloy_address() != usdc);
+        for token in tokens {
+            if token.get_alloy_address() == usdc {
+                continue;
+            }
+
+            // Fetch the fee override from the contract
+            let addr = token.get_alloy_address();
+            let fee = self.darkpool_client.get_protocol_fee(addr, usdc).await?;
+
+            // Write the fee into the mapping
+            set_protocol_fee(&addr, &usdc, fee);
+        }
+
+        Ok(EmptyRequestResponse {})
     }
 }
 
@@ -162,12 +177,15 @@ impl TypedHandler for AdminRefreshMatchFeesHandler {
 // -------------------
 
 /// Handler for GET /v2/relayer-admin/orders
-pub struct AdminGetOrdersHandler;
+pub struct AdminGetOrdersHandler {
+    /// A handle to the relayer state
+    state: State,
+}
 
 impl AdminGetOrdersHandler {
     /// Constructor
-    pub fn new() -> Self {
-        Self
+    pub fn new(state: State) -> Self {
+        Self { state }
     }
 }
 
@@ -183,17 +201,35 @@ impl TypedHandler for AdminGetOrdersHandler {
         _params: UrlParams,
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
-        Err(ApiServerError::not_implemented(ERR_NOT_IMPLEMENTED))
+        // Get all orders with their admin metadata
+        let orders_data =
+            self.state.get_all_orders_with_matching_pool().await.map_err(internal_error)?;
+
+        // Convert to API types
+        let orders: Vec<ApiAdminOrder> = orders_data
+            .into_iter()
+            .map(|(order, account_id, matching_pool)| ApiAdminOrder {
+                order: ApiOrder::from(order),
+                account_id,
+                matching_pool: matching_pool.to_string(),
+            })
+            .collect();
+
+        // TODO: Paginate
+        Ok(GetOrdersAdminResponse { orders, next_page_token: None })
     }
 }
 
 /// Handler for GET /v2/relayer-admin/orders/:order_id
-pub struct AdminGetOrderByIdHandler;
+pub struct AdminGetOrderByIdHandler {
+    /// A handle to the relayer state
+    state: State,
+}
 
 impl AdminGetOrderByIdHandler {
     /// Constructor
-    pub fn new() -> Self {
-        Self
+    pub fn new(state: State) -> Self {
+        Self { state }
     }
 }
 
@@ -206,9 +242,27 @@ impl TypedHandler for AdminGetOrderByIdHandler {
         &self,
         _headers: HeaderMap,
         _req: Self::Request,
-        _params: UrlParams,
+        params: UrlParams,
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
-        Err(ApiServerError::not_implemented(ERR_NOT_IMPLEMENTED))
+        let order_id = parse_order_id_from_params(&params)?;
+        let account_id = self
+            .state
+            .get_account_id_for_order(&order_id)
+            .await?
+            .ok_or(ApiServerError::order_not_found(order_id))?;
+
+        let order = self
+            .state
+            .get_account_order(&order_id)
+            .await?
+            .ok_or(ApiServerError::order_not_found(order_id))?;
+
+        // Convert to API type
+        let matching_pool = self.state.get_matching_pool_for_order(&order_id).await?;
+        let order: ApiAdminOrder =
+            ApiAdminOrder { order: ApiOrder::from(order), account_id, matching_pool };
+
+        Ok(GetOrderAdminResponse { order })
     }
 }

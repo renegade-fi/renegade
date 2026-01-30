@@ -3,12 +3,11 @@
 use alloy_primitives::{Address, U256};
 
 use crate::{
-    client::{DarkpoolClientInner, RenegadeProvider, erc20::abis::erc20::IERC20::IERC20Instance},
+    client::{DarkpoolClient, RenegadeProvider, erc20::abis::erc20::IERC20::IERC20Instance},
     errors::DarkpoolClientError,
-    traits::DarkpoolImpl,
 };
 
-impl<D: DarkpoolImpl> DarkpoolClientInner<D> {
+impl DarkpoolClient {
     /// Get the ticker of a given erc20 token
     pub async fn get_erc20_ticker(&self, token: Address) -> Result<String, DarkpoolClientError> {
         let erc20 = self.erc20_client(token);

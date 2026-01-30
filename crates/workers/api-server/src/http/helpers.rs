@@ -1,7 +1,7 @@
 //! Helper functions for the HTTP API
 
 use state::State;
-use types_tasks::{NewAccountTaskDescriptor, TaskDescriptor, TaskIdentifier};
+use types_tasks::{TaskDescriptor, TaskIdentifier};
 
 use crate::error::ApiServerError;
 

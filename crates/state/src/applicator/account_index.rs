@@ -381,7 +381,7 @@ pub(crate) mod test {
         // Verify balance was updated
         let tx = applicator.db().new_read_tx().unwrap();
         let retrieved_account = tx.get_account(&account.id).unwrap().unwrap();
-        let retrieved_balance = retrieved_account.get_balance(&mint).unwrap();
+        let retrieved_balance = retrieved_account.get_eoa_balance(&mint).unwrap();
         assert_eq!(retrieved_balance.amount(), AMOUNT_ADDED);
 
         // Verify orders using the updated balance's mint have updated matchable amounts

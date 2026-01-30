@@ -5,10 +5,6 @@ use alloy_sol_types::Error as SolError;
 /// The error type returned by the darkpool client interface
 #[derive(Clone, Debug, thiserror::Error)]
 pub enum DarkpoolClientError {
-    /// Error thrown when a target public blinder share was not found
-    /// in a given transaction
-    #[error("blinder not found")]
-    BlinderNotFound,
     /// Error thrown when a commitment can't be found in the Merkle tree
     #[error("commitment not found")]
     CommitmentNotFound,
