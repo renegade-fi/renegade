@@ -339,5 +339,5 @@ fn create_ring0_balance(
     let share_stream_seed = Scalar::zero();
     let recovery_stream_seed = Scalar::zero();
     let state_wrapper = StateWrapper::new(bal, share_stream_seed, recovery_stream_seed);
-    Balance::new(state_wrapper)
+    Balance::new_eoa(state_wrapper)
 }
