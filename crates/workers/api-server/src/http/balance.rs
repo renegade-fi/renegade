@@ -1,7 +1,8 @@
 //! Route handlers for balance operations
 
+use alloy::primitives::Address;
 use async_trait::async_trait;
-use circuit_types::{baby_jubjub::BabyJubJubPoint, schnorr::SchnorrPublicKey};
+use circuit_types::{Amount, baby_jubjub::BabyJubJubPoint, schnorr::SchnorrPublicKey};
 use external_api::{
     EmptyRequestResponse,
     http::balance::{
@@ -11,9 +12,13 @@ use external_api::{
     types::crypto_primitives::ApiSchnorrPublicKey,
 };
 use hyper::HeaderMap;
+use itertools::Itertools;
 use renegade_solidity_abi::v2::IDarkpoolV2::DepositAuth;
 use state::State;
-use types_tasks::{CreateBalanceTaskDescriptor, DepositTaskDescriptor};
+use types_core::AccountId;
+use types_tasks::{
+    CreateBalanceTaskDescriptor, DepositTaskDescriptor, TaskDescriptor, WithdrawTaskDescriptor,
+};
 use util::hex::scalar_from_hex_string;
 
 use crate::{
@@ -56,12 +61,15 @@ fn parse_schnorr_public_key(
 // ---------------------
 
 /// Handler for GET /v2/account/:account_id/balances
-pub struct GetBalancesHandler;
+pub struct GetBalancesHandler {
+    /// A handle to the relayer state
+    state: State,
+}
 
 impl GetBalancesHandler {
     /// Constructor
-    pub fn new() -> Self {
-        Self
+    pub fn new(state: State) -> Self {
+        Self { state }
     }
 }
 
@@ -74,10 +82,13 @@ impl TypedHandler for GetBalancesHandler {
         &self,
         _headers: HeaderMap,
         _req: Self::Request,
-        _params: UrlParams,
+        params: UrlParams,
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
-        Err(ApiServerError::not_implemented(ERR_NOT_IMPLEMENTED))
+        let account_id = parse_account_id_from_params(&params)?;
+        let balances = self.state.get_account_balances(&account_id).await?;
+        let balances = balances.into_iter().map(Into::into).collect_vec();
+        Ok(GetBalancesResponse { balances })
     }
 }
 
@@ -163,7 +174,7 @@ impl TypedHandler for DepositBalanceHandler {
         let updated_balance = account.get_balance(&token).cloned().unwrap();
 
         // Create the appropriate task descriptor based on whether balance exists
-        let descriptor: types_tasks::TaskDescriptor = if !has_balance {
+        let descriptor: TaskDescriptor = if !has_balance {
             CreateBalanceTaskDescriptor::new(
                 account_id,
                 from_address,
@@ -189,12 +200,36 @@ impl TypedHandler for DepositBalanceHandler {
 }
 
 /// Handler for POST /v2/account/:account_id/balances/:mint/withdraw
-pub struct WithdrawBalanceHandler;
+pub struct WithdrawBalanceHandler {
+    /// The global state
+    state: State,
+}
 
 impl WithdrawBalanceHandler {
     /// Constructor
-    pub fn new() -> Self {
-        Self
+    pub fn new(state: State) -> Self {
+        Self { state }
+    }
+
+    /// Validate a withdrawal
+    async fn validate_withdrawal(
+        &self,
+        account_id: AccountId,
+        token: Address,
+        amount: Amount,
+    ) -> Result<(), ApiServerError> {
+        let balance = self.state.get_account_balance(&account_id, &token).await?;
+        let balance = balance.ok_or(ApiServerError::balance_not_found(token))?;
+
+        if balance.amount() < amount {
+            return Err(bad_request(format!(
+                "balance amount is less than the withdrawal amount: {} < {}",
+                balance.amount(),
+                amount
+            )));
+        }
+
+        Ok(())
     }
 }
 
@@ -206,10 +241,21 @@ impl TypedHandler for WithdrawBalanceHandler {
     async fn handle_typed(
         &self,
         _headers: HeaderMap,
-        _req: Self::Request,
-        _params: UrlParams,
+        req: Self::Request,
+        params: UrlParams,
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
-        Err(ApiServerError::not_implemented(ERR_NOT_IMPLEMENTED))
+        let account_id = parse_account_id_from_params(&params)?;
+        let token = parse_mint_from_params(&params)?;
+
+        // Validate the withdrawal
+        self.validate_withdrawal(account_id, token, req.amount).await?;
+
+        // Enqueue the withdrawal task
+        let descriptor: TaskDescriptor =
+            WithdrawTaskDescriptor::new(account_id, token, req.amount, req.signature).into();
+        let task_id = append_task(descriptor, &self.state).await?;
+
+        Ok(WithdrawBalanceResponse { task_id, completed: false })
     }
 }

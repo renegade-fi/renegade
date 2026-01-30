@@ -132,14 +132,14 @@ impl HttpServer {
         );
 
         // GET /v2/account/:account_id/seeds
-        router.add_unauthenticated_route(
+        router.add_account_authenticated_route(
             &Method::GET,
             GET_ACCOUNT_SEEDS_ROUTE.to_string(),
-            GetAccountSeedsHandler::new(),
+            GetAccountSeedsHandler::new(state.clone()),
         );
 
         // POST /v2/account/:account_id/sync
-        router.add_unauthenticated_route(
+        router.add_account_authenticated_route(
             &Method::POST,
             SYNC_ACCOUNT_ROUTE.to_string(),
             SyncAccountHandler::new(),
@@ -151,7 +151,7 @@ impl HttpServer {
         router.add_account_authenticated_route(
             &Method::GET,
             GET_ORDERS_ROUTE.to_string(),
-            GetOrdersHandler::new(),
+            GetOrdersHandler::new(state.clone()),
         );
 
         // POST /v2/account/:account_id/orders
@@ -186,31 +186,31 @@ impl HttpServer {
         // --- Balance Routes (v2) --- //
 
         // GET /v2/account/:account_id/balances
-        router.add_unauthenticated_route(
+        router.add_account_authenticated_route(
             &Method::GET,
             GET_BALANCES_ROUTE.to_string(),
-            GetBalancesHandler::new(),
+            GetBalancesHandler::new(state.clone()),
         );
 
         // GET /v2/account/:account_id/balances/:mint
-        router.add_unauthenticated_route(
+        router.add_account_authenticated_route(
             &Method::GET,
             GET_BALANCE_BY_MINT_ROUTE.to_string(),
             GetBalanceByMintHandler::new(state.clone()),
         );
 
         // POST /v2/account/:account_id/balances/:mint/deposit
-        router.add_unauthenticated_route(
+        router.add_account_authenticated_route(
             &Method::POST,
             DEPOSIT_BALANCE_ROUTE.to_string(),
             DepositBalanceHandler::new(state.clone()),
         );
 
         // POST /v2/account/:account_id/balances/:mint/withdraw
-        router.add_unauthenticated_route(
+        router.add_account_authenticated_route(
             &Method::POST,
             WITHDRAW_BALANCE_ROUTE.to_string(),
-            WithdrawBalanceHandler::new(),
+            WithdrawBalanceHandler::new(state.clone()),
         );
 
         // --- Task Routes (v2) --- //
@@ -328,14 +328,14 @@ impl HttpServer {
         router.add_admin_authenticated_route(
             &Method::GET,
             ADMIN_GET_ORDERS_ROUTE.to_string(),
-            AdminGetOrdersHandler::new(),
+            AdminGetOrdersHandler::new(state.clone()),
         );
 
         // GET /v2/relayer-admin/orders/:order_id (v2)
         router.add_admin_authenticated_route(
             &Method::GET,
             ADMIN_GET_ORDER_BY_ID_ROUTE.to_string(),
-            AdminGetOrderByIdHandler::new(),
+            AdminGetOrderByIdHandler::new(state.clone()),
         );
 
         Ok(router)

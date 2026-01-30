@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use util::hex::embedded_scalar_from_decimal_string;
 
 use crate::error::ApiTypeError;
+use crate::serde_helpers;
 
 // -----------------------
 // | Cryptographic Types |
@@ -21,14 +22,15 @@ use crate::error::ApiTypeError;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ApiPoseidonCSPRNG {
     /// The seed of the CSPRNG
-    pub seed: String,
+    #[serde(with = "serde_helpers::scalar_as_string")]
+    pub seed: Scalar,
     /// The current index of the CSPRNG
     pub index: u64,
 }
 
 impl From<PoseidonCSPRNG> for ApiPoseidonCSPRNG {
     fn from(csprng: PoseidonCSPRNG) -> Self {
-        Self { seed: csprng.seed.to_string(), index: csprng.index }
+        Self { seed: csprng.seed, index: csprng.index }
     }
 }
 
