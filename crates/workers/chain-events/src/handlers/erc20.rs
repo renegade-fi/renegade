@@ -108,12 +108,34 @@ impl OnChainEventListenerExecutor {
             .try_into()
             .map_err(|_| OnChainEventListenerError::State(ERR_BALANCE_OVERFLOW.into()))?;
 
-        // Update matching engine cache immediately for consistency
+        // Update matching engine cache immediately
         self.state().update_matching_engine_for_balance(account_id, &balance).await?;
 
         // Non-selected nodes wait before processing to allow primary to handle first
         if !self.should_execute_update(tx_hash).await? {
             self.sleep_for_crash_recovery().await;
+
+            // Re-fetch on-chain balance after sleep to avoid TOCTOU
+            let on_chain_amount = self
+                .darkpool_client()
+                .get_erc20_balance(token, owner)
+                .await?
+                .try_into()
+                .map_err(|_| OnChainEventListenerError::State(ERR_BALANCE_OVERFLOW.into()))?;
+
+            // Check if update still needed
+            let Some(local) = self.state().get_account_balance(&account_id, &token).await? else {
+                return Ok(());
+            };
+            if local.amount() == on_chain_amount {
+                return Ok(());
+            }
+
+            // Update balance to on-chain value
+            *balance.amount_mut() = on_chain_amount;
+
+            // Re-sync cache in case it drifted during sleep
+            self.state().update_matching_engine_for_balance(account_id, &balance).await?;
         }
 
         // Run matching engine and persist balance update
