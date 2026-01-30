@@ -7,7 +7,6 @@ use job_types::{
 use libmdbx::{RW, TransactionKind};
 use system_bus::{SystemBusMessage, TaskStatus, task_topic};
 use tracing::{error, info, instrument};
-use types_core::AccountId;
 use types_gossip::WrappedPeerId;
 use types_tasks::{
     ArchivedQueuedTask, HistoricalTask, QueuedTask, QueuedTaskState, TaskIdentifier, TaskQueueKey,
@@ -96,7 +95,7 @@ impl StateApplicator {
         }
 
         // Pop the task from the queue, remove its assignment, and add it to history
-        let (task, executor) = self
+        let (task, _executor) = self
             .pop_and_record_task(&keys, &task_id, success, &tx)?
             .ok_or_else(|| StateApplicatorError::TaskQueueEmpty(keys[0]))?;
 
@@ -111,11 +110,6 @@ impl StateApplicator {
             // If the queue is non-empty, start the next task
             if let Some(task) = tx.next_runnable_task(&key)? {
                 self.maybe_run_task(&task, &tx)?;
-            }
-
-            if Self::should_run_matching_engine(&executor, &key, &task, &tx)? {
-                // Run the matching engine on all orders that are ready
-                self.run_matching_engine_on_account(key, &tx)?;
             }
         }
 
@@ -269,60 +263,6 @@ impl StateApplicator {
             let job = TaskDriverJob::run(task);
             self.config.task_queue.send(job).map_err(StateApplicatorError::enqueue_task)?;
         }
-
-        Ok(())
-    }
-
-    /// Given the current state of the queue and the last popped task, determine
-    /// if the matching engine should be run.
-    /// This should be the case if the queue is empty, the last task was a
-    /// wallet task, and the current peer is the executor of the last task.
-    fn should_run_matching_engine<T: TransactionKind>(
-        executor: &WrappedPeerId,
-        queue_key: &TaskQueueKey,
-        popped_task: &QueuedTask,
-        tx: &StateTxn<'_, T>,
-    ) -> Result<bool> {
-        let this_node = tx.get_peer_id()?;
-        let queue_empty = !tx.serial_tasks_active(queue_key)?;
-        let is_executor = *executor == this_node;
-        let is_account_task = popped_task.descriptor.is_account_task();
-        Ok(queue_empty && is_executor && is_account_task)
-    }
-
-    /// Run the internal matching engine on all of an account's orders that are
-    /// ready for matching
-    fn run_matching_engine_on_account<T: TransactionKind>(
-        &self,
-        wallet_id: AccountId,
-        tx: &StateTxn<'_, T>,
-    ) -> Result<()> {
-        // TODO: re-implement run_matching_engine_on_account
-        // let wallet = match tx.get_wallet(&wallet_id)? {
-        //     Some(wallet) => wallet,
-        //     // We simply skip running the matching engine if the wallet cannot be
-        // found, this may     // happen in a failed lookup task for example. We
-        // do not want to fail the tx     // in this case
-        //     None => {
-        //         warn!("wallet not found to run internal matching engine on:
-        // {wallet_id}");         return Ok(());
-        //     },
-        // };
-
-        // for order_id in wallet.orders.keys() {
-        //     let order = match tx.get_order_info(order_id)? {
-        //         Some(order) => order,
-        //         None => continue,
-        //     };
-
-        //     if order.ready_for_match() {
-        //         let job = HandshakeManagerJob::InternalMatchingEngine { order:
-        // order.id };         if
-        // self.config.handshake_manager_queue.send(job).is_err() {
-        // error!("error enqueueing internal matching engine job for order {order_id}");
-        //         }
-        //     }
-        // }
 
         Ok(())
     }

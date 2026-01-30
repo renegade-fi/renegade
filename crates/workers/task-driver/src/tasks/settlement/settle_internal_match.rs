@@ -10,6 +10,7 @@ use serde::Serialize;
 use state::error::StateError;
 use tracing::{info, instrument};
 use types_account::OrderId;
+use types_account::balance::BalanceLocation;
 use types_core::MatchResult;
 use types_core::{AccountId, TimestampedPriceFp};
 use types_tasks::SettleInternalMatchTaskDescriptor;
@@ -300,7 +301,7 @@ impl SettleInternalMatchTask {
         let order_id = branch_party!(party_id, self.order_id, self.other_order_id);
         let obligation = self.get_obligation(party_id)?;
 
-        self.processor.update_input_balance(account_id, obligation.input_token, obligation).await?;
+        self.processor.update_input_balance(account_id, BalanceLocation::EOA, obligation).await?;
         self.processor.update_order_amount_in(order_id, obligation).await?;
         Ok(())
     }

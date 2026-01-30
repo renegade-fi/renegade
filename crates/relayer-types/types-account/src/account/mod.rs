@@ -111,13 +111,9 @@ impl Account {
     /// by the account's balance.
     pub fn get_matchable_amount_for_order(&self, order: &Order) -> Amount {
         let token = order.input_token();
-        let bal = match order.ring {
-            PrivacyRing::Ring0 | PrivacyRing::Ring1 => self.get_eoa_balance(&token),
-            PrivacyRing::Ring2 | PrivacyRing::Ring3 => self.get_darkpool_balance(&token),
-        };
-
-        let bal_amt = bal.map(|b| b.amount()).unwrap_or_default();
-        Amount::min(bal_amt, order.intent.inner.amount_in)
+        let location = order.ring.balance_location();
+        let bal = self.get_balance(&token, location).map(|b| b.amount()).unwrap_or_default();
+        Amount::min(bal, order.intent.inner.amount_in)
     }
 
     /// Place an order into the account
@@ -166,6 +162,21 @@ impl Account {
     /// mint
     pub fn get_darkpool_balance_mut(&mut self, mint: &Address) -> Option<&mut Balance> {
         self.balances.get_mut(mint).and_then(|b| b.get_mut(&BalanceLocation::Darkpool))
+    }
+
+    /// Get the balance for an account by its mint and location
+    pub fn get_balance(&self, mint: &Address, location: BalanceLocation) -> Option<&Balance> {
+        self.balances.get(mint).and_then(|b| b.get(&location))
+    }
+
+    /// Get a mutable reference to the balance for an account by its mint and
+    /// location
+    pub fn get_balance_mut(
+        &mut self,
+        mint: &Address,
+        location: BalanceLocation,
+    ) -> Option<&mut Balance> {
+        self.balances.get_mut(mint).and_then(|b| b.get_mut(&location))
     }
 
     /// Get all balances in the account
@@ -279,7 +290,7 @@ mod rkyv_order_impls {
 
     use crate::OrderId;
     use crate::balance::{ArchivedBalance, ArchivedBalanceLocation};
-    use crate::order::{ArchivedPrivacyRing, Order};
+    use crate::order::Order;
 
     use super::ArchivedAccount;
     use super::order::ArchivedOrder;
@@ -306,25 +317,29 @@ mod rkyv_order_impls {
             self.balances.get(mint).and_then(|b| b.get(&ArchivedBalanceLocation::Darkpool))
         }
 
+        /// Get the balance for an account by its mint and location
+        pub fn get_balance(
+            &self,
+            mint: &ArchivedAddress,
+            location: &ArchivedBalanceLocation,
+        ) -> Option<&ArchivedBalance> {
+            self.balances.get(mint).and_then(|b| b.get(location))
+        }
+
         /// Get the matchable amount for an order
         pub fn get_matchable_amount_for_order(
             &self,
             order: &ArchivedOrder,
         ) -> <Amount as rkyv::Archive>::Archived {
             let in_token = &order.intent.inner.in_token;
-            let bal = match order.ring {
-                ArchivedPrivacyRing::Ring0 | ArchivedPrivacyRing::Ring1 => {
-                    self.get_eoa_balance(in_token)
-                },
-                ArchivedPrivacyRing::Ring2 | ArchivedPrivacyRing::Ring3 => {
-                    self.get_darkpool_balance(in_token)
-                },
-            };
+            let location = order.ring.balance_location();
+            let bal = self
+                .get_balance(in_token, &location)
+                .map(|b| b.amount_archived())
+                .unwrap_or_default();
 
-            let bal_amt = bal.map(|b| b.amount_archived()).unwrap_or_default();
             let intent_amt = order.intent.inner.amount_in;
-
-            min(bal_amt, intent_amt)
+            min(bal, intent_amt)
         }
     }
 }

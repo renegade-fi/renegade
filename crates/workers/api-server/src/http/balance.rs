@@ -81,7 +81,12 @@ impl TypedHandler for GetBalancesHandler {
     ) -> Result<Self::Response, ApiServerError> {
         let account_id = parse_account_id_from_params(&params)?;
         let balances = self.state.get_account_balances(&account_id).await?;
-        let balances = balances.into_iter().map(Into::into).collect_vec();
+        let balances = balances
+            .into_iter()
+            .filter(|b| b.location == BalanceLocation::Darkpool)
+            .map(Into::into)
+            .collect_vec();
+
         Ok(GetBalancesResponse { balances })
     }
 }
@@ -114,7 +119,7 @@ impl TypedHandler for GetBalanceByMintHandler {
         let account_id = parse_account_id_from_params(&params)?;
         let token = parse_mint_from_params(&params)?;
 
-        let balance = self.state.get_account_balance(&account_id, &token).await?;
+        let balance = self.state.get_account_darkpool_balance(&account_id, &token).await?;
         let balance = balance.ok_or(not_found(ERR_BALANCE_NOT_FOUND))?;
 
         Ok(GetBalanceByMintResponse { balance: balance.into() })
@@ -216,7 +221,7 @@ impl WithdrawBalanceHandler {
         token: Address,
         amount: Amount,
     ) -> Result<(), ApiServerError> {
-        let balance = self.state.get_account_balance(&account_id, &token).await?;
+        let balance = self.state.get_account_darkpool_balance(&account_id, &token).await?;
         let balance = balance.ok_or(ApiServerError::balance_not_found(token))?;
 
         if balance.amount() < amount {
