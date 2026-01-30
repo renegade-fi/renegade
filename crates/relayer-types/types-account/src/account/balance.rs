@@ -3,6 +3,8 @@
 //! This type wraps a DarkpoolBalance in a StateWrapper, similar to how Order
 //! wraps Intent.
 
+use std::fmt::{self, Display, Formatter};
+
 use alloy::primitives::Address;
 use circuit_types::Amount;
 use darkpool_types::{balance::DarkpoolBalance, state_wrapper::StateWrapper};
@@ -30,6 +32,15 @@ pub enum BalanceLocation {
     EOA,
     /// A balance in the darkpool Merkle state
     Darkpool,
+}
+
+impl Display for BalanceLocation {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            BalanceLocation::EOA => write!(f, "EOA"),
+            BalanceLocation::Darkpool => write!(f, "Darkpool"),
+        }
+    }
 }
 
 impl Balance {

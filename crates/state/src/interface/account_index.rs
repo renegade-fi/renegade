@@ -8,7 +8,7 @@ use circuit_types::Amount;
 use types_account::{
     MatchingPoolName,
     account::{Account, OrderId},
-    balance::Balance,
+    balance::{Balance, BalanceLocation},
     keychain::KeyChain,
     order::Order,
     order_auth::OrderAuth,
@@ -206,15 +206,34 @@ impl StateInner {
         &self,
         account_id: &AccountId,
         token: &Address,
+        location: BalanceLocation,
     ) -> Result<Amount, StateError> {
         let account_id = *account_id;
         let token = *token;
         self.with_read_tx(move |tx| {
-            let balance = tx.get_balance(&account_id, &token)?;
+            let balance = tx.get_balance(&account_id, &token, location)?;
             let amt = balance.map(|b| b.amount()).unwrap_or_default();
             Ok(amt)
         })
         .await
+    }
+
+    /// Get the full state balance for an EOA located balance
+    pub async fn get_account_eoa_balance(
+        &self,
+        account_id: &AccountId,
+        token: &Address,
+    ) -> Result<Option<Balance>, StateError> {
+        self.get_account_balance(account_id, token, BalanceLocation::EOA).await
+    }
+
+    /// Get the full state balance for a darkpool located balance
+    pub async fn get_account_darkpool_balance(
+        &self,
+        account_id: &AccountId,
+        token: &Address,
+    ) -> Result<Option<Balance>, StateError> {
+        self.get_account_balance(account_id, token, BalanceLocation::Darkpool).await
     }
 
     /// Get the full state balance type for an account on a given token
@@ -222,11 +241,12 @@ impl StateInner {
         &self,
         account_id: &AccountId,
         token: &Address,
+        location: BalanceLocation,
     ) -> Result<Option<Balance>, StateError> {
         let account_id = *account_id;
         let token = *token;
         self.with_read_tx(move |tx| {
-            let balance = res_some!(tx.get_balance(&account_id, &token)?);
+            let balance = res_some!(tx.get_balance(&account_id, &token, location)?);
             let balance = balance.deserialize()?;
             Ok(Some(balance))
         })
