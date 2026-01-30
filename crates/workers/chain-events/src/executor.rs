@@ -52,9 +52,7 @@ impl OnChainEventListenerExecutor {
 
     /// The main execution loop for the executor
     pub async fn execute(self) -> Result<(), OnChainEventListenerError> {
-        // TODO: Remove `|| true` to enable the event listener
-        #[allow(clippy::overly_complex_bool_expr)]
-        if in_bootstrap_mode() || true {
+        if in_bootstrap_mode() {
             sleep_forever_async().await;
         }
 
