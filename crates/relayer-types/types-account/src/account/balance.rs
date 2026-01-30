@@ -17,12 +17,35 @@ use serde::{Deserialize, Serialize};
 pub struct Balance {
     /// The balance data wrapped in a state wrapper
     pub state_wrapper: StateWrapper<DarkpoolBalance>,
+    /// The location of the balance
+    pub location: BalanceLocation,
+}
+
+/// The location of a balance
+#[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "rkyv", derive(Archive, RkyvDeserialize, RkyvSerialize))]
+#[cfg_attr(feature = "rkyv", rkyv(derive(Debug, Hash, PartialEq, Eq)))]
+pub enum BalanceLocation {
+    /// An EOA balance approved to the darkpool for trading
+    EOA,
+    /// A balance in the darkpool Merkle state
+    Darkpool,
 }
 
 impl Balance {
     /// Create a new balance from a state wrapper
-    pub fn new(state_wrapper: StateWrapper<DarkpoolBalance>) -> Self {
-        Self { state_wrapper }
+    pub fn new(state_wrapper: StateWrapper<DarkpoolBalance>, location: BalanceLocation) -> Self {
+        Self { state_wrapper, location }
+    }
+
+    /// Create a new EOA balance
+    pub fn new_eoa(state_wrapper: StateWrapper<DarkpoolBalance>) -> Self {
+        Self::new(state_wrapper, BalanceLocation::EOA)
+    }
+
+    /// Create a new darkpool balance
+    pub fn new_darkpool(state_wrapper: StateWrapper<DarkpoolBalance>) -> Self {
+        Self::new(state_wrapper, BalanceLocation::Darkpool)
     }
 
     /// Get a reference to the inner balance
@@ -63,7 +86,7 @@ impl Balance {
 
 impl From<StateWrapper<DarkpoolBalance>> for Balance {
     fn from(balance: StateWrapper<DarkpoolBalance>) -> Self {
-        Self::new(balance)
+        Self::new(balance, BalanceLocation::Darkpool)
     }
 }
 
@@ -85,6 +108,11 @@ impl ArchivedBalance {
     pub fn amount(&self) -> Amount {
         self.state_wrapper.inner.amount.to_native()
     }
+
+    /// Get the amount as an archived type
+    pub fn amount_archived(&self) -> <Amount as rkyv::Archive>::Archived {
+        self.state_wrapper.inner.amount
+    }
 }
 
 #[cfg(feature = "mocks")]
@@ -104,7 +132,7 @@ pub mod mocks {
         let share_stream_seed = Scalar::random(&mut rng);
         let recovery_stream_seed = Scalar::random(&mut rng);
         let state_wrapper = StateWrapper::new(balance, share_stream_seed, recovery_stream_seed);
-        Balance::new(state_wrapper)
+        Balance::new_eoa(state_wrapper)
     }
 
     /// Create a mock balance with a specific mint
@@ -115,7 +143,7 @@ pub mod mocks {
         let share_stream_seed = Scalar::random(&mut rng);
         let recovery_stream_seed = Scalar::random(&mut rng);
         let state_wrapper = StateWrapper::new(balance, share_stream_seed, recovery_stream_seed);
-        Balance::new(state_wrapper)
+        Balance::new_eoa(state_wrapper)
     }
 
     /// Create a mock DarkpoolBalance

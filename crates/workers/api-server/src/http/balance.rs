@@ -15,6 +15,7 @@ use hyper::HeaderMap;
 use itertools::Itertools;
 use renegade_solidity_abi::v2::IDarkpoolV2::DepositAuth;
 use state::State;
+use types_account::balance::BalanceLocation;
 use types_core::AccountId;
 use types_tasks::{
     CreateBalanceTaskDescriptor, DepositTaskDescriptor, TaskDescriptor, WithdrawTaskDescriptor,
@@ -33,13 +34,6 @@ use crate::{
     },
     router::{QueryParams, TypedHandler, UrlParams},
 };
-
-// ------------------
-// | Error Messages |
-// ------------------
-
-/// Error message for not implemented
-const ERR_NOT_IMPLEMENTED: &str = "not implemented";
 
 // ----------------------
 // | Conversion Helpers |
@@ -161,17 +155,21 @@ impl TypedHandler for DepositBalanceHandler {
         let authority = parse_schnorr_public_key(&req.authority)?;
 
         // Update the account for simulation
+        // Deposit implies that the balance is allocated in the darkpool, so the balance
+        // location is set to darkpool for all paths below
         let mut account =
             self.state.get_account(&account_id).await?.ok_or(not_found(ERR_ACCOUNT_NOT_FOUND))?;
         let has_balance = account.has_balance(&token);
 
         if !has_balance {
             let fee_addr = self.state.get_relayer_fee_addr().map_err(internal_error)?;
-            account.create_balance(token, from_address, fee_addr, authority);
+            account.create_darkpool_balance(token, from_address, fee_addr, authority);
         } else {
-            account.deposit_balance(token, amount).map_err(bad_request)?;
+            account
+                .deposit_balance(token, amount, BalanceLocation::Darkpool)
+                .map_err(bad_request)?;
         }
-        let updated_balance = account.get_balance(&token).cloned().unwrap();
+        let updated_balance = account.get_darkpool_balance(&token).cloned().unwrap();
 
         // Create the appropriate task descriptor based on whether balance exists
         let descriptor: TaskDescriptor = if !has_balance {

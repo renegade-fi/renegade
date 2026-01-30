@@ -215,7 +215,8 @@ impl<T: TransactionKind> StateTxn<'_, T> {
         let balances = self.fetch_balances_for_account(account_id)?;
 
         // Reconstruct the account struct
-        Ok(Some(Account { id: header.id, orders, balances, keychain: header.keychain }))
+        let account = Account::new(header.id, orders, balances, header.keychain);
+        Ok(Some(account))
     }
 
     /// Get all account IDs in the database
@@ -262,8 +263,7 @@ impl<T: TransactionKind> StateTxn<'_, T> {
 
     /// Get all orders for an account without deserializing the full account
     pub fn get_account_orders(&self, account_id: &AccountId) -> Result<Vec<Order>, StorageError> {
-        let orders = self.fetch_orders_for_account(account_id)?;
-        Ok(orders.into_values().collect())
+        self.fetch_orders_for_account(account_id)
     }
 
     /// Get all balances for an account without deserializing the full account
@@ -271,17 +271,13 @@ impl<T: TransactionKind> StateTxn<'_, T> {
         &self,
         account_id: &AccountId,
     ) -> Result<Vec<Balance>, StorageError> {
-        let balances = self.fetch_balances_for_account(account_id)?;
-        Ok(balances.into_values().collect())
+        self.fetch_balances_for_account(account_id)
     }
 
     // --- Private Helpers --- //
 
     /// Fetch all orders for an account
-    fn fetch_orders_for_account(
-        &self,
-        account_id: &AccountId,
-    ) -> Result<HashMap<OrderId, Order>, StorageError> {
+    fn fetch_orders_for_account(&self, account_id: &AccountId) -> Result<Vec<Order>, StorageError> {
         let order_prefix = orders_prefix(account_id);
         let order_cursor =
             self.inner().cursor::<String, Order>(ACCOUNTS_TABLE)?.with_key_prefix(&order_prefix);
@@ -290,7 +286,7 @@ impl<T: TransactionKind> StateTxn<'_, T> {
             .map(|res| {
                 let (_key, val) = res?;
                 let order = val.deserialize()?;
-                Ok((order.id, order))
+                Ok(order)
             })
             .collect::<Result<_, StorageError>>()
     }
@@ -299,7 +295,7 @@ impl<T: TransactionKind> StateTxn<'_, T> {
     fn fetch_balances_for_account(
         &self,
         account_id: &AccountId,
-    ) -> Result<HashMap<Address, Balance>, StorageError> {
+    ) -> Result<Vec<Balance>, StorageError> {
         let balance_prefix = balances_prefix(account_id);
         let balance_cursor = self
             .inner()
@@ -310,7 +306,7 @@ impl<T: TransactionKind> StateTxn<'_, T> {
             .map(|res| {
                 let (_key, val) = res?;
                 let balance = val.deserialize()?;
-                Ok((balance.mint(), balance))
+                Ok(balance)
             })
             .collect::<Result<_, StorageError>>()
     }

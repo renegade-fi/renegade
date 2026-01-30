@@ -25,7 +25,7 @@ pub struct ApiAccount {
 #[cfg(feature = "full-api")]
 impl From<Account> for ApiAccount {
     fn from(acct: Account) -> Self {
-        let balances = acct.balances.into_values().map(|balance| balance.into()).collect();
+        let balances = acct.get_all_balances().into_iter().map(|balance| balance.into()).collect();
         let orders = acct.orders.into_values().map(|order| order.into()).collect();
         Self { id: acct.id, orders, balances }
     }

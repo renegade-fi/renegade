@@ -335,7 +335,7 @@ impl CreateBalanceTask {
             DarkpoolBalance::new(self.token, self.from_address, fee_addr, self.authority)
                 .with_amount(self.amount);
         let state_wrapper = StateWrapper::new(bal_inner, share_stream_seed, recovery_stream_seed);
-        let bal = Balance::new(state_wrapper);
+        let bal = Balance::new_darkpool(state_wrapper);
         Ok(bal)
     }
 

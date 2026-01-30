@@ -2,7 +2,7 @@
 
 use state::State;
 use tracing::warn;
-use types_account::Account;
+use types_account::{Account, balance::BalanceLocation};
 use types_tasks::{
     CreateBalanceTaskDescriptor, CreateOrderTaskDescriptor, DepositTaskDescriptor,
     NewAccountTaskDescriptor, QueuedTask, SettleInternalMatchTaskDescriptor, TaskDescriptor,
@@ -102,7 +102,7 @@ fn simulate_deposit(
     account: &mut Account,
     desc: &DepositTaskDescriptor,
 ) -> Result<(), TaskSimulationError> {
-    account.deposit_balance(desc.token, desc.amount)?;
+    account.deposit_balance(desc.token, desc.amount, BalanceLocation::Darkpool)?;
     Ok(())
 }
 
@@ -114,7 +114,13 @@ fn simulate_create_balance(
 ) -> Result<(), TaskSimulationError> {
     // CreateBalance creates a new balance, similar to deposit but for a new balance
     let fee_recipient = state.get_relayer_fee_addr().map_err(TaskSimulationError::state)?;
-    account.create_balance(desc.token, desc.from_address, fee_recipient, desc.authority);
+    account.create_balance(
+        desc.token,
+        desc.from_address,
+        fee_recipient,
+        desc.authority,
+        BalanceLocation::Darkpool,
+    );
     Ok(())
 }
 
