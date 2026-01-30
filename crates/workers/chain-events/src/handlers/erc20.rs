@@ -1,7 +1,9 @@
 //! ERC20 Transfer event handling and subscription management
 
+use std::cmp;
+
 use alloy::{
-    primitives::{Address, B256, TxHash},
+    primitives::{Address, B256, TxHash, U256},
     providers::{DynProvider, Provider},
     rpc::types::{Filter, Log},
     sol_types::SolEvent,
@@ -96,8 +98,8 @@ impl OnChainEventListenerExecutor {
         token: Address,
         tx_hash: TxHash,
     ) -> Result<(), OnChainEventListenerError> {
-        // Fetch current on-chain balance
-        let on_chain_balance = self.darkpool_client().get_erc20_balance(token, owner).await?;
+        // Fetch usable balance: min of ERC20 balance and Permit2 allowance
+        let on_chain_balance = self.get_usable_balance(token, owner).await?;
         let Some(mut balance) = self.state().get_account_balance(&account_id, &token).await? else {
             info!("No balance found for account={account_id:?}, token={token:?}, skipping");
             return Ok(());
@@ -115,10 +117,9 @@ impl OnChainEventListenerExecutor {
         if !self.should_execute_update(tx_hash).await? {
             self.sleep_for_crash_recovery().await;
 
-            // Re-fetch on-chain balance after sleep to avoid TOCTOU
+            // Re-fetch usable balance after sleep to avoid TOCTOU
             let on_chain_amount = self
-                .darkpool_client()
-                .get_erc20_balance(token, owner)
+                .get_usable_balance(token, owner)
                 .await?
                 .try_into()
                 .map_err(|_| OnChainEventListenerError::State(ERR_BALANCE_OVERFLOW.into()))?;
@@ -168,5 +169,17 @@ impl OnChainEventListenerExecutor {
         }
 
         Ok(())
+    }
+
+    /// Get the usable balance for an owner: min of ERC20 balance and Permit2 allowance
+    async fn get_usable_balance(
+        &self,
+        token: Address,
+        owner: Address,
+    ) -> Result<U256, OnChainEventListenerError> {
+        let client = self.darkpool_client();
+        let erc20_balance = client.get_erc20_balance(token, owner).await?;
+        let permit_allowance = client.get_darkpool_allowance(owner, token).await?;
+        Ok(cmp::min(erc20_balance, permit_allowance))
     }
 }
