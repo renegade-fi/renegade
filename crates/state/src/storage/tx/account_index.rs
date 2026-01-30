@@ -328,10 +328,7 @@ impl<T: TransactionKind> StateTxn<'_, T> {
     /// Get the account ID for a given owner address
     ///
     /// Used to route balance update events to the correct account
-    pub fn get_account_for_owner(
-        &self,
-        owner: &Address,
-    ) -> Result<Option<AccountId>, StorageError> {
+    pub fn get_account_by_owner(&self, owner: &Address) -> Result<Option<AccountId>, StorageError> {
         let key = owner_index_key(owner);
         self.inner()
             .read::<_, AccountId>(ACCOUNTS_TABLE, &key)
@@ -362,10 +359,10 @@ impl<T: TransactionKind> StateTxn<'_, T> {
             .collect()
     }
 
-    /// Get the order for a given intent hash
+    /// Get the order by intent hash
     ///
     /// Used to route public intent events to the correct order
-    pub fn get_order_for_intent_hash(
+    pub fn get_order_by_intent_hash(
         &self,
         intent_hash: &B256,
     ) -> Result<Option<(AccountId, OrderId)>, StorageError> {
@@ -794,7 +791,7 @@ mod test {
 
         // Get owner index
         let tx = db.new_read_tx().unwrap();
-        let result = tx.get_account_for_owner(&owner).unwrap();
+        let result = tx.get_account_by_owner(&owner).unwrap();
         assert_eq!(result, Some(account.id));
     }
 
@@ -813,7 +810,7 @@ mod test {
         tx.commit().unwrap();
 
         let tx = db.new_read_tx().unwrap();
-        assert!(tx.get_account_for_owner(&owner).unwrap().is_some());
+        assert!(tx.get_account_by_owner(&owner).unwrap().is_some());
         drop(tx);
 
         // Delete and verify
@@ -822,7 +819,7 @@ mod test {
         tx.commit().unwrap();
 
         let tx = db.new_read_tx().unwrap();
-        assert!(tx.get_account_for_owner(&owner).unwrap().is_none());
+        assert!(tx.get_account_by_owner(&owner).unwrap().is_none());
     }
 
     /// Tests getting all owner index entries
@@ -874,7 +871,7 @@ mod test {
 
         // Get intent index
         let tx = db.new_read_tx().unwrap();
-        let result = tx.get_order_for_intent_hash(&intent_hash).unwrap();
+        let result = tx.get_order_by_intent_hash(&intent_hash).unwrap();
         assert_eq!(result, Some((account.id, order.id)));
     }
 
@@ -896,7 +893,7 @@ mod test {
         tx.commit().unwrap();
 
         let tx = db.new_read_tx().unwrap();
-        assert!(tx.get_order_for_intent_hash(&intent_hash).unwrap().is_some());
+        assert!(tx.get_order_by_intent_hash(&intent_hash).unwrap().is_some());
         drop(tx);
 
         // Delete and verify
@@ -905,6 +902,6 @@ mod test {
         tx.commit().unwrap();
 
         let tx = db.new_read_tx().unwrap();
-        assert!(tx.get_order_for_intent_hash(&intent_hash).unwrap().is_none());
+        assert!(tx.get_order_by_intent_hash(&intent_hash).unwrap().is_none());
     }
 }

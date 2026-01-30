@@ -170,7 +170,7 @@ impl OnChainEventListenerExecutor {
         let mut peers = state.get_cluster_peers(&cluster_id).await?;
         peers.sort();
 
-        let peer_idx = usize::from(tx_hash[31]) % peers.len();
+        let peer_idx = usize::from(*tx_hash.last().unwrap()) % peers.len();
         Ok(peers[peer_idx] == my_id)
     }
 }

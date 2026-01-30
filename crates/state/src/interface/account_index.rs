@@ -169,16 +169,16 @@ impl StateInner {
         .await
     }
 
-    /// Get the account ID for a given owner
+    /// Get the account ID by owner
     ///
     /// Used to route balance update events to the correct account
-    pub async fn get_account_for_owner(
+    pub async fn get_account_by_owner(
         &self,
         owner: &Address,
     ) -> Result<Option<AccountId>, StateError> {
         let owner = *owner;
         self.with_read_tx(move |tx| {
-            let account_id = tx.get_account_for_owner(&owner)?;
+            let account_id = tx.get_account_by_owner(&owner)?;
             Ok(account_id)
         })
         .await
@@ -213,16 +213,16 @@ impl StateInner {
         .await
     }
 
-    /// Get the order for a given intent hash
+    /// Get the order by intent hash
     ///
     /// Used to route public intent events to the correct order
-    pub async fn get_order_for_intent_hash(
+    pub async fn get_order_by_intent_hash(
         &self,
         intent_hash: &B256,
     ) -> Result<Option<(AccountId, OrderId)>, StateError> {
         let intent_hash = *intent_hash;
         self.with_read_tx(move |tx| {
-            let result = tx.get_order_for_intent_hash(&intent_hash)?;
+            let result = tx.get_order_by_intent_hash(&intent_hash)?;
             Ok(result)
         })
         .await

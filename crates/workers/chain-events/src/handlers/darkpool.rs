@@ -85,7 +85,7 @@ impl OnChainEventListenerExecutor {
 
         // Look up order by intent hash, skip if not managed by this relayer
         let Some((account_id, order_id)) =
-            self.state().get_order_for_intent_hash(&intent_hash).await?
+            self.state().get_order_by_intent_hash(&intent_hash).await?
         else {
             return Ok(());
         };
@@ -142,7 +142,7 @@ impl OnChainEventListenerExecutor {
 
         // Look up order by intent hash, skip if not managed by this relayer
         let Some((account_id, order_id)) =
-            self.state().get_order_for_intent_hash(&intent_hash).await?
+            self.state().get_order_by_intent_hash(&intent_hash).await?
         else {
             return Ok(());
         };
@@ -155,7 +155,7 @@ impl OnChainEventListenerExecutor {
             self.sleep_for_crash_recovery().await;
 
             // Check if already processed by another node
-            if self.state().get_order_for_intent_hash(&intent_hash).await?.is_none() {
+            if self.state().get_order_by_intent_hash(&intent_hash).await?.is_none() {
                 return Ok(());
             }
         }

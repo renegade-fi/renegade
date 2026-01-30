@@ -120,7 +120,7 @@ impl StateApplicator {
         // Index the owner for balance event routing
         // TODO: When multiple rings are enabled, only index Ring 0/1 orders
         let owner = order.intent().owner;
-        let is_new_entry = tx.get_account_for_owner(&owner)?.is_none();
+        let is_new_entry = tx.get_account_by_owner(&owner)?.is_none();
         tx.set_owner_index(&owner, &account_id)?;
 
         // Get the info needed to update the matching engine

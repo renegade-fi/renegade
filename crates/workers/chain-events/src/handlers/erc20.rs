@@ -68,8 +68,8 @@ impl OnChainEventListenerExecutor {
         );
 
         // Look up accounts for both parties
-        let from_account = self.state().get_account_for_owner(&from).await?;
-        let to_account = self.state().get_account_for_owner(&to).await?;
+        let from_account = self.state().get_account_by_owner(&from).await?;
+        let to_account = self.state().get_account_by_owner(&to).await?;
 
         // Process balance updates for any accounts we manage
         if let Some(account_id) = from_account {
