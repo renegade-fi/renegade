@@ -120,16 +120,15 @@ impl StateApplicator {
         // Index the owner for balance event routing
         // TODO: When multiple rings are enabled, only index Ring 0/1 orders
         let owner = order.intent().owner;
-        let token = order.input_token();
-        let is_new_entry = tx.get_account_for_owner(&owner, &token)?.is_none();
-        tx.set_owner_index(&owner, &token, &account_id)?;
+        let is_new_entry = tx.get_account_for_owner(&owner)?.is_none();
+        tx.set_owner_index(&owner, &account_id)?;
 
         // Get the info needed to update the matching engine
         let matching_pool = tx.get_matching_pool_for_order(&order.id)?;
         let matchable_amount = tx.get_order_matchable_amount(&order.id)?.unwrap_or_default();
         tx.commit()?;
 
-        // Notify chain-events worker to refresh subscriptions if new owner/token pair
+        // Notify chain-events worker to refresh subscriptions if new owner
         if is_new_entry {
             self.publish_owner_index_changed();
         }
@@ -173,7 +172,7 @@ impl StateApplicator {
         tx.remove_order_from_matching_pool(&order_id)?;
         tx.commit()?;
 
-        // TODO: Clean up owner_index when last Ring 0/1 order for (owner, token) is
+        // TODO: Clean up owner_index when last Ring 0/1 order for owner is
         // removed
 
         // Remove from the matching engine
@@ -208,7 +207,7 @@ impl StateApplicator {
         if matchable_amount > 0 {
             self.matching_engine().upsert_order(account_id, order, matchable_amount, matching_pool);
         } else {
-            // TODO: Clean up owner_index when last Ring 0/1 order for (owner, token) is
+            // TODO: Clean up owner_index when last Ring 0/1 order for owner is
             // removed
             self.matching_engine().cancel_order(order, matching_pool);
         }

@@ -22,7 +22,7 @@ pub const ALL_WALLET_UPDATES_TOPIC: &str = "wallet-updates";
 /// The system bus topic published to for all admin wallet updates, including
 /// order placements and cancellations
 pub const ADMIN_WALLET_UPDATES_TOPIC: &str = "admin-wallet-updates";
-/// The system bus topic published to when a new (owner, token) pair is indexed
+/// The system bus topic published to when a new owner is indexed
 ///
 /// This notifies the chain-events worker to refresh its Transfer event
 /// subscriptions to include the new owner address
@@ -135,7 +135,7 @@ pub enum SystemBusMessage {
     },
 
     // --- Chain Events -- //
-    /// A message indicating that a new (owner, token) pair was indexed
+    /// A message indicating that a new owner was indexed
     ///
     /// Signals the chain-events worker to refresh its Transfer event
     /// subscriptions to include new owner addresses

@@ -68,15 +68,21 @@ impl OnChainEventListenerExecutor {
         );
 
         // Look up accounts for both parties
-        let from_account = self.state().get_account_for_owner(&from, &token).await?;
-        let to_account = self.state().get_account_for_owner(&to, &token).await?;
+        let from_account = self.state().get_account_for_owner(&from).await?;
+        let to_account = self.state().get_account_for_owner(&to).await?;
 
         // Process balance updates for any accounts we manage
         if let Some(account_id) = from_account {
-            self.handle_balance_update(account_id, from, token, tx_hash).await?;
+            let orders = self.state().get_orders_with_input_token(&account_id, &token).await?;
+            if !orders.is_empty() {
+                self.handle_balance_update(account_id, from, token, tx_hash).await?;
+            }
         }
         if let Some(account_id) = to_account {
-            self.handle_balance_update(account_id, to, token, tx_hash).await?;
+            let orders = self.state().get_orders_with_input_token(&account_id, &token).await?;
+            if !orders.is_empty() {
+                self.handle_balance_update(account_id, to, token, tx_hash).await?;
+            }
         }
 
         Ok(())

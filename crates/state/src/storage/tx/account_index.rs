@@ -99,9 +99,9 @@ fn order_index_key(order_id: &OrderId) -> String {
 
 /// Build the key for the owner -> account index
 ///
-/// Maps (owner, token) to account_id for routing balance update events
-fn owner_index_key(owner: &Address, token: &Address) -> String {
-    format!("owner_index:{owner:?}:{token:?}")
+/// Maps owner address to account_id for routing balance update events
+fn owner_index_key(owner: &Address) -> String {
+    format!("owner_index:{owner:?}")
 }
 
 /// Build the key for the intent hash -> order index
@@ -325,15 +325,14 @@ impl<T: TransactionKind> StateTxn<'_, T> {
             .collect::<Result<_, StorageError>>()
     }
 
-    /// Get the account ID for a given owner address and token
+    /// Get the account ID for a given owner address
     ///
     /// Used to route balance update events to the correct account
     pub fn get_account_for_owner(
         &self,
         owner: &Address,
-        token: &Address,
     ) -> Result<Option<AccountId>, StorageError> {
-        let key = owner_index_key(owner, token);
+        let key = owner_index_key(owner);
         self.inner()
             .read::<_, AccountId>(ACCOUNTS_TABLE, &key)
             .map(|opt| opt.map(|archived| archived.deserialize()).transpose())?
@@ -341,10 +340,8 @@ impl<T: TransactionKind> StateTxn<'_, T> {
 
     /// Get all owner index entries
     ///
-    /// Returns all (owner, token, account_id) tuples for state-based sync
-    pub fn get_all_owner_index_entries(
-        &self,
-    ) -> Result<Vec<(Address, Address, AccountId)>, StorageError> {
+    /// Returns all (owner, account_id) tuples for state-based sync
+    pub fn get_all_owner_index_entries(&self) -> Result<Vec<(Address, AccountId)>, StorageError> {
         let prefix = "owner_index:";
         let cursor =
             self.inner().cursor::<String, AccountId>(ACCOUNTS_TABLE)?.with_key_prefix(prefix);
@@ -353,15 +350,14 @@ impl<T: TransactionKind> StateTxn<'_, T> {
             .into_iter()
             .filter_map(|res| {
                 let (key, val) = res.ok()?;
-                // Parse key format: "owner_index:{owner:?}:{token:?}"
-                let parts: Vec<&str> = key.splitn(3, ':').collect();
-                if parts.len() != 3 {
+                // Parse key format: "owner_index:{owner:?}"
+                let parts: Vec<&str> = key.splitn(2, ':').collect();
+                if parts.len() != 2 {
                     return None;
                 }
                 let owner = parts[1].parse::<Address>().ok()?;
-                let token = parts[2].parse::<Address>().ok()?;
                 let account_id = val.deserialize().ok()?;
-                Some(Ok((owner, token, account_id)))
+                Some(Ok((owner, account_id)))
             })
             .collect()
     }
@@ -442,22 +438,21 @@ impl StateTxn<'_, RW> {
         Ok(())
     }
 
-    /// Set the owner index mapping for a (owner, token) pair
+    /// Set the owner index mapping for an owner
     ///
-    /// Maps owner address + token to the account that holds the balance
+    /// Maps owner address to the account that holds the balance
     pub fn set_owner_index(
         &self,
         owner: &Address,
-        token: &Address,
         account_id: &AccountId,
     ) -> Result<(), StorageError> {
-        let key = owner_index_key(owner, token);
+        let key = owner_index_key(owner);
         self.inner().write(ACCOUNTS_TABLE, &key, account_id)
     }
 
-    /// Delete the owner index mapping for a (owner, token) pair
-    pub fn delete_owner_index(&self, owner: &Address, token: &Address) -> Result<(), StorageError> {
-        let key = owner_index_key(owner, token);
+    /// Delete the owner index mapping for an owner
+    pub fn delete_owner_index(&self, owner: &Address) -> Result<(), StorageError> {
+        let key = owner_index_key(owner);
         self.inner().delete(ACCOUNTS_TABLE, &key)?;
         Ok(())
     }
@@ -791,17 +786,15 @@ mod test {
 
         let account = mock_account();
         let owner = Address::from([0xAA; 20]);
-        let token = Address::from([0xBB; 20]);
-
         // Set owner index
         let tx = db.new_write_tx().unwrap();
         tx.new_account(&account).unwrap();
-        tx.set_owner_index(&owner, &token, &account.id).unwrap();
+        tx.set_owner_index(&owner, &account.id).unwrap();
         tx.commit().unwrap();
 
         // Get owner index
         let tx = db.new_read_tx().unwrap();
-        let result = tx.get_account_for_owner(&owner, &token).unwrap();
+        let result = tx.get_account_for_owner(&owner).unwrap();
         assert_eq!(result, Some(account.id));
     }
 
@@ -813,25 +806,23 @@ mod test {
 
         let account = mock_account();
         let owner = Address::from([0xAA; 20]);
-        let token = Address::from([0xBB; 20]);
-
         // Set and verify
         let tx = db.new_write_tx().unwrap();
         tx.new_account(&account).unwrap();
-        tx.set_owner_index(&owner, &token, &account.id).unwrap();
+        tx.set_owner_index(&owner, &account.id).unwrap();
         tx.commit().unwrap();
 
         let tx = db.new_read_tx().unwrap();
-        assert!(tx.get_account_for_owner(&owner, &token).unwrap().is_some());
+        assert!(tx.get_account_for_owner(&owner).unwrap().is_some());
         drop(tx);
 
         // Delete and verify
         let tx = db.new_write_tx().unwrap();
-        tx.delete_owner_index(&owner, &token).unwrap();
+        tx.delete_owner_index(&owner).unwrap();
         tx.commit().unwrap();
 
         let tx = db.new_read_tx().unwrap();
-        assert!(tx.get_account_for_owner(&owner, &token).unwrap().is_none());
+        assert!(tx.get_account_for_owner(&owner).unwrap().is_none());
     }
 
     /// Tests getting all owner index entries
@@ -844,27 +835,22 @@ mod test {
         let account2 = mock_account();
         let owner1 = Address::from([0xAA; 20]);
         let owner2 = Address::from([0xBB; 20]);
-        let token1 = Address::from([0x11; 20]);
-        let token2 = Address::from([0x22; 20]);
-
         // Set multiple owner indices
         let tx = db.new_write_tx().unwrap();
         tx.new_account(&account1).unwrap();
         tx.new_account(&account2).unwrap();
-        tx.set_owner_index(&owner1, &token1, &account1.id).unwrap();
-        tx.set_owner_index(&owner1, &token2, &account1.id).unwrap();
-        tx.set_owner_index(&owner2, &token1, &account2.id).unwrap();
+        tx.set_owner_index(&owner1, &account1.id).unwrap();
+        tx.set_owner_index(&owner2, &account2.id).unwrap();
         tx.commit().unwrap();
 
         // Get all entries
         let tx = db.new_read_tx().unwrap();
         let entries = tx.get_all_owner_index_entries().unwrap();
-        assert_eq!(entries.len(), 3);
+        assert_eq!(entries.len(), 2);
 
         // Verify entries contain expected mappings
-        assert!(entries.contains(&(owner1, token1, account1.id)));
-        assert!(entries.contains(&(owner1, token2, account1.id)));
-        assert!(entries.contains(&(owner2, token1, account2.id)));
+        assert!(entries.contains(&(owner1, account1.id)));
+        assert!(entries.contains(&(owner2, account2.id)));
     }
 
     // --- Intent Hash Index Tests ---

@@ -169,18 +169,16 @@ impl StateInner {
         .await
     }
 
-    /// Get the account ID for a given owner and token
+    /// Get the account ID for a given owner
     ///
     /// Used to route balance update events to the correct account
     pub async fn get_account_for_owner(
         &self,
         owner: &Address,
-        token: &Address,
     ) -> Result<Option<AccountId>, StateError> {
         let owner = *owner;
-        let token = *token;
         self.with_read_tx(move |tx| {
-            let account_id = tx.get_account_for_owner(&owner, &token)?;
+            let account_id = tx.get_account_for_owner(&owner)?;
             Ok(account_id)
         })
         .await
@@ -304,7 +302,7 @@ impl StateInner {
         self.with_read_tx(|tx| {
             let entries = tx.get_all_owner_index_entries()?;
             let owners: std::collections::HashSet<_> =
-                entries.into_iter().map(|(owner, _, _)| owner).collect();
+                entries.into_iter().map(|(owner, _)| owner).collect();
             Ok(owners.into_iter().collect())
         })
         .await
