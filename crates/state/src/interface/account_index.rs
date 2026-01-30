@@ -201,6 +201,19 @@ impl StateInner {
         .await
     }
 
+    /// Get all tracked owners from the owner index
+    ///
+    /// Returns a deduplicated list of owner addresses that have balances
+    pub async fn get_all_tracked_owners(&self) -> Result<Vec<Address>, StateError> {
+        self.with_read_tx(|tx| {
+            let entries = tx.get_all_owner_index_entries()?;
+            let owners: std::collections::HashSet<_> =
+                entries.into_iter().map(|(owner, _, _)| owner).collect();
+            Ok(owners.into_iter().collect())
+        })
+        .await
+    }
+
     // -----------
     // | Setters |
     // -----------

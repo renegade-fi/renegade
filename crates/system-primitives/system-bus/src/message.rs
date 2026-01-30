@@ -22,6 +22,11 @@ pub const ALL_WALLET_UPDATES_TOPIC: &str = "wallet-updates";
 /// The system bus topic published to for all admin wallet updates, including
 /// order placements and cancellations
 pub const ADMIN_WALLET_UPDATES_TOPIC: &str = "admin-wallet-updates";
+/// The system bus topic published to when a new (owner, token) pair is indexed
+///
+/// This notifies the chain-events worker to refresh its Transfer event
+/// subscriptions to include the new owner address
+pub const OWNER_INDEX_CHANGED_TOPIC: &str = "owner-index-changed";
 
 /// Get the topic name for a given wallet
 pub fn account_topic(account_id: &AccountId) -> String {
@@ -128,6 +133,13 @@ pub enum SystemBusMessage {
         /// The ID of the account that was updated
         account_id: AccountId,
     },
+
+    // --- Chain Events -- //
+    /// A message indicating that a new (owner, token) pair was indexed
+    ///
+    /// Signals the chain-events worker to refresh its Transfer event
+    /// subscriptions to include new owner addresses
+    OwnerIndexChanged,
 }
 
 /// A wrapper around a SystemBusMessage containing the topic, used for

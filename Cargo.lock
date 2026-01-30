@@ -2475,6 +2475,7 @@ dependencies = [
  "rand 0.8.5",
  "renegade-metrics",
  "state",
+ "system-bus",
  "tokio",
  "tracing",
  "types-account",

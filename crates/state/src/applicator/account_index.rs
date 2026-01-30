@@ -14,6 +14,8 @@ use types_account::{
 };
 use types_core::AccountId;
 
+use system_bus::{OWNER_INDEX_CHANGED_TOPIC, SystemBusMessage};
+
 use crate::{
     applicator::error::StateApplicatorError,
     storage::{traits::RkyvValue, tx::StateTxn},
@@ -115,10 +117,22 @@ impl StateApplicator {
         let intent_hash = compute_intent_hash(order.intent(), self.config.executor_address);
         tx.set_intent_index(&intent_hash, &account_id, &order.id)?;
 
+        // Index the owner for balance event routing
+        // TODO: When multiple rings are enabled, only index Ring 0/1 orders
+        let owner = order.intent().owner;
+        let token = order.input_token();
+        let is_new_entry = tx.get_account_for_owner(&owner, &token)?.is_none();
+        tx.set_owner_index(&owner, &token, &account_id)?;
+
         // Get the info needed to update the matching engine
         let matching_pool = tx.get_matching_pool_for_order(&order.id)?;
         let matchable_amount = tx.get_order_matchable_amount(&order.id)?.unwrap_or_default();
         tx.commit()?;
+
+        // Notify chain-events worker to refresh subscriptions if new owner/token pair
+        if is_new_entry {
+            self.publish_owner_index_changed();
+        }
 
         // Update the matching engine book
         if matchable_amount > 0 {
@@ -159,6 +173,9 @@ impl StateApplicator {
         tx.remove_order_from_matching_pool(&order_id)?;
         tx.commit()?;
 
+        // TODO: Clean up owner_index when last Ring 0/1 order for (owner, token) is
+        // removed
+
         // Remove from the matching engine
         self.matching_engine().cancel_order(&order, matching_pool);
         Ok(ApplicatorReturnType::None)
@@ -191,6 +208,8 @@ impl StateApplicator {
         if matchable_amount > 0 {
             self.matching_engine().upsert_order(account_id, order, matchable_amount, matching_pool);
         } else {
+            // TODO: Clean up owner_index when last Ring 0/1 order for (owner, token) is
+            // removed
             self.matching_engine().cancel_order(order, matching_pool);
         }
         Ok(ApplicatorReturnType::None)
@@ -208,9 +227,6 @@ impl StateApplicator {
             return Err(StateApplicatorError::reject("account not found"));
         }
         tx.update_balance(&account_id, balance)?;
-
-        // Index the balance for owner lookup (enables routing balance update events)
-        tx.set_owner_index(&balance.owner(), &balance.mint(), &account_id)?;
         tx.commit()?;
 
         // Open a read transaction to get order info for matching engine updates
@@ -220,6 +236,17 @@ impl StateApplicator {
         update_matchable_amounts(&engine, &tx, account_id, &balance.mint(), balance.amount())?;
 
         Ok(ApplicatorReturnType::None)
+    }
+
+    // -----------
+    // | Helpers |
+    // -----------
+
+    /// Notify the chain-events worker to refresh its Transfer event
+    /// subscriptions
+    fn publish_owner_index_changed(&self) {
+        self.system_bus()
+            .publish(OWNER_INDEX_CHANGED_TOPIC.to_string(), SystemBusMessage::OwnerIndexChanged);
     }
 }
 
