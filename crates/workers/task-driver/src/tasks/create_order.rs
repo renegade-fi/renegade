@@ -7,7 +7,7 @@ use std::{
 
 use alloy::primitives::{Address, U256};
 use async_trait::async_trait;
-use circuit_types::{Amount, primitives::schnorr::SchnorrPublicKey};
+use circuit_types::{Amount, schnorr::SchnorrPublicKey};
 use constants::Scalar;
 use darkpool_client::{DarkpoolClient, errors::DarkpoolClientError};
 use darkpool_types::{

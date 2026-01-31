@@ -2,7 +2,6 @@
 
 use alloy::sol_types::SolValue;
 use alloy_primitives::{Address, B256, keccak256};
-use circuit_types::Amount;
 use darkpool_types::intent::Intent;
 use matching_engine_core::MatchingEngine;
 use renegade_solidity_abi::v2::IDarkpoolV2;
@@ -38,43 +37,31 @@ pub fn compute_intent_hash(intent: &Intent, executor: Address) -> B256 {
     keccak256(permit.abi_encode())
 }
 
-/// Update the matching engine cache for a single order based on balance
-fn update_order_matchable_amount<T: libmdbx::TransactionKind>(
-    engine: &MatchingEngine,
-    tx: &StateTxn<'_, T>,
-    account_id: AccountId,
-    order_id: &OrderId,
-    balance_amount: Amount,
-) -> Result<()> {
-    let Some(archived_order) = tx.get_order(order_id)? else {
-        tracing::warn!("order {order_id} not found, skipping matching engine cache update");
-        return Ok(());
-    };
-    let order = Order::from_archived(&archived_order)?;
-
-    let matching_pool = tx.get_matching_pool_for_order(order_id)?;
-    let matchable_amount = Amount::min(balance_amount, order.amount_in());
-
-    if matchable_amount > 0 {
-        engine.upsert_order(account_id, &order, matchable_amount, matching_pool);
-    } else {
-        engine.cancel_order(&order, matching_pool);
-    }
-
-    Ok(())
-}
-
 /// Update the matching engine cache for orders affected by a balance change
 pub fn update_matchable_amounts<T: libmdbx::TransactionKind>(
     engine: &MatchingEngine,
     tx: &StateTxn<'_, T>,
     account_id: AccountId,
-    token: &Address,
-    balance_amount: Amount,
+    balance: &Balance,
 ) -> Result<()> {
-    let orders = tx.get_orders_with_input_token(&account_id, token)?;
-    for order_id in orders {
-        update_order_matchable_amount(engine, tx, account_id, &order_id, balance_amount)?;
+    let affected_order_ids = tx.get_orders_with_input_token(&account_id, &balance.mint())?;
+    for order_id in affected_order_ids {
+        let order = match tx.get_order(&order_id)? {
+            Some(archived_order) => Order::from_archived(&archived_order)?,
+            None => {
+                tracing::warn!("order {order_id} not found, skipping matchable amount update");
+                continue;
+            },
+        };
+
+        // Fetch the information the matching engine needs to update
+        let matching_pool = tx.get_matching_pool_for_order(&order_id)?;
+        let matchable_amount = tx.get_order_matchable_amount(&order_id)?.unwrap_or_default();
+        if matchable_amount > 0 {
+            engine.upsert_order(account_id, &order, matchable_amount, matching_pool);
+        } else {
+            engine.cancel_order(&order, matching_pool);
+        }
     }
     Ok(())
 }
@@ -248,7 +235,7 @@ impl StateApplicator {
         // We do this after committing to ensure the balance state is durable
         let engine = self.matching_engine();
         let tx = self.db().new_read_tx()?;
-        update_matchable_amounts(&engine, &tx, account_id, &balance.mint(), balance.amount())?;
+        update_matchable_amounts(&engine, &tx, account_id, balance)?;
 
         Ok(ApplicatorReturnType::None)
     }
@@ -339,8 +326,7 @@ pub(crate) mod test {
         // Check that the order is not in the matching engine
         let matching_pool = tx.get_matching_pool_for_order(&order.id).unwrap();
         let contains_order = applicator.matching_engine().contains_order(&order, matching_pool);
-        assert!(!contains_order); // zero matchable amount, so not in the
-        // matching engine
+        assert!(!contains_order); // zero matchable amount, so not in the matching engine
     }
 
     /// Test adding an order to an account with a balance

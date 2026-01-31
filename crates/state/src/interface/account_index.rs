@@ -363,12 +363,11 @@ impl StateInner {
         account_id: AccountId,
         balance: &Balance,
     ) -> Result<(), StateError> {
-        let token = balance.mint();
-        let balance_amount = balance.amount();
+        let balance = balance.clone();
         let engine = self.matching_engine.clone();
 
         self.with_read_tx(move |tx| {
-            update_matchable_amounts(&engine, tx, account_id, &token, balance_amount)?;
+            update_matchable_amounts(&engine, tx, account_id, &balance)?;
             Ok(())
         })
         .await
