@@ -262,6 +262,30 @@ impl From<BoundedMatchResult> for ApiBoundedMatchResult {
     }
 }
 
+#[cfg(feature = "full-api")]
+impl From<ApiBoundedMatchResult> for BoundedMatchResult {
+    fn from(api_result: ApiBoundedMatchResult) -> Self {
+        // The API price is in units of external output / external input
+        // which equals internal input / internal output
+        // So the internal price is the inverse
+        let internal_price = api_result.price_fp.inverse().expect("price is zero");
+
+        // The API amounts are the external party's input amounts
+        // To get internal party input amounts, multiply by the API price
+        let min_internal_scalar = api_result.price_fp.floor_mul_int(api_result.min_input_amount);
+        let max_internal_scalar = api_result.price_fp.floor_mul_int(api_result.max_input_amount);
+
+        Self {
+            internal_party_input_token: api_result.output_mint,
+            internal_party_output_token: api_result.input_mint,
+            min_internal_party_amount_in: scalar_to_u128(&min_internal_scalar),
+            max_internal_party_amount_in: scalar_to_u128(&max_internal_scalar),
+            price: internal_price,
+            block_deadline: 0,
+        }
+    }
+}
+
 /// Fee rates for a match
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FeeTakeRate {
