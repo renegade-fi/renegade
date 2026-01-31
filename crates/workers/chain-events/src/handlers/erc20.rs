@@ -3,15 +3,17 @@
 use std::cmp;
 
 use alloy::{
-    primitives::{Address, B256, TxHash, U256},
+    primitives::{Address, B256, TxHash},
     providers::{DynProvider, Provider},
     rpc::types::{Filter, Log},
     sol_types::SolEvent,
 };
+use circuit_types::Amount;
 use darkpool_client::client::erc20::abis::erc20::IERC20;
 use futures_util::Stream;
 use job_types::matching_engine::MatchingEngineWorkerJob;
 use tracing::{info, warn};
+use types_account::balance::Balance;
 use types_core::{AccountId, get_all_tokens};
 
 use crate::{error::OnChainEventListenerError, executor::OnChainEventListenerExecutor};
@@ -98,51 +100,90 @@ impl OnChainEventListenerExecutor {
         token: Address,
         tx_hash: TxHash,
     ) -> Result<(), OnChainEventListenerError> {
-        // Fetch usable balance: min of ERC20 balance and Permit2 allowance
-        let on_chain_balance = self.get_usable_balance(token, owner).await?;
-        let Some(mut balance) = self.state().get_account_balance(&account_id, &token).await? else {
-            info!("No balance found for account={account_id:?}, token={token:?}, skipping");
+        let amount = self.fetch_usable_amount(token, owner).await?;
+
+        // Get or create balance (returns None if amount == 0 and no record)
+        let Some(mut balance) =
+            self.get_or_create_balance(account_id, owner, token, amount).await?
+        else {
             return Ok(());
         };
 
-        // Update local balance to match on-chain state
-        *balance.amount_mut() = on_chain_balance
-            .try_into()
-            .map_err(|_| OnChainEventListenerError::State(ERR_BALANCE_OVERFLOW.into()))?;
-
-        // Update matching engine cache immediately
+        // Update amount and cache
+        *balance.amount_mut() = amount;
         self.state().update_matching_engine_for_balance(account_id, &balance).await?;
 
-        // Non-selected nodes wait before processing to allow primary to handle first
+        // Crash recovery: non-selected nodes wait and recheck
         if !self.should_execute_update(tx_hash).await? {
             self.sleep_for_crash_recovery().await;
 
-            // Re-fetch usable balance after sleep to avoid TOCTOU
-            let on_chain_amount = self
-                .get_usable_balance(token, owner)
-                .await?
-                .try_into()
-                .map_err(|_| OnChainEventListenerError::State(ERR_BALANCE_OVERFLOW.into()))?;
-
-            // Check if update still needed
-            let Some(local) = self.state().get_account_balance(&account_id, &token).await? else {
+            let local_amount = self.fetch_usable_amount(token, owner).await?;
+            let Some(mut balance) =
+                self.get_or_create_balance(account_id, owner, token, local_amount).await?
+            else {
                 return Ok(());
             };
-            if local.amount() == on_chain_amount {
+
+            // Already handled by selected node
+            if balance.amount() == local_amount {
                 return Ok(());
             }
 
-            // Update balance to on-chain value
-            *balance.amount_mut() = on_chain_amount;
-
-            // Re-sync cache in case it drifted during sleep
+            *balance.amount_mut() = local_amount;
             self.state().update_matching_engine_for_balance(account_id, &balance).await?;
         }
 
-        // Run matching engine and persist balance update
+        self.apply_balance_update(account_id, balance, token).await
+    }
+
+    /// Fetch usable balance from chain and convert to Amount
+    async fn fetch_usable_amount(
+        &self,
+        token: Address,
+        owner: Address,
+    ) -> Result<Amount, OnChainEventListenerError> {
+        let client = self.darkpool_client();
+        let erc20_balance = client.get_erc20_balance(token, owner).await?;
+        let permit_allowance = client.get_darkpool_allowance(owner, token).await?;
+        let usable = cmp::min(erc20_balance, permit_allowance);
+        usable.try_into().map_err(|_| OnChainEventListenerError::State(ERR_BALANCE_OVERFLOW.into()))
+    }
+
+    /// Get existing balance or create Ring 0 balance if amount > 0
+    ///
+    /// Returns None if no balance exists and amount == 0 (nothing to create)
+    async fn get_or_create_balance(
+        &self,
+        account_id: AccountId,
+        owner: Address,
+        token: Address,
+        amount: Amount,
+    ) -> Result<Option<Balance>, OnChainEventListenerError> {
+        // Try to get existing balance
+        if let Some(balance) = self.state().get_account_balance(&account_id, &token).await? {
+            return Ok(Some(balance));
+        }
+
+        // No existing balance - only create if amount > 0
+        if amount == 0 {
+            return Ok(None);
+        }
+
+        // Create new Ring 0 balance
+        let relayer_fee_recipient = self.state().get_relayer_fee_addr()?;
+        let balance = Balance::new_ring0(token, owner, relayer_fee_recipient, amount);
+        Ok(Some(balance))
+    }
+
+    /// Apply balance update: run matching engine jobs and persist
+    async fn apply_balance_update(
+        &self,
+        account_id: AccountId,
+        balance: Balance,
+        token: Address,
+    ) -> Result<(), OnChainEventListenerError> {
         self.run_matching_engine_for_account_and_balance(account_id, token).await?;
         self.state().update_account_balance(account_id, balance).await?.await?;
-
         Ok(())
     }
 
@@ -169,17 +210,5 @@ impl OnChainEventListenerExecutor {
         }
 
         Ok(())
-    }
-
-    /// Get the usable balance for an owner: min of ERC20 balance and Permit2 allowance
-    async fn get_usable_balance(
-        &self,
-        token: Address,
-        owner: Address,
-    ) -> Result<U256, OnChainEventListenerError> {
-        let client = self.darkpool_client();
-        let erc20_balance = client.get_erc20_balance(token, owner).await?;
-        let permit_allowance = client.get_darkpool_allowance(owner, token).await?;
-        Ok(cmp::min(erc20_balance, permit_allowance))
     }
 }

@@ -6,7 +6,8 @@
 use std::fmt::{self, Display, Formatter};
 
 use alloy::primitives::Address;
-use circuit_types::Amount;
+use circuit_types::{Amount, schnorr::SchnorrPublicKey};
+use constants::Scalar;
 use darkpool_types::{balance::DarkpoolBalance, state_wrapper::StateWrapper};
 #[cfg(feature = "rkyv")]
 use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
@@ -57,6 +58,24 @@ impl Balance {
     /// Create a new darkpool balance
     pub fn new_darkpool(state_wrapper: StateWrapper<DarkpoolBalance>) -> Self {
         Self::new(state_wrapper, BalanceLocation::Darkpool)
+    }
+
+    /// Create a Ring 0 balance with mock authority and zero stream seeds
+    ///
+    /// Ring 0 balances are backed by ERC20 + permit2 allowance, no deposit
+    /// required. Uses default authority and zero stream seeds since Ring 0
+    /// doesn't use secret sharing.
+    pub fn new_ring0(
+        mint: Address,
+        owner: Address,
+        relayer_fee_recipient: Address,
+        amount: Amount,
+    ) -> Self {
+        let mock_authority = SchnorrPublicKey::default();
+        let bal = DarkpoolBalance::new(mint, owner, relayer_fee_recipient, mock_authority)
+            .with_amount(amount);
+        let state_wrapper = StateWrapper::new(bal, Scalar::zero(), Scalar::zero());
+        Balance::new(state_wrapper)
     }
 
     /// Get a reference to the inner balance
@@ -123,6 +142,53 @@ impl ArchivedBalance {
     /// Get the amount as an archived type
     pub fn amount_archived(&self) -> <Amount as rkyv::Archive>::Archived {
         self.state_wrapper.inner.amount
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Test that new_ring0 creates a balance with the correct properties
+    #[test]
+    fn test_new_ring0() {
+        let mint = Address::from([1u8; 20]);
+        let owner = Address::from([2u8; 20]);
+        let relayer_fee_recipient = Address::from([3u8; 20]);
+        let amount = 1000u128;
+
+        let balance = Balance::new_ring0(mint, owner, relayer_fee_recipient, amount);
+
+        assert_eq!(balance.mint(), mint);
+        assert_eq!(balance.owner(), owner);
+        assert_eq!(balance.amount(), amount);
+        assert_eq!(balance.inner().relayer_fee_recipient, relayer_fee_recipient);
+    }
+
+    /// Test that new_ring0 with zero amount creates a valid balance
+    #[test]
+    fn test_new_ring0_zero_amount() {
+        let mint = Address::from([1u8; 20]);
+        let owner = Address::from([2u8; 20]);
+        let relayer_fee_recipient = Address::from([3u8; 20]);
+
+        let balance = Balance::new_ring0(mint, owner, relayer_fee_recipient, 0);
+
+        assert_eq!(balance.amount(), 0);
+    }
+
+    /// Test that amount_mut allows updating the balance amount
+    #[test]
+    fn test_amount_mut() {
+        let mint = Address::from([1u8; 20]);
+        let owner = Address::from([2u8; 20]);
+        let relayer_fee_recipient = Address::from([3u8; 20]);
+
+        let mut balance = Balance::new_ring0(mint, owner, relayer_fee_recipient, 100);
+        assert_eq!(balance.amount(), 100);
+
+        *balance.amount_mut() = 500;
+        assert_eq!(balance.amount(), 500);
     }
 }
 
