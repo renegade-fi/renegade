@@ -4,6 +4,7 @@
 use std::cmp::Reverse;
 use std::collections::VecDeque;
 
+use alloy::consensus::constants::SELECTOR_LEN;
 use alloy::providers::{Provider, ext::DebugApi};
 use alloy::rpc::types::Log as RpcLog;
 use alloy::rpc::types::TransactionReceipt;
@@ -12,13 +13,16 @@ use alloy::rpc::types::trace::geth::{
 };
 use alloy_contract::Event;
 use alloy_primitives::{Log, TxHash};
-use alloy_sol_types::SolEvent;
+use alloy_sol_types::{SolCall, SolEvent};
+use circuit_types::Amount;
 use constants::{MERKLE_HEIGHT, Scalar};
 use crypto::fields::{scalar_to_u256, u256_to_scalar};
+use darkpool_types::bounded_match_result::BoundedMatchResult;
 use itertools::Itertools;
 use renegade_solidity_abi::v2::IDarkpoolV2::{
-    MerkleInsertion as AbiMerkleInsertion, MerkleOpeningNode as AbiMerkleOpeningNode,
+    self, MerkleInsertion as AbiMerkleInsertion, MerkleOpeningNode as AbiMerkleOpeningNode,
 };
+use renegade_solidity_abi::v2::relayer_types::u256_to_u128;
 use tracing::instrument;
 use types_account::MerkleAuthenticationPath;
 
@@ -135,23 +139,26 @@ impl DarkpoolClient {
         Ok((event.index, log.transaction_hash.expect(ERR_NO_TX_HASH)))
     }
 
-    // /// Fetch all external matches in a given transaction
-    // pub async fn find_external_matches_in_tx(
-    //     &self,
-    //     tx_hash: TxHash,
-    // ) -> Result<Vec<BoundedMatchResult>, DarkpoolClientError> {
-    //     // Get all darkpool subcalls in the tx
-    //     let mut matches = Vec::new();
-    //     let darkpool_calls = self.fetch_tx_darkpool_calls(tx_hash).await?;
-    //     for frame in darkpool_calls.into_iter() {
-    //         let calldata: &[u8] = &frame.input;
-    //         if let Some(match_res) = D::parse_external_match(calldata)? {
-    //             matches.push(match_res);
-    //         }
-    //     }
+    /// Fetch all external matches in a given transaction
+    ///
+    /// Returns a vector of bounded match results and the actual amount in that
+    /// was traded by the external party.
+    pub async fn find_external_matches_in_tx(
+        &self,
+        tx_hash: TxHash,
+    ) -> Result<Vec<(BoundedMatchResult, Amount)>, DarkpoolClientError> {
+        // Get all darkpool subcalls in the tx
+        let mut matches = Vec::new();
+        let darkpool_calls = self.fetch_tx_darkpool_calls(tx_hash).await?;
+        for frame in darkpool_calls.into_iter() {
+            let calldata: &[u8] = &frame.input;
+            if let Some(match_res) = self.parse_external_match(calldata)? {
+                matches.push(match_res);
+            }
+        }
 
-    //     Ok(matches)
-    // }
+        Ok(matches)
+    }
 
     // -----------
     // | Helpers |
@@ -208,6 +215,35 @@ impl DarkpoolClient {
 
         darkpool_calls
     }
+
+    // --- Calldata Parsing --- //
+
+    /// Parse an external match from calldata
+    ///
+    /// The calldata input to this method is assumed to be darkpool calldata.
+    /// The caller should filter a tx trace for darkpool sub-calls and pass only
+    /// the darkpool calldata to this method.
+    fn parse_external_match(
+        &self,
+        calldata: &[u8],
+    ) -> Result<Option<(BoundedMatchResult, Amount)>, DarkpoolClientError> {
+        // Parse calldata
+        let selector: [u8; SELECTOR_LEN] = calldata[..SELECTOR_LEN].try_into().unwrap();
+        let call = match selector {
+            IDarkpoolV2::settleExternalMatchCall::SELECTOR => {
+                IDarkpoolV2::settleExternalMatchCall::abi_decode(calldata)?
+            },
+            _ => return Ok(None),
+        };
+
+        // Build an external party's settlement obligation from the match result and the
+        // traded volume
+        let match_res = BoundedMatchResult::from(call.matchResult);
+        let amount_in = u256_to_u128(call.externalPartyAmountIn);
+        Ok(Some((match_res, amount_in)))
+    }
+
+    // --- Query Helpers --- //
 
     /// Query events paginating by block number
     async fn query_latest_event<E: SolEvent>(

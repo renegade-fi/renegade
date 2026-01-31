@@ -3200,6 +3200,7 @@ dependencies = [
  "colored",
  "constants",
  "crypto",
+ "darkpool-types",
  "eyre",
  "inventory",
  "itertools 0.12.1",
