@@ -20,6 +20,8 @@ pub enum OnChainEventListenerError {
     StreamEnded,
     /// An error starting up a task
     TaskStartup(String),
+    /// The listener was cancelled
+    Cancelled,
 }
 
 impl OnChainEventListenerError {

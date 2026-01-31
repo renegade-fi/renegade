@@ -132,6 +132,11 @@ impl DarkpoolClient {
         *self.darkpool.address()
     }
 
+    /// Get the permit2 contract address
+    pub fn permit2_addr(&self) -> Address {
+        self.permit2_addr
+    }
+
     /// Get a reference to some underlying RPC client
     pub fn provider(&self) -> &RenegadeProvider {
         self.darkpool.provider()

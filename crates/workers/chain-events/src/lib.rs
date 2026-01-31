@@ -18,6 +18,8 @@
 #![allow(incomplete_features)]
 
 pub mod error;
-pub mod listener;
-// pub mod post_settlement;
+mod executor;
+mod handlers;
 pub mod worker;
+
+pub use worker::{OnChainEventListener, OnChainEventListenerConfig};

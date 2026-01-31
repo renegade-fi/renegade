@@ -1,5 +1,10 @@
 //! Applicator methods for the account index, separated out for discoverability
 
+use alloy::sol_types::SolValue;
+use alloy_primitives::{Address, B256, keccak256};
+use darkpool_types::intent::Intent;
+use matching_engine_core::MatchingEngine;
+use renegade_solidity_abi::v2::IDarkpoolV2;
 use types_account::{
     account::{Account, OrderId},
     balance::Balance,
@@ -8,9 +13,58 @@ use types_account::{
 };
 use types_core::AccountId;
 
-use crate::{applicator::error::StateApplicatorError, storage::traits::RkyvValue};
+use system_bus::{OWNER_INDEX_CHANGED_TOPIC, SystemBusMessage};
+
+use crate::{
+    applicator::error::StateApplicatorError,
+    storage::{traits::RkyvValue, tx::StateTxn},
+};
 
 use super::{Result, StateApplicator, return_type::ApplicatorReturnType};
+
+/// Compute the intent hash for a public intent permit
+///
+/// This matches the contract's `PublicIntentPermit.computeHash()` which
+/// computes: `keccak256(abi.encode(PublicIntentPermit { intent, executor }))`
+pub fn compute_intent_hash(intent: &Intent, executor: Address) -> B256 {
+    // Convert the circuit intent to the contract's Intent type
+    let contract_intent: IDarkpoolV2::Intent = intent.clone().into();
+
+    // Create the PublicIntentPermit struct
+    let permit = IDarkpoolV2::PublicIntentPermit { intent: contract_intent, executor };
+
+    // ABI-encode and hash to match the contract's computation
+    keccak256(permit.abi_encode())
+}
+
+/// Update the matching engine cache for orders affected by a balance change
+pub fn update_matchable_amounts<T: libmdbx::TransactionKind>(
+    engine: &MatchingEngine,
+    tx: &StateTxn<'_, T>,
+    account_id: AccountId,
+    balance: &Balance,
+) -> Result<()> {
+    let affected_order_ids = tx.get_orders_with_input_token(&account_id, &balance.mint())?;
+    for order_id in affected_order_ids {
+        let order = match tx.get_order(&order_id)? {
+            Some(archived_order) => Order::from_archived(&archived_order)?,
+            None => {
+                tracing::warn!("order {order_id} not found, skipping matchable amount update");
+                continue;
+            },
+        };
+
+        // Fetch the information the matching engine needs to update
+        let matching_pool = tx.get_matching_pool_for_order(&order_id)?;
+        let matchable_amount = tx.get_order_matchable_amount(&order_id)?.unwrap_or_default();
+        if matchable_amount > 0 {
+            engine.upsert_order(account_id, &order, matchable_amount, matching_pool);
+        } else {
+            engine.cancel_order(&order, matching_pool);
+        }
+    }
+    Ok(())
+}
 
 impl StateApplicator {
     // -------------
@@ -51,10 +105,29 @@ impl StateApplicator {
         tx.add_order(&account_id, order)?;
         tx.write_order_auth(&order.id, auth)?;
 
+        // Index the intent hash for on-chain event correlation
+        // TODO: When multiple rings are enabled, only index Ring 0/1 orders
+        if !matches!(auth, OrderAuth::PublicOrder { .. }) {
+            return Err(StateApplicatorError::reject("Ring 0/1 order must have PublicOrder auth"));
+        }
+        let intent_hash = compute_intent_hash(order.intent(), self.config.executor_address);
+        tx.set_intent_to_order_and_account(&intent_hash, &account_id, &order.id)?;
+
+        // Index the owner for balance event routing
+        // TODO: When multiple rings are enabled, only index Ring 0/1 orders
+        let owner = order.intent().owner;
+        let is_new_entry = tx.get_account_by_owner(&owner)?.is_none();
+        tx.set_owner_to_account(&owner, &account_id)?;
+
         // Get the info needed to update the matching engine
         let matching_pool = tx.get_matching_pool_for_order(&order.id)?;
         let matchable_amount = tx.get_order_matchable_amount(&order.id)?.unwrap_or_default();
         tx.commit()?;
+
+        // Notify chain-events worker to refresh subscriptions if new owner
+        if is_new_entry {
+            self.publish_owner_index_changed();
+        }
 
         // Update the matching engine book
         if matchable_amount > 0 {
@@ -84,11 +157,28 @@ impl StateApplicator {
         let order = Order::from_archived(&archived_order)?;
         let matching_pool = tx.get_matching_pool_for_order(&order_id)?;
 
+        // Delete the intent hash index
+        let intent_hash = compute_intent_hash(order.intent(), self.config.executor_address);
+        tx.remove_intent_mapping(&intent_hash)?;
+
         // Remove order from account storage
         tx.remove_order(&account_id, &order_id)?;
         tx.delete_order_auth(&order_id)?;
         tx.remove_order_from_matching_pool(&order_id)?;
+
+        // Clean up owner index if account has no remaining orders
+        let owner = order.intent().owner;
+        let should_remove_owner = tx.get_account_orders(&account_id)?.is_empty();
+        if should_remove_owner {
+            tx.remove_owner_mapping(&owner)?;
+        }
+
         tx.commit()?;
+
+        // Notify chain-events worker if owner index was deleted
+        if should_remove_owner {
+            self.publish_owner_index_changed();
+        }
 
         // Remove from the matching engine
         self.matching_engine().cancel_order(&order, matching_pool);
@@ -145,28 +235,20 @@ impl StateApplicator {
         // We do this after committing to ensure the balance state is durable
         let engine = self.matching_engine();
         let tx = self.db().new_read_tx()?;
-
-        let affected_order_ids = tx.get_orders_with_input_token(&account_id, &balance.mint())?;
-        for order_id in affected_order_ids {
-            let order = match tx.get_order(&order_id)? {
-                Some(archived_order) => Order::from_archived(&archived_order)?,
-                None => {
-                    tracing::warn!("order {order_id} not found, skipping matchable amount update");
-                    continue;
-                },
-            };
-
-            // Fetch the information the matching engine needs to update
-            let matching_pool = tx.get_matching_pool_for_order(&order_id)?;
-            let matchable_amount = tx.get_order_matchable_amount(&order_id)?.unwrap_or_default();
-            if matchable_amount > 0 {
-                engine.upsert_order(account_id, &order, matchable_amount, matching_pool);
-            } else {
-                engine.cancel_order(&order, matching_pool);
-            }
-        }
+        update_matchable_amounts(&engine, &tx, account_id, balance)?;
 
         Ok(ApplicatorReturnType::None)
+    }
+
+    // -----------
+    // | Helpers |
+    // -----------
+
+    /// Notify the chain-events worker to refresh its Transfer event
+    /// subscriptions
+    fn publish_owner_index_changed(&self) {
+        self.system_bus()
+            .publish(OWNER_INDEX_CHANGED_TOPIC.to_string(), SystemBusMessage::OwnerIndexChanged);
     }
 }
 
@@ -406,5 +488,78 @@ pub(crate) mod test {
         assert!(matching_engine.contains_order(&order1, matching_pool1));
         assert!(matching_engine.contains_order(&order2, matching_pool2));
         assert!(!matching_engine.contains_order(&order3, matching_pool3));
+    }
+
+    // --- Owner Index Cleanup Tests ---
+
+    /// Test that owner index is deleted when the last order for an owner is
+    /// removed
+    #[test]
+    fn test_owner_index_cleanup_on_last_order_removal() {
+        let applicator = mock_applicator();
+
+        // Add an account
+        let account = mock_empty_account();
+        applicator.create_account(&account).unwrap();
+
+        // Add an order
+        let order = mock_order();
+        let auth = mock_order_auth();
+        let owner = order.intent().owner;
+        applicator.add_order_to_account(account.id, &order, &auth).unwrap();
+
+        // Verify owner index was created
+        let tx = applicator.db().new_read_tx().unwrap();
+        assert_eq!(tx.get_account_by_owner(&owner).unwrap(), Some(account.id));
+        drop(tx);
+
+        // Remove the order
+        applicator.remove_order_from_account(account.id, order.id).unwrap();
+
+        // Verify owner index was deleted
+        let tx = applicator.db().new_read_tx().unwrap();
+        assert_eq!(tx.get_account_by_owner(&owner).unwrap(), None);
+    }
+
+    /// Test that owner index is retained when another order for the same owner
+    /// remains
+    #[test]
+    fn test_owner_index_retained_with_remaining_order() {
+        let applicator = mock_applicator();
+
+        // Add an account
+        let account = mock_empty_account();
+        applicator.create_account(&account).unwrap();
+
+        // Add two orders with the same owner
+        let mut order1 = mock_order();
+        let mut order2 = mock_order();
+        let owner = Address::from([0xAA; 20]);
+        order1.intent.inner.owner = owner;
+        order2.intent.inner.owner = owner;
+        let auth = mock_order_auth();
+
+        applicator.add_order_to_account(account.id, &order1, &auth).unwrap();
+        applicator.add_order_to_account(account.id, &order2, &auth).unwrap();
+
+        // Verify owner index exists
+        let tx = applicator.db().new_read_tx().unwrap();
+        assert_eq!(tx.get_account_by_owner(&owner).unwrap(), Some(account.id));
+        drop(tx);
+
+        // Remove one order
+        applicator.remove_order_from_account(account.id, order1.id).unwrap();
+
+        // Verify owner index is still present (order2 remains)
+        let tx = applicator.db().new_read_tx().unwrap();
+        assert_eq!(tx.get_account_by_owner(&owner).unwrap(), Some(account.id));
+        drop(tx);
+
+        // Remove the second order
+        applicator.remove_order_from_account(account.id, order2.id).unwrap();
+
+        // Now owner index should be deleted
+        let tx = applicator.db().new_read_tx().unwrap();
+        assert_eq!(tx.get_account_by_owner(&owner).unwrap(), None);
     }
 }

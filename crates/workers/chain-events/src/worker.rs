@@ -1,15 +1,45 @@
 //! The relayer worker implementation for the event listener
 
-use async_trait::async_trait;
 use std::thread::{Builder, JoinHandle};
+
+use async_trait::async_trait;
+use darkpool_client::DarkpoolClient;
+use job_types::{event_manager::EventManagerQueue, matching_engine::MatchingEngineWorkerQueue};
+use state::State;
+use system_bus::SystemBus;
 use tokio::runtime::Builder as RuntimeBuilder;
 use tracing::error;
-use types_runtime::Worker;
+use types_runtime::{CancelChannel, Worker};
 
-use super::{
-    error::OnChainEventListenerError,
-    listener::{OnChainEventListener, OnChainEventListenerConfig, OnChainEventListenerExecutor},
-};
+use crate::{error::OnChainEventListenerError, executor::OnChainEventListenerExecutor};
+
+/// The configuration passed to the listener upon startup
+#[derive(Clone)]
+pub struct OnChainEventListenerConfig {
+    /// The ethereum websocket address to use for streaming events
+    pub websocket_addr: Option<String>,
+    /// A darkpool client for listening to events
+    pub darkpool_client: DarkpoolClient,
+    /// A copy of the relayer global state
+    pub global_state: State,
+    /// The channel on which the coordinator may send a cancel signal
+    pub cancel_channel: CancelChannel,
+    /// A sender to the event manager's queue
+    pub event_queue: EventManagerQueue,
+    /// A sender to the matching engine worker's queue
+    pub matching_engine_queue: MatchingEngineWorkerQueue,
+    /// The system bus for internal pub/sub notifications
+    pub system_bus: SystemBus,
+}
+
+/// The worker responsible for listening for on-chain events, translating them
+/// to jobs for other workers, and forwarding these jobs to the relevant workers
+pub struct OnChainEventListener {
+    /// The executor run in a separate thread
+    pub(crate) executor: Option<OnChainEventListenerExecutor>,
+    /// The thread handle of the executor
+    pub(crate) executor_handle: Option<JoinHandle<OnChainEventListenerError>>,
+}
 
 #[async_trait]
 impl Worker for OnChainEventListener {
@@ -21,12 +51,7 @@ impl Worker for OnChainEventListener {
         Self: Sized,
     {
         let executor = OnChainEventListenerExecutor::new(config);
-
-        Ok(Self {
-            executor: Some(executor),
-            // Replaced at startup
-            executor_handle: None,
-        })
+        Ok(Self { executor: Some(executor), executor_handle: None })
     }
 
     fn name(&self) -> String {
@@ -38,27 +63,24 @@ impl Worker for OnChainEventListener {
     }
 
     fn start(&mut self) -> Result<(), Self::Error> {
-        // Spawn the execution loop in a separate thread
         let executor = self.executor.take().unwrap();
         let join_handle = Builder::new()
             .name("on-chain-event-listener-executor".to_string())
             .spawn(move || {
-                let runtime = RuntimeBuilder::new_current_thread()
+                let runtime = match RuntimeBuilder::new_current_thread()
                     .enable_all()
                     .thread_name("on-chain-listener-runtime")
                     .build()
-                    .map_err(|err| OnChainEventListenerError::Setup(err.to_string()));
-                if let Err(e) = runtime {
-                    return e;
-                }
+                {
+                    Ok(rt) => rt,
+                    Err(err) => return OnChainEventListenerError::Setup(err.to_string()),
+                };
 
-                let runtime = runtime.unwrap();
                 runtime.block_on(async {
                     if let Err(e) = executor.execute().await {
                         error!("Chain event listener crashed with error: {e}");
                         return e;
                     }
-
                     OnChainEventListenerError::StreamEnded
                 })
             })
