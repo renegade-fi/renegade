@@ -132,7 +132,9 @@ where
         inputs.extend(self.recovery_stream.to_scalars());
         inputs.extend(self.share_stream.to_scalars());
 
-        println!("{:?}", inputs);
+        for input in &inputs {
+            println!("input: {}", input.to_biguint());
+        }
 
         // Hash the inputs to commit to them
         compute_poseidon_hash(&inputs)
