@@ -14,17 +14,15 @@ use alloy::{
 };
 use alloy_contract::{CallBuilder, CallDecoder, Event};
 use alloy_primitives::{Address, BlockNumber, ChainId, U256};
-use alloy_sol_types::{SolError, SolEvent};
+use alloy_sol_types::SolEvent;
 use constants::{
     ARBITRUM_ONE_DEPLOY_BLOCK, ARBITRUM_SEPOLIA_DEPLOY_BLOCK, BASE_MAINNET_DEPLOY_BLOCK,
     BASE_SEPOLIA_DEPLOY_BLOCK, DEVNET_DEPLOY_BLOCK, MERKLE_HEIGHT,
 };
-use renegade_solidity_abi::v2::IDarkpoolV2::{
-    self, IDarkpoolV2Errors, IDarkpoolV2Instance, InvalidObligationAmountIn,
-};
+use renegade_solidity_abi::v2::IDarkpoolV2::{self, IDarkpoolV2Instance};
 use tracing::info;
 use types_core::Chain;
-use util::{err_str, hex::bytes_to_hex_string};
+use util::err_str;
 
 use crate::errors::{DarkpoolClientConfigError, DarkpoolClientError};
 
@@ -132,6 +130,11 @@ impl DarkpoolClient {
     /// Get an alloy address for the darkpool contract
     pub fn darkpool_addr(&self) -> Address {
         *self.darkpool.address()
+    }
+
+    /// Get the permit2 contract address
+    pub fn permit2_addr(&self) -> Address {
+        self.permit2_addr
     }
 
     /// Get a reference to some underlying RPC client

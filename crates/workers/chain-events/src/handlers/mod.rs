@@ -2,3 +2,4 @@
 
 pub mod darkpool;
 pub mod erc20;
+pub mod permit2;

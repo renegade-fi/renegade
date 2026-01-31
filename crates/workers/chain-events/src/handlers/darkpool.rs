@@ -102,12 +102,8 @@ impl OnChainEventListenerExecutor {
                 return Ok(()); // Order was removed (fully filled)
             };
 
-            // Use monotonic guard: if local remaining <= event remaining, we've already
-            // processed an equal-or-later update. This works because remaining only
-            // decreases (fills reduce it, no increases possible currently).
             // TODO: Once public intent update feature is added (allowing increases),
-            // this monotonic guard will be insufficient - will need on-chain fetch or
-            // cursor.
+            // this monotonic guard will be insufficient.
             if order.intent.inner.amount_in <= amount_remaining {
                 return Ok(()); // Already processed equal-or-later update
             }

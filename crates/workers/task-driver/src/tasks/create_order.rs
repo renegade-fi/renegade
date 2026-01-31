@@ -7,10 +7,11 @@ use std::{
 
 use alloy::primitives::{Address, U256};
 use async_trait::async_trait;
-use circuit_types::Amount;
+use circuit_types::{Amount, primitives::schnorr::SchnorrPublicKey};
 use constants::Scalar;
 use darkpool_client::{DarkpoolClient, errors::DarkpoolClientError};
 use darkpool_types::{
+    balance::DarkpoolBalance,
     intent::{DarkpoolStateIntent, Intent},
     state_wrapper::StateWrapper,
 };
@@ -290,7 +291,7 @@ impl CreateOrderTask {
         let amt = u256_to_u128(usable_balance);
         info!("Found usable balance of {amt} on chain, updating account balance");
 
-        let bal = Balance::new_ring0(in_token, owner, relayer_fee_addr, amt);
+        let bal = create_ring0_balance(in_token, owner, relayer_fee_addr, amt);
         let waiter = self.state().update_account_balance(self.account_id, bal).await?;
         waiter.await.map_err(CreateOrderTaskError::state)?;
         Ok(())
@@ -321,4 +322,23 @@ fn create_ring0_state_wrapper(intent: Intent) -> StateWrapper<Intent> {
     let share_stream_seed = Scalar::zero();
     let recovery_stream_seed = Scalar::zero();
     DarkpoolStateIntent::new(intent, share_stream_seed, recovery_stream_seed)
+}
+
+/// Create a ring 0 balance from a usable balance
+///
+/// We again mock the authority and share/recovery stream seeds
+fn create_ring0_balance(
+    mint: Address,
+    owner: Address,
+    relayer_fee_recipient: Address,
+    amount: Amount,
+) -> Balance {
+    let mock_authority = SchnorrPublicKey::default();
+    let bal = DarkpoolBalance::new(mint, owner, relayer_fee_recipient, mock_authority)
+        .with_amount(amount);
+
+    let share_stream_seed = Scalar::zero();
+    let recovery_stream_seed = Scalar::zero();
+    let state_wrapper = StateWrapper::new(bal, share_stream_seed, recovery_stream_seed);
+    Balance::new_eoa(state_wrapper)
 }

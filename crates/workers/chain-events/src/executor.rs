@@ -71,6 +71,8 @@ impl OnChainEventListenerExecutor {
         let client = self.create_ws_client().await?;
         let (mut transfer_from, mut transfer_to) =
             self.create_transfer_subscriptions(&client).await?;
+        let (mut permit2_approval, mut permit2_permit) =
+            self.create_permit2_subscriptions(&client).await?;
         let mut darkpool = self.create_darkpool_subscription(&client).await?;
 
         // Subscribe to internal notifications for owner index changes
@@ -99,6 +101,26 @@ impl OnChainEventListenerExecutor {
                     });
                 }
 
+                // Handle Permit2 Approval events
+                Some(log) = permit2_approval.next() => {
+                    let executor = self.clone();
+                    tokio::task::spawn(async move {
+                        if let Err(e) = executor.handle_permit2_event(log).await {
+                            error!("error handling Permit2 approval event: {e}");
+                        }
+                    });
+                }
+
+                // Handle Permit2 Permit events (signature-based approvals)
+                Some(log) = permit2_permit.next() => {
+                    let executor = self.clone();
+                    tokio::task::spawn(async move {
+                        if let Err(e) = executor.handle_permit2_event(log).await {
+                            error!("error handling Permit2 permit event: {e}");
+                        }
+                    });
+                }
+
                 // Handle darkpool contract events (intent updates/cancellations)
                 Some(log) = darkpool.next() => {
                     let executor = self.clone();
@@ -109,15 +131,22 @@ impl OnChainEventListenerExecutor {
                     });
                 }
 
-                // Refresh transfer subscriptions when owner set changes
+                // Refresh subscriptions when owner set changes
                 _ = owner_changes.next_message() => {
-                    info!("Owner index changed, refreshing transfer subscriptions");
+                    info!("Owner index changed, refreshing subscriptions");
                     match self.create_transfer_subscriptions(&client).await {
                         Ok((from, to)) => {
                             transfer_from = from;
                             transfer_to = to;
                         }
                         Err(e) => error!("Failed to refresh transfer subscriptions: {e}"),
+                    }
+                    match self.create_permit2_subscriptions(&client).await {
+                        Ok((approval, permit)) => {
+                            permit2_approval = approval;
+                            permit2_permit = permit;
+                        }
+                        Err(e) => error!("Failed to refresh Permit2 subscriptions: {e}"),
                     }
                 }
 

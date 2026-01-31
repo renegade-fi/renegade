@@ -15,6 +15,7 @@ alloy = { workspace = true, features = ["provider-ws"] }
 
 # === Workspace Dependencies === #
 darkpool-client = { workspace = true }
+darkpool-types = { workspace = true }
 circuit-types = { workspace = true }
 types-account = { workspace = true }
 types-core = { workspace = true }

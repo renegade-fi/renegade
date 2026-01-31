@@ -8,12 +8,14 @@ use alloy::{
     rpc::types::{Filter, Log},
     sol_types::SolEvent,
 };
-use circuit_types::Amount;
+use circuit_types::{Amount, primitives::schnorr::SchnorrPublicKey};
+use constants::Scalar;
 use darkpool_client::client::erc20::abis::erc20::IERC20;
+use darkpool_types::{balance::DarkpoolBalance, state_wrapper::StateWrapper};
 use futures_util::Stream;
 use job_types::matching_engine::MatchingEngineWorkerJob;
 use tracing::{info, warn};
-use types_account::balance::Balance;
+use types_account::balance::{Balance, BalanceLocation};
 use types_core::{AccountId, get_all_tokens};
 
 use crate::{error::OnChainEventListenerError, executor::OnChainEventListenerExecutor};
@@ -93,7 +95,7 @@ impl OnChainEventListenerExecutor {
     }
 
     /// Handle the balance update for an account affected by a transfer event
-    async fn handle_balance_update(
+    pub(crate) async fn handle_balance_update(
         &self,
         account_id: AccountId,
         owner: Address,
@@ -151,7 +153,11 @@ impl OnChainEventListenerExecutor {
 
     /// Get existing balance or create Ring 0 balance if amount > 0
     ///
-    /// Returns None if no balance exists and amount == 0 (nothing to create)
+    /// Callers must verify an order exists for this token before calling.
+    /// If amount > 0, we create a balance to make the order matchable.
+    ///
+    /// TODO: When Ring 2/3 orders are enabled, only create Ring 0 balances for
+    /// Ring 0 orders - private orders use shielded balances.
     async fn get_or_create_balance(
         &self,
         account_id: AccountId,
@@ -160,7 +166,9 @@ impl OnChainEventListenerExecutor {
         amount: Amount,
     ) -> Result<Option<Balance>, OnChainEventListenerError> {
         // Try to get existing balance
-        if let Some(balance) = self.state().get_account_balance(&account_id, &token).await? {
+        if let Some(balance) =
+            self.state().get_account_balance(&account_id, &token, BalanceLocation::EOA).await?
+        {
             return Ok(Some(balance));
         }
 
@@ -171,7 +179,7 @@ impl OnChainEventListenerExecutor {
 
         // Create new Ring 0 balance
         let relayer_fee_recipient = self.state().get_relayer_fee_addr()?;
-        let balance = Balance::new_ring0(token, owner, relayer_fee_recipient, amount);
+        let balance = create_ring0_balance(token, owner, relayer_fee_recipient, amount);
         Ok(Some(balance))
     }
 
@@ -211,4 +219,24 @@ impl OnChainEventListenerExecutor {
 
         Ok(())
     }
+}
+
+/// Create a ring 0 balance from a usable balance
+///
+/// We mock the authority and share/recovery stream seeds since Ring 0
+/// doesn't use secret sharing
+fn create_ring0_balance(
+    mint: Address,
+    owner: Address,
+    relayer_fee_recipient: Address,
+    amount: Amount,
+) -> Balance {
+    let mock_authority = SchnorrPublicKey::default();
+    let bal = DarkpoolBalance::new(mint, owner, relayer_fee_recipient, mock_authority)
+        .with_amount(amount);
+
+    let share_stream_seed = Scalar::zero();
+    let recovery_stream_seed = Scalar::zero();
+    let state_wrapper = StateWrapper::new(bal, share_stream_seed, recovery_stream_seed);
+    Balance::new_eoa(state_wrapper)
 }
