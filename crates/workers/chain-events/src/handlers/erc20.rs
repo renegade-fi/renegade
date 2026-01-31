@@ -8,7 +8,7 @@ use alloy::{
     rpc::types::{Filter, Log},
     sol_types::SolEvent,
 };
-use circuit_types::{Amount, primitives::schnorr::SchnorrPublicKey};
+use circuit_types::{Amount, schnorr::SchnorrPublicKey};
 use constants::Scalar;
 use darkpool_client::client::erc20::abis::erc20::IERC20;
 use darkpool_types::{balance::DarkpoolBalance, state_wrapper::StateWrapper};
@@ -155,9 +155,6 @@ impl OnChainEventListenerExecutor {
     ///
     /// Callers must verify an order exists for this token before calling.
     /// If amount > 0, we create a balance to make the order matchable.
-    ///
-    /// TODO: When Ring 2/3 orders are enabled, only create Ring 0 balances for
-    /// Ring 0 orders - private orders use shielded balances.
     async fn get_or_create_balance(
         &self,
         account_id: AccountId,
@@ -178,6 +175,7 @@ impl OnChainEventListenerExecutor {
         }
 
         // Create new Ring 0 balance
+        // TODO: When Ring 2/3 orders are enabled, gate creation
         let relayer_fee_recipient = self.state().get_relayer_fee_addr()?;
         let balance = create_ring0_balance(token, owner, relayer_fee_recipient, amount);
         Ok(Some(balance))
