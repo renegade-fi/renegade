@@ -435,10 +435,10 @@ impl StateTxn<'_, RW> {
         Ok(())
     }
 
-    /// Set the owner index mapping for an owner
+    /// Set the owner-to-account mapping
     ///
     /// Maps owner address to the account that holds the balance
-    pub fn set_owner_index(
+    pub fn set_owner_to_account(
         &self,
         owner: &Address,
         account_id: &AccountId,
@@ -447,8 +447,8 @@ impl StateTxn<'_, RW> {
         self.inner().write(ACCOUNTS_TABLE, &key, account_id)
     }
 
-    /// Delete the owner index mapping for an owner
-    pub fn delete_owner_index(&self, owner: &Address) -> Result<(), StorageError> {
+    /// Remove the owner mapping
+    pub fn remove_owner_mapping(&self, owner: &Address) -> Result<(), StorageError> {
         let key = owner_index_key(owner);
         self.inner().delete(ACCOUNTS_TABLE, &key)?;
         Ok(())
@@ -786,7 +786,7 @@ mod test {
         // Set owner index
         let tx = db.new_write_tx().unwrap();
         tx.new_account(&account).unwrap();
-        tx.set_owner_index(&owner, &account.id).unwrap();
+        tx.set_owner_to_account(&owner, &account.id).unwrap();
         tx.commit().unwrap();
 
         // Get owner index
@@ -806,7 +806,7 @@ mod test {
         // Set and verify
         let tx = db.new_write_tx().unwrap();
         tx.new_account(&account).unwrap();
-        tx.set_owner_index(&owner, &account.id).unwrap();
+        tx.set_owner_to_account(&owner, &account.id).unwrap();
         tx.commit().unwrap();
 
         let tx = db.new_read_tx().unwrap();
@@ -815,7 +815,7 @@ mod test {
 
         // Delete and verify
         let tx = db.new_write_tx().unwrap();
-        tx.delete_owner_index(&owner).unwrap();
+        tx.remove_owner_mapping(&owner).unwrap();
         tx.commit().unwrap();
 
         let tx = db.new_read_tx().unwrap();
@@ -836,8 +836,8 @@ mod test {
         let tx = db.new_write_tx().unwrap();
         tx.new_account(&account1).unwrap();
         tx.new_account(&account2).unwrap();
-        tx.set_owner_index(&owner1, &account1.id).unwrap();
-        tx.set_owner_index(&owner2, &account2.id).unwrap();
+        tx.set_owner_to_account(&owner1, &account1.id).unwrap();
+        tx.set_owner_to_account(&owner2, &account2.id).unwrap();
         tx.commit().unwrap();
 
         // Get all entries

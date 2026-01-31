@@ -130,7 +130,7 @@ impl StateApplicator {
         // TODO: When multiple rings are enabled, only index Ring 0/1 orders
         let owner = order.intent().owner;
         let is_new_entry = tx.get_account_by_owner(&owner)?.is_none();
-        tx.set_owner_index(&owner, &account_id)?;
+        tx.set_owner_to_account(&owner, &account_id)?;
 
         // Get the info needed to update the matching engine
         let matching_pool = tx.get_matching_pool_for_order(&order.id)?;
@@ -171,7 +171,6 @@ impl StateApplicator {
         let matching_pool = tx.get_matching_pool_for_order(&order_id)?;
 
         // Delete the intent hash index
-        // TODO: When multiple rings are enabled, only delete for Ring 0/1 orders
         let intent_hash = compute_intent_hash(order.intent(), self.config.executor_address);
         tx.delete_intent_index(&intent_hash)?;
 
@@ -179,10 +178,20 @@ impl StateApplicator {
         tx.remove_order(&account_id, &order_id)?;
         tx.delete_order_auth(&order_id)?;
         tx.remove_order_from_matching_pool(&order_id)?;
+
+        // Clean up owner index if account has no remaining orders
+        let owner = order.intent().owner;
+        let should_remove_owner = tx.get_account_orders(&account_id)?.is_empty();
+        if should_remove_owner {
+            tx.remove_owner_mapping(&owner)?;
+        }
+
         tx.commit()?;
 
-        // TODO: Clean up owner_index when last Ring 0/1 order for owner is
-        // removed
+        // Notify chain-events worker if owner index was deleted
+        if should_remove_owner {
+            self.publish_owner_index_changed();
+        }
 
         // Remove from the matching engine
         self.matching_engine().cancel_order(&order, matching_pool);
@@ -216,8 +225,6 @@ impl StateApplicator {
         if matchable_amount > 0 {
             self.matching_engine().upsert_order(account_id, order, matchable_amount, matching_pool);
         } else {
-            // TODO: Clean up owner_index when last Ring 0/1 order for owner is
-            // removed
             self.matching_engine().cancel_order(order, matching_pool);
         }
         Ok(ApplicatorReturnType::None)
@@ -495,5 +502,78 @@ pub(crate) mod test {
         assert!(matching_engine.contains_order(&order1, matching_pool1));
         assert!(matching_engine.contains_order(&order2, matching_pool2));
         assert!(!matching_engine.contains_order(&order3, matching_pool3));
+    }
+
+    // --- Owner Index Cleanup Tests ---
+
+    /// Test that owner index is deleted when the last order for an owner is
+    /// removed
+    #[test]
+    fn test_owner_index_cleanup_on_last_order_removal() {
+        let applicator = mock_applicator();
+
+        // Add an account
+        let account = mock_empty_account();
+        applicator.create_account(&account).unwrap();
+
+        // Add an order
+        let order = mock_order();
+        let auth = mock_order_auth();
+        let owner = order.intent().owner;
+        applicator.add_order_to_account(account.id, &order, &auth).unwrap();
+
+        // Verify owner index was created
+        let tx = applicator.db().new_read_tx().unwrap();
+        assert_eq!(tx.get_account_by_owner(&owner).unwrap(), Some(account.id));
+        drop(tx);
+
+        // Remove the order
+        applicator.remove_order_from_account(account.id, order.id).unwrap();
+
+        // Verify owner index was deleted
+        let tx = applicator.db().new_read_tx().unwrap();
+        assert_eq!(tx.get_account_by_owner(&owner).unwrap(), None);
+    }
+
+    /// Test that owner index is retained when another order for the same owner
+    /// remains
+    #[test]
+    fn test_owner_index_retained_with_remaining_order() {
+        let applicator = mock_applicator();
+
+        // Add an account
+        let account = mock_empty_account();
+        applicator.create_account(&account).unwrap();
+
+        // Add two orders with the same owner
+        let mut order1 = mock_order();
+        let mut order2 = mock_order();
+        let owner = Address::from([0xAA; 20]);
+        order1.intent.inner.owner = owner;
+        order2.intent.inner.owner = owner;
+        let auth = mock_order_auth();
+
+        applicator.add_order_to_account(account.id, &order1, &auth).unwrap();
+        applicator.add_order_to_account(account.id, &order2, &auth).unwrap();
+
+        // Verify owner index exists
+        let tx = applicator.db().new_read_tx().unwrap();
+        assert_eq!(tx.get_account_by_owner(&owner).unwrap(), Some(account.id));
+        drop(tx);
+
+        // Remove one order
+        applicator.remove_order_from_account(account.id, order1.id).unwrap();
+
+        // Verify owner index is still present (order2 remains)
+        let tx = applicator.db().new_read_tx().unwrap();
+        assert_eq!(tx.get_account_by_owner(&owner).unwrap(), Some(account.id));
+        drop(tx);
+
+        // Remove the second order
+        applicator.remove_order_from_account(account.id, order2.id).unwrap();
+
+        // Now owner index should be deleted
+        let tx = applicator.db().new_read_tx().unwrap();
+        assert_eq!(tx.get_account_by_owner(&owner).unwrap(), None);
     }
 }
