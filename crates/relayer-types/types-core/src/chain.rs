@@ -63,6 +63,8 @@ impl Chain {
             Chain::ArbitrumOne => 42161,
             Chain::BaseSepolia => 84532,
             Chain::BaseMainnet => 8453,
+            Chain::EthereumSepolia => 11155111,
+            Chain::EthereumMainnet => 1,
             Chain::Devnet => 31337,
         }
     }
