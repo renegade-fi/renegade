@@ -9,6 +9,9 @@ use state::State;
 use tokio::task::JoinHandle;
 use tracing::{error, info};
 
+mod debug_order_metadata;
+pub(crate) use debug_order_metadata::debug_order_metadata;
+
 mod remove_phantom_orders;
 pub(crate) use remove_phantom_orders::remove_phantom_orders;
 
@@ -18,6 +21,18 @@ pub(crate) use remove_old_proofs::remove_old_proofs;
 /// Apply all state migrations
 pub(crate) fn run_state_migrations(state: &State) -> Vec<JoinHandle<()>> {
     let mut handles = Vec::new();
+
+    // Debug: scan for orders missing metadata
+    let state_clone = state.clone();
+    let handle = tokio::task::spawn(async move {
+        info!("scanning for orders with missing metadata...");
+        if let Err(e) = debug_order_metadata(&state_clone).await {
+            error!("error scanning order metadata: {e}");
+        } else {
+            info!("done scanning order metadata");
+        }
+    });
+    handles.push(handle);
 
     // Remove phantom orders in the order book
     let state_clone = state.clone();
