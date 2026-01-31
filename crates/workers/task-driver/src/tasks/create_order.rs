@@ -1,27 +1,20 @@
 //! Defines a task to create an order
 
-use std::{
-    cmp,
-    fmt::{Display, Formatter, Result as FmtResult},
-};
+use std::fmt::{Display, Formatter, Result as FmtResult};
 
-use alloy::primitives::{Address, U256};
 use async_trait::async_trait;
-use circuit_types::{Amount, schnorr::SchnorrPublicKey};
 use constants::Scalar;
-use darkpool_client::{DarkpoolClient, errors::DarkpoolClientError};
+use darkpool_client::errors::DarkpoolClientError;
 use darkpool_types::{
-    balance::DarkpoolBalance,
     intent::{DarkpoolStateIntent, Intent},
     state_wrapper::StateWrapper,
 };
-use renegade_solidity_abi::v2::relayer_types::u256_to_u128;
 use serde::Serialize;
 use state::{State, error::StateError};
 use tracing::{info, instrument};
 use types_account::{
     OrderId,
-    balance::{Balance, BalanceLocation},
+    balance::BalanceLocation,
     order::{Order, OrderMetadata, PrivacyRing},
     order_auth::OrderAuth,
 };
@@ -32,7 +25,7 @@ use crate::{
     hooks::{RefreshAccountHook, RunMatchingEngineHook, TaskHook},
     task_state::TaskStateWrapper,
     traits::{Descriptor, Task, TaskContext, TaskError, TaskState},
-    utils::get_relayer_fee_addr,
+    utils::fetch_ring0_balance,
 };
 
 /// The task name for the create order task
@@ -270,30 +263,17 @@ impl CreateOrderTask {
 
         // Otherwise, we need to check for an existing allowance on-chain
         let owner = self.intent.owner;
-        info!("Checking for balance of {in_token} for owner {owner}");
-        let darkpool_client = self.darkpool_client();
+        let balance = fetch_ring0_balance(&self.ctx, in_token, owner)
+            .await
+            .map_err(CreateOrderTaskError::darkpool_client)?;
 
-        let erc20_bal = darkpool_client.get_erc20_balance(in_token, owner).await?;
-        let permit_allowance = darkpool_client.get_darkpool_allowance(owner, in_token).await?;
-        let usable_balance = cmp::min(erc20_bal, permit_allowance);
-        if usable_balance == U256::ZERO {
-            info!(
-                "No usable balance found for new intent [balance = {}, permit = {}]",
-                erc20_bal, permit_allowance
-            );
-            return Ok(());
+        // Update the account balance if we found a usable balance
+        if let Some(bal) = balance {
+            info!("Found usable balance on chain, updating account balance");
+            let waiter = self.state().update_account_balance(self.account_id, bal).await?;
+            waiter.await.map_err(CreateOrderTaskError::state)?;
         }
 
-        // Update the account balance with the newly discovered balance
-        let relayer_fee_addr =
-            get_relayer_fee_addr(&self.ctx).map_err(CreateOrderTaskError::state)?;
-
-        let amt = u256_to_u128(usable_balance);
-        info!("Found usable balance of {amt} on chain, updating account balance");
-
-        let bal = create_ring0_balance(in_token, owner, relayer_fee_addr, amt);
-        let waiter = self.state().update_account_balance(self.account_id, bal).await?;
-        waiter.await.map_err(CreateOrderTaskError::state)?;
         Ok(())
     }
 }
@@ -307,11 +287,6 @@ impl CreateOrderTask {
     fn state(&self) -> &State {
         &self.ctx.state
     }
-
-    /// Get a handle on the darkpool client
-    fn darkpool_client(&self) -> &DarkpoolClient {
-        &self.ctx.darkpool_client
-    }
 }
 
 /// Create a state wrapper for a ring 0 intent
@@ -322,23 +297,4 @@ fn create_ring0_state_wrapper(intent: Intent) -> StateWrapper<Intent> {
     let share_stream_seed = Scalar::zero();
     let recovery_stream_seed = Scalar::zero();
     DarkpoolStateIntent::new(intent, share_stream_seed, recovery_stream_seed)
-}
-
-/// Create a ring 0 balance from a usable balance
-///
-/// We again mock the authority and share/recovery stream seeds
-fn create_ring0_balance(
-    mint: Address,
-    owner: Address,
-    relayer_fee_recipient: Address,
-    amount: Amount,
-) -> Balance {
-    let mock_authority = SchnorrPublicKey::default();
-    let bal = DarkpoolBalance::new(mint, owner, relayer_fee_recipient, mock_authority)
-        .with_amount(amount);
-
-    let share_stream_seed = Scalar::zero();
-    let recovery_stream_seed = Scalar::zero();
-    let state_wrapper = StateWrapper::new(bal, share_stream_seed, recovery_stream_seed);
-    Balance::new_eoa(state_wrapper)
 }

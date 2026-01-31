@@ -373,6 +373,20 @@ impl StateTxn<'_, RW> {
         self.inner().delete(ACCOUNTS_TABLE, &index_key)?;
         Ok(())
     }
+
+    /// Remove all storage artifacts for an order
+    ///
+    /// This removes the order data, auth, and matching pool assignment.
+    pub fn remove_order_with_auth(
+        &self,
+        account_id: &AccountId,
+        order_id: &OrderId,
+    ) -> Result<(), StorageError> {
+        self.remove_order(account_id, order_id)?;
+        self.delete_order_auth(order_id)?;
+        self.remove_order_from_matching_pool(order_id)?;
+        Ok(())
+    }
 }
 
 // ---------

@@ -142,7 +142,7 @@ impl HttpServer {
         router.add_account_authenticated_route(
             &Method::POST,
             SYNC_ACCOUNT_ROUTE.to_string(),
-            SyncAccountHandler::new(),
+            SyncAccountHandler::new(state.clone()),
         );
 
         // --- Order Routes (v2) --- //

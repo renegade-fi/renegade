@@ -45,7 +45,7 @@ types-account = { workspace = true }
 types-proofs = { workspace = true }
 types-runtime = { workspace = true }
 constants = { workspace = true }
-external-api = { workspace = true }
+external-api = { workspace = true, features = ["auth"] }
 gossip-api = { workspace = true }
 job-types = { workspace = true }
 matching-engine-core = { workspace = true }
@@ -56,8 +56,14 @@ util = { workspace = true }
 renegade-metrics = { workspace = true }
 renegade-solidity-abi = { workspace = true }
 
+# === HTTP === #
+http = { workspace = true }
+reqwest = { workspace = true, features = ["json"] }
+url = "2"
+
 # === Misc Dependencies === #
 itertools = "0.11"
+eyre = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

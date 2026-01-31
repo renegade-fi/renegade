@@ -9,7 +9,7 @@ use crate::{
     tasks::{
         create_balance::CreateBalanceTaskState, create_new_account::CreateNewAccountTaskState,
         create_order::CreateOrderTaskState, deposit::DepositTaskState,
-        node_startup::NodeStartupTaskState,
+        node_startup::NodeStartupTaskState, refresh_account::RefreshAccountTaskState,
         settlement::settle_external_match::SettleExternalMatchTaskState,
         settlement::settle_internal_match::SettleInternalMatchTaskState,
         withdraw::WithdrawTaskState,
@@ -36,6 +36,8 @@ pub enum TaskStateWrapper {
     CreateBalance(CreateBalanceTaskState),
     /// The state of a create order task
     CreateOrder(CreateOrderTaskState),
+    /// The state of a refresh account task
+    RefreshAccount(RefreshAccountTaskState),
     /// The state of a settle internal match task
     SettleInternalMatch(SettleInternalMatchTaskState),
     /// The state of a settle external match task
@@ -61,6 +63,9 @@ impl TaskStateWrapper {
             TaskStateWrapper::CreateOrder(state) => {
                 <CreateOrderTaskState as TaskState>::committed(state)
             },
+            TaskStateWrapper::RefreshAccount(state) => {
+                <RefreshAccountTaskState as TaskState>::committed(state)
+            },
             TaskStateWrapper::SettleInternalMatch(state) => {
                 <SettleInternalMatchTaskState as TaskState>::committed(state)
             },
@@ -84,6 +89,9 @@ impl TaskStateWrapper {
                 *state == CreateBalanceTaskState::commit_point()
             },
             TaskStateWrapper::CreateOrder(state) => *state == CreateOrderTaskState::commit_point(),
+            TaskStateWrapper::RefreshAccount(state) => {
+                *state == RefreshAccountTaskState::commit_point()
+            },
             TaskStateWrapper::SettleInternalMatch(state) => {
                 *state == SettleInternalMatchTaskState::commit_point()
             },
@@ -110,6 +118,9 @@ impl TaskStateWrapper {
             TaskStateWrapper::CreateOrder(state) => {
                 <CreateOrderTaskState as TaskState>::completed(state)
             },
+            TaskStateWrapper::RefreshAccount(state) => {
+                <RefreshAccountTaskState as TaskState>::completed(state)
+            },
             TaskStateWrapper::SettleInternalMatch(state) => {
                 <SettleInternalMatchTaskState as TaskState>::completed(state)
             },
@@ -129,6 +140,7 @@ impl Display for TaskStateWrapper {
             TaskStateWrapper::Deposit(state) => write!(f, "{state}"),
             TaskStateWrapper::CreateBalance(state) => write!(f, "{state}"),
             TaskStateWrapper::CreateOrder(state) => write!(f, "{state}"),
+            TaskStateWrapper::RefreshAccount(state) => write!(f, "{state}"),
             TaskStateWrapper::SettleInternalMatch(state) => write!(f, "{state}"),
             TaskStateWrapper::SettleExternalMatch(state) => write!(f, "{state}"),
             TaskStateWrapper::Withdraw(state) => write!(f, "{state}"),

@@ -81,6 +81,11 @@ pub enum HistoricalTaskDescription {
         /// The input amount for the order
         amount: Amount,
     },
+    /// An account was refreshed
+    RefreshAccount {
+        /// The account ID that was refreshed
+        account_id: AccountId,
+    },
 }
 
 impl HistoricalTaskDescription {
@@ -103,6 +108,9 @@ impl HistoricalTaskDescription {
                 token: desc.token,
                 amount: desc.amount,
             }),
+            TaskDescriptor::RefreshAccount(desc) => {
+                Some(Self::RefreshAccount { account_id: desc.account_id })
+            },
             TaskDescriptor::SettleInternalMatch(_) => None,
             TaskDescriptor::SettleExternalMatch(_) => None,
             TaskDescriptor::NodeStartup(_) => None,

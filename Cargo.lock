@@ -9180,6 +9180,7 @@ dependencies = [
  "flate2",
  "futures",
  "gossip-api",
+ "http 1.4.0",
  "inventory",
  "itertools 0.11.0",
  "job-types",
@@ -9192,6 +9193,7 @@ dependencies = [
  "proof-manager",
  "rand 0.8.5",
  "renegade-metrics",
+ "reqwest",
  "serde",
  "serde_json",
  "state",
@@ -9206,6 +9208,7 @@ dependencies = [
  "types-proofs",
  "types-runtime",
  "types-tasks",
+ "url",
  "util",
  "uuid",
 ]

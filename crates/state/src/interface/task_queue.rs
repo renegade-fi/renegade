@@ -4,7 +4,8 @@ use tracing::instrument;
 use types_core::AccountId;
 use types_gossip::WrappedPeerId;
 use types_tasks::{
-    HistoricalTask, QueuedTask, QueuedTaskState, TaskDescriptor, TaskIdentifier, TaskQueueKey,
+    HistoricalTask, QueuedTask, QueuedTaskState, RefreshAccountTaskDescriptor, TaskDescriptor,
+    TaskIdentifier, TaskQueueKey,
 };
 use util::{res_some, telemetry::helpers::backfill_trace_field};
 
@@ -146,9 +147,20 @@ impl StateInner {
     /// Returns the task ID for the refresh
     pub async fn append_account_refresh_task(
         &self,
-        _account_id: AccountId,
+        account_id: AccountId,
     ) -> Result<TaskIdentifier, StateError> {
-        todo!("Implement append_account_refresh_task")
+        // Fetch the account's keychain
+        let keychain = self
+            .get_account_keychain(&account_id)
+            .await?
+            .ok_or_else(|| StorageError::not_found(format!("account {account_id} not found")))?;
+
+        // Create and append the task
+        let descriptor = RefreshAccountTaskDescriptor::new(account_id, keychain);
+        let (tid, waiter) = self.append_task(descriptor.into()).await?;
+        waiter.await?;
+
+        Ok(tid)
     }
 
     /// Append a task to the queue

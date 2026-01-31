@@ -52,6 +52,7 @@ fn should_simulate(task: &QueuedTask) -> bool {
         // External matches bypass the task queue and are not simulated
         TaskDescriptor::SettleExternalMatch(_) => false,
         TaskDescriptor::NodeStartup(_) => false,
+        TaskDescriptor::RefreshAccount(_) => false,
     }
 }
 
@@ -71,6 +72,7 @@ fn simulate_single_account_task(
         // Ignore all non-wallet tasks
         TaskDescriptor::SettleExternalMatch(_) => Ok(()),
         TaskDescriptor::NodeStartup(_) => Ok(()),
+        TaskDescriptor::RefreshAccount(_) => Ok(()),
     }
 }
 
