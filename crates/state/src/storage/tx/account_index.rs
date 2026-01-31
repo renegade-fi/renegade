@@ -454,11 +454,11 @@ impl StateTxn<'_, RW> {
         Ok(())
     }
 
-    /// Set the intent hash index mapping
+    /// Set the intent hash to order and account mapping
     ///
     /// Maps intent_hash to (account_id, order_id) for routing public intent
     /// events
-    pub fn set_intent_index(
+    pub fn set_intent_to_order_and_account(
         &self,
         intent_hash: &B256,
         account_id: &AccountId,
@@ -468,8 +468,8 @@ impl StateTxn<'_, RW> {
         self.inner().write(ACCOUNTS_TABLE, &key, &(*account_id, *order_id))
     }
 
-    /// Delete the intent hash index mapping
-    pub fn delete_intent_index(&self, intent_hash: &B256) -> Result<(), StorageError> {
+    /// Remove the intent hash mapping
+    pub fn remove_intent_mapping(&self, intent_hash: &B256) -> Result<(), StorageError> {
         let key = intent_hash_key(intent_hash);
         self.inner().delete(ACCOUNTS_TABLE, &key)?;
         Ok(())
@@ -866,7 +866,7 @@ mod test {
         let tx = db.new_write_tx().unwrap();
         tx.new_account(&account).unwrap();
         tx.add_order(&account.id, &order).unwrap();
-        tx.set_intent_index(&intent_hash, &account.id, &order.id).unwrap();
+        tx.set_intent_to_order_and_account(&intent_hash, &account.id, &order.id).unwrap();
         tx.commit().unwrap();
 
         // Get intent index
@@ -889,7 +889,7 @@ mod test {
         let tx = db.new_write_tx().unwrap();
         tx.new_account(&account).unwrap();
         tx.add_order(&account.id, &order).unwrap();
-        tx.set_intent_index(&intent_hash, &account.id, &order.id).unwrap();
+        tx.set_intent_to_order_and_account(&intent_hash, &account.id, &order.id).unwrap();
         tx.commit().unwrap();
 
         let tx = db.new_read_tx().unwrap();
@@ -898,7 +898,7 @@ mod test {
 
         // Delete and verify
         let tx = db.new_write_tx().unwrap();
-        tx.delete_intent_index(&intent_hash).unwrap();
+        tx.remove_intent_mapping(&intent_hash).unwrap();
         tx.commit().unwrap();
 
         let tx = db.new_read_tx().unwrap();

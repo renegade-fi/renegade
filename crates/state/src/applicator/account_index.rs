@@ -124,7 +124,7 @@ impl StateApplicator {
             return Err(StateApplicatorError::reject("Ring 0/1 order must have PublicOrder auth"));
         }
         let intent_hash = compute_intent_hash(order.intent(), self.config.executor_address);
-        tx.set_intent_index(&intent_hash, &account_id, &order.id)?;
+        tx.set_intent_to_order_and_account(&intent_hash, &account_id, &order.id)?;
 
         // Index the owner for balance event routing
         // TODO: When multiple rings are enabled, only index Ring 0/1 orders
@@ -172,7 +172,7 @@ impl StateApplicator {
 
         // Delete the intent hash index
         let intent_hash = compute_intent_hash(order.intent(), self.config.executor_address);
-        tx.delete_intent_index(&intent_hash)?;
+        tx.remove_intent_mapping(&intent_hash)?;
 
         // Remove order from account storage
         tx.remove_order(&account_id, &order_id)?;
