@@ -269,6 +269,25 @@ impl CreateBalanceTask {
         };
 
         let deposit = self.create_deposit();
+
+        // Print detailed balance fields for debugging
+        info!("\n=== RELAYER Balance Fields (inputs to commitment) ===");
+        info!("mint: {}", bal.state_wrapper.inner.mint);
+        info!("owner: {}", bal.state_wrapper.inner.owner);
+        info!("relayer_fee_recipient: {}", bal.state_wrapper.inner.relayer_fee_recipient);
+        info!("authority.x: {}", bal.state_wrapper.inner.authority.point.x.to_biguint());
+        info!("authority.y: {}", bal.state_wrapper.inner.authority.point.y.to_biguint());
+        info!("relayer_fee_balance: {}", bal.state_wrapper.inner.relayer_fee_balance);
+        info!("protocol_fee_balance: {}", bal.state_wrapper.inner.protocol_fee_balance);
+        info!("amount: {}", bal.state_wrapper.inner.amount);
+
+        info!("\n=== RELAYER Stream States ===");
+        info!("recovery_stream.seed: {}", bal.state_wrapper.recovery_stream.seed.to_biguint());
+        info!("recovery_stream.index: {}", bal.state_wrapper.recovery_stream.index);
+        info!("share_stream.seed: {}", bal.state_wrapper.share_stream.seed.to_biguint());
+        info!("share_stream.index: {}", bal.state_wrapper.share_stream.index);
+        info!("===========================================\n");
+
         let recovery_id = bal.state_wrapper.compute_recovery_id();
         let balance_commitment = bal.state_wrapper.compute_commitment();
         info!("RELAYER RECOVERY ID: {}", recovery_id);
