@@ -18,12 +18,20 @@ use crate::{
     error::TaskDriverError,
     running_task::RunnableTask,
     tasks::{
-        create_balance::CreateBalanceTask, create_new_account::CreateNewAccountTask,
-        create_order::CreateOrderTask, deposit::DepositTask, node_startup::NodeStartupTask,
-        settlement::settle_external_match::SettleExternalMatchTask,
-        settlement::settle_internal_match::SettleInternalMatchTask, withdraw::WithdrawTask,
+        create_balance::CreateBalanceTask,
+        create_new_account::CreateNewAccountTask,
+        create_order::CreateOrderTask,
+        deposit::DepositTask,
+        node_startup::NodeStartupTask,
+        refresh_account::RefreshAccountTask,
+        settlement::{
+            settle_external_match::SettleExternalMatchTask,
+            settle_internal_match::SettleInternalMatchTask,
+        },
+        withdraw::WithdrawTask,
     },
     traits::{Descriptor as _, Task, TaskContext},
+    utils::indexer_client::IndexerClient,
     worker::TaskDriverConfig,
 };
 
@@ -93,6 +101,7 @@ impl Default for RuntimeArgs {
 impl TaskExecutor {
     /// Constructor
     pub fn new(config: TaskDriverConfig) -> Self {
+        let indexer_client = IndexerClient::new(config.indexer_url, config.indexer_hmac_key);
         let task_context = TaskContext {
             darkpool_client: config.darkpool_client,
             network_queue: config.network_queue,
@@ -102,6 +111,7 @@ impl TaskExecutor {
             task_queue: config.task_queue_sender,
             state: config.state,
             bus: config.system_bus.clone(),
+            indexer_client,
         };
 
         Self {
@@ -233,6 +243,9 @@ impl TaskExecutor {
             },
             TaskDescriptor::CreateOrder(desc) => {
                 self.start_task_helper::<CreateOrderTask>(id, desc, affected_accounts).await
+            },
+            TaskDescriptor::RefreshAccount(desc) => {
+                self.start_task_helper::<RefreshAccountTask>(id, desc, affected_accounts).await
             },
             TaskDescriptor::SettleInternalMatch(desc) => {
                 self.start_task_helper::<SettleInternalMatchTask>(id, desc, affected_accounts).await

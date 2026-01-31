@@ -53,7 +53,10 @@ use serde::{Serialize, de::DeserializeOwned};
 use state::{State, create_global_state};
 use system_bus::SystemBus;
 use system_clock::SystemClock;
-use task_driver::worker::{TaskDriver, TaskDriverConfig};
+use task_driver::{
+    indexer_client::IndexerClient,
+    worker::{TaskDriver, TaskDriverConfig},
+};
 use test_helpers::mocks::mock_cancel;
 use tokio::runtime::Handle;
 use types_core::Price;
@@ -371,6 +374,8 @@ impl MockNodeController {
         let event_queue = self.event_queue.0.clone();
         let bus = self.bus.clone();
         let state = self.state.clone().expect("State not initialized");
+        let indexer_client =
+            IndexerClient::new(self.config.indexer_url.clone(), self.config.indexer_hmac_key);
 
         let conf = TaskDriverConfig::new(
             task_queue,
@@ -382,6 +387,7 @@ impl MockNodeController {
             self.matching_engine_worker_queue.0.clone(),
             bus,
             state,
+            indexer_client,
         );
         let mut driver = run_fut(TaskDriver::new(conf)).expect("Failed to create task driver");
         driver.start().expect("Failed to start task driver");

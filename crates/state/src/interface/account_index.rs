@@ -309,6 +309,16 @@ impl StateInner {
     ) -> Result<ProposalWaiter, StateError> {
         self.send_proposal(StateTransition::UpdateAccountBalance { account_id, balance }).await
     }
+
+    /// Refresh an account's state with updated orders and balances
+    pub async fn refresh_account(
+        &self,
+        account_id: AccountId,
+        orders: Vec<(Order, MatchingPoolName)>,
+        balances: Vec<Balance>,
+    ) -> Result<ProposalWaiter, StateError> {
+        self.send_proposal(StateTransition::RefreshAccount { account_id, orders, balances }).await
+    }
 }
 
 #[cfg(test)]

@@ -1,6 +1,9 @@
 //! Applicator methods for the account index, separated out for discoverability
 
+use std::collections::HashSet;
+
 use types_account::{
+    MatchingPoolName,
     account::{Account, OrderId},
     balance::Balance,
     order::Order,
@@ -85,9 +88,7 @@ impl StateApplicator {
         let matching_pool = tx.get_matching_pool_for_order(&order_id)?;
 
         // Remove order from account storage
-        tx.remove_order(&account_id, &order_id)?;
-        tx.delete_order_auth(&order_id)?;
-        tx.remove_order_from_matching_pool(&order_id)?;
+        tx.remove_order_with_auth(&account_id, &order_id)?;
         tx.commit()?;
 
         // Remove from the matching engine
@@ -159,6 +160,79 @@ impl StateApplicator {
             // Fetch the information the matching engine needs to update
             let matching_pool = tx.get_matching_pool_for_order(&order_id)?;
             let matchable_amount = tx.get_order_matchable_amount(&order_id)?.unwrap_or_default();
+            if matchable_amount > 0 {
+                engine.upsert_order(account_id, &order, matchable_amount, matching_pool);
+            } else {
+                engine.cancel_order(&order, matching_pool);
+            }
+        }
+
+        Ok(ApplicatorReturnType::None)
+    }
+
+    /// Refresh an account's state from the indexer
+    pub fn refresh_account(
+        &self,
+        account_id: AccountId,
+        orders: Vec<(Order, MatchingPoolName)>,
+        balances: &[Balance],
+    ) -> Result<ApplicatorReturnType> {
+        // Create write transaction
+        let tx = self.db().new_write_tx()?;
+        if !tx.contains_account(&account_id)? {
+            return Err(StateApplicatorError::reject("account not found"));
+        }
+
+        // Update all balances
+        for balance in balances {
+            tx.update_balance(&account_id, balance)?;
+        }
+
+        // Collect order IDs from the refresh set
+        let refresh_order_ids: HashSet<OrderId> = orders.iter().map(|(o, _)| o.id).collect();
+
+        // Get current orders and identify stale ones to remove
+        let current_orders = tx.get_account_orders(&account_id)?;
+        let mut stale_orders = Vec::new();
+        for order in current_orders {
+            if !refresh_order_ids.contains(&order.id) {
+                let matching_pool = tx.get_matching_pool_for_order(&order.id)?;
+                tx.remove_order_with_auth(&account_id, &order.id)?;
+                stale_orders.push((order, matching_pool));
+            }
+        }
+
+        // Update all orders and their matching pool assignments
+        for (order, pool_name) in &orders {
+            // Check if the order exists
+            let order_exists = tx.get_order(&order.id)?.is_some();
+
+            if order_exists {
+                tx.update_order(&account_id, order)?;
+            } else {
+                tx.add_order(&account_id, order)?;
+            }
+
+            // Assign to the matching pool
+            tx.assign_order_to_matching_pool(&order.id, pool_name)?;
+        }
+
+        tx.commit()?;
+
+        // Open a read transaction for matching engine updates
+        let engine = self.matching_engine();
+        let tx = self.db().new_read_tx()?;
+
+        // Cancel stale orders in the matching engine
+        for (order, matching_pool) in stale_orders {
+            engine.cancel_order(&order, matching_pool);
+        }
+
+        // Update/cancel refreshed orders based on matchable amount
+        for (order, matching_pool) in orders {
+            let order_id = order.id;
+            let matchable_amount = tx.get_order_matchable_amount(&order_id)?.unwrap_or_default();
+
             if matchable_amount > 0 {
                 engine.upsert_order(account_id, &order, matchable_amount, matching_pool);
             } else {

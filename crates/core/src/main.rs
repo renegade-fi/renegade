@@ -39,7 +39,10 @@ use util::default_option;
 
 use error::CoordinatorError;
 use system_clock::SystemClock;
-use task_driver::worker::{TaskDriver, TaskDriverConfig};
+use task_driver::{
+    indexer_client::IndexerClient,
+    worker::{TaskDriver, TaskDriverConfig},
+};
 use tokio::select;
 use tracing::info;
 
@@ -185,6 +188,8 @@ async fn main() -> Result<(), CoordinatorError> {
         matching_engine_worker_sender.clone(),
         system_bus.clone(),
         global_state.clone(),
+        args.indexer_url.clone(),
+        args.indexer_hmac_key,
     );
     let mut task_driver =
         TaskDriver::new(task_driver_config).await.expect("failed to build task driver");
