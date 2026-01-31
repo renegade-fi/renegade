@@ -290,7 +290,7 @@ mod rkyv_order_impls {
 
     use crate::OrderId;
     use crate::balance::{ArchivedBalance, ArchivedBalanceLocation};
-    use crate::order::{ArchivedPrivacyRing, Order};
+    use crate::order::Order;
 
     use super::ArchivedAccount;
     use super::order::ArchivedOrder;

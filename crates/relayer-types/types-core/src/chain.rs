@@ -54,3 +54,16 @@ impl FromStr for Chain {
         }
     }
 }
+
+impl Chain {
+    /// Get the chain ID for this chain
+    pub fn chain_id(&self) -> u64 {
+        match self {
+            Chain::ArbitrumSepolia => 421614,
+            Chain::ArbitrumOne => 42161,
+            Chain::BaseSepolia => 84532,
+            Chain::BaseMainnet => 8453,
+            Chain::Devnet => 31337,
+        }
+    }
+}
