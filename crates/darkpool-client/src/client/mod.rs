@@ -87,7 +87,7 @@ impl DarkpoolClientConfig {
 
     /// Constructs RPC clients capable of signing transactions from the
     /// configuration
-    fn get_provider(&self) -> Result<RenegadeProvider, DarkpoolClientConfigError> {
+    pub fn get_provider(&self) -> Result<RenegadeProvider, DarkpoolClientConfigError> {
         let url = Url::parse(&self.rpc_url)
             .map_err(err_str!(DarkpoolClientConfigError::RpcClientInitialization))?;
         let key = self.private_key.clone();
