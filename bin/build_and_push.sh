@@ -11,14 +11,7 @@ while [[ "$#" -gt 0 ]]; do
     shift
 done
 
-# If chain contains "arbitrum", define the "arbitrum" cargo feature
-if [[ "$CHAIN" == *"arbitrum"* ]]; then
-    CARGO_FEATURES="default,arbitrum"
-elif [[ "$CHAIN" == *"base"* ]]; then
-    CARGO_FEATURES="default,base"
-else
-    CARGO_FEATURES="default"
-fi
+CARGO_FEATURES="default,base"
 
 # Use default if not provided
 CHAIN=${CHAIN:-$DEFAULT_CHAIN}
