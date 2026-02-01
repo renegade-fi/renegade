@@ -18,6 +18,7 @@ use crate::{
     error::TaskDriverError,
     running_task::RunnableTask,
     tasks::{
+        cancel_order::CancelOrderTask,
         create_balance::CreateBalanceTask,
         create_new_account::CreateNewAccountTask,
         create_order::CreateOrderTask,
@@ -243,6 +244,9 @@ impl TaskExecutor {
             },
             TaskDescriptor::CreateOrder(desc) => {
                 self.start_task_helper::<CreateOrderTask>(id, desc, affected_accounts).await
+            },
+            TaskDescriptor::CancelOrder(desc) => {
+                self.start_task_helper::<CancelOrderTask>(id, desc, affected_accounts).await
             },
             TaskDescriptor::RefreshAccount(desc) => {
                 self.start_task_helper::<RefreshAccountTask>(id, desc, affected_accounts).await

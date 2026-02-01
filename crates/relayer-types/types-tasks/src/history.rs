@@ -111,6 +111,7 @@ impl HistoricalTaskDescription {
             TaskDescriptor::RefreshAccount(desc) => {
                 Some(Self::RefreshAccount { account_id: desc.account_id })
             },
+            TaskDescriptor::CancelOrder(_) => None,
             TaskDescriptor::SettleInternalMatch(_) => None,
             TaskDescriptor::SettleExternalMatch(_) => None,
             TaskDescriptor::NodeStartup(_) => None,

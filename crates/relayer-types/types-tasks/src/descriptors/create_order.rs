@@ -70,7 +70,7 @@ pub fn validate_order_auth(
     auth: &OrderAuth,
 ) -> Result<(), TaskError> {
     match auth {
-        OrderAuth::PublicOrder { intent_signature } => {
+        OrderAuth::PublicOrder { permit, intent_signature } => {
             validate_public_order_auth(executor, intent, intent_signature)
         },
         _ => unimplemented!("auth validation not implemented for this order auth type"),

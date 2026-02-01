@@ -62,8 +62,10 @@ impl StateTxn<'_, RW> {
 mod test {
     use circuit_types::{primitives::baby_jubjub::BabyJubJubPoint, schnorr::SchnorrSignature};
     use constants::EmbeddedScalarField;
-    use renegade_solidity_abi::v2::IDarkpoolV2::SignatureWithNonce;
-    use types_account::{account::OrderId, order_auth::OrderAuth};
+    use types_account::{
+        account::OrderId,
+        order_auth::{OrderAuth, mocks::mock_order_auth},
+    };
 
     use crate::{ORDER_AUTH_TABLE, test_helpers::mock_db};
 
@@ -80,12 +82,7 @@ mod test {
 
         // Write the order auth
         let order_id = OrderId::new_v4();
-        let auth = OrderAuth::PublicOrder {
-            intent_signature: SignatureWithNonce {
-                nonce: alloy::primitives::U256::from(0),
-                signature: alloy::primitives::Bytes::from(vec![0u8; 65]),
-            },
-        };
+        let auth = mock_order_auth();
 
         let tx = db.new_write_tx().unwrap();
         tx.write_order_auth(&order_id, &auth).unwrap();

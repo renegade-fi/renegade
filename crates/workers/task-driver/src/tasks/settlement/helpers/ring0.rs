@@ -117,7 +117,7 @@ impl SettlementProcessor {
             })?;
 
         let sig = match auth {
-            OrderAuth::PublicOrder { intent_signature } => intent_signature,
+            OrderAuth::PublicOrder { intent_signature, .. } => intent_signature,
             _ => {
                 return Err(SettlementError::state(format!(
                     "invalid order auth type for order {order_id}"

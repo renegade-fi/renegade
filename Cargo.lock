@@ -5,7 +5,7 @@ version = 4
 [[package]]
 name = "abi"
 version = "0.1.0"
-source = "git+https://github.com/renegade-fi/renegade-contracts#34ad7a73f206688d82bedbfdac92e52f371c8637"
+source = "git+https://github.com/renegade-fi/renegade-contracts#08d8d9820a0b225498cf518533aed8f440f8f577"
 dependencies = [
  "alloy",
  "ark-bn254",

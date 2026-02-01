@@ -39,10 +39,7 @@ use util::default_option;
 
 use error::CoordinatorError;
 use system_clock::SystemClock;
-use task_driver::{
-    indexer_client::IndexerClient,
-    worker::{TaskDriver, TaskDriverConfig},
-};
+use task_driver::worker::{TaskDriver, TaskDriverConfig};
 use tokio::select;
 use tracing::info;
 
