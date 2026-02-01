@@ -37,6 +37,8 @@ use crate::{
 };
 
 pub use error::AccountError;
+pub use order::OrderRefreshData;
+pub use order_auth::OrderAuth;
 
 /// An identifier of an order used for caching
 pub type OrderId = Uuid;

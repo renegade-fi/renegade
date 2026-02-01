@@ -8,8 +8,8 @@ use circuit_types::Nullifier;
 use darkpool_types::rkyv_remotes::ScalarDef;
 use serde::{Deserialize, Serialize};
 use types_account::{
-    Account, MatchingPoolName, MerkleAuthenticationPath, account::OrderId, balance::Balance,
-    order::Order, order_auth::OrderAuth,
+    Account, MatchingPoolName, MerkleAuthenticationPath, OrderRefreshData, account::OrderId,
+    balance::Balance, order::Order, order_auth::OrderAuth,
 };
 use types_core::AccountId;
 use types_gossip::WrappedPeerId;
@@ -60,8 +60,8 @@ pub enum StateTransition {
     RefreshAccount {
         /// The account ID to refresh
         account_id: AccountId,
-        /// The up-to-date ring 0 orders with their matching pool assignments
-        orders: Vec<(Order, MatchingPoolName)>,
+        /// The up-to-date ring 0 orders with their matching pool assignments and auth
+        orders: Vec<OrderRefreshData>,
         /// The up-to-date balances
         balances: Vec<Balance>,
     },
