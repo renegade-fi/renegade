@@ -269,6 +269,7 @@ impl CreateBalanceTask {
         };
 
         let deposit = self.create_deposit();
+
         let recovery_id = bal.state_wrapper.compute_recovery_id();
         let balance_commitment = bal.state_wrapper.compute_commitment();
         let statement = ValidBalanceCreateStatement {

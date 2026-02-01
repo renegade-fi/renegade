@@ -16,6 +16,10 @@ pub enum Chain {
     BaseSepolia,
     /// The Base Mainnet chain
     BaseMainnet,
+    /// The Ethereum Sepolia chain
+    EthereumSepolia,
+    /// The Ethereum Mainnet chain
+    EthereumMainnet,
     /// Any local devnet chain
     Devnet,
 }
@@ -27,6 +31,8 @@ impl Display for Chain {
             Chain::ArbitrumOne => write!(f, "arbitrum-one"),
             Chain::BaseSepolia => write!(f, "base-sepolia"),
             Chain::BaseMainnet => write!(f, "base-mainnet"),
+            Chain::EthereumSepolia => write!(f, "ethereum-sepolia"),
+            Chain::EthereumMainnet => write!(f, "ethereum-mainnet"),
             Chain::Devnet => write!(f, "devnet"),
         }
     }
@@ -41,6 +47,8 @@ impl FromStr for Chain {
             "arbitrum-one" => Ok(Chain::ArbitrumOne),
             "base-sepolia" => Ok(Chain::BaseSepolia),
             "base-mainnet" => Ok(Chain::BaseMainnet),
+            "ethereum-sepolia" => Ok(Chain::EthereumSepolia),
+            "ethereum-mainnet" => Ok(Chain::EthereumMainnet),
             "devnet" => Ok(Chain::Devnet),
             _ => Err(format!("Invalid chain: {s}")),
         }
@@ -55,6 +63,8 @@ impl Chain {
             Chain::ArbitrumOne => 42161,
             Chain::BaseSepolia => 84532,
             Chain::BaseMainnet => 8453,
+            Chain::EthereumSepolia => 11155111,
+            Chain::EthereumMainnet => 1,
             Chain::Devnet => 31337,
         }
     }
