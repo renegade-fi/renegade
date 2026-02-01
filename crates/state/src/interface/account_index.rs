@@ -6,7 +6,7 @@
 use alloy_primitives::Address;
 use circuit_types::Amount;
 use types_account::{
-    MatchingPoolName,
+    MatchingPoolName, OrderRefreshData,
     account::{Account, OrderId},
     balance::{Balance, BalanceLocation},
     keychain::KeyChain,
@@ -314,7 +314,7 @@ impl StateInner {
     pub async fn refresh_account(
         &self,
         account_id: AccountId,
-        orders: Vec<(Order, MatchingPoolName)>,
+        orders: Vec<OrderRefreshData>,
         balances: Vec<Balance>,
     ) -> Result<ProposalWaiter, StateError> {
         self.send_proposal(StateTransition::RefreshAccount { account_id, orders, balances }).await

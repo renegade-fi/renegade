@@ -3,7 +3,7 @@
 use std::collections::HashSet;
 
 use types_account::{
-    MatchingPoolName,
+    OrderRefreshData,
     account::{Account, OrderId},
     balance::Balance,
     order::Order,
@@ -174,7 +174,7 @@ impl StateApplicator {
     pub fn refresh_account(
         &self,
         account_id: AccountId,
-        orders: Vec<(Order, MatchingPoolName)>,
+        orders: Vec<OrderRefreshData>,
         balances: &[Balance],
     ) -> Result<ApplicatorReturnType> {
         // Create write transaction
@@ -189,7 +189,7 @@ impl StateApplicator {
         }
 
         // Collect order IDs from the refresh set
-        let refresh_order_ids: HashSet<OrderId> = orders.iter().map(|(o, _)| o.id).collect();
+        let refresh_order_ids: HashSet<OrderId> = orders.iter().map(|o| o.order.id).collect();
 
         // Get current orders and identify stale ones to remove
         let current_orders = tx.get_account_orders(&account_id)?;
@@ -202,8 +202,8 @@ impl StateApplicator {
             }
         }
 
-        // Update all orders and their matching pool assignments
-        for (order, pool_name) in &orders {
+        // Update all orders, their auth, and matching pool assignments
+        for OrderRefreshData { order, matching_pool, auth } in &orders {
             // Check if the order exists
             let order_exists = tx.get_order(&order.id)?.is_some();
 
@@ -213,8 +213,11 @@ impl StateApplicator {
                 tx.add_order(&account_id, order)?;
             }
 
+            // Write the order auth
+            tx.write_order_auth(&order.id, auth)?;
+
             // Assign to the matching pool
-            tx.assign_order_to_matching_pool(&order.id, pool_name)?;
+            tx.assign_order_to_matching_pool(&order.id, matching_pool)?;
         }
 
         tx.commit()?;
@@ -229,7 +232,7 @@ impl StateApplicator {
         }
 
         // Update/cancel refreshed orders based on matchable amount
-        for (order, matching_pool) in orders {
+        for OrderRefreshData { order, matching_pool, .. } in orders {
             let order_id = order.id;
             let matchable_amount = tx.get_order_matchable_amount(&order_id)?.unwrap_or_default();
 

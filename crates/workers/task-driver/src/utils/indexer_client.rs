@@ -2,8 +2,9 @@
 
 use std::time::Duration;
 
-use external_api::auth::add_expiring_auth_to_headers;
+use external_api::{auth::add_expiring_auth_to_headers, types::SignatureWithNonce};
 use http::HeaderMap;
+use renegade_solidity_abi::v2::IDarkpoolV2::PublicIntentPermit;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -90,6 +91,10 @@ pub struct ApiIntent {
 pub struct ApiPublicIntent {
     /// The underlying order type
     pub order: Order,
+    /// The permit for the intent
+    pub permit: PublicIntentPermit,
+    /// The intent signature
+    pub intent_signature: SignatureWithNonce,
     /// The matching pool to which the intent is allocated
     pub matching_pool: String,
 }
