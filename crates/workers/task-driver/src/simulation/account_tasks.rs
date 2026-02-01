@@ -49,6 +49,8 @@ fn should_simulate(task: &QueuedTask) -> bool {
         TaskDescriptor::CreateBalance(_) => true,
         TaskDescriptor::SettleInternalMatch(_) => true,
         TaskDescriptor::Withdraw(_) => true,
+        // Cancel order removes from local state after on-chain tx succeeds
+        TaskDescriptor::CancelOrder(_) => false,
         // External matches bypass the task queue and are not simulated
         TaskDescriptor::SettleExternalMatch(_) => false,
         TaskDescriptor::NodeStartup(_) => false,
@@ -70,6 +72,7 @@ fn simulate_single_account_task(
         TaskDescriptor::SettleInternalMatch(t) => simulate_settle_internal_match(account, &t),
         TaskDescriptor::Withdraw(t) => simulate_withdraw(account, &t),
         // Ignore all non-wallet tasks
+        TaskDescriptor::CancelOrder(_) => Ok(()),
         TaskDescriptor::SettleExternalMatch(_) => Ok(()),
         TaskDescriptor::NodeStartup(_) => Ok(()),
         TaskDescriptor::RefreshAccount(_) => Ok(()),

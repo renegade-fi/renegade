@@ -1,5 +1,6 @@
 //! Task definitions run by the driver
 
+pub mod cancel_order;
 pub mod create_balance;
 pub mod create_new_account;
 pub mod create_order;
