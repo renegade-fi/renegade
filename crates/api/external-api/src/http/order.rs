@@ -1,10 +1,17 @@
 //! HTTP route definitions and request/response types for order operations
 
 #[cfg(feature = "full-api")]
+use alloy::primitives::Address;
+#[cfg(feature = "full-api")]
 use darkpool_types::intent::Intent;
+#[cfg(feature = "full-api")]
+use renegade_solidity_abi::v2::IDarkpoolV2::SignatureWithNonce;
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "full-api")]
-use types_account::order::{OrderMetadata, PrivacyRing};
+use types_account::{
+    order::{OrderMetadata, PrivacyRing},
+    order_auth::OrderAuth as AccountOrderAuth,
+};
 use uuid::Uuid;
 
 use crate::error::ApiTypeError;
@@ -69,6 +76,43 @@ impl CreateOrderRequest {
 
         Ok((intent, ring, meta))
     }
+
+    /// Get the order auth from the request
+    pub fn get_order_auth(&self, executor: Address) -> Result<AccountOrderAuth, ApiTypeError> {
+        use circuit_types::schnorr::SchnorrSignature;
+        use renegade_solidity_abi::v2::IDarkpoolV2;
+
+        let auth = match self.auth.clone() {
+            OrderAuth::PublicOrder { intent_signature } => {
+                let intent = self.order.get_intent()?;
+                let permit = IDarkpoolV2::PublicIntentPermit { intent: intent.into(), executor };
+                let intent_signature = IDarkpoolV2::SignatureWithNonce::try_from(intent_signature)
+                    .map_err(ApiTypeError::parsing)?;
+
+                AccountOrderAuth::PublicOrder { permit, intent_signature }
+            },
+            OrderAuth::NativelySettledPrivateOrder { intent_signature } => {
+                let intent_signature =
+                    SchnorrSignature::try_from(intent_signature).map_err(ApiTypeError::parsing)?;
+
+                AccountOrderAuth::NativelySettledPrivateOrder { intent_signature }
+            },
+            OrderAuth::RenegadeSettledOrder { intent_signature, new_output_balance_signature } => {
+                let intent_signature =
+                    SchnorrSignature::try_from(intent_signature).map_err(ApiTypeError::parsing)?;
+                let new_output_balance_signature =
+                    SchnorrSignature::try_from(new_output_balance_signature)
+                        .map_err(ApiTypeError::parsing)?;
+
+                AccountOrderAuth::RenegadeSettledOrder {
+                    intent_signature,
+                    new_output_balance_signature,
+                }
+            },
+        };
+
+        Ok(auth)
+    }
 }
 
 /// Response for create order
@@ -97,8 +141,8 @@ pub struct UpdateOrderResponse {
 /// Request to cancel an order
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CancelOrderRequest {
-    /// The signature authorizing the cancellation (base64 encoded)
-    pub signature: String,
+    /// The signature authorizing the cancellation
+    pub cancel_signature: SignatureWithNonce,
 }
 
 /// Response for cancel order
@@ -106,8 +150,6 @@ pub struct CancelOrderRequest {
 pub struct CancelOrderResponse {
     /// The task ID for the cancellation
     pub task_id: Uuid,
-    /// The cancelled order
-    pub order: ApiOrder,
     /// Whether the operation has completed
     pub completed: bool,
 }

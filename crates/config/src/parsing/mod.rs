@@ -8,6 +8,7 @@ use clap::Parser;
 use constants::set_bootstrap_mode;
 use libp2p::{Multiaddr, PeerId, identity::Keypair};
 use types_gossip::{ClusterId, WrappedPeerId};
+use url::Url;
 use util::hex::address_from_hex_string;
 
 use crate::{
@@ -22,6 +23,13 @@ use crate::{
 
 pub mod config_file;
 pub(crate) mod utils;
+
+/// Parse a URL string into a `Url` type
+///
+/// Returns a descriptive error message if parsing fails
+fn parse_url(url_str: &str, description: &str) -> Result<Url, String> {
+    url_str.parse().map_err(|e| format!("Invalid {description}: {e}"))
+}
 
 /// Parses command line args into the node config
 ///
@@ -97,14 +105,19 @@ pub(crate) fn parse_config_from_args(cli_args: Cli) -> Result<RelayerConfig, Str
     // --- Parse Service URLs --- //
     let compliance_service_url = cli_args
         .compliance_service_url
-        .map(|url| url.parse().expect("Invalid compliance service URL"));
+        .map(|url| parse_url(&url, "compliance service URL"))
+        .transpose()?;
     let event_export_url =
-        cli_args.event_export_url.map(|url| url.parse().expect("Invalid event export URL"));
+        cli_args.event_export_url.map(|url| parse_url(&url, "event export URL")).transpose()?;
     let price_reporter_url =
-        cli_args.price_reporter_url.map(|url| url.parse().expect("Invalid price reporter URL"));
+        cli_args.price_reporter_url.map(|url| parse_url(&url, "price reporter URL")).transpose()?;
 
     let prover_service_url =
-        cli_args.prover_service_url.map(|url| url.parse().expect("Invalid prover service URL"));
+        cli_args.prover_service_url.map(|url| parse_url(&url, "prover service URL")).transpose()?;
+
+    // Parse indexer config
+    let indexer_url = parse_url(&cli_args.indexer_url, "indexer URL")?;
+    let indexer_hmac_key = parse_symmetric_key(cli_args.indexer_hmac_key)?;
 
     // Fee conversion
     let max_match_fee = FixedPoint::from_f64_round_down(cli_args.max_match_fee);
@@ -129,6 +142,8 @@ pub(crate) fn parse_config_from_args(cli_args: Cli) -> Result<RelayerConfig, Str
         compliance_service_url,
         prover_service_url,
         prover_service_password: cli_args.prover_service_password,
+        indexer_url,
+        indexer_hmac_key,
         bootstrap_mode: cli_args.bootstrap_mode,
         bootstrap_servers: parsed_bootstrap_addrs,
         p2p_port: cli_args.p2p_port,

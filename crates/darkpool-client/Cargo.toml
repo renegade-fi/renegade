@@ -39,6 +39,7 @@ alloy-sol-types = { workspace = true }
 constants = { workspace = true }
 circuit-types = { workspace = true }
 circuits-core = { workspace = true }
+darkpool-types = { workspace = true }
 types-account = { workspace = true }
 types-core = { workspace = true }
 types-proofs = { workspace = true }

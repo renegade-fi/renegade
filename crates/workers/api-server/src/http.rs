@@ -142,7 +142,7 @@ impl HttpServer {
         router.add_account_authenticated_route(
             &Method::POST,
             SYNC_ACCOUNT_ROUTE.to_string(),
-            SyncAccountHandler::new(),
+            SyncAccountHandler::new(state.clone()),
         );
 
         // --- Order Routes (v2) --- //
@@ -177,10 +177,10 @@ impl HttpServer {
         );
 
         // POST /v2/account/:account_id/orders/:order_id/cancel
-        router.add_unauthenticated_route(
+        router.add_account_authenticated_route(
             &Method::POST,
             CANCEL_ORDER_ROUTE.to_string(),
-            CancelOrderHandler::new(),
+            CancelOrderHandler::new(state.clone()),
         );
 
         // --- Balance Routes (v2) --- //

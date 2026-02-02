@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use state::State;
 use system_bus::SystemBus;
 
-use crate::{hooks::TaskHook, task_state::TaskStateWrapper};
+use crate::{hooks::TaskHook, task_state::TaskStateWrapper, utils::indexer_client::IndexerClient};
 
 // ------------------
 // | Task and State |
@@ -144,4 +144,6 @@ pub struct TaskContext {
     pub task_queue: TaskDriverQueue,
     /// A handle on the system bus
     pub bus: SystemBus,
+    /// A client for the darkpool indexer API
+    pub indexer_client: IndexerClient,
 }

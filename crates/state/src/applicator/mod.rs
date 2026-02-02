@@ -102,6 +102,9 @@ impl StateApplicator {
             StateTransition::UpdateAccountBalance { account_id, balance } => {
                 self.update_account_balance(account_id, &balance)
             },
+            StateTransition::RefreshAccount { account_id, orders, balances } => {
+                self.refresh_account(account_id, orders, &balances)
+            },
             StateTransition::AddOrderValidityProof { order_id, proof } => {
                 self.add_order_validity_proof(order_id, proof)
             },

@@ -233,39 +233,6 @@ pub enum OrderAuth {
     },
 }
 
-#[cfg(feature = "full-api")]
-impl TryFrom<OrderAuth> for types_account::order_auth::OrderAuth {
-    type Error = ApiTypeError;
-
-    fn try_from(auth: OrderAuth) -> Result<Self, Self::Error> {
-        match auth {
-            OrderAuth::PublicOrder { intent_signature } => {
-                let intent_signature = IDarkpoolV2::SignatureWithNonce::try_from(intent_signature)
-                    .map_err(ApiTypeError::parsing)?;
-                Ok(types_account::order_auth::OrderAuth::PublicOrder { intent_signature })
-            },
-            OrderAuth::NativelySettledPrivateOrder { intent_signature } => {
-                let intent_signature =
-                    SchnorrSignature::try_from(intent_signature).map_err(ApiTypeError::parsing)?;
-                Ok(types_account::order_auth::OrderAuth::NativelySettledPrivateOrder {
-                    intent_signature,
-                })
-            },
-            OrderAuth::RenegadeSettledOrder { intent_signature, new_output_balance_signature } => {
-                let intent_signature =
-                    SchnorrSignature::try_from(intent_signature).map_err(ApiTypeError::parsing)?;
-                let new_output_balance_signature =
-                    SchnorrSignature::try_from(new_output_balance_signature)
-                        .map_err(ApiTypeError::parsing)?;
-                Ok(types_account::order_auth::OrderAuth::RenegadeSettledOrder {
-                    intent_signature,
-                    new_output_balance_signature,
-                })
-            },
-        }
-    }
-}
-
 /// A signature with an associated nonce
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SignatureWithNonce {

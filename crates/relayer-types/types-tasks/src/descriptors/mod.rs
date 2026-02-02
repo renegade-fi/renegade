@@ -2,20 +2,24 @@
 // Allow missing docs on generated rkyv Archived types
 #![cfg_attr(feature = "rkyv", allow(missing_docs))]
 
+mod cancel_order;
 mod create_balance;
 mod create_order;
 mod deposit;
 mod new_account;
 mod node_startup;
+mod refresh_account;
 mod settle_external_match;
 mod settle_internal_match;
 mod withdraw;
 
+pub use cancel_order::*;
 pub use create_balance::*;
 pub use create_order::*;
 pub use deposit::*;
 pub use new_account::*;
 pub use node_startup::*;
+pub use refresh_account::*;
 pub use settle_external_match::*;
 pub use settle_internal_match::*;
 pub use withdraw::*;
@@ -147,6 +151,10 @@ pub enum TaskDescriptor {
     CreateBalance(CreateBalanceTaskDescriptor),
     /// The task descriptor for the `CreateOrder` task
     CreateOrder(CreateOrderTaskDescriptor),
+    /// The task descriptor for the `CancelOrder` task
+    CancelOrder(CancelOrderTaskDescriptor),
+    /// The task descriptor for the `RefreshAccount` task
+    RefreshAccount(RefreshAccountTaskDescriptor),
     /// The task descriptor for the `SettleInternalMatch` task
     SettleInternalMatch(SettleInternalMatchTaskDescriptor),
     /// The task descriptor for the `SettleExternalMatch` task
@@ -164,13 +172,15 @@ impl TaskDescriptor {
             TaskDescriptor::Deposit(task) => task.account_id,
             TaskDescriptor::CreateBalance(task) => task.account_id,
             TaskDescriptor::CreateOrder(task) => task.account_id,
+            TaskDescriptor::CancelOrder(task) => task.account_id,
+            TaskDescriptor::RefreshAccount(task) => task.account_id,
             TaskDescriptor::SettleInternalMatch(task) => task.account_id,
             TaskDescriptor::SettleExternalMatch(task) => task.account_id,
             TaskDescriptor::Withdraw(task) => task.account_id,
         }
     }
 
-    /// Returns the IDs of the wallets affected by the task
+    /// Returns the IDs of the accounts affected by the task
     pub fn affected_accounts(&self) -> Vec<AccountId> {
         match self {
             TaskDescriptor::NewAccount(task) => vec![task.account_id],
@@ -178,6 +188,8 @@ impl TaskDescriptor {
             TaskDescriptor::Deposit(task) => vec![task.account_id],
             TaskDescriptor::CreateBalance(task) => vec![task.account_id],
             TaskDescriptor::CreateOrder(task) => vec![task.account_id],
+            TaskDescriptor::CancelOrder(task) => vec![task.account_id],
+            TaskDescriptor::RefreshAccount(task) => vec![task.account_id],
             TaskDescriptor::SettleInternalMatch(task) => {
                 vec![task.account_id, task.other_account_id]
             },
@@ -186,7 +198,7 @@ impl TaskDescriptor {
         }
     }
 
-    /// Returns whether the task is a wallet task
+    /// Returns whether the task is an account task
     pub fn is_account_task(&self) -> bool {
         match self {
             TaskDescriptor::NewAccount(_) => true,
@@ -194,6 +206,8 @@ impl TaskDescriptor {
             TaskDescriptor::Deposit(_) => true,
             TaskDescriptor::CreateBalance(_) => true,
             TaskDescriptor::CreateOrder(_) => true,
+            TaskDescriptor::CancelOrder(_) => true,
+            TaskDescriptor::RefreshAccount(_) => true,
             TaskDescriptor::SettleInternalMatch(_) => true,
             TaskDescriptor::SettleExternalMatch(_) => true,
             TaskDescriptor::Withdraw(_) => true,
@@ -208,6 +222,8 @@ impl TaskDescriptor {
             TaskDescriptor::Deposit(_) => "Deposit".to_string(),
             TaskDescriptor::CreateBalance(_) => "Create Balance".to_string(),
             TaskDescriptor::CreateOrder(_) => "Create Order".to_string(),
+            TaskDescriptor::CancelOrder(_) => "Cancel Order".to_string(),
+            TaskDescriptor::RefreshAccount(_) => "Refresh Account".to_string(),
             TaskDescriptor::SettleInternalMatch(_) => "Settle Internal Match".to_string(),
             TaskDescriptor::SettleExternalMatch(_) => "Settle External Match".to_string(),
             TaskDescriptor::Withdraw(_) => "Withdraw".to_string(),

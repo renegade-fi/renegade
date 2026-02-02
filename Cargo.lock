@@ -5,7 +5,7 @@ version = 4
 [[package]]
 name = "abi"
 version = "0.1.0"
-source = "git+https://github.com/renegade-fi/renegade-contracts#34ad7a73f206688d82bedbfdac92e52f371c8637"
+source = "git+https://github.com/renegade-fi/renegade-contracts#08d8d9820a0b225498cf518533aed8f440f8f577"
 dependencies = [
  "alloy",
  "ark-bn254",
@@ -3200,6 +3200,7 @@ dependencies = [
  "colored",
  "constants",
  "crypto",
+ "darkpool-types",
  "eyre",
  "inventory",
  "itertools 0.12.1",
@@ -9179,6 +9180,7 @@ dependencies = [
  "flate2",
  "futures",
  "gossip-api",
+ "http 1.4.0",
  "inventory",
  "itertools 0.11.0",
  "job-types",
@@ -9191,6 +9193,7 @@ dependencies = [
  "proof-manager",
  "rand 0.8.5",
  "renegade-metrics",
+ "reqwest",
  "serde",
  "serde_json",
  "state",
@@ -9205,6 +9208,7 @@ dependencies = [
  "types-proofs",
  "types-runtime",
  "types-tasks",
+ "url",
  "util",
  "uuid",
 ]

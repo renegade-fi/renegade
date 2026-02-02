@@ -56,6 +56,15 @@ pub enum StateTransition {
     UpdateOrder { order: Order },
     /// Update a balance in an account
     UpdateAccountBalance { account_id: AccountId, balance: Balance },
+    /// Refresh an account's state
+    RefreshAccount {
+        /// The account ID to refresh
+        account_id: AccountId,
+        /// The up-to-date ring 0 orders with their matching pool assignments
+        orders: Vec<(Order, MatchingPoolName)>,
+        /// The up-to-date balances
+        balances: Vec<Balance>,
+    },
 
     // --- Orders --- //
     /// Add a validity proof to an order

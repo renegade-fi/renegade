@@ -382,6 +382,8 @@ impl MockNodeController {
             self.matching_engine_worker_queue.0.clone(),
             bus,
             state,
+            self.config.indexer_url.clone(),
+            self.config.indexer_hmac_key,
         );
         let mut driver = run_fut(TaskDriver::new(conf)).expect("Failed to create task driver");
         driver.start().expect("Failed to start task driver");

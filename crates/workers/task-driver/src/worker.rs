@@ -13,7 +13,9 @@ use job_types::{
 };
 use state::State;
 use system_bus::SystemBus;
+use types_core::HmacKey;
 use types_runtime::Worker;
+use url::Url;
 use util::DefaultOption;
 
 use crate::{
@@ -49,6 +51,10 @@ pub struct TaskDriverConfig {
     pub system_bus: SystemBus,
     /// A handle on the global state
     pub state: State,
+    /// The indexer URL to use for the darkpool indexer API
+    pub indexer_url: Url,
+    /// The HMAC key for authenticating requests to the indexer API
+    pub indexer_hmac_key: HmacKey,
 }
 
 impl TaskDriverConfig {
@@ -64,6 +70,8 @@ impl TaskDriverConfig {
         matching_engine_queue: MatchingEngineWorkerQueue,
         system_bus: SystemBus,
         state: State,
+        indexer_url: Url,
+        indexer_hmac_key: HmacKey,
     ) -> Self {
         Self {
             runtime_config: Default::default(),
@@ -76,6 +84,8 @@ impl TaskDriverConfig {
             matching_engine_queue,
             system_bus,
             state,
+            indexer_url,
+            indexer_hmac_key,
         }
     }
 }

@@ -185,6 +185,8 @@ async fn main() -> Result<(), CoordinatorError> {
         matching_engine_worker_sender.clone(),
         system_bus.clone(),
         global_state.clone(),
+        args.indexer_url.clone(),
+        args.indexer_hmac_key,
     );
     let mut task_driver =
         TaskDriver::new(task_driver_config).await.expect("failed to build task driver");
