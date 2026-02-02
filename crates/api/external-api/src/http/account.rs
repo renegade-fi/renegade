@@ -1,9 +1,11 @@
 //! HTTP route definitions and request/response types for account operations
 
+use alloy::primitives::Address;
+use constants::Scalar;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::types::{ApiAccount, ApiPoseidonCSPRNG};
+use crate::{serde_helpers, types::{ApiAccount, ApiPoseidonCSPRNG}};
 
 // ---------------
 // | HTTP Routes |
@@ -35,9 +37,11 @@ pub struct CreateAccountRequest {
     /// The account identifier
     pub account_id: Uuid,
     /// The Ethereum address associated with the account
-    pub address: String,
+    #[serde(with = "serde_helpers::address_as_string")]
+    pub address: Address,
     /// The master view seed for deriving keys
-    pub master_view_seed: String,
+    #[serde(with = "serde_helpers::scalar_as_string")]
+    pub master_view_seed: Scalar,
     /// The HMAC key for authenticating requests
     pub auth_hmac_key: String,
 }
