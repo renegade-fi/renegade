@@ -6,7 +6,10 @@
 #![deny(clippy::needless_pass_by_ref_mut)]
 #![allow(incomplete_features)]
 
-use config::{CONFIG_PATH, ENV_SQS_QUEUE_URL, fetch_config, modify_config};
+use config::{
+    CONFIG_PATH, ENV_INDEXER_SQS_QUEUE_URL, ENV_SQS_QUEUE_URL, INDEXER_MESSAGE_SIDECAR_PORT,
+    fetch_config, modify_config,
+};
 use gas_wallet::setup_gas_wallet;
 use helpers::{
     DEFAULT_AWS_REGION, build_s3_client, download_s3_file, in_bootstrap_mode, is_env_var_set,
@@ -26,6 +29,8 @@ mod snapshot;
 const SNAPSHOT_SIDECAR_BIN: &str = "/bin/snapshot-sidecar";
 /// The location of the event export sidecar binary
 const EVENT_EXPORT_SIDECAR_BIN: &str = "/bin/event-export-sidecar";
+/// The location of the indexer message sidecar binary
+const INDEXER_MESSAGE_SIDECAR_BIN: &str = "/bin/indexer-message-sidecar";
 /// The location of the relayer binary
 const RELAYER_BIN: &str = "/bin/renegade-relayer";
 
@@ -43,7 +48,7 @@ async fn main() -> Result<(), String> {
     let cfg = modify_config().await?;
     download_snapshot(&s3_client, &cfg).await?;
 
-    // Start the snapshot sidecar, event export sidecar, and the relayer
+    // Start the sidecars and the relayer
     let bucket = read_env_var::<String>(ENV_SNAP_BUCKET)?;
     let mut snapshot_sidecar = Command::new(SNAPSHOT_SIDECAR_BIN)
         .args(["--config-path", CONFIG_PATH])
@@ -59,6 +64,16 @@ async fn main() -> Result<(), String> {
         .spawn()
         .expect("Failed to start event export sidecar process");
 
+    let indexer_sqs_queue_url = read_env_var::<String>(ENV_INDEXER_SQS_QUEUE_URL)?;
+    let sidecar_port = INDEXER_MESSAGE_SIDECAR_PORT.to_string();
+    let mut indexer_message_sidecar = Command::new(INDEXER_MESSAGE_SIDECAR_BIN)
+        .args(["--config-path", CONFIG_PATH])
+        .args(["--queue-url", &indexer_sqs_queue_url])
+        .args(["--region", DEFAULT_AWS_REGION])
+        .args(["--port", &sidecar_port])
+        .spawn()
+        .expect("Failed to start indexer message sidecar process");
+
     let mut relayer = Command::new(RELAYER_BIN)
         .args(["--config-file", CONFIG_PATH])
         .spawn()
@@ -66,18 +81,24 @@ async fn main() -> Result<(), String> {
 
     let snapshot_sidecar_result = snapshot_sidecar.wait();
     let event_export_sidecar_result = event_export_sidecar.wait();
+    let indexer_message_sidecar_result = indexer_message_sidecar.wait();
     let relayer_result = relayer.wait();
-    let (snapshot_sidecar_result, event_export_sidecar_result, relayer_result) = tokio::try_join!(
+    let (
         snapshot_sidecar_result,
         event_export_sidecar_result,
+        indexer_message_sidecar_result,
+        relayer_result,
+    ) = tokio::try_join!(
+        snapshot_sidecar_result,
+        event_export_sidecar_result,
+        indexer_message_sidecar_result,
         relayer_result
     )
-    .expect(
-        "Either snapshot sidecar, event export sidecar, or relayer process encountered an error",
-    );
+    .expect("A sidecar or relayer process encountered an error");
 
     error!("snapshot sidecar exited with: {:?}", snapshot_sidecar_result);
     error!("event export sidecar exited with: {:?}", event_export_sidecar_result);
+    error!("indexer message sidecar exited with: {:?}", indexer_message_sidecar_result);
     error!("relayer exited with: {:?}", relayer_result);
     Ok(())
 }

@@ -29,8 +29,10 @@ const ENV_P2P_PORT: &str = "P2P_PORT";
 const ENV_PUBLIC_IP: &str = "PUBLIC_IP";
 /// The symmetric key used to authenticate admin API requests (optional)
 const ENV_ADMIN_KEY: &str = "ADMIN_API_KEY";
-/// The SQS queue URL
+/// The SQS queue URL for event export
 pub(crate) const ENV_SQS_QUEUE_URL: &str = "SQS_QUEUE_URL";
+/// The SQS queue URL for indexer messages
+pub(crate) const ENV_INDEXER_SQS_QUEUE_URL: &str = "INDEXER_SQS_QUEUE_URL";
 
 // --- Constants --- //
 
@@ -46,6 +48,11 @@ const CONFIG_PUBLIC_IP: &str = "public-ip";
 const CONFIG_ADMIN_KEY: &str = "admin-api-key";
 /// The p2p key name in the relayer config
 const CONFIG_P2P_KEY: &str = "p2p-key";
+/// The indexer URL key name in the relayer config
+pub const CONFIG_INDEXER_URL: &str = "indexer-url";
+
+/// The port on which the indexer message sidecar listens
+pub(crate) const INDEXER_MESSAGE_SIDECAR_PORT: u16 = 3080;
 
 /// A type alias for the parsed config
 ///
@@ -96,6 +103,10 @@ pub(crate) async fn modify_config() -> Result<ConfigContents, String> {
         let admin_key = Value::String(read_env_var(ENV_ADMIN_KEY)?);
         config.insert(CONFIG_ADMIN_KEY.to_string(), admin_key);
     }
+
+    // Replace the indexer URL with the sidecar URL
+    let sidecar_url = format!("http://127.0.0.1:{INDEXER_MESSAGE_SIDECAR_PORT}");
+    config.insert(CONFIG_INDEXER_URL.to_string(), Value::String(sidecar_url));
 
     // Write the modified config back to the original file
     let new_config_content =
