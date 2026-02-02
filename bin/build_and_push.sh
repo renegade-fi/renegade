@@ -11,7 +11,7 @@ while [[ "$#" -gt 0 ]]; do
     shift
 done
 
-CARGO_FEATURES="default,base"
+CARGO_FEATURES="default"
 
 # Use default if not provided
 CHAIN=${CHAIN:-$DEFAULT_CHAIN}
