@@ -242,11 +242,7 @@ pub struct Cli {
     )]
     pub private_key: String,
     /// The executor private key used for order execution
-    #[clap(
-        value_parser,
-        long = "executor-private-key",
-        default_value = "0xb6b15c8cb491557369f3c7d2c287b053eb229daa9c22138887752191c9520659",
-    )]
+    #[clap( value_parser, long = "executor-private-key")]
     pub executor_private_key: String,
 
     // -------------
