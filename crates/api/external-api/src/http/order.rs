@@ -4,8 +4,6 @@
 use alloy::primitives::Address;
 #[cfg(feature = "full-api")]
 use darkpool_types::intent::Intent;
-#[cfg(feature = "full-api")]
-use renegade_solidity_abi::v2::IDarkpoolV2::SignatureWithNonce;
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "full-api")]
 use types_account::{
@@ -15,7 +13,7 @@ use types_account::{
 use uuid::Uuid;
 
 use crate::error::ApiTypeError;
-use crate::types::{ApiOrder, ApiOrderCore, OrderAuth};
+use crate::types::{ApiOrder, ApiOrderCore, OrderAuth, SignatureWithNonce};
 
 // ---------------
 // | HTTP Routes |
