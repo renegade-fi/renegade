@@ -10,6 +10,7 @@ pub mod balance;
 pub mod external_match;
 pub mod market;
 pub mod metadata;
+pub mod network;
 pub mod order;
 pub mod task;
 

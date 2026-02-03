@@ -7,6 +7,7 @@ mod external_match;
 mod helpers;
 mod market;
 mod metadata;
+mod network;
 mod order;
 mod rate_limit;
 mod task;
@@ -44,6 +45,7 @@ use external_api::{
             GET_MARKETS_ROUTE,
         },
         metadata::GET_EXCHANGE_METADATA_ROUTE,
+        network::GET_NETWORK_TOPOLOGY_ROUTE,
         order::{
             CANCEL_ORDER_ROUTE, CREATE_ORDER_ROUTE, GET_ORDER_BY_ID_ROUTE, GET_ORDERS_ROUTE,
             UPDATE_ORDER_ROUTE,
@@ -61,6 +63,7 @@ use market::{
     GetMarketDepthByMintHandler, GetMarketDepthsHandler, GetMarketPriceHandler, GetMarketsHandler,
 };
 use metadata::GetExchangeMetadataHandler;
+use network::GetNetworkTopologyHandler;
 use order::{
     CancelOrderHandler, CreateOrderHandler, GetOrderByIdHandler, GetOrdersHandler,
     UpdateOrderHandler,
@@ -292,6 +295,15 @@ impl HttpServer {
             &Method::GET,
             GET_EXCHANGE_METADATA_ROUTE.to_string(),
             GetExchangeMetadataHandler::new(state.clone(), darkpool_client.clone()),
+        );
+
+        // --- Network Routes (v2) --- //
+
+        // GET /v2/network
+        router.add_unauthenticated_route(
+            &Method::GET,
+            GET_NETWORK_TOPOLOGY_ROUTE.to_string(),
+            GetNetworkTopologyHandler::new(config.chain, state.clone()),
         );
 
         // --- Admin Routes --- //

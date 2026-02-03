@@ -175,7 +175,6 @@ impl TypedHandler for CreateOrderHandler {
 
 /// Handler for POST /v2/account/:account_id/orders/:order_id/update
 pub struct UpdateOrderHandler;
-
 impl UpdateOrderHandler {
     /// Constructor
     pub fn new() -> Self {
