@@ -16,8 +16,9 @@ use account::{
     CreateAccountHandler, GetAccountByIdHandler, GetAccountSeedsHandler, SyncAccountHandler,
 };
 use admin::{
-    AdminGetOrderByIdHandler, AdminGetOrdersHandler, AdminRefreshMatchFeesHandler,
-    AdminRefreshTokenMappingHandler, AdminTriggerSnapshotHandler, IsLeaderHandler,
+    AdminCreateMatchingPoolHandler, AdminDestroyMatchingPoolHandler, AdminGetOrderByIdHandler,
+    AdminGetOrdersHandler, AdminRefreshMatchFeesHandler, AdminRefreshTokenMappingHandler,
+    AdminTriggerSnapshotHandler, IsLeaderHandler,
 };
 use async_trait::async_trait;
 use balance::{
@@ -32,7 +33,8 @@ use external_api::{
             SYNC_ACCOUNT_ROUTE,
         },
         admin::{
-            ADMIN_GET_ORDER_BY_ID_ROUTE, ADMIN_GET_ORDERS_ROUTE, ADMIN_REFRESH_MATCH_FEES_ROUTE,
+            ADMIN_GET_ORDER_BY_ID_ROUTE, ADMIN_GET_ORDERS_ROUTE, ADMIN_MATCHING_POOL_CREATE_ROUTE,
+            ADMIN_MATCHING_POOL_DESTROY_ROUTE, ADMIN_REFRESH_MATCH_FEES_ROUTE,
             ADMIN_REFRESH_TOKEN_MAPPING_ROUTE, ADMIN_TRIGGER_SNAPSHOT_ROUTE, IS_LEADER_ROUTE,
         },
         balance::{
@@ -348,6 +350,22 @@ impl HttpServer {
             &Method::GET,
             ADMIN_GET_ORDER_BY_ID_ROUTE.to_string(),
             AdminGetOrderByIdHandler::new(state.clone()),
+        );
+
+        // --- Matching Pool Routes (v2) --- //
+
+        // POST /v2/admin/matching-pools/:matching_pool
+        router.add_admin_authenticated_route(
+            &Method::POST,
+            ADMIN_MATCHING_POOL_CREATE_ROUTE.to_string(),
+            AdminCreateMatchingPoolHandler::new(state.clone()),
+        );
+
+        // POST /v2/admin/matching-pools/:matching_pool/destroy
+        router.add_admin_authenticated_route(
+            &Method::POST,
+            ADMIN_MATCHING_POOL_DESTROY_ROUTE.to_string(),
+            AdminDestroyMatchingPoolHandler::new(state.clone()),
         );
 
         Ok(router)

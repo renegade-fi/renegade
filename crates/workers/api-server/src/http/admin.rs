@@ -2,6 +2,7 @@
 
 use async_trait::async_trait;
 use config::setup_token_remaps;
+use constants::GLOBAL_MATCHING_POOL;
 use darkpool_client::DarkpoolClient;
 use external_api::{
     EmptyRequestResponse,
@@ -15,8 +16,8 @@ use types_core::{Chain, Token, get_all_tokens};
 use util::on_chain::{set_default_protocol_fee, set_protocol_fee};
 
 use crate::{
-    error::{ApiServerError, internal_error},
-    param_parsing::parse_order_id_from_params,
+    error::{ApiServerError, bad_request, internal_error, not_found},
+    param_parsing::{parse_matching_pool_from_url_params, parse_order_id_from_params},
     router::{QueryParams, TypedHandler, UrlParams},
 };
 
@@ -264,5 +265,113 @@ impl TypedHandler for AdminGetOrderByIdHandler {
             ApiAdminOrder { order: ApiOrder::from(order), account_id, matching_pool };
 
         Ok(GetOrderAdminResponse { order })
+    }
+}
+
+// --------------------------
+// | Matching Pool Handlers |
+// --------------------------
+
+/// Error message when a matching pool already exists
+const ERR_MATCHING_POOL_EXISTS: &str = "matching pool already exists";
+/// Error message when a matching pool does not exist
+const ERR_MATCHING_POOL_NOT_FOUND: &str = "matching pool does not exist";
+/// Error message when trying to destroy a non-empty matching pool
+const ERR_MATCHING_POOL_NOT_EMPTY: &str = "matching pool is not empty";
+/// Error message when trying to create or destroy the global matching pool
+const ERR_CANNOT_MODIFY_GLOBAL_POOL: &str = "cannot create or destroy the global matching pool";
+
+/// Handler for the POST /v2/admin/matching-pools/:matching_pool route
+#[derive(Clone)]
+pub struct AdminCreateMatchingPoolHandler {
+    /// A handle to the relayer state
+    state: State,
+}
+
+impl AdminCreateMatchingPoolHandler {
+    /// Constructor
+    pub fn new(state: State) -> Self {
+        Self { state }
+    }
+}
+
+#[async_trait]
+impl TypedHandler for AdminCreateMatchingPoolHandler {
+    type Request = EmptyRequestResponse;
+    type Response = EmptyRequestResponse;
+
+    async fn handle_typed(
+        &self,
+        _headers: HeaderMap,
+        _req: Self::Request,
+        params: UrlParams,
+        _query_params: QueryParams,
+    ) -> Result<Self::Response, ApiServerError> {
+        let matching_pool = parse_matching_pool_from_url_params(&params)?;
+
+        // Cannot create the global matching pool
+        if matching_pool == GLOBAL_MATCHING_POOL {
+            return Err(bad_request(ERR_CANNOT_MODIFY_GLOBAL_POOL));
+        }
+
+        // Check that the matching pool does not already exist
+        if self.state.matching_pool_exists(matching_pool.clone()).await? {
+            return Err(bad_request(ERR_MATCHING_POOL_EXISTS));
+        }
+
+        let waiter = self.state.create_matching_pool(matching_pool).await?;
+        waiter.await?;
+
+        Ok(EmptyRequestResponse {})
+    }
+}
+
+/// Handler for the POST /v2/admin/matching-pools/:matching_pool/destroy route
+#[derive(Clone)]
+pub struct AdminDestroyMatchingPoolHandler {
+    /// A handle to the relayer state
+    state: State,
+}
+
+impl AdminDestroyMatchingPoolHandler {
+    /// Constructor
+    pub fn new(state: State) -> Self {
+        Self { state }
+    }
+}
+
+#[async_trait]
+impl TypedHandler for AdminDestroyMatchingPoolHandler {
+    type Request = EmptyRequestResponse;
+    type Response = EmptyRequestResponse;
+
+    async fn handle_typed(
+        &self,
+        _headers: HeaderMap,
+        _req: Self::Request,
+        params: UrlParams,
+        _query_params: QueryParams,
+    ) -> Result<Self::Response, ApiServerError> {
+        let matching_pool = parse_matching_pool_from_url_params(&params)?;
+
+        // Cannot destroy the global matching pool
+        if matching_pool == GLOBAL_MATCHING_POOL {
+            return Err(bad_request(ERR_CANNOT_MODIFY_GLOBAL_POOL));
+        }
+
+        // Check that the matching pool exists
+        if !self.state.matching_pool_exists(matching_pool.clone()).await? {
+            return Err(not_found(ERR_MATCHING_POOL_NOT_FOUND));
+        }
+
+        // Check that the matching pool is empty
+        if !self.state.matching_pool_is_empty(matching_pool.clone()).await? {
+            return Err(bad_request(ERR_MATCHING_POOL_NOT_EMPTY));
+        }
+
+        let waiter = self.state.destroy_matching_pool(matching_pool).await?;
+        waiter.await?;
+
+        Ok(EmptyRequestResponse {})
     }
 }
