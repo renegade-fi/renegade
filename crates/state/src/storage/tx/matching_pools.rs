@@ -65,6 +65,24 @@ impl<T: TransactionKind> StateTxn<'_, T> {
         let exists = self.inner().read::<_, bool>(POOL_TABLE, &pool_exists_key)?.is_some();
         Ok(exists)
     }
+
+    /// Whether or not a matching pool is empty (has no orders assigned to it)
+    pub fn matching_pool_is_empty(&self, pool_name: &str) -> Result<bool, StorageError> {
+        let cursor = self
+            .inner()
+            .cursor::<String, MatchingPoolName>(POOL_TABLE)?
+            .with_key_prefix(POOL_KEY_PREFIX);
+
+        for entry in cursor.into_iter() {
+            let (_key, value) = entry?;
+            let pool_name_value = value.deserialize()?;
+            if pool_name_value == pool_name {
+                return Ok(false);
+            }
+        }
+
+        Ok(true)
+    }
 }
 
 // -----------
