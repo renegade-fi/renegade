@@ -2,6 +2,9 @@
 
 use std::collections::HashSet;
 
+use system_bus::{
+    ADMIN_BALANCE_UPDATES_TOPIC, ADMIN_ORDER_UPDATES_TOPIC, AdminOrderUpdateType, SystemBusMessage,
+};
 use types_account::{
     OrderRefreshData,
     account::{Account, OrderId},
@@ -55,14 +58,17 @@ impl StateApplicator {
         tx.write_order_auth(&order.id, auth)?;
 
         // Get the info needed to update the matching engine
-        let matching_pool = tx.get_matching_pool_for_order(&order.id)?;
+        let pool = tx.get_matching_pool_for_order(&order.id)?;
         let matchable_amount = tx.get_order_matchable_amount(&order.id)?.unwrap_or_default();
         tx.commit()?;
 
         // Update the matching engine book
         if matchable_amount > 0 {
-            self.matching_engine().upsert_order(account_id, order, matchable_amount, matching_pool);
+            self.matching_engine().upsert_order(account_id, order, matchable_amount, pool.clone());
         }
+
+        // Publish admin order update event
+        self.publish_admin_order_update(account_id, order, pool, AdminOrderUpdateType::Created);
         Ok(ApplicatorReturnType::None)
     }
 
@@ -85,14 +91,17 @@ impl StateApplicator {
             .get_order(&order_id)?
             .ok_or_else(|| StateApplicatorError::reject(format!("order {order_id} not found")))?;
         let order = Order::from_archived(&archived_order)?;
-        let matching_pool = tx.get_matching_pool_for_order(&order_id)?;
+        let pool = tx.get_matching_pool_for_order(&order_id)?;
 
         // Remove order from account storage
         tx.remove_order_with_auth(&account_id, &order_id)?;
         tx.commit()?;
 
         // Remove from the matching engine
-        self.matching_engine().cancel_order(&order, matching_pool);
+        self.matching_engine().cancel_order(&order, pool.clone());
+
+        // Publish admin order update event
+        self.publish_admin_order_update(account_id, &order, pool, AdminOrderUpdateType::Cancelled);
         Ok(ApplicatorReturnType::None)
     }
 
@@ -115,16 +124,19 @@ impl StateApplicator {
         tx.update_order(&account_id, order)?;
 
         // Get the info needed to update the matching engine
-        let matching_pool = tx.get_matching_pool_for_order(&order_id)?;
+        let pool = tx.get_matching_pool_for_order(&order_id)?;
         let matchable_amount = tx.get_order_matchable_amount(&order_id)?.unwrap_or_default();
         tx.commit()?;
 
         // Update the matching engine book
         if matchable_amount > 0 {
-            self.matching_engine().upsert_order(account_id, order, matchable_amount, matching_pool);
+            self.matching_engine().upsert_order(account_id, order, matchable_amount, pool.clone());
         } else {
-            self.matching_engine().cancel_order(order, matching_pool);
+            self.matching_engine().cancel_order(order, pool.clone());
         }
+
+        // Publish admin order update event
+        self.publish_admin_order_update(account_id, order, pool, AdminOrderUpdateType::Updated);
         Ok(ApplicatorReturnType::None)
     }
 
@@ -167,6 +179,8 @@ impl StateApplicator {
             }
         }
 
+        // Publish admin balance update event
+        self.publish_admin_balance_update(account_id, balance);
         Ok(ApplicatorReturnType::None)
     }
 
@@ -186,6 +200,7 @@ impl StateApplicator {
         // Update all balances
         for balance in balances {
             tx.update_balance(&account_id, balance)?;
+            self.publish_admin_balance_update(account_id, balance);
         }
 
         // Collect order IDs from the refresh set
@@ -203,14 +218,28 @@ impl StateApplicator {
         }
 
         // Update all orders, their auth, and matching pool assignments
+        // Track which orders are new vs updated
         for OrderRefreshData { order, matching_pool, auth } in &orders {
             // Check if the order exists
             let order_exists = tx.get_order(&order.id)?.is_some();
 
+            let pool = matching_pool.clone();
             if order_exists {
                 tx.update_order(&account_id, order)?;
+                self.publish_admin_order_update(
+                    account_id,
+                    order,
+                    pool,
+                    AdminOrderUpdateType::Updated,
+                );
             } else {
                 tx.add_order(&account_id, order)?;
+                self.publish_admin_order_update(
+                    account_id,
+                    order,
+                    pool,
+                    AdminOrderUpdateType::Created,
+                );
             }
 
             // Write the order auth
@@ -226,9 +255,15 @@ impl StateApplicator {
         let engine = self.matching_engine();
         let tx = self.db().new_read_tx()?;
 
-        // Cancel stale orders in the matching engine
+        // Cancel stale orders in the matching engine and publish cancellation events
         for (order, matching_pool) in stale_orders {
-            engine.cancel_order(&order, matching_pool);
+            engine.cancel_order(&order, matching_pool.clone());
+            self.publish_admin_order_update(
+                account_id,
+                &order,
+                matching_pool,
+                AdminOrderUpdateType::Cancelled,
+            );
         }
 
         // Update/cancel refreshed orders based on matchable amount
@@ -244,6 +279,34 @@ impl StateApplicator {
         }
 
         Ok(ApplicatorReturnType::None)
+    }
+
+    // -----------
+    // | Helpers |
+    // -----------
+
+    /// Publish an admin order update event to the system bus
+    fn publish_admin_order_update(
+        &self,
+        account_id: AccountId,
+        order: &Order,
+        matching_pool: String,
+        update_type: AdminOrderUpdateType,
+    ) {
+        let msg = SystemBusMessage::AdminOrderUpdate {
+            account_id,
+            order: Box::new(order.clone()),
+            matching_pool,
+            update_type,
+        };
+        self.system_bus().publish(ADMIN_ORDER_UPDATES_TOPIC.to_string(), msg);
+    }
+
+    /// Publish an admin balance update event to the system bus
+    fn publish_admin_balance_update(&self, account_id: AccountId, balance: &Balance) {
+        let msg =
+            SystemBusMessage::AdminBalanceUpdate { account_id, balance: Box::new(balance.clone()) };
+        self.system_bus().publish(ADMIN_BALANCE_UPDATES_TOPIC.to_string(), msg);
     }
 }
 

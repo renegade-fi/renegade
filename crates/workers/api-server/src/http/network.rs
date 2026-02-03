@@ -19,7 +19,7 @@ use crate::{
 // -----------
 
 /// Convert a PeerInfo to a Peer API type
-fn peer_info_to_peer(peer_info: PeerInfo) -> Peer {
+fn peer_info_to_peer(peer_info: &PeerInfo) -> Peer {
     Peer {
         id: peer_info.get_peer_id().to_string(),
         cluster_id: peer_info.get_cluster_id().to_string(),
@@ -66,7 +66,7 @@ impl TypedHandler for GetNetworkTopologyHandler {
 
         // Gather by cluster
         let mut peers_by_cluster: HashMap<String, Vec<Peer>> = HashMap::with_capacity(peers.len());
-        for peer in peers.values().cloned() {
+        for peer in peers.values() {
             let peer: Peer = peer_info_to_peer(peer);
             peers_by_cluster.entry(peer.cluster_id.clone()).or_default().push(peer);
         }

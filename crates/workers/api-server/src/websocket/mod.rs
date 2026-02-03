@@ -1,5 +1,6 @@
 //! Websocket API server implementation
 
+mod conversion;
 mod handler;
 mod server;
 

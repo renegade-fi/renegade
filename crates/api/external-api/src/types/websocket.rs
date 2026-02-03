@@ -41,9 +41,9 @@ pub enum ClientWebsocketMessageBody {
     },
 }
 
-// ---------------------------
-// | Server Message Types    |
-// ---------------------------
+// ------------------------
+// | Server Message Types |
+// ------------------------
 
 /// A message from the server over WebSocket
 #[derive(Clone, Debug, Serialize, Deserialize)]
