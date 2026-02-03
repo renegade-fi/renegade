@@ -16,6 +16,7 @@ full-api = [
     "task-api",
     "websocket",
     "darkpool-types/proof-system-types",
+    "dep:renegade-solidity-abi",
 ]
 
 [dependencies]
@@ -36,7 +37,7 @@ types-runtime = { workspace = true }
 constants = { workspace = true }
 crypto = { workspace = true }
 util = { workspace = true, features = ["hex"] }
-renegade-solidity-abi = { workspace = true }
+renegade-solidity-abi = { workspace = true, optional = true }
 
 # === Misc Dependencies === #
 alloy = { workspace = true }

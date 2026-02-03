@@ -149,21 +149,11 @@ async fn handle_user_state(
     let target_url =
         state.indexer_url.join(&path).map_err(|e| warp::reject::custom(ServerError::proxy(e)))?;
 
-    // Convert warp headers to reqwest headers
-    let mut reqwest_headers = reqwest::header::HeaderMap::new();
-    for (key, value) in headers.iter() {
-        let name = reqwest::header::HeaderName::from_bytes(key.as_str().as_bytes());
-        let val = reqwest::header::HeaderValue::from_bytes(value.as_bytes());
-        if let (Ok(name), Ok(val)) = (name, val) {
-            reqwest_headers.insert(name, val);
-        }
-    }
-
     // Make the proxied request
     let response = state
         .http_client
         .get(target_url)
-        .headers(reqwest_headers)
+        .headers(headers)
         .send()
         .await
         .map_err(|e| warp::reject::custom(ServerError::proxy(e)))?;

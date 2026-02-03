@@ -2,8 +2,9 @@
 
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
+use alloy::{primitives::keccak256, sol_types::SolValue};
 use async_trait::async_trait;
-use constants::Scalar;
+use constants::{GLOBAL_MATCHING_POOL, Scalar};
 use darkpool_client::errors::DarkpoolClientError;
 use darkpool_types::{
     intent::{DarkpoolStateIntent, Intent},
@@ -11,7 +12,7 @@ use darkpool_types::{
 };
 use serde::Serialize;
 use state::{State, error::StateError};
-use tracing::{info, instrument};
+use tracing::{info, instrument, warn};
 use types_account::{
     OrderId,
     balance::BalanceLocation,
@@ -25,7 +26,10 @@ use crate::{
     hooks::{RefreshAccountHook, RunMatchingEngineHook, TaskHook},
     task_state::TaskStateWrapper,
     traits::{Descriptor, Task, TaskContext, TaskError, TaskState},
-    utils::fetch_ring0_balance,
+    utils::{
+        fetch_ring0_balance,
+        indexer_client::{Message, PublicIntentMetadataUpdateMessage},
+    },
 };
 
 /// The task name for the create order task
@@ -274,7 +278,38 @@ impl CreateOrderTask {
             waiter.await.map_err(CreateOrderTaskError::state)?;
         }
 
+        self.send_indexer_message().await;
         Ok(())
+    }
+
+    /// Send an indexer message to update public intent metadata
+    async fn send_indexer_message(&self) {
+        // Only send for public orders for now
+        let (permit, intent_signature) = match &self.auth {
+            OrderAuth::PublicOrder { permit, intent_signature } => (permit, intent_signature),
+            _ => return,
+        };
+
+        // Compute intent hash
+        let intent_hash = keccak256(permit.abi_encode());
+
+        let intent_signature_api = intent_signature.clone().into();
+
+        let message = PublicIntentMetadataUpdateMessage {
+            intent_hash,
+            intent: self.intent.clone(),
+            intent_signature: intent_signature_api,
+            permit: permit.clone(),
+            order_id: self.order_id,
+            matching_pool: GLOBAL_MATCHING_POOL.to_string(),
+            allow_external_matches: self.metadata.allow_external_matches,
+            min_fill_size: self.metadata.min_fill_size,
+        };
+
+        let msg = Message::UpdatePublicIntentMetadata(message);
+        if let Err(e) = self.ctx.indexer_client.submit_message(msg).await {
+            warn!("Failed to send indexer message: {e}");
+        }
     }
 }
 
