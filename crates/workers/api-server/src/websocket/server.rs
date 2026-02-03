@@ -3,16 +3,20 @@
 use std::{net::SocketAddr, sync::Arc};
 
 use constants::in_bootstrap_mode;
-use external_api::websocket::{ClientWebsocketMessage, SubscriptionResponse, WebsocketMessage};
+use external_api::{
+    types::ServerWebsocketMessage,
+    websocket::{ClientWebsocketMessage, SubscriptionResponse, WebsocketMessage},
+};
 use futures::{SinkExt, StreamExt, stream::SplitSink};
 use hyper::{HeaderMap, http::HeaderValue};
 use matchit::Router;
-use system_bus::TopicReader;
-use system_bus::{SystemBusMessage, SystemBusMessageWithTopic};
+use system_bus::{SystemBusMessage, TopicReader};
 use tokio::net::{TcpListener, TcpStream};
 use tokio_stream::StreamMap;
 use tokio_tungstenite::{WebSocketStream, accept_async};
 use tungstenite::Message;
+
+use super::conversion::system_bus_message_to_websocket_body;
 
 use crate::error::ApiServerError;
 use crate::param_parsing::parse_account_id_from_params;
@@ -23,7 +27,7 @@ use crate::{
     error::{bad_request, not_found},
 };
 
-use super::handler::WebsocketTopicHandler;
+use super::handler::{DefaultHandler, WebsocketTopicHandler};
 
 /// The matchit router with generics specified for websocket use
 type WebsocketRouter = Router<Box<dyn WebsocketTopicHandler>>;
@@ -55,9 +59,12 @@ const NETWORK_INFO_ROUTE: &str = "/v2/network";
 const TASK_STATUS_ROUTE: &str = "/v2/tasks/:task_id";
 /// The task history topic, streams information about historical tasks
 const TASK_HISTORY_ROUTE: &str = "/v2/wallet/:wallet_id/task-history";
-/// The admin wallet updates topic, streams opaque information about all wallet
-/// updates
-const ADMIN_WALLET_UPDATES_ROUTE: &str = "/v2/admin/wallet-updates";
+/// The admin order updates topic, streams granular order updates for all
+/// accounts
+const ADMIN_ORDER_UPDATES_ROUTE: &str = "/v2/admin/orders";
+/// The admin balance updates topic, streams granular balance updates for all
+/// accounts
+const ADMIN_BALANCE_UPDATES_ROUTE: &str = "/v2/admin/balances";
 
 // --------------------
 // | Websocket Server |
@@ -83,10 +90,33 @@ impl WebsocketServer {
     }
 
     /// Setup the websocket routes for the server
-    /// TODO: implement websocket api
-    #[allow(unused_mut)]
-    fn setup_routes(_config: &ApiServerConfig) -> WebsocketRouter {
+    fn setup_routes(config: &ApiServerConfig) -> WebsocketRouter {
         let mut router = WebsocketRouter::new();
+
+        // The "/v2/admin/orders" route
+        router
+            .insert(
+                ADMIN_ORDER_UPDATES_ROUTE,
+                Box::new(DefaultHandler::new_with_remap(
+                    AuthType::Admin,
+                    system_bus::ADMIN_ORDER_UPDATES_TOPIC.to_string(),
+                    config.system_bus.clone(),
+                )),
+            )
+            .expect("failed to insert admin order updates route");
+
+        // The "/v2/admin/balances" route
+        router
+            .insert(
+                ADMIN_BALANCE_UPDATES_ROUTE,
+                Box::new(DefaultHandler::new_with_remap(
+                    AuthType::Admin,
+                    system_bus::ADMIN_BALANCE_UPDATES_TOPIC.to_string(),
+                    config.system_bus.clone(),
+                )),
+            )
+            .expect("failed to insert admin balance updates route");
+
         router
     }
 
@@ -296,7 +326,7 @@ impl WebsocketServer {
         match auth_type {
             AuthType::Account => {
                 // Parse the account ID from the params
-                let account_id = parse_account_id_from_params(&params)?;
+                let account_id = parse_account_id_from_params(params)?;
                 self.auth_middleware
                     .authenticate_account_request(account_id, topic, &headers, &body_serialized)
                     .await
@@ -316,10 +346,13 @@ impl WebsocketServer {
         event: SystemBusMessage,
         write_stream: &mut SplitSink<WebSocketStream<TcpStream>, Message>,
     ) -> Result<(), ApiServerError> {
-        // Serialize the message and push it onto the stream
-        let event_serialized =
-            serde_json::to_string(&SystemBusMessageWithTopic { topic, event })
-                .map_err(|err| ApiServerError::WebsocketServerFailure(err.to_string()))?;
+        // Convert the system bus message to a websocket message body
+        let body = system_bus_message_to_websocket_body(event);
+
+        // Serialize and push onto the stream
+        let ws_message = ServerWebsocketMessage { topic, body };
+        let event_serialized = serde_json::to_string(&ws_message)
+            .map_err(|err| ApiServerError::WebsocketServerFailure(err.to_string()))?;
         let message = Message::Text(event_serialized);
 
         write_stream

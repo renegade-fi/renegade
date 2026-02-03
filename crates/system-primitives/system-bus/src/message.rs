@@ -2,7 +2,11 @@
 
 use darkpool_types::bounded_match_result::BoundedMatchResult;
 use renegade_solidity_abi::v2::IDarkpoolV2::SettlementBundle;
-use types_account::account::{Account, OrderId};
+use types_account::{
+    account::{Account, OrderId},
+    balance::Balance,
+    order::Order,
+};
 use types_core::AccountId;
 use types_gossip::{PeerInfo, WrappedPeerId};
 use types_tasks::TaskIdentifier;
@@ -19,9 +23,10 @@ pub const NETWORK_TOPOLOGY_TOPIC: &str = "network-topology";
 /// The system bus topic published to for all wallet updates, not those given by
 /// Id
 pub const ALL_WALLET_UPDATES_TOPIC: &str = "wallet-updates";
-/// The system bus topic published to for all admin wallet updates, including
-/// order placements and cancellations
-pub const ADMIN_WALLET_UPDATES_TOPIC: &str = "admin-wallet-updates";
+/// The system bus topic for admin order updates
+pub const ADMIN_ORDER_UPDATES_TOPIC: &str = "admin-order-updates";
+/// The system bus topic for admin balance updates
+pub const ADMIN_BALANCE_UPDATES_TOPIC: &str = "admin-balance-updates";
 
 /// Get the topic name for a given wallet
 pub fn account_topic(account_id: &AccountId) -> String {
@@ -122,12 +127,36 @@ pub enum SystemBusMessage {
     NoExternalMatchFound,
 
     // --- Admin -- //
-    /// A message indicating that an account has been updated, intended for
-    /// consumption by the admin API
-    AdminAccountUpdate {
-        /// The ID of the account that was updated
+    /// A message indicating that an order has been updated, for admin consumption
+    AdminOrderUpdate {
+        /// The ID of the account that owns the order
         account_id: AccountId,
+        /// The updated order
+        order: Box<Order>,
+        /// The matching pool the order is in
+        matching_pool: String,
+        /// The type of update
+        update_type: AdminOrderUpdateType,
     },
+    /// A message indicating that a balance has been updated, for admin consumption
+    AdminBalanceUpdate {
+        /// The ID of the account that owns the balance
+        account_id: AccountId,
+        /// The updated balance
+        balance: Box<Balance>,
+    },
+}
+
+/// The type of admin order update
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AdminOrderUpdateType {
+    /// Order was created
+    Created,
+    /// Order was updated
+    Updated,
+    /// Order was cancelled
+    Cancelled,
 }
 
 /// A wrapper around a SystemBusMessage containing the topic, used for
