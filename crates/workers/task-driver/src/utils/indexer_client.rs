@@ -2,21 +2,29 @@
 
 use std::time::Duration;
 
-use external_api::auth::add_expiring_auth_to_headers;
+use alloy::primitives::{Address, B256};
+use circuit_types::Amount;
+use constants::Scalar;
+use darkpool_types::intent::Intent;
+use external_api::{auth::add_expiring_auth_to_headers, types::SignatureWithNonce};
 use http::HeaderMap;
+use renegade_solidity_abi::v2::IDarkpoolV2::PublicIntentPermit;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use types_account::order::Order;
 use types_core::{AccountId, HmacKey};
 use url::Url;
+use uuid::Uuid;
 
 // -------------
 // | Constants |
 // -------------
 
-/// The path for the get user state endpoint
-const GET_USER_STATE_PATH: &str = "/user-state";
+/// The path for the get user state endpoint (without leading slash)
+pub const GET_USER_STATE_PATH: &str = "user-state";
+/// The path for the submit message endpoint (without leading slash)
+pub const SUBMIT_MESSAGE_PATH: &str = "submit-message";
 /// The expiration duration for auth signatures
 const AUTH_EXPIRATION: Duration = Duration::from_secs(30);
 
@@ -90,6 +98,10 @@ pub struct ApiIntent {
 pub struct ApiPublicIntent {
     /// The underlying order type
     pub order: Order,
+    /// The permit for the intent
+    pub permit: PublicIntentPermit,
+    /// The intent signature
+    pub intent_signature: SignatureWithNonce,
     /// The matching pool to which the intent is allocated
     pub matching_pool: String,
 }
@@ -99,6 +111,52 @@ pub struct ApiPublicIntent {
 pub struct GetUserStateResponse {
     /// The list of active state objects
     pub active_state_objects: Vec<ApiStateObject>,
+}
+
+// ---------------------------
+// | Duplicated Message Types |
+// ---------------------------
+
+/// The message types that can be submitted to the indexer via the sidecar
+#[derive(Serialize, Deserialize, Clone)]
+#[allow(clippy::large_enum_variant)]
+pub enum Message {
+    /// A message representing the registration of a new master view seed
+    RegisterMasterViewSeed(MasterViewSeedMessage),
+    /// A message representing an update to a public intent's metadata
+    UpdatePublicIntentMetadata(PublicIntentMetadataUpdateMessage),
+}
+
+/// A message representing the registration of a new master view seed
+#[derive(Serialize, Deserialize, Clone)]
+pub struct MasterViewSeedMessage {
+    /// The account ID of the seed owner
+    pub account_id: Uuid,
+    /// The address of the seed's owner
+    pub owner_address: Address,
+    /// The master view seed
+    pub seed: Scalar,
+}
+
+/// A message representing an update to a public intent's metadata
+#[derive(Serialize, Deserialize, Clone)]
+pub struct PublicIntentMetadataUpdateMessage {
+    /// The intent hash
+    pub intent_hash: B256,
+    /// The public intent
+    pub intent: Intent,
+    /// The intent signature
+    pub intent_signature: SignatureWithNonce,
+    /// The permit for the intent
+    pub permit: PublicIntentPermit,
+    /// The order ID
+    pub order_id: Uuid,
+    /// The matching pool to which the intent is allocated
+    pub matching_pool: String,
+    /// Whether the intent allows external matches
+    pub allow_external_matches: bool,
+    /// The minimum fill size allowed for the intent
+    pub min_fill_size: Amount,
 }
 
 // -----------------
@@ -129,7 +187,7 @@ impl IndexerClient {
         account_id: AccountId,
     ) -> Result<GetUserStateResponse, IndexerClientError> {
         // Build the request URL
-        let path = format!("{}/{}", GET_USER_STATE_PATH, account_id);
+        let path = format!("/{GET_USER_STATE_PATH}/{account_id}");
         let url = self.base_url.join(&path).map_err(IndexerClientError::url_build)?;
 
         // Build and sign the request headers
@@ -149,5 +207,35 @@ impl IndexerClient {
         // Deserialize the response
         let body = response.text().await?;
         serde_json::from_str(&body).map_err(IndexerClientError::serde)
+    }
+
+    /// Submit a message to the indexer via the sidecar
+    ///
+    /// This endpoint is unauthenticated as the sidecar runs locally.
+    pub async fn submit_message(&self, message: Message) -> Result<(), IndexerClientError> {
+        // Build the request URL
+        let path = format!("/{SUBMIT_MESSAGE_PATH}");
+        let url = self.base_url.join(&path).map_err(IndexerClientError::url_build)?;
+
+        // Serialize the message
+        let body = serde_json::to_string(&message).map_err(IndexerClientError::serde)?;
+
+        // Send the request (no auth required for local sidecar)
+        let response = self
+            .client
+            .post(url)
+            .header("Content-Type", "application/json")
+            .body(body)
+            .send()
+            .await?;
+
+        // Check for errors
+        let status = response.status();
+        if !status.is_success() {
+            let body = response.text().await.unwrap_or_default();
+            return Err(IndexerClientError::StatusCode(status.as_u16(), body));
+        }
+
+        Ok(())
     }
 }

@@ -8,3 +8,8 @@ pub fn bytes_from_base64_string(base64: &str) -> Result<Vec<u8>, String> {
         .decode(base64)
         .map_err(|e| format!("error deserializing bytes from base64 string: {e}"))
 }
+
+/// Encode a byte slice to a base64 string
+pub fn bytes_to_base64_string(bytes: &[u8]) -> String {
+    BASE64_ENGINE.encode(bytes)
+}

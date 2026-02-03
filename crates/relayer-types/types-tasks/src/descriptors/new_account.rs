@@ -1,5 +1,8 @@
 //! Descriptor for the new account task
 
+use alloy::primitives::Address;
+#[cfg(feature = "rkyv")]
+use darkpool_types::rkyv_remotes::AddressDef;
 #[cfg(feature = "rkyv")]
 use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
 use serde::{Deserialize, Serialize};
@@ -18,12 +21,15 @@ pub struct NewAccountTaskDescriptor {
     pub account_id: AccountId,
     /// The keychain for the account
     pub keychain: KeyChain,
+    /// The owner address for the account
+    #[cfg_attr(feature = "rkyv", rkyv(with = AddressDef))]
+    pub owner_address: Address,
 }
 
 impl NewAccountTaskDescriptor {
     /// Create a new account task descriptor
-    pub fn new(account_id: AccountId, keychain: KeyChain) -> Self {
-        Self { account_id, keychain }
+    pub fn new(account_id: AccountId, keychain: KeyChain, owner_address: Address) -> Self {
+        Self { account_id, keychain, owner_address }
     }
 }
 
