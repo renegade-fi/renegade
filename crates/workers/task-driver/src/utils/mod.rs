@@ -14,7 +14,7 @@ use types_account::balance::Balance;
 
 use crate::traits::TaskContext;
 
-pub(crate) mod indexer_client;
+pub mod indexer_client;
 pub(crate) mod merkle_path;
 
 /// Error message emitted when enqueuing a job with the proof manager fails

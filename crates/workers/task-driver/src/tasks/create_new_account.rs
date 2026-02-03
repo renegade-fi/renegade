@@ -5,10 +5,11 @@ use std::{
     fmt::{Display, Formatter, Result as FmtResult},
 };
 
+use alloy::primitives::Address;
 use async_trait::async_trait;
 use serde::Serialize;
 use state::error::StateError;
-use tracing::instrument;
+use tracing::{instrument, warn};
 use types_account::{Account, keychain::KeyChain};
 use types_core::AccountId;
 use types_tasks::NewAccountTaskDescriptor;
@@ -16,6 +17,7 @@ use types_tasks::NewAccountTaskDescriptor;
 use crate::{
     task_state::TaskStateWrapper,
     traits::{Descriptor, Task, TaskContext, TaskError, TaskState},
+    utils::indexer_client::{MasterViewSeedMessage, Message},
 };
 
 /// The task name for the create new account task
@@ -106,6 +108,8 @@ pub struct CreateNewAccountTask {
     pub account_id: AccountId,
     /// The keychain for the account
     pub keychain: KeyChain,
+    /// The owner address for the account
+    pub owner_address: Address,
     /// The state of the task's execution
     pub task_state: CreateNewAccountTaskState,
     /// The context of the task
@@ -122,6 +126,7 @@ impl Task for CreateNewAccountTask {
         Ok(Self {
             account_id: descriptor.account_id,
             keychain: descriptor.keychain,
+            owner_address: descriptor.owner_address,
             task_state: CreateNewAccountTaskState::Pending,
             ctx,
         })
@@ -169,6 +174,21 @@ impl CreateNewAccountTask {
         let waiter = self.ctx.state.new_account(acct).await?;
         waiter.await?;
 
+        self.send_indexer_message().await;
         Ok(())
+    }
+
+    /// Send an indexer message to register the master view seed
+    async fn send_indexer_message(&self) {
+        let message = MasterViewSeedMessage {
+            account_id: self.account_id,
+            owner_address: self.owner_address,
+            seed: self.keychain.secret_keys.master_view_seed,
+        };
+
+        let msg = Message::RegisterMasterViewSeed(message);
+        if let Err(e) = self.ctx.indexer_client.submit_message(msg).await {
+            warn!("Failed to send indexer message: {e}");
+        }
     }
 }

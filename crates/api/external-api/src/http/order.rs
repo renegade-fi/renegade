@@ -12,6 +12,7 @@ use types_account::{
 };
 use uuid::Uuid;
 
+#[cfg(feature = "full-api")]
 use crate::error::ApiTypeError;
 use crate::types::{ApiOrder, ApiOrderCore, OrderAuth, SignatureWithNonce};
 

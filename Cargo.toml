@@ -19,6 +19,7 @@ members = [
 	"crates/testing/mock-node",
 	"crates/node-support/snapshot-sidecar",
 	"crates/node-support/event-export-sidecar",
+	"crates/node-support/indexer-message-sidecar",
 	"crates/node-support/bootloader",
 	"crates/crypto",
 	"crates/darkpool-types",
