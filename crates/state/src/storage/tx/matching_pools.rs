@@ -303,4 +303,32 @@ mod test {
 
         assert!(res.is_err());
     }
+
+    /// Tests checking if a matching pool is empty
+    #[test]
+    fn test_matching_pool_is_empty() {
+        let db = mock_db();
+        let pool_name = TEST_POOL_NAME.to_string();
+        let order_id = OrderId::new_v4();
+
+        // Create a matching pool
+        let tx = db.new_write_tx().unwrap();
+        tx.create_matching_pool(&pool_name).unwrap();
+        tx.commit().unwrap();
+
+        // Assert the pool is empty
+        let tx = db.new_read_tx().unwrap();
+        assert!(tx.matching_pool_is_empty(&pool_name).unwrap());
+        tx.commit().unwrap();
+
+        // Assign an order to the pool
+        let tx = db.new_write_tx().unwrap();
+        tx.assign_order_to_matching_pool(&order_id, &pool_name).unwrap();
+        tx.commit().unwrap();
+
+        // Assert the pool is not empty
+        let tx = db.new_read_tx().unwrap();
+        assert!(!tx.matching_pool_is_empty(&pool_name).unwrap());
+        tx.commit().unwrap();
+    }
 }

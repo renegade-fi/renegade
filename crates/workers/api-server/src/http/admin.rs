@@ -2,6 +2,7 @@
 
 use async_trait::async_trait;
 use config::setup_token_remaps;
+use constants::GLOBAL_MATCHING_POOL;
 use darkpool_client::DarkpoolClient;
 use external_api::{
     EmptyRequestResponse,
@@ -277,6 +278,8 @@ const ERR_MATCHING_POOL_EXISTS: &str = "matching pool already exists";
 const ERR_MATCHING_POOL_NOT_FOUND: &str = "matching pool does not exist";
 /// Error message when trying to destroy a non-empty matching pool
 const ERR_MATCHING_POOL_NOT_EMPTY: &str = "matching pool is not empty";
+/// Error message when trying to create or destroy the global matching pool
+const ERR_CANNOT_MODIFY_GLOBAL_POOL: &str = "cannot create or destroy the global matching pool";
 
 /// Handler for the POST /v2/admin/matching-pools/:matching_pool route
 #[derive(Clone)]
@@ -305,6 +308,11 @@ impl TypedHandler for AdminCreateMatchingPoolHandler {
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
         let matching_pool = parse_matching_pool_from_url_params(&params)?;
+
+        // Cannot create the global matching pool
+        if matching_pool == GLOBAL_MATCHING_POOL {
+            return Err(bad_request(ERR_CANNOT_MODIFY_GLOBAL_POOL));
+        }
 
         // Check that the matching pool does not already exist
         if self.state.matching_pool_exists(matching_pool.clone()).await? {
@@ -345,6 +353,11 @@ impl TypedHandler for AdminDestroyMatchingPoolHandler {
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
         let matching_pool = parse_matching_pool_from_url_params(&params)?;
+
+        // Cannot destroy the global matching pool
+        if matching_pool == GLOBAL_MATCHING_POOL {
+            return Err(bad_request(ERR_CANNOT_MODIFY_GLOBAL_POOL));
+        }
 
         // Check that the matching pool exists
         if !self.state.matching_pool_exists(matching_pool.clone()).await? {
