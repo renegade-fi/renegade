@@ -49,7 +49,7 @@ pub enum StateTransition {
     /// Create a new account
     CreateAccount { account: Account },
     /// Update an account by adding an order, marking it as local, and storing its auth
-    AddOrderToAccount { account_id: AccountId, order: Order, auth: OrderAuth },
+    AddOrderToAccount { account_id: AccountId, order: Order, auth: OrderAuth, pool_name: MatchingPoolName },
     /// Remove an order from an account
     RemoveOrderFromAccount { account_id: AccountId, order_id: OrderId },
     /// Update an existing order in an account

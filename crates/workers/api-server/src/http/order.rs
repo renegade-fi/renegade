@@ -2,6 +2,7 @@
 
 use alloy::primitives::Address;
 use async_trait::async_trait;
+use constants::GLOBAL_MATCHING_POOL;
 use external_api::{
     EmptyRequestResponse,
     http::order::{
@@ -14,7 +15,7 @@ use hyper::HeaderMap;
 use itertools::Itertools;
 use renegade_solidity_abi::v2::IDarkpoolV2::SignatureWithNonce;
 use state::State;
-use types_account::{OrderId, order::PrivacyRing, order_auth::OrderAuth};
+use types_account::{OrderId, order::PrivacyRing};
 use types_core::AccountId;
 use types_tasks::{CancelOrderTaskDescriptor, CreateOrderTaskDescriptor};
 
@@ -156,7 +157,7 @@ impl TypedHandler for CreateOrderHandler {
         let auth = req.get_order_auth(self.executor)?;
         let (intent, ring, metadata) = req.into_order_components()?;
 
-        // Create the task descriptor
+        // Create the task descriptor with the global matching pool
         let descriptor = CreateOrderTaskDescriptor::new(
             account_id,
             order_id,
@@ -165,6 +166,7 @@ impl TypedHandler for CreateOrderHandler {
             ring,
             metadata,
             auth,
+            GLOBAL_MATCHING_POOL.to_string(),
         )
         .map_err(bad_request)?;
         let task_id = append_task(descriptor.into(), &self.state).await?;

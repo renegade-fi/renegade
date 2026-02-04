@@ -1,25 +1,31 @@
 //! Route handlers for the admin API
 
+use alloy::primitives::Address;
 use async_trait::async_trait;
 use config::setup_token_remaps;
 use constants::GLOBAL_MATCHING_POOL;
 use darkpool_client::DarkpoolClient;
 use external_api::{
     EmptyRequestResponse,
-    http::admin::IsLeaderResponse,
+    http::{
+        admin::IsLeaderResponse,
+        order::{CreateOrderInPoolRequest, CreateOrderResponse},
+    },
     types::{
-        ApiAdminOrder, GetOrderAdminResponse, GetOrdersAdminResponse, TaskQueuePausedResponse,
-        order::ApiOrder,
+        ApiAdminOrder, GetOrderAdminResponse, GetOrdersAdminResponse, OrderType,
+        TaskQueuePausedResponse, order::ApiOrder,
     },
 };
 use hyper::HeaderMap;
 use state::State;
 use tracing::info;
 use types_core::{Chain, Token, get_all_tokens};
+use types_tasks::CreateOrderTaskDescriptor;
 use util::on_chain::{set_default_protocol_fee, set_protocol_fee};
 
 use crate::{
     error::{ApiServerError, bad_request, internal_error, not_found},
+    http::helpers::append_task,
     param_parsing::{
         parse_account_id_from_params, parse_matching_pool_from_url_params,
         parse_order_id_from_params,
@@ -461,5 +467,76 @@ impl TypedHandler for AdminDestroyMatchingPoolHandler {
         waiter.await?;
 
         Ok(EmptyRequestResponse {})
+    }
+}
+
+// ----------------------------------
+// | Create Order In Pool Handlers |
+// ----------------------------------
+
+/// Handler for POST /v2/relayer-admin/account/:account_id/orders/create-order-in-pool
+pub struct AdminCreateOrderInPoolHandler {
+    /// The local relayer's executor address
+    executor: Address,
+    /// A handle to the relayer state
+    state: State,
+}
+
+impl AdminCreateOrderInPoolHandler {
+    /// Constructor
+    pub fn new(executor: Address, state: State) -> Self {
+        Self { executor, state }
+    }
+}
+
+#[async_trait]
+impl TypedHandler for AdminCreateOrderInPoolHandler {
+    type Request = CreateOrderInPoolRequest;
+    type Response = CreateOrderResponse;
+
+    async fn handle_typed(
+        &self,
+        _headers: HeaderMap,
+        req: Self::Request,
+        params: UrlParams,
+        _query_params: QueryParams,
+    ) -> Result<Self::Response, ApiServerError> {
+        // Parse account ID from URL params
+        let account_id = parse_account_id_from_params(&params)?;
+
+        // Only public orders are currently supported
+        let ty = req.order.order_type;
+        if !matches!(ty, OrderType::PublicOrder) {
+            return Err(bad_request("Only public orders are currently supported"));
+        }
+
+        // Extract matching_pool before consuming req
+        let matching_pool = req.matching_pool.clone();
+
+        // Validate matching pool exists
+        if !self.state.matching_pool_exists(matching_pool.clone()).await? {
+            return Err(not_found(ERR_MATCHING_POOL_NOT_FOUND));
+        }
+
+        // Convert order auth to an internal type
+        let order_id = req.order.id;
+        let auth = req.get_order_auth(self.executor)?;
+        let (intent, ring, metadata) = req.into_order_components()?;
+
+        // Create the task descriptor with the specified matching pool
+        let descriptor = CreateOrderTaskDescriptor::new(
+            account_id,
+            order_id,
+            self.executor,
+            intent,
+            ring,
+            metadata,
+            auth,
+            matching_pool,
+        )
+        .map_err(bad_request)?;
+        let task_id = append_task(descriptor.into(), &self.state).await?;
+
+        Ok(CreateOrderResponse { task_id, completed: false })
     }
 }

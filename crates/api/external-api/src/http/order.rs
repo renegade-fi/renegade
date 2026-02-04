@@ -152,3 +152,65 @@ pub struct CancelOrderResponse {
     /// Whether the operation has completed
     pub completed: bool,
 }
+
+/// Request to create a new order in a specific matching pool (admin only)
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CreateOrderInPoolRequest {
+    /// The order to create
+    pub order: ApiOrderCore,
+    /// The authorization for the order
+    pub auth: OrderAuth,
+    /// The matching pool to assign the order to
+    pub matching_pool: String,
+}
+
+#[cfg(feature = "full-api")]
+impl CreateOrderInPoolRequest {
+    /// Return the components of an order from the request
+    pub fn into_order_components(
+        self,
+    ) -> Result<(Intent, PrivacyRing, OrderMetadata), ApiTypeError> {
+        let intent = self.order.get_intent()?;
+        let ring = self.order.order_type.into();
+        let meta = self.order.get_order_metadata()?;
+
+        Ok((intent, ring, meta))
+    }
+
+    /// Get the order auth from the request
+    pub fn get_order_auth(&self, executor: Address) -> Result<AccountOrderAuth, ApiTypeError> {
+        use circuit_types::schnorr::SchnorrSignature;
+        use renegade_solidity_abi::v2::IDarkpoolV2;
+
+        let auth = match self.auth.clone() {
+            OrderAuth::PublicOrder { intent_signature } => {
+                let intent = self.order.get_intent()?;
+                let permit = IDarkpoolV2::PublicIntentPermit { intent: intent.into(), executor };
+                let intent_signature = IDarkpoolV2::SignatureWithNonce::try_from(intent_signature)
+                    .map_err(ApiTypeError::parsing)?;
+
+                AccountOrderAuth::PublicOrder { permit, intent_signature }
+            },
+            OrderAuth::NativelySettledPrivateOrder { intent_signature } => {
+                let intent_signature =
+                    SchnorrSignature::try_from(intent_signature).map_err(ApiTypeError::parsing)?;
+
+                AccountOrderAuth::NativelySettledPrivateOrder { intent_signature }
+            },
+            OrderAuth::RenegadeSettledOrder { intent_signature, new_output_balance_signature } => {
+                let intent_signature =
+                    SchnorrSignature::try_from(intent_signature).map_err(ApiTypeError::parsing)?;
+                let new_output_balance_signature =
+                    SchnorrSignature::try_from(new_output_balance_signature)
+                        .map_err(ApiTypeError::parsing)?;
+
+                AccountOrderAuth::RenegadeSettledOrder {
+                    intent_signature,
+                    new_output_balance_signature,
+                }
+            },
+        };
+
+        Ok(auth)
+    }
+}

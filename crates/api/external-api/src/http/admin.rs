@@ -29,6 +29,9 @@ pub const ADMIN_MATCHING_POOL_CREATE_ROUTE: &str = "/v2/admin/matching-pools/:ma
 /// Route to destroy a matching pool
 pub const ADMIN_MATCHING_POOL_DESTROY_ROUTE: &str =
     "/v2/admin/matching-pools/:matching_pool/destroy";
+/// Route to create an order in a specific matching pool
+pub const ADMIN_CREATE_ORDER_IN_POOL_ROUTE: &str =
+    "/v2/relayer-admin/account/:account_id/orders/create-order-in-pool";
 
 // -------------------
 // | Request/Response |

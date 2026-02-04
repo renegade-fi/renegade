@@ -92,8 +92,8 @@ impl StateApplicator {
     ) -> Result<ApplicatorReturnType> {
         match *transition {
             StateTransition::CreateAccount { account } => self.create_account(&account),
-            StateTransition::AddOrderToAccount { account_id, order, auth } => {
-                self.add_order_to_account(account_id, &order, &auth)
+            StateTransition::AddOrderToAccount { account_id, order, auth, pool_name } => {
+                self.add_order_to_account(account_id, &order, &auth, pool_name)
             },
             StateTransition::RemoveOrderFromAccount { account_id, order_id } => {
                 self.remove_order_from_account(account_id, order_id)

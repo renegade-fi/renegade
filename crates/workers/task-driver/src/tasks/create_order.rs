@@ -4,7 +4,7 @@ use std::fmt::{Display, Formatter, Result as FmtResult};
 
 use alloy::{primitives::keccak256, sol_types::SolValue};
 use async_trait::async_trait;
-use constants::{GLOBAL_MATCHING_POOL, Scalar};
+use constants::Scalar;
 use darkpool_client::errors::DarkpoolClientError;
 use darkpool_types::{
     intent::{DarkpoolStateIntent, Intent},
@@ -14,7 +14,7 @@ use serde::Serialize;
 use state::{State, error::StateError};
 use tracing::{info, instrument, warn};
 use types_account::{
-    OrderId,
+    MatchingPoolName, OrderId,
     balance::BalanceLocation,
     order::{Order, OrderMetadata, PrivacyRing},
     order_auth::OrderAuth,
@@ -157,6 +157,8 @@ pub struct CreateOrderTask {
     pub metadata: OrderMetadata,
     /// The order authorization
     pub auth: OrderAuth,
+    /// The matching pool to assign the order to
+    pub matching_pool: MatchingPoolName,
     /// The state of the task's execution
     pub task_state: CreateOrderTaskState,
     /// The context of the task
@@ -183,6 +185,7 @@ impl Task for CreateOrderTask {
             ring: descriptor.ring,
             metadata: descriptor.metadata,
             auth: descriptor.auth,
+            matching_pool: descriptor.matching_pool,
             task_state: CreateOrderTaskState::Pending,
             ctx,
         })
@@ -242,13 +245,15 @@ impl Descriptor for CreateOrderTaskDescriptor {}
 impl CreateOrderTask {
     /// Create a new order
     pub async fn create_order(&self) -> Result<()> {
-        let CreateOrderTask { order_id, account_id, intent, ring, metadata, auth, .. } =
-            self.clone();
+        let CreateOrderTask {
+            order_id, account_id, intent, ring, metadata, auth, matching_pool, ..
+        } = self.clone();
 
         // Create the order in the state
         let state_intent = create_ring0_state_wrapper(intent);
         let order = Order::new_with_ring(order_id, state_intent, metadata, ring);
-        let waiter = self.state().add_order_to_account(account_id, order, auth).await?;
+        let waiter =
+            self.state().add_order_to_account(account_id, order, auth, matching_pool).await?;
         waiter.await.map_err(CreateOrderTaskError::state).map(|_| ())
     }
 
@@ -301,7 +306,7 @@ impl CreateOrderTask {
             intent_signature: intent_signature_api,
             permit: permit.clone(),
             order_id: self.order_id,
-            matching_pool: GLOBAL_MATCHING_POOL.to_string(),
+            matching_pool: self.matching_pool.clone(),
             allow_external_matches: self.metadata.allow_external_matches,
             min_fill_size: self.metadata.min_fill_size,
         };
