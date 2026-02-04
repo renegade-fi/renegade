@@ -18,6 +18,8 @@ pub const ADMIN_REFRESH_MATCH_FEES_ROUTE: &str = "/v2/admin/refresh-match-fees";
 pub const ADMIN_GET_ORDERS_ROUTE: &str = "/v2/relayer-admin/orders";
 /// Route to get an order by ID as an admin
 pub const ADMIN_GET_ORDER_BY_ID_ROUTE: &str = "/v2/relayer-admin/orders/:order_id";
+/// Route to get orders for an account as an admin
+pub const ADMIN_GET_ACCOUNT_ORDERS_ROUTE: &str = "/v2/relayer-admin/account/:account_id/orders";
 
 /// Route to create a matching pool
 pub const ADMIN_MATCHING_POOL_CREATE_ROUTE: &str = "/v2/admin/matching-pools/:matching_pool";

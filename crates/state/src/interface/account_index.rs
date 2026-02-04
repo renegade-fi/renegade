@@ -169,6 +169,24 @@ impl StateInner {
         .await
     }
 
+    /// Get all orders for an account with their matching pool
+    pub async fn get_account_orders_with_matching_pool(
+        &self,
+        account_id: &AccountId,
+    ) -> Result<Vec<(Order, MatchingPoolName)>, StateError> {
+        let account_id = *account_id;
+        self.with_read_tx(move |tx| {
+            let orders = tx.get_account_orders(&account_id)?;
+            let mut result = Vec::with_capacity(orders.len());
+            for order in orders {
+                let matching_pool = tx.get_matching_pool_for_order(&order.id)?;
+                result.push((order, matching_pool));
+            }
+            Ok(result)
+        })
+        .await
+    }
+
     /// Get all orders across all accounts with their matching pool
     ///
     /// Returns a vector of tuples containing (AccountId, Order,
