@@ -17,7 +17,10 @@ use util::on_chain::{set_default_protocol_fee, set_protocol_fee};
 
 use crate::{
     error::{ApiServerError, bad_request, internal_error, not_found},
-    param_parsing::{parse_matching_pool_from_url_params, parse_order_id_from_params},
+    param_parsing::{
+        parse_account_id_from_params, parse_matching_pool_from_url_params,
+        parse_order_id_from_params,
+    },
     router::{QueryParams, TypedHandler, UrlParams},
 };
 
@@ -265,6 +268,55 @@ impl TypedHandler for AdminGetOrderByIdHandler {
             ApiAdminOrder { order: ApiOrder::from(order), account_id, matching_pool };
 
         Ok(GetOrderAdminResponse { order })
+    }
+}
+
+/// Handler for GET /v2/relayer-admin/account/:account_id/orders
+pub struct AdminGetAccountOrdersHandler {
+    /// A handle to the relayer state
+    state: State,
+}
+
+impl AdminGetAccountOrdersHandler {
+    /// Constructor
+    pub fn new(state: State) -> Self {
+        Self { state }
+    }
+}
+
+#[async_trait]
+impl TypedHandler for AdminGetAccountOrdersHandler {
+    type Request = EmptyRequestResponse;
+    type Response = GetOrdersAdminResponse;
+
+    async fn handle_typed(
+        &self,
+        _headers: HeaderMap,
+        _req: Self::Request,
+        params: UrlParams,
+        _query_params: QueryParams,
+    ) -> Result<Self::Response, ApiServerError> {
+        let account_id = parse_account_id_from_params(&params)?;
+
+        // Get orders with matching pool for this account
+        let orders_data = self
+            .state
+            .get_account_orders_with_matching_pool(&account_id)
+            .await
+            .map_err(internal_error)?;
+
+        // Convert to API types
+        let orders = orders_data
+            .into_iter()
+            .map(|(order, matching_pool)| ApiAdminOrder {
+                order: ApiOrder::from(order),
+                account_id,
+                matching_pool: matching_pool.to_string(),
+            })
+            .collect();
+
+        // TODO: Paginate
+        Ok(GetOrdersAdminResponse { orders, next_page_token: None })
     }
 }
 
