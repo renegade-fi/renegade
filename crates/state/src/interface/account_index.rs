@@ -335,6 +335,15 @@ impl StateInner {
         self.send_proposal(StateTransition::UpdateAccountBalance { account_id, balance }).await
     }
 
+    /// Update an account's keychain
+    pub async fn update_account_keychain(
+        &self,
+        account_id: AccountId,
+        keychain: KeyChain,
+    ) -> Result<ProposalWaiter, StateError> {
+        self.send_proposal(StateTransition::UpdateAccountKeychain { account_id, keychain }).await
+    }
+
     /// Refresh an account's state with updated orders and balances
     pub async fn refresh_account(
         &self,

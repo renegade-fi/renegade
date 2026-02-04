@@ -356,6 +356,17 @@ impl StateTxn<'_, RW> {
         self.inner().write(ACCOUNTS_TABLE, &key, balance)
     }
 
+    /// Update the keychain for an existing account
+    pub fn update_keychain(
+        &self,
+        account_id: &AccountId,
+        keychain: &KeyChain,
+    ) -> Result<(), StorageError> {
+        let header = AccountHeader { id: *account_id, keychain: keychain.clone() };
+        let key = account_header_key(account_id);
+        self.inner().write(ACCOUNTS_TABLE, &key, &header)
+    }
+
     /// Remove an order from an account
     ///
     /// This deletes both the order data and the order->account index

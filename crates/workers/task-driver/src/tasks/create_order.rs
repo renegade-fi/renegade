@@ -246,7 +246,14 @@ impl CreateOrderTask {
     /// Create a new order
     pub async fn create_order(&self) -> Result<()> {
         let CreateOrderTask {
-            order_id, account_id, intent, ring, metadata, auth, matching_pool, ..
+            order_id,
+            account_id,
+            intent,
+            ring,
+            metadata,
+            auth,
+            matching_pool,
+            ..
         } = self.clone();
 
         // Create the order in the state

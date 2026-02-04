@@ -9,6 +9,7 @@ use types_account::{
     MatchingPoolName, OrderRefreshData,
     account::{Account, OrderId},
     balance::Balance,
+    keychain::KeyChain,
     order::Order,
     order_auth::OrderAuth,
 };
@@ -185,6 +186,21 @@ impl StateApplicator {
 
         // Publish admin balance update event
         self.publish_admin_balance_update(account_id, balance);
+        Ok(ApplicatorReturnType::None)
+    }
+
+    /// Update an account's keychain
+    pub fn update_account_keychain(
+        &self,
+        account_id: AccountId,
+        keychain: &KeyChain,
+    ) -> Result<ApplicatorReturnType> {
+        let tx = self.db().new_write_tx()?;
+        if !tx.contains_account(&account_id)? {
+            return Err(StateApplicatorError::reject("account not found"));
+        }
+        tx.update_keychain(&account_id, keychain)?;
+        tx.commit()?;
         Ok(ApplicatorReturnType::None)
     }
 

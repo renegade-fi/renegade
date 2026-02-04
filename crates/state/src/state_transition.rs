@@ -9,7 +9,7 @@ use darkpool_types::rkyv_remotes::ScalarDef;
 use serde::{Deserialize, Serialize};
 use types_account::{
     Account, MatchingPoolName, MerkleAuthenticationPath, OrderRefreshData, account::OrderId,
-    balance::Balance, order::Order, order_auth::OrderAuth,
+    balance::Balance, keychain::KeyChain, order::Order, order_auth::OrderAuth,
 };
 use types_core::AccountId;
 use types_gossip::WrappedPeerId;
@@ -56,6 +56,8 @@ pub enum StateTransition {
     UpdateOrder { order: Order },
     /// Update a balance in an account
     UpdateAccountBalance { account_id: AccountId, balance: Balance },
+    /// Update an account's keychain
+    UpdateAccountKeychain { account_id: AccountId, keychain: KeyChain },
     /// Refresh an account's state
     RefreshAccount {
         /// The account ID to refresh
