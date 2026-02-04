@@ -27,7 +27,7 @@ impl NullifierGadget {
         V::ShareType: StateWrapperShareBound,
     {
         // The recovery stream index cannot underflow
-        NotEqualGadget::not_equal(element.recovery_stream.index, cs.zero(), cs)?;
+        NotEqualGadget::constrain_not_equal(&element.recovery_stream.index, &cs.zero(), cs)?;
 
         // Get the recovery identifier for the last update of the element
         let last_idx = cs.sub(element.recovery_stream.index, cs.one())?;
