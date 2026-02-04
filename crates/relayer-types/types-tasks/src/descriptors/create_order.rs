@@ -4,7 +4,7 @@ use alloy::primitives::Address;
 use darkpool_types::intent::Intent;
 use renegade_solidity_abi::v2::IDarkpoolV2::{PublicIntentPermit, SignatureWithNonce};
 use types_account::{
-    OrderId,
+    MatchingPoolName, OrderId,
     order::{OrderMetadata, PrivacyRing},
     order_auth::OrderAuth,
 };
@@ -35,6 +35,8 @@ pub struct CreateOrderTaskDescriptor {
     pub metadata: OrderMetadata,
     /// The order authorization payload provided by the user
     pub auth: OrderAuth,
+    /// The matching pool to assign the order to
+    pub matching_pool: MatchingPoolName,
 }
 
 impl CreateOrderTaskDescriptor {
@@ -47,9 +49,10 @@ impl CreateOrderTaskDescriptor {
         ring: PrivacyRing,
         metadata: OrderMetadata,
         auth: OrderAuth,
+        matching_pool: MatchingPoolName,
     ) -> Result<Self, TaskError> {
         validate_order_auth(executor, &intent, &auth)?;
-        Ok(Self { account_id, order_id, intent, ring, metadata, auth })
+        Ok(Self { account_id, order_id, intent, ring, metadata, auth, matching_pool })
     }
 }
 

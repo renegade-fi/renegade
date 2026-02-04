@@ -86,6 +86,7 @@ impl StateApplicator {
 
 #[cfg(test)]
 mod test {
+    use constants::GLOBAL_MATCHING_POOL;
     use types_account::{
         MatchingPoolName,
         account::{OrderId, mocks::mock_empty_account},
@@ -143,7 +144,9 @@ mod test {
 
         // Add the account to the state
         applicator.create_account(&account).unwrap();
-        applicator.add_order_to_account(account.id, &order, &auth).unwrap();
+        applicator
+            .add_order_to_account(account.id, &order, &auth, GLOBAL_MATCHING_POOL.to_string())
+            .unwrap();
 
         // Create a matching pool, then assign the order
         applicator.create_matching_pool(&pool_name).unwrap();
@@ -170,7 +173,9 @@ mod test {
 
         // Add the account to the state
         applicator.create_account(&account).unwrap();
-        applicator.add_order_to_account(account.id, &order, &auth).unwrap();
+        applicator
+            .add_order_to_account(account.id, &order, &auth, GLOBAL_MATCHING_POOL.to_string())
+            .unwrap();
 
         // Create both matching pools
         applicator.create_matching_pool(&pool_1_name).unwrap();

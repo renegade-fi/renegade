@@ -6,7 +6,7 @@ use system_bus::{
     ADMIN_BALANCE_UPDATES_TOPIC, ADMIN_ORDER_UPDATES_TOPIC, AdminOrderUpdateType, SystemBusMessage,
 };
 use types_account::{
-    OrderRefreshData,
+    MatchingPoolName, OrderRefreshData,
     account::{Account, OrderId},
     balance::Balance,
     order::Order,
@@ -44,6 +44,7 @@ impl StateApplicator {
         account_id: AccountId,
         order: &Order,
         auth: &OrderAuth,
+        pool: MatchingPoolName,
     ) -> Result<ApplicatorReturnType> {
         // Create write transaction
         let tx = self.db().new_write_tx()?;
@@ -57,14 +58,17 @@ impl StateApplicator {
         tx.add_order(&account_id, order)?;
         tx.write_order_auth(&order.id, auth)?;
 
-        // Get the info needed to update the matching engine
-        let pool = tx.get_matching_pool_for_order(&order.id)?;
+        // Assign the order to the specified matching pool
+        tx.assign_order_to_matching_pool(&order.id, &pool)?;
+
+        // Get the matchable amount for matching engine updates
         let matchable_amount = tx.get_order_matchable_amount(&order.id)?.unwrap_or_default();
         tx.commit()?;
 
         // Update the matching engine book
         if matchable_amount > 0 {
-            self.matching_engine().upsert_order(account_id, order, matchable_amount, pool.clone());
+            let engine = self.matching_engine();
+            engine.upsert_order(account_id, order, matchable_amount, pool.clone());
         }
 
         // Publish admin order update event
@@ -318,6 +322,7 @@ impl StateApplicator {
 pub(crate) mod test {
     use alloy_primitives::Address;
     use circuit_types::Amount;
+    use constants::GLOBAL_MATCHING_POOL;
     use types_account::{
         account::mocks::mock_empty_account,
         balance::mocks::mock_balance,
@@ -358,7 +363,9 @@ pub(crate) mod test {
         // Add an order to the account
         let order = mock_order();
         let auth = mock_order_auth();
-        applicator.add_order_to_account(account.id, &order, &auth).unwrap();
+        applicator
+            .add_order_to_account(account.id, &order, &auth, GLOBAL_MATCHING_POOL.to_string())
+            .unwrap();
 
         // Check that the order is stored in the account
         let tx = applicator.db().new_read_tx().unwrap();
@@ -403,7 +410,9 @@ pub(crate) mod test {
 
         // Add a balance, then an order
         applicator.update_account_balance(account.id, &balance).unwrap();
-        applicator.add_order_to_account(account.id, &order, &auth).unwrap();
+        applicator
+            .add_order_to_account(account.id, &order, &auth, GLOBAL_MATCHING_POOL.to_string())
+            .unwrap();
 
         // Check that the order is stored in the account
         let tx = applicator.db().new_read_tx().unwrap();
@@ -432,7 +441,9 @@ pub(crate) mod test {
 
         // Add a balance, then an order
         applicator.update_account_balance(account.id, &balance).unwrap();
-        applicator.add_order_to_account(account.id, &order, &auth).unwrap();
+        applicator
+            .add_order_to_account(account.id, &order, &auth, GLOBAL_MATCHING_POOL.to_string())
+            .unwrap();
 
         // Verify the order exists before removal
         let tx = applicator.db().new_read_tx().unwrap();
@@ -494,9 +505,15 @@ pub(crate) mod test {
         let auth = mock_order_auth();
 
         // Add orders to the account
-        applicator.add_order_to_account(account.id, &order1, &auth).unwrap();
-        applicator.add_order_to_account(account.id, &order2, &auth).unwrap();
-        applicator.add_order_to_account(account.id, &order3, &auth).unwrap();
+        applicator
+            .add_order_to_account(account.id, &order1, &auth, GLOBAL_MATCHING_POOL.to_string())
+            .unwrap();
+        applicator
+            .add_order_to_account(account.id, &order2, &auth, GLOBAL_MATCHING_POOL.to_string())
+            .unwrap();
+        applicator
+            .add_order_to_account(account.id, &order3, &auth, GLOBAL_MATCHING_POOL.to_string())
+            .unwrap();
 
         // Verify initial matchable amounts
         let tx = applicator.db().new_read_tx().unwrap();

@@ -301,8 +301,15 @@ impl StateInner {
         account_id: AccountId,
         order: Order,
         auth: OrderAuth,
+        pool_name: MatchingPoolName,
     ) -> Result<ProposalWaiter, StateError> {
-        self.send_proposal(StateTransition::AddOrderToAccount { account_id, order, auth }).await
+        self.send_proposal(StateTransition::AddOrderToAccount {
+            account_id,
+            order,
+            auth,
+            pool_name,
+        })
+        .await
     }
 
     /// Remove an order from an account
@@ -341,6 +348,7 @@ impl StateInner {
 
 #[cfg(test)]
 mod test {
+    use constants::GLOBAL_MATCHING_POOL;
     use types_account::{
         account::mocks::mock_empty_account, order::mocks::mock_order,
         order_auth::mocks::mock_order_auth,
@@ -374,7 +382,9 @@ mod test {
         // Add a local order to the account
         let order = mock_order();
         let auth = mock_order_auth();
-        let waiter = state.add_order_to_account(account.id, order.clone(), auth).await.unwrap();
+        let pool_name = GLOBAL_MATCHING_POOL.to_string();
+        let waiter =
+            state.add_order_to_account(account.id, order.clone(), auth, pool_name).await.unwrap();
         waiter.await.unwrap();
 
         // Verify the account was updated
@@ -395,7 +405,9 @@ mod test {
         // Add a local order to the account
         let order = mock_order();
         let auth = mock_order_auth();
-        let waiter = state.add_order_to_account(account.id, order.clone(), auth).await.unwrap();
+        let pool_name = GLOBAL_MATCHING_POOL.to_string();
+        let waiter =
+            state.add_order_to_account(account.id, order.clone(), auth, pool_name).await.unwrap();
         waiter.await.unwrap();
 
         // Verify the order was added

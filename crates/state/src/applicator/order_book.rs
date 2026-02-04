@@ -129,7 +129,9 @@ mod test {
 
         // Add the account to the state
         applicator.create_account(&account).unwrap();
-        applicator.add_order_to_account(account.id, &order, &auth).unwrap();
+        applicator
+            .add_order_to_account(account.id, &order, &auth, constants::GLOBAL_MATCHING_POOL)
+            .unwrap();
 
         // Create a network order and add it to the order book
         // The order must exist in the order book for add_order_validity_proof to work
