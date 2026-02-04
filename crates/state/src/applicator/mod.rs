@@ -102,6 +102,9 @@ impl StateApplicator {
             StateTransition::UpdateAccountBalance { account_id, balance } => {
                 self.update_account_balance(account_id, &balance)
             },
+            StateTransition::UpdateAccountKeychain { account_id, keychain } => {
+                self.update_account_keychain(account_id, &keychain)
+            },
             StateTransition::RefreshAccount { account_id, orders, balances } => {
                 self.refresh_account(account_id, orders, &balances)
             },

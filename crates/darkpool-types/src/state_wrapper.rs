@@ -85,6 +85,20 @@ where
         Self { recovery_stream, share_stream, inner, public_share }
     }
 
+    /// Clone the original share stream
+    ///
+    /// That is, by resetting the index to 0
+    pub fn get_original_share_stream(&self) -> PoseidonCSPRNG {
+        PoseidonCSPRNG::new(self.share_stream.seed)
+    }
+
+    /// Clone the original recovery stream
+    ///
+    /// That is, by resetting the index to 0
+    pub fn get_original_recovery_stream(&self) -> PoseidonCSPRNG {
+        PoseidonCSPRNG::new(self.recovery_stream.seed)
+    }
+
     // --- Secret Shares --- //
 
     /// Compute the private shares of the state element

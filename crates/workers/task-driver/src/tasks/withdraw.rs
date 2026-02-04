@@ -1,5 +1,6 @@
 //! Defines a task to withdraw a balance from the darkpool
 
+use core::panic;
 use std::{
     error::Error,
     fmt::{Display, Formatter, Result as FmtResult},
@@ -31,15 +32,17 @@ const WITHDRAW_TASK_NAME: &str = "withdraw";
 pub enum WithdrawTaskState {
     /// The task is awaiting scheduling
     Pending,
-    /// The task is executing the withdrawal
-    Withdrawing,
+    /// Generating a proof of `VALID WITHDRAWAL`
+    Proving,
+    /// The task is submitting the withdrawal transaction
+    SubmittingTx,
     /// The task is completed
     Completed,
 }
 
 impl TaskState for WithdrawTaskState {
     fn commit_point() -> Self {
-        WithdrawTaskState::Withdrawing
+        WithdrawTaskState::SubmittingTx
     }
 
     fn completed(&self) -> bool {
@@ -51,7 +54,8 @@ impl Display for WithdrawTaskState {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         match self {
             WithdrawTaskState::Pending => write!(f, "Pending"),
-            WithdrawTaskState::Withdrawing => write!(f, "Withdrawing"),
+            WithdrawTaskState::Proving => write!(f, "Proving"),
+            WithdrawTaskState::SubmittingTx => write!(f, "SubmittingTx"),
             WithdrawTaskState::Completed => write!(f, "Completed"),
         }
     }
@@ -131,11 +135,16 @@ impl Task for WithdrawTask {
         // Dispatch based on task state
         match self.task_state {
             WithdrawTaskState::Pending => {
-                self.task_state = WithdrawTaskState::Withdrawing;
+                self.task_state = WithdrawTaskState::Proving;
             },
-            WithdrawTaskState::Withdrawing => {
-                // TODO: Implement withdrawal logic
-                info!("got to withdraw task");
+            WithdrawTaskState::Proving => {
+                // Generate a proof of `VALID WITHDRAWAL`
+                self.generate_proof().await?;
+                self.task_state = WithdrawTaskState::SubmittingTx;
+            },
+            WithdrawTaskState::SubmittingTx => {
+                // Submit the withdrawal transaction to the darkpool
+                self.submit_withdrawal().await?;
                 self.task_state = WithdrawTaskState::Completed;
             },
             WithdrawTaskState::Completed => {
@@ -164,3 +173,26 @@ impl Task for WithdrawTask {
 }
 
 impl Descriptor for WithdrawTaskDescriptor {}
+
+// -----------------------
+// | Task Implementation |
+// -----------------------
+
+impl WithdrawTask {
+    // --------------
+    // | Task Steps |
+    // --------------
+
+    /// Generate a proof of `VALID WITHDRAWAL` for the withdrawal
+    pub async fn generate_proof(&mut self) -> Result<()> {
+        panic!("Got to withdrawal");
+        Ok(())
+    }
+
+    /// Submit the withdrawal transaction to the darkpool
+    pub async fn submit_withdrawal(&self) -> Result<()> {
+        info!("Submitting withdrawal...");
+        // TODO: Implement withdrawal submission
+        Ok(())
+    }
+}

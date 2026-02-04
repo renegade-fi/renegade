@@ -25,8 +25,6 @@ use crate::{
 // | Error Messages |
 // ------------------
 
-/// Error message for not implemented
-const ERR_NOT_IMPLEMENTED: &str = "not implemented";
 /// Error message for account not found
 const ERR_ACCOUNT_NOT_FOUND: &str = "account not found";
 

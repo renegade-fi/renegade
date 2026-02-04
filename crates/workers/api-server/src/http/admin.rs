@@ -470,11 +470,12 @@ impl TypedHandler for AdminDestroyMatchingPoolHandler {
     }
 }
 
-// ----------------------------------
+// ---------------------------------
 // | Create Order In Pool Handlers |
-// ----------------------------------
+// ---------------------------------
 
-/// Handler for POST /v2/relayer-admin/account/:account_id/orders/create-order-in-pool
+/// Handler for
+/// POST /v2/relayer-admin/account/:account_id/orders/create-order-in-pool
 pub struct AdminCreateOrderInPoolHandler {
     /// The local relayer's executor address
     executor: Address,
@@ -510,10 +511,8 @@ impl TypedHandler for AdminCreateOrderInPoolHandler {
             return Err(bad_request("Only public orders are currently supported"));
         }
 
-        // Extract matching_pool before consuming req
-        let matching_pool = req.matching_pool.clone();
-
         // Validate matching pool exists
+        let matching_pool = req.matching_pool.clone();
         if !self.state.matching_pool_exists(matching_pool.clone()).await? {
             return Err(not_found(ERR_MATCHING_POOL_NOT_FOUND));
         }
