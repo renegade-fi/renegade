@@ -133,7 +133,8 @@ pub enum SystemBusMessage {
     NoExternalMatchFound,
 
     // --- Admin -- //
-    /// A message indicating that an order has been updated, for admin consumption
+    /// A message indicating that an order has been updated, for admin
+    /// consumption
     AdminOrderUpdate {
         /// The ID of the account that owns the order
         account_id: AccountId,
@@ -144,7 +145,8 @@ pub enum SystemBusMessage {
         /// The type of update
         update_type: AdminOrderUpdateType,
     },
-    /// A message indicating that a balance has been updated, for admin consumption
+    /// A message indicating that a balance has been updated, for admin
+    /// consumption
     AdminBalanceUpdate {
         /// The ID of the account that owns the balance
         account_id: AccountId,

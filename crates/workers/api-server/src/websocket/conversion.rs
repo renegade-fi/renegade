@@ -26,7 +26,8 @@ pub fn system_bus_message_to_websocket_body(msg: SystemBusMessage) -> ServerWebs
         | SystemBusMessage::AccountUpdate { .. }
         | SystemBusMessage::ExternalOrderQuote { .. }
         | SystemBusMessage::ExternalOrderBundle { .. }
-        | SystemBusMessage::NoExternalMatchFound => {
+        | SystemBusMessage::NoExternalMatchFound
+        | SystemBusMessage::OwnerIndexChanged { .. } => {
             panic!("invalid websocket bus subscription: message type not intended for websocket")
         },
     }
