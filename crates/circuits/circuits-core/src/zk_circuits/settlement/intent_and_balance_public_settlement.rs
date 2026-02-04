@@ -7,12 +7,12 @@ use alloy_primitives::Address;
 use circuit_macros::circuit_type;
 use circuit_types::{
     PlonkCircuit,
-    fixed_point::FixedPoint,
     traits::{BaseType, CircuitBaseType, CircuitVarType},
 };
 use constants::{Scalar, ScalarField};
 use darkpool_types::{
     balance::{DarkpoolBalance, PostMatchBalanceShare},
+    fee::FeeRates,
     intent::Intent,
     settlement_obligation::SettlementObligation,
 };
@@ -32,7 +32,7 @@ use crate::{
         intent_and_balance_private_settlement::IntentAndBalancePrivateSettlementCircuit,
         settlement_lib::SettlementGadget,
     },
-    zk_gadgets::comparators::EqGadget,
+    zk_gadgets::{comparators::EqGadget, fee::FeeGadget},
 };
 
 // ----------------------
@@ -48,16 +48,24 @@ impl IntentAndBalancePublicSettlementCircuit {
         witness: &mut IntentAndBalancePublicSettlementWitnessVar,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
-        // 1. Verify the constraints imposed by both the intent and the balance
+        // 1. Compute the fee take from the fee rates
+        let fee_take = FeeGadget::compute_fee_take(
+            statement.settlement_obligation.amount_out,
+            &statement.fee_rates,
+            cs,
+        )?;
+
+        // 2. Verify the constraints imposed by both the intent and the balance
         SettlementGadget::verify_intent_and_balance_obligation_constraints(
             &witness.intent,
             &witness.in_balance,
             &witness.out_balance,
             &statement.settlement_obligation,
+            &fee_take,
             cs,
         )?;
 
-        // 2. Verify that the leaked pre-update public shares match those proof-linked
+        // 3. Verify that the leaked pre-update public shares match those proof-linked
         //    into the witness
         EqGadget::constrain_eq(
             &witness.pre_settlement_amount_public_share,
@@ -163,12 +171,7 @@ pub struct IntentAndBalancePublicSettlementStatement {
     /// update it directly on-chain.
     pub out_balance_public_shares: PostMatchBalanceShare,
     /// The relayer fee which is charged for the settlement
-    ///
-    /// We place this field in the statement so that it is included in the
-    /// Fiat-Shamir transcript and therefore is not malleable transaction
-    /// calldata. This allows the relayer to set the fee and be sure it cannot
-    /// be modified by mempool observers.
-    pub relayer_fee: FixedPoint,
+    pub fee_rates: FeeRates,
     /// The recipient of the relayer fee
     ///
     /// This must match the value on the output balance where the fee is
@@ -226,15 +229,16 @@ pub mod test_helpers {
     use alloy_primitives::Address;
     use circuit_types::max_amount;
     use darkpool_types::{
-        balance::DarkpoolBalance, intent::Intent, settlement_obligation::SettlementObligation,
+        balance::DarkpoolBalance, fuzzing::random_fee_rate, intent::Intent,
+        settlement_obligation::SettlementObligation,
     };
     use rand::{Rng, thread_rng};
 
     use crate::{
         test_helpers::{
             create_matching_balance_for_intent, create_settlement_obligation_with_balance,
-            random_address, random_amount, random_fee, random_intent,
-            random_post_match_balance_share, random_scalar, random_schnorr_public_key,
+            random_address, random_amount, random_intent, random_post_match_balance_share,
+            random_scalar, random_schnorr_public_key,
         },
         zk_circuits::settlement::intent_and_balance_public_settlement::{
             IntentAndBalancePublicSettlementCircuit, IntentAndBalancePublicSettlementStatement,
@@ -318,7 +322,7 @@ pub mod test_helpers {
             amount_public_share: pre_settlement_amount_public_share,
             in_balance_public_shares: pre_settlement_in_balance_shares,
             out_balance_public_shares: pre_settlement_out_balance_shares,
-            relayer_fee: random_fee(),
+            fee_rates: random_fee_rate(),
             relayer_fee_recipient,
         };
 

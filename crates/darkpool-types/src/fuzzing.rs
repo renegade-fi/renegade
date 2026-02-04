@@ -6,6 +6,7 @@ use crate::{
     balance::{DarkpoolBalance, PostMatchBalanceShare},
     bounded_match_result::BoundedMatchResult,
     deposit::Deposit,
+    fee::FeeRates,
     intent::Intent,
     settlement_obligation::SettlementObligation,
     state_wrapper::{StateWrapper, StateWrapperBound, StateWrapperShareBound},
@@ -83,6 +84,11 @@ pub fn random_fee() -> FixedPoint {
     let mut rng = thread_rng();
     let fee_f64 = rng.gen_range(0.0..=MAX_RELAYER_FEE_RATE);
     FixedPoint::from_f64_round_down(fee_f64)
+}
+
+/// Generate a random fee rate
+pub fn random_fee_rate() -> FeeRates {
+    FeeRates { relayer_fee_rate: random_fee(), protocol_fee_rate: random_fee() }
 }
 
 /// Generate a random block deadline
