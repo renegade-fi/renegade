@@ -3,7 +3,7 @@
 //! Account index updates must go through raft consensus so that the leader may
 //! order them
 
-use alloy_primitives::Address;
+use alloy_primitives::{Address, B256};
 use circuit_types::Amount;
 use types_account::{
     MatchingPoolName, OrderRefreshData,
@@ -17,8 +17,8 @@ use types_core::{AccountId, HmacKey};
 use util::res_some;
 
 use crate::{
-    StateInner, error::StateError, notifications::ProposalWaiter,
-    state_transition::StateTransition, storage::traits::RkyvValue,
+    StateInner, applicator::account_index::update_matchable_amounts, error::StateError,
+    notifications::ProposalWaiter, state_transition::StateTransition, storage::traits::RkyvValue,
 };
 
 impl StateInner {
@@ -187,11 +187,25 @@ impl StateInner {
         .await
     }
 
+    /// Get the account ID by owner
+    ///
+    /// Used to route balance update events to the correct account
+    pub async fn get_account_by_owner(
+        &self,
+        owner: &Address,
+    ) -> Result<Option<AccountId>, StateError> {
+        let owner = *owner;
+        self.with_read_tx(move |tx| {
+            let account_id = tx.get_account_by_owner(&owner)?;
+            Ok(account_id)
+        })
+        .await
+    }
+
     /// Get all orders across all accounts with their matching pool
     ///
     /// Returns a vector of tuples containing (AccountId, Order,
-    /// MatchingPoolName) for each order in the state. MatchingPoolName) for
-    /// each order in the state.
+    /// MatchingPoolName) for each order in the state.
     ///
     /// Warning: this can be slow when the state has many orders
     pub async fn get_all_orders_with_matching_pool(
@@ -212,6 +226,21 @@ impl StateInner {
                 }
             }
 
+            Ok(result)
+        })
+        .await
+    }
+
+    /// Get the order by intent hash
+    ///
+    /// Used to route public intent events to the correct order
+    pub async fn get_order_by_intent_hash(
+        &self,
+        intent_hash: &B256,
+    ) -> Result<Option<(AccountId, OrderId)>, StateError> {
+        let intent_hash = *intent_hash;
+        self.with_read_tx(move |tx| {
+            let result = tx.get_order_by_intent_hash(&intent_hash)?;
             Ok(result)
         })
         .await
@@ -284,6 +313,19 @@ impl StateInner {
         .await
     }
 
+    /// Get all tracked owners from the owner index
+    ///
+    /// Returns a deduplicated list of owner addresses that have balances
+    pub async fn get_all_tracked_owners(&self) -> Result<Vec<Address>, StateError> {
+        self.with_read_tx(|tx| {
+            let entries = tx.get_all_owner_index_entries()?;
+            let owners: std::collections::HashSet<_> =
+                entries.into_iter().map(|(owner, _)| owner).collect();
+            Ok(owners.into_iter().collect())
+        })
+        .await
+    }
+
     // -----------
     // | Setters |
     // -----------
@@ -352,6 +394,27 @@ impl StateInner {
         balances: Vec<Balance>,
     ) -> Result<ProposalWaiter, StateError> {
         self.send_proposal(StateTransition::RefreshAccount { account_id, orders, balances }).await
+    }
+
+    /// Update the matching engine cache for orders affected by a balance change
+    ///
+    /// This method updates the matching engine's in-memory cache without
+    /// persisting to DB or going through raft consensus. It should be called
+    /// before `update_account_balance` to enable low-latency matching while
+    /// the raft proposal is in flight.
+    pub async fn update_matching_engine_for_balance(
+        &self,
+        account_id: AccountId,
+        balance: &Balance,
+    ) -> Result<(), StateError> {
+        let balance = balance.clone();
+        let engine = self.matching_engine.clone();
+
+        self.with_read_tx(move |tx| {
+            update_matchable_amounts(account_id, &balance, &engine, tx)?;
+            Ok(())
+        })
+        .await
     }
 }
 

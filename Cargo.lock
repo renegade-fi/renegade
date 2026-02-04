@@ -2459,6 +2459,7 @@ dependencies = [
 name = "chain-events"
 version = "0.1.0"
 dependencies = [
+ "abi",
  "alloy",
  "async-trait",
  "circuit-types",
@@ -2466,6 +2467,7 @@ dependencies = [
  "crossbeam",
  "crypto",
  "darkpool-client",
+ "darkpool-types",
  "futures-util",
  "gossip-api",
  "job-types",
@@ -2474,6 +2476,7 @@ dependencies = [
  "rand 0.8.5",
  "renegade-metrics",
  "state",
+ "system-bus",
  "tokio",
  "tracing",
  "types-account",

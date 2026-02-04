@@ -1,0 +1,249 @@
+//! The executor for the on-chain event listener
+
+use std::{
+    collections::HashSet,
+    sync::{Arc, RwLock},
+    time::Duration,
+};
+
+use alloy::{
+    primitives::{Address, TxHash},
+    providers::{DynProvider, ProviderBuilder, WsConnect},
+};
+use constants::in_bootstrap_mode;
+use darkpool_client::DarkpoolClient;
+use futures_util::StreamExt;
+use rand::Rng;
+use state::State;
+use system_bus::{OWNER_INDEX_CHANGED_TOPIC, SystemBus, SystemBusMessage};
+use tracing::{error, info, warn};
+use util::concurrency::runtime::sleep_forever_async;
+
+use crate::{error::OnChainEventListenerError, worker::OnChainEventListenerConfig};
+
+/// Minimum delay before non-selected nodes process an event (crash recovery)
+const MIN_CRASH_RECOVERY_DELAY_S: u64 = 20;
+/// Maximum delay before non-selected nodes process an event (crash recovery)
+const MAX_CRASH_RECOVERY_DELAY_S: u64 = 40;
+
+/// The executor that runs in a thread and polls events from on-chain state
+#[derive(Clone)]
+pub struct OnChainEventListenerExecutor {
+    /// A copy of the config that the executor maintains
+    pub(crate) config: OnChainEventListenerConfig,
+    /// In-memory set of tracked owners, initialized from DB at startup and
+    /// kept in sync via system bus messages
+    tracked_owners: Arc<RwLock<HashSet<Address>>>,
+}
+
+impl OnChainEventListenerExecutor {
+    /// Create a new executor
+    pub fn new(config: OnChainEventListenerConfig) -> Self {
+        Self { config, tracked_owners: Arc::new(RwLock::new(HashSet::new())) }
+    }
+
+    /// Get the tracked owners from the in-memory cache
+    pub(crate) fn get_tracked_owners(&self) -> Vec<Address> {
+        self.tracked_owners.read().unwrap().iter().copied().collect()
+    }
+
+    /// Add an owner to the tracked set
+    fn add_tracked_owner(&self, owner: Address) {
+        self.tracked_owners.write().unwrap().insert(owner);
+    }
+
+    /// Remove an owner from the tracked set
+    fn remove_tracked_owner(&self, owner: Address) {
+        self.tracked_owners.write().unwrap().remove(&owner);
+    }
+
+    /// Initialize the tracked owners cache from the database
+    async fn init_tracked_owners(&self) -> Result<(), OnChainEventListenerError> {
+        let owners = self.state().get_all_tracked_owners().await?;
+        let mut cache = self.tracked_owners.write().unwrap();
+        cache.clear();
+        cache.extend(owners);
+        info!("Initialized tracked owners cache with {} owners", cache.len());
+        Ok(())
+    }
+
+    /// Get a reference to the darkpool client
+    pub(crate) fn darkpool_client(&self) -> &DarkpoolClient {
+        &self.config.darkpool_client
+    }
+
+    /// Get a reference to the global state
+    pub(crate) fn state(&self) -> &State {
+        &self.config.global_state
+    }
+
+    /// Get a reference to the system bus
+    fn system_bus(&self) -> &SystemBus {
+        &self.config.system_bus
+    }
+
+    /// The main execution loop for the executor
+    pub async fn execute(self) -> Result<(), OnChainEventListenerError> {
+        if in_bootstrap_mode() {
+            sleep_forever_async().await;
+        }
+
+        info!("Starting on-chain event listener");
+
+        let res = self.run_event_loop().await.unwrap_err();
+        error!("on-chain event listener stream ended unexpectedly: {res}");
+        Err(res)
+    }
+
+    /// Main event loop that watches all chain events via websocket
+    async fn run_event_loop(&self) -> Result<(), OnChainEventListenerError> {
+        info!("listening for chain events via websocket");
+
+        // Initialize the tracked owners cache from DB
+        self.init_tracked_owners().await?;
+
+        // Create websocket client and subscribe to all event streams
+        let client = self.create_ws_client().await?;
+        let (mut transfer_from, mut transfer_to) =
+            self.create_transfer_subscriptions(&client).await?;
+        let (mut permit2_approval, mut permit2_permit) =
+            self.create_permit2_subscriptions(&client).await?;
+        let mut darkpool = self.create_darkpool_subscription(&client).await?;
+
+        // Subscribe to internal notifications for owner index changes
+        let mut owner_changes = self.system_bus().subscribe(OWNER_INDEX_CHANGED_TOPIC.to_string());
+        let mut cancel = self.config.cancel_channel.clone();
+
+        loop {
+            tokio::select! {
+                // Handle ERC20 transfers from tracked owners
+                Some(log) = transfer_from.next() => {
+                    let executor = self.clone();
+                    tokio::task::spawn(async move {
+                        if let Err(e) = executor.handle_transfer_event(log).await {
+                            error!("error handling transfer event: {e}");
+                        }
+                    });
+                }
+
+                // Handle ERC20 transfers to tracked owners
+                Some(log) = transfer_to.next() => {
+                    let executor = self.clone();
+                    tokio::task::spawn(async move {
+                        if let Err(e) = executor.handle_transfer_event(log).await {
+                            error!("error handling transfer event: {e}");
+                        }
+                    });
+                }
+
+                // Handle Permit2 Approval events
+                Some(log) = permit2_approval.next() => {
+                    let executor = self.clone();
+                    tokio::task::spawn(async move {
+                        if let Err(e) = executor.handle_permit2_event(log).await {
+                            error!("error handling Permit2 approval event: {e}");
+                        }
+                    });
+                }
+
+                // Handle Permit2 Permit events (signature-based approvals)
+                Some(log) = permit2_permit.next() => {
+                    let executor = self.clone();
+                    tokio::task::spawn(async move {
+                        if let Err(e) = executor.handle_permit2_event(log).await {
+                            error!("error handling Permit2 permit event: {e}");
+                        }
+                    });
+                }
+
+                // Handle darkpool contract events (intent updates/cancellations)
+                Some(log) = darkpool.next() => {
+                    let executor = self.clone();
+                    tokio::task::spawn(async move {
+                        if let Err(e) = executor.dispatch_darkpool_event(log).await {
+                            error!("error handling darkpool event: {e}");
+                        }
+                    });
+                }
+
+                // Update cache and refresh subscriptions when owner set changes
+                msg = owner_changes.next_message() => {
+                    if let SystemBusMessage::OwnerIndexChanged { owner, added } = msg {
+                        if added {
+                            self.add_tracked_owner(owner);
+                        } else {
+                            self.remove_tracked_owner(owner);
+                        }
+
+                        match self.create_transfer_subscriptions(&client).await {
+                            Ok((from, to)) => {
+                                transfer_from = from;
+                                transfer_to = to;
+                            }
+                            Err(e) => error!("Failed to refresh transfer subscriptions: {e}"),
+                        }
+                        match self.create_permit2_subscriptions(&client).await {
+                            Ok((approval, permit)) => {
+                                permit2_approval = approval;
+                                permit2_permit = permit;
+                            }
+                            Err(e) => error!("Failed to refresh Permit2 subscriptions: {e}"),
+                        }
+                    } else {
+                        warn!("Unexpected message on owner index topic");
+                    }
+                }
+
+                // Handle shutdown signal
+                _ = cancel.changed() => {
+                    info!("on-chain event listener received cancel signal");
+                    return Err(OnChainEventListenerError::Cancelled);
+                }
+
+                else => break,
+            }
+        }
+
+        Err(OnChainEventListenerError::StreamEnded)
+    }
+
+    /// Create a new websocket client
+    async fn create_ws_client(&self) -> Result<DynProvider, OnChainEventListenerError> {
+        let Some(ref addr) = self.config.websocket_addr else {
+            panic!("no websocket listener configured");
+        };
+
+        let conn = WsConnect::new(addr.clone());
+        let provider = ProviderBuilder::new().connect_ws(conn).await?;
+        Ok(DynProvider::new(provider))
+    }
+
+    /// Sleep for a random crash recovery delay
+    ///
+    /// Non-selected nodes wait a random interval before processing to give
+    /// the selected node time to handle the event first.
+    pub(crate) async fn sleep_for_crash_recovery(&self) {
+        let delay =
+            rand::thread_rng().gen_range(MIN_CRASH_RECOVERY_DELAY_S..=MAX_CRASH_RECOVERY_DELAY_S);
+        tokio::time::sleep(Duration::from_secs(delay)).await;
+    }
+
+    /// Decides if this node should execute updates for a given tx hash
+    ///
+    /// To prevent multiple nodes from processing the same event, we select one
+    /// node using (tx_hash_lsb % n_nodes). The tx hash is a cryptographic hash,
+    /// so this gives roughly uniform distribution.
+    pub(crate) async fn should_execute_update(
+        &self,
+        tx_hash: TxHash,
+    ) -> Result<bool, OnChainEventListenerError> {
+        let state = self.state();
+        let my_id = state.get_peer_id()?;
+        let cluster_id = state.get_cluster_id()?;
+        let mut peers = state.get_cluster_peers(&cluster_id).await?;
+        peers.sort();
+
+        let peer_idx = usize::from(*tx_hash.last().unwrap()) % peers.len();
+        Ok(peers[peer_idx] == my_id)
+    }
+}
