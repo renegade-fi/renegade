@@ -7,7 +7,10 @@ use darkpool_client::DarkpoolClient;
 use external_api::{
     EmptyRequestResponse,
     http::admin::IsLeaderResponse,
-    types::{ApiAdminOrder, GetOrderAdminResponse, GetOrdersAdminResponse, order::ApiOrder},
+    types::{
+        ApiAdminOrder, GetOrderAdminResponse, GetOrdersAdminResponse, TaskQueuePausedResponse,
+        order::ApiOrder,
+    },
 };
 use hyper::HeaderMap;
 use state::State;
@@ -317,6 +320,39 @@ impl TypedHandler for AdminGetAccountOrdersHandler {
 
         // TODO: Paginate
         Ok(GetOrdersAdminResponse { orders, next_page_token: None })
+    }
+}
+
+/// Handler for GET /v2/relayer-admin/account/:account_id/tasks/paused
+pub struct AdminGetTaskQueuePausedHandler {
+    /// A handle to the relayer state
+    state: State,
+}
+
+impl AdminGetTaskQueuePausedHandler {
+    /// Constructor
+    pub fn new(state: State) -> Self {
+        Self { state }
+    }
+}
+
+#[async_trait]
+impl TypedHandler for AdminGetTaskQueuePausedHandler {
+    type Request = EmptyRequestResponse;
+    type Response = TaskQueuePausedResponse;
+
+    async fn handle_typed(
+        &self,
+        _headers: HeaderMap,
+        _req: Self::Request,
+        params: UrlParams,
+        _query_params: QueryParams,
+    ) -> Result<Self::Response, ApiServerError> {
+        let account_id = parse_account_id_from_params(&params)?;
+        let paused =
+            self.state.is_queue_paused_serial(&account_id).await.map_err(internal_error)?;
+
+        Ok(TaskQueuePausedResponse { paused })
     }
 }
 

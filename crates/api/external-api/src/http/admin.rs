@@ -20,6 +20,9 @@ pub const ADMIN_GET_ORDERS_ROUTE: &str = "/v2/relayer-admin/orders";
 pub const ADMIN_GET_ORDER_BY_ID_ROUTE: &str = "/v2/relayer-admin/orders/:order_id";
 /// Route to get orders for an account as an admin
 pub const ADMIN_GET_ACCOUNT_ORDERS_ROUTE: &str = "/v2/relayer-admin/account/:account_id/orders";
+/// Route to check if task queue is paused for an account
+pub const ADMIN_GET_TASK_QUEUE_PAUSED_ROUTE: &str =
+    "/v2/relayer-admin/account/:account_id/tasks/paused";
 
 /// Route to create a matching pool
 pub const ADMIN_MATCHING_POOL_CREATE_ROUTE: &str = "/v2/admin/matching-pools/:matching_pool";
@@ -39,4 +42,6 @@ pub struct IsLeaderResponse {
 }
 
 // Re-export v2 admin types from types module
-pub use crate::types::{ApiAdminOrder, GetOrderAdminResponse, GetOrdersAdminResponse};
+pub use crate::types::{
+    ApiAdminOrder, GetOrderAdminResponse, GetOrdersAdminResponse, TaskQueuePausedResponse,
+};

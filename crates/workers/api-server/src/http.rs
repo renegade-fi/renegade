@@ -17,8 +17,9 @@ use account::{
 };
 use admin::{
     AdminCreateMatchingPoolHandler, AdminDestroyMatchingPoolHandler, AdminGetAccountOrdersHandler,
-    AdminGetOrderByIdHandler, AdminGetOrdersHandler, AdminRefreshMatchFeesHandler,
-    AdminRefreshTokenMappingHandler, AdminTriggerSnapshotHandler, IsLeaderHandler,
+    AdminGetOrderByIdHandler, AdminGetOrdersHandler, AdminGetTaskQueuePausedHandler,
+    AdminRefreshMatchFeesHandler, AdminRefreshTokenMappingHandler, AdminTriggerSnapshotHandler,
+    IsLeaderHandler,
 };
 use async_trait::async_trait;
 use balance::{
@@ -34,9 +35,9 @@ use external_api::{
         },
         admin::{
             ADMIN_GET_ACCOUNT_ORDERS_ROUTE, ADMIN_GET_ORDER_BY_ID_ROUTE, ADMIN_GET_ORDERS_ROUTE,
-            ADMIN_MATCHING_POOL_CREATE_ROUTE, ADMIN_MATCHING_POOL_DESTROY_ROUTE,
-            ADMIN_REFRESH_MATCH_FEES_ROUTE, ADMIN_REFRESH_TOKEN_MAPPING_ROUTE,
-            ADMIN_TRIGGER_SNAPSHOT_ROUTE, IS_LEADER_ROUTE,
+            ADMIN_GET_TASK_QUEUE_PAUSED_ROUTE, ADMIN_MATCHING_POOL_CREATE_ROUTE,
+            ADMIN_MATCHING_POOL_DESTROY_ROUTE, ADMIN_REFRESH_MATCH_FEES_ROUTE,
+            ADMIN_REFRESH_TOKEN_MAPPING_ROUTE, ADMIN_TRIGGER_SNAPSHOT_ROUTE, IS_LEADER_ROUTE,
         },
         balance::{
             DEPOSIT_BALANCE_ROUTE, GET_BALANCE_BY_MINT_ROUTE, GET_BALANCES_ROUTE,
@@ -358,6 +359,13 @@ impl HttpServer {
             &Method::GET,
             ADMIN_GET_ACCOUNT_ORDERS_ROUTE.to_string(),
             AdminGetAccountOrdersHandler::new(state.clone()),
+        );
+
+        // GET /v2/relayer-admin/account/:account_id/tasks/paused
+        router.add_admin_authenticated_route(
+            &Method::GET,
+            ADMIN_GET_TASK_QUEUE_PAUSED_ROUTE.to_string(),
+            AdminGetTaskQueuePausedHandler::new(state.clone()),
         );
 
         // --- Matching Pool Routes (v2) --- //

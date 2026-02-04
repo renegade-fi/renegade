@@ -36,3 +36,10 @@ pub struct GetOrderAdminResponse {
     /// The order
     pub order: ApiAdminOrder,
 }
+
+/// Response for checking if an account's task queue is paused
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TaskQueuePausedResponse {
+    /// Whether the task queue is paused
+    pub paused: bool,
+}
