@@ -1,24 +1,21 @@
 //! API types for orders
 
-use std::str::FromStr;
-
-use alloy::primitives::{Bytes, U256};
-use circuit_types::{Amount, fixed_point::FixedPoint};
+use alloy::primitives::Address;
+use circuit_types::{Amount, fixed_point::FixedPoint, fixed_point::FixedPointShare};
 use constants::Scalar;
+#[cfg(feature = "full-api")]
+use darkpool_types::intent::DarkpoolStateIntent;
 use darkpool_types::intent::{Intent, IntentShare};
 use serde::{Deserialize, Serialize};
 use types_account::{
     OrderId,
     order::{Order, OrderMetadata, PrivacyRing},
 };
-use util::{
-    base64::{bytes_from_base64_string, bytes_to_base64_string},
-    hex::{address_from_hex_string, address_to_hex_string},
-};
 use uuid::Uuid;
 
+use super::SignatureWithNonce;
 use super::crypto_primitives::{ApiPoseidonCSPRNG, ApiSchnorrSignature};
-use crate::error::ApiTypeError;
+use crate::serde_helpers;
 
 // --------------
 // | Core Types |
@@ -30,17 +27,23 @@ pub struct ApiOrderCore {
     /// The order identifier
     pub id: Uuid,
     /// The input token mint address
-    pub in_token: String,
+    #[serde(with = "serde_helpers::address_as_string")]
+    pub in_token: Address,
     /// The output token mint address
-    pub out_token: String,
+    #[serde(with = "serde_helpers::address_as_string")]
+    pub out_token: Address,
     /// The owner's address
-    pub owner: String,
+    #[serde(with = "serde_helpers::address_as_string")]
+    pub owner: Address,
     /// The minimum price for the order
-    pub min_price: String,
+    #[serde(with = "serde_helpers::fixed_point_as_string")]
+    pub min_price: FixedPoint,
     /// The input amount
-    pub amount_in: String,
+    #[serde(with = "serde_helpers::amount_as_string")]
+    pub amount_in: Amount,
     /// The minimum fill size
-    pub min_fill_size: String,
+    #[serde(with = "serde_helpers::amount_as_string")]
+    pub min_fill_size: Amount,
     /// The type of order
     pub order_type: OrderType,
     /// Whether to allow external matches
@@ -49,26 +52,22 @@ pub struct ApiOrderCore {
 
 impl ApiOrderCore {
     /// Return the order metadata from the core order
-    pub fn get_order_metadata(&self) -> Result<OrderMetadata, ApiTypeError> {
-        let min_fill = Amount::from_str(&self.min_fill_size)
-            .map_err(|e| ApiTypeError::parsing(format!("invalid min fill size: {e:?}")))?;
-
-        Ok(OrderMetadata {
-            min_fill_size: min_fill,
+    pub fn get_order_metadata(&self) -> OrderMetadata {
+        OrderMetadata {
+            min_fill_size: self.min_fill_size,
             allow_external_matches: self.allow_external_matches,
-        })
+        }
     }
 
     /// Get the intent from the core order
-    pub fn get_intent(&self) -> Result<Intent, ApiTypeError> {
-        let in_token = address_from_hex_string(&self.in_token).map_err(ApiTypeError::parsing)?;
-        let out_token = address_from_hex_string(&self.out_token).map_err(ApiTypeError::parsing)?;
-        let owner = address_from_hex_string(&self.owner).map_err(ApiTypeError::parsing)?;
-        let repr = Scalar::from_decimal_string(&self.min_price).map_err(ApiTypeError::parsing)?;
-        let min_price = FixedPoint::from_repr(repr);
-        let amount_in = Amount::from_str(&self.amount_in).map_err(ApiTypeError::parsing)?;
-
-        Ok(Intent { in_token, out_token, owner, min_price, amount_in })
+    pub fn get_intent(&self) -> Intent {
+        Intent {
+            in_token: self.in_token,
+            out_token: self.out_token,
+            owner: self.owner,
+            min_price: self.min_price,
+            amount_in: self.amount_in,
+        }
     }
 }
 
@@ -77,12 +76,12 @@ impl From<Order> for ApiOrderCore {
     fn from(order: Order) -> Self {
         Self {
             id: order.id,
-            in_token: address_to_hex_string(&order.intent().in_token),
-            out_token: address_to_hex_string(&order.intent().out_token),
-            owner: address_to_hex_string(&order.intent().owner),
-            min_price: order.intent().min_price.repr.to_string(),
-            amount_in: order.intent().amount_in.to_string(),
-            min_fill_size: order.metadata.min_fill_size.to_string(),
+            in_token: order.intent().in_token,
+            out_token: order.intent().out_token,
+            owner: order.intent().owner,
+            min_price: order.intent().min_price,
+            amount_in: order.intent().amount_in,
+            min_fill_size: order.metadata.min_fill_size,
             order_type: order.ring.into(),
             allow_external_matches: order.metadata.allow_external_matches,
         }
@@ -93,25 +92,42 @@ impl From<Order> for ApiOrderCore {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ApiOrderShare {
     /// The input token share
-    pub in_token: String,
+    #[serde(with = "serde_helpers::scalar_as_string")]
+    pub in_token: Scalar,
     /// The output token share
-    pub out_token: String,
+    #[serde(with = "serde_helpers::scalar_as_string")]
+    pub out_token: Scalar,
     /// The owner share
-    pub owner: String,
+    #[serde(with = "serde_helpers::scalar_as_string")]
+    pub owner: Scalar,
     /// The minimum price share
-    pub min_price: String,
+    #[serde(with = "serde_helpers::scalar_as_string")]
+    pub min_price: Scalar,
     /// The amount in share
-    pub amount_in: String,
+    #[serde(with = "serde_helpers::scalar_as_string")]
+    pub amount_in: Scalar,
 }
 
 impl From<IntentShare> for ApiOrderShare {
     fn from(share: IntentShare) -> Self {
         Self {
-            in_token: share.in_token.to_string(),
-            out_token: share.out_token.to_string(),
-            owner: share.owner.to_string(),
-            min_price: share.min_price.repr.to_string(),
-            amount_in: share.amount_in.to_string(),
+            in_token: share.in_token,
+            out_token: share.out_token,
+            owner: share.owner,
+            min_price: share.min_price.repr,
+            amount_in: share.amount_in,
+        }
+    }
+}
+
+impl From<ApiOrderShare> for IntentShare {
+    fn from(share: ApiOrderShare) -> Self {
+        IntentShare {
+            in_token: share.in_token,
+            out_token: share.out_token,
+            owner: share.owner,
+            min_price: FixedPointShare { repr: share.min_price },
+            amount_in: share.amount_in,
         }
     }
 }
@@ -152,6 +168,35 @@ impl From<Order> for ApiOrder {
             state: OrderState::Created,
             fills: vec![],
             created: 0,
+        }
+    }
+}
+
+#[cfg(feature = "full-api")]
+impl From<ApiOrder> for DarkpoolStateIntent {
+    fn from(api_order: ApiOrder) -> Self {
+        DarkpoolStateIntent {
+            recovery_stream: api_order.recovery_stream.into(),
+            share_stream: api_order.share_stream.into(),
+            inner: api_order.order.get_intent(),
+            public_share: api_order.public_shares.into(),
+        }
+    }
+}
+
+#[cfg(feature = "full-api")]
+impl From<ApiOrder> for Order {
+    fn from(api_order: ApiOrder) -> Self {
+        Self {
+            id: api_order.id,
+            intent: DarkpoolStateIntent {
+                recovery_stream: api_order.recovery_stream.into(),
+                share_stream: api_order.share_stream.into(),
+                inner: api_order.order.get_intent(),
+                public_share: api_order.public_shares.into(),
+            },
+            ring: api_order.order.order_type.into(),
+            metadata: api_order.order.get_order_metadata(),
         }
     }
 }
@@ -231,46 +276,12 @@ pub enum OrderAuth {
     },
 }
 
-/// A signature with an associated nonce
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct SignatureWithNonce {
-    /// The nonce
-    pub nonce: String,
-    /// The signature bytes (base64 encoded)
-    pub signature: String,
-}
-
-#[cfg(feature = "full-api")]
-impl TryFrom<SignatureWithNonce> for renegade_solidity_abi::v2::IDarkpoolV2::SignatureWithNonce {
-    type Error = ApiTypeError;
-
-    fn try_from(signature_with_nonce: SignatureWithNonce) -> Result<Self, Self::Error> {
-        let nonce = U256::from_str(&signature_with_nonce.nonce)
-            .map_err(|e| ApiTypeError::parsing(format!("invalid nonce: {e}")))?;
-
-        let signature_bytes = bytes_from_base64_string(&signature_with_nonce.signature)
-            .map_err(ApiTypeError::parsing)?;
-
-        let signature = Bytes::from(signature_bytes);
-        Ok(renegade_solidity_abi::v2::IDarkpoolV2::SignatureWithNonce { nonce, signature })
-    }
-}
-
-#[cfg(feature = "full-api")]
-impl From<renegade_solidity_abi::v2::IDarkpoolV2::SignatureWithNonce> for SignatureWithNonce {
-    fn from(sig: renegade_solidity_abi::v2::IDarkpoolV2::SignatureWithNonce) -> Self {
-        SignatureWithNonce {
-            nonce: sig.nonce.to_string(),
-            signature: bytes_to_base64_string(&sig.signature),
-        }
-    }
-}
-
 /// A partial fill of an order
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ApiPartialOrderFill {
     /// The amount filled
-    pub amount: String,
+    #[serde(with = "serde_helpers::amount_as_string")]
+    pub amount: Amount,
     /// The price at which the fill occurred
     pub price: ApiTimestampedPriceFloat,
     /// The fees taken
@@ -282,7 +293,7 @@ pub struct ApiPartialOrderFill {
 /// A timestamped price with float representation
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ApiTimestampedPriceFloat {
-    /// The price as a string
+    /// The price as a string to avoid fixed point precision issues
     pub price: String,
     /// The timestamp in milliseconds
     pub timestamp: u64,
@@ -292,9 +303,11 @@ pub struct ApiTimestampedPriceFloat {
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct FeeTake {
     /// The relayer fee amount
-    pub relayer_fee: String,
+    #[serde(with = "serde_helpers::amount_as_string")]
+    pub relayer_fee: Amount,
     /// The protocol fee amount
-    pub protocol_fee: String,
+    #[serde(with = "serde_helpers::amount_as_string")]
+    pub protocol_fee: Amount,
 }
 
 /// The type of order update

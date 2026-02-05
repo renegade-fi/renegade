@@ -43,8 +43,3 @@ pub struct IsLeaderResponse {
     /// Whether the target node is a raft leader
     pub leader: bool,
 }
-
-// Re-export v2 admin types from types module
-pub use crate::types::{
-    ApiAdminOrder, GetOrderAdminResponse, GetOrdersAdminResponse, TaskQueuePausedResponse,
-};

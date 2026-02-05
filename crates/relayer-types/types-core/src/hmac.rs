@@ -70,6 +70,15 @@ impl HmacKey {
         Ok(Self(bytes.try_into().unwrap()))
     }
 
+    /// Try to create an HMAC key from a byte slice
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
+        if bytes.len() != HMAC_KEY_LEN {
+            return Err(format!("expected {HMAC_KEY_LEN} byte HMAC key, got {}", bytes.len()));
+        }
+
+        Ok(Self(bytes.try_into().unwrap()))
+    }
+
     /// Compute the HMAC of a message
     pub fn compute_mac(&self, msg: &[u8]) -> Vec<u8> {
         let mut hmac =

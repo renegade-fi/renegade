@@ -42,8 +42,6 @@ const ERR_INVALID_ORDER_TYPE: &str =
     "only public orders (Ring0) can be cancelled via this endpoint";
 /// Error message for missing order auth
 const ERR_ORDER_AUTH_NOT_FOUND: &str = "order auth not found";
-/// Error message for invalid order auth type
-const ERR_INVALID_ORDER_AUTH: &str = "order auth is not for a public order";
 
 // -------------------
 // | Order Handlers  |
@@ -161,8 +159,8 @@ impl TypedHandler for CreateOrderHandler {
 
         // Convert order auth to an internal type
         let order_id = req.order.id;
-        let auth = req.get_order_auth(self.executor)?;
-        let (intent, ring, metadata) = req.into_order_components()?;
+        let auth = req.get_order_auth(self.executor);
+        let (intent, ring, metadata) = req.into_order_components();
 
         // Create the task descriptor with the global matching pool
         let descriptor = CreateOrderTaskDescriptor::new(

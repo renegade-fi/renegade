@@ -1,15 +1,23 @@
 //! API types for balances
 
+use alloy::primitives::Address;
 #[cfg(feature = "full-api")]
-use darkpool_types::balance::DarkpoolBalanceShare;
+use alloy::primitives::Bytes;
+use alloy::primitives::U256;
+#[cfg(feature = "full-api")]
+use circuit_types::Amount;
+#[cfg(feature = "full-api")]
+use constants::Scalar;
+#[cfg(feature = "full-api")]
+use darkpool_types::balance::{DarkpoolBalance, DarkpoolBalanceShare, DarkpoolStateBalance};
 #[cfg(feature = "full-api")]
 use renegade_solidity_abi::v2::IDarkpoolV2::DepositAuth;
 use serde::{Deserialize, Serialize};
 use types_account::balance::Balance;
-use util::hex::address_to_hex_string;
 
 use super::crypto_primitives::{ApiPoseidonCSPRNG, ApiSchnorrPublicKey, ApiSchnorrPublicKeyShare};
 use crate::error::ApiTypeError;
+use crate::serde_helpers;
 
 // -----------------
 // | Balance Types |
@@ -19,19 +27,25 @@ use crate::error::ApiTypeError;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ApiBalance {
     /// The token mint address
-    pub mint: String,
+    #[serde(with = "serde_helpers::address_as_string")]
+    pub mint: Address,
     /// The owner address
-    pub owner: String,
+    #[serde(with = "serde_helpers::address_as_string")]
+    pub owner: Address,
     /// The relayer fee recipient address
-    pub relayer_fee_recipient: String,
+    #[serde(with = "serde_helpers::address_as_string")]
+    pub relayer_fee_recipient: Address,
     /// The authority public key
     pub authority: ApiSchnorrPublicKey,
     /// The relayer fee balance
-    pub relayer_fee_balance: String,
+    #[serde(with = "serde_helpers::amount_as_string")]
+    pub relayer_fee_balance: Amount,
     /// The protocol fee balance
-    pub protocol_fee_balance: String,
+    #[serde(with = "serde_helpers::amount_as_string")]
+    pub protocol_fee_balance: Amount,
     /// The available amount
-    pub amount: String,
+    #[serde(with = "serde_helpers::amount_as_string")]
+    pub amount: Amount,
     /// The recovery stream CSPRNG state
     pub recovery_stream: ApiPoseidonCSPRNG,
     /// The share stream CSPRNG state
@@ -46,13 +60,13 @@ impl From<Balance> for ApiBalance {
         let inner = bal.inner();
         let elt = &bal.state_wrapper;
         Self {
-            mint: address_to_hex_string(&inner.mint),
-            owner: address_to_hex_string(&inner.owner),
-            relayer_fee_recipient: address_to_hex_string(&inner.relayer_fee_recipient),
+            mint: inner.mint,
+            owner: inner.owner,
+            relayer_fee_recipient: inner.relayer_fee_recipient,
             authority: inner.authority.into(),
-            relayer_fee_balance: inner.relayer_fee_balance.to_string(),
-            protocol_fee_balance: inner.protocol_fee_balance.to_string(),
-            amount: inner.amount.to_string(),
+            relayer_fee_balance: inner.relayer_fee_balance,
+            protocol_fee_balance: inner.protocol_fee_balance,
+            amount: inner.amount,
             recovery_stream: elt.recovery_stream.clone().into(),
             share_stream: elt.share_stream.clone().into(),
             public_shares: elt.public_share.clone().into(),
@@ -60,36 +74,79 @@ impl From<Balance> for ApiBalance {
     }
 }
 
+#[cfg(feature = "full-api")]
+impl TryFrom<ApiBalance> for DarkpoolStateBalance {
+    type Error = ApiTypeError;
+
+    fn try_from(api_balance: ApiBalance) -> Result<Self, Self::Error> {
+        let inner = DarkpoolBalance {
+            mint: api_balance.mint,
+            owner: api_balance.owner,
+            relayer_fee_recipient: api_balance.relayer_fee_recipient,
+            authority: api_balance.authority.into(),
+            relayer_fee_balance: api_balance.relayer_fee_balance,
+            protocol_fee_balance: api_balance.protocol_fee_balance,
+            amount: api_balance.amount,
+        };
+        let recovery_stream = api_balance.recovery_stream.into();
+        let share_stream = api_balance.share_stream.into();
+        let public_share = api_balance.public_shares.into();
+
+        Ok(DarkpoolStateBalance { recovery_stream, share_stream, inner, public_share })
+    }
+}
+
 /// Public shares of a balance
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ApiBalanceShare {
     /// The token mint address share
-    pub mint: String,
+    #[serde(with = "serde_helpers::scalar_as_string")]
+    pub mint: Scalar,
     /// The owner address share
-    pub owner: String,
+    #[serde(with = "serde_helpers::scalar_as_string")]
+    pub owner: Scalar,
     /// The relayer fee recipient address share
-    pub relayer_fee_recipient: String,
+    #[serde(with = "serde_helpers::scalar_as_string")]
+    pub relayer_fee_recipient: Scalar,
     /// The authority public key share
     pub authority: ApiSchnorrPublicKeyShare,
     /// The relayer fee balance share
-    pub relayer_fee_balance: String,
+    #[serde(with = "serde_helpers::scalar_as_string")]
+    pub relayer_fee_balance: Scalar,
     /// The protocol fee balance share
-    pub protocol_fee_balance: String,
+    #[serde(with = "serde_helpers::scalar_as_string")]
+    pub protocol_fee_balance: Scalar,
     /// The amount share
-    pub amount: String,
+    #[serde(with = "serde_helpers::scalar_as_string")]
+    pub amount: Scalar,
 }
 
 #[cfg(feature = "full-api")]
 impl From<DarkpoolBalanceShare> for ApiBalanceShare {
     fn from(share: DarkpoolBalanceShare) -> Self {
         Self {
-            mint: share.mint.to_string(),
-            owner: share.owner.to_string(),
-            relayer_fee_recipient: share.relayer_fee_recipient.to_string(),
+            mint: share.mint,
+            owner: share.owner,
+            relayer_fee_recipient: share.relayer_fee_recipient,
             authority: share.authority.into(),
-            relayer_fee_balance: share.relayer_fee_balance.to_string(),
-            protocol_fee_balance: share.protocol_fee_balance.to_string(),
-            amount: share.amount.to_string(),
+            relayer_fee_balance: share.relayer_fee_balance,
+            protocol_fee_balance: share.protocol_fee_balance,
+            amount: share.amount,
+        }
+    }
+}
+
+#[cfg(feature = "full-api")]
+impl From<ApiBalanceShare> for DarkpoolBalanceShare {
+    fn from(share: ApiBalanceShare) -> Self {
+        DarkpoolBalanceShare {
+            mint: share.mint,
+            owner: share.owner,
+            relayer_fee_recipient: share.relayer_fee_recipient,
+            authority: share.authority.into(),
+            relayer_fee_balance: share.relayer_fee_balance,
+            protocol_fee_balance: share.protocol_fee_balance,
+            amount: share.amount,
         }
     }
 }
@@ -98,33 +155,23 @@ impl From<DarkpoolBalanceShare> for ApiBalanceShare {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ApiDepositPermit {
     /// The permit nonce
-    pub nonce: String,
+    #[serde(with = "serde_helpers::u256_as_string")]
+    pub nonce: U256,
     /// The permit deadline
-    pub deadline: String,
+    #[serde(with = "serde_helpers::u256_as_string")]
+    pub deadline: U256,
     /// The permit signature (base64 encoded)
-    pub signature: String,
+    #[serde(with = "serde_helpers::bytes_as_base64_string")]
+    pub signature: Vec<u8>,
 }
 
 #[cfg(feature = "full-api")]
-impl TryFrom<ApiDepositPermit> for DepositAuth {
-    type Error = ApiTypeError;
-
-    fn try_from(permit: ApiDepositPermit) -> Result<Self, Self::Error> {
-        use std::str::FromStr;
-
-        use alloy::primitives::{Bytes, U256};
-        use base64::{Engine, engine::general_purpose::STANDARD_NO_PAD as BASE64_ENGINE};
-
-        let permit_signature_bytes = BASE64_ENGINE
-            .decode(&permit.signature)
-            .map_err(|e| ApiTypeError::parsing(format!("invalid permit signature: {e}")))?;
-
-        Ok(DepositAuth {
-            permit2Nonce: U256::from_str(&permit.nonce)
-                .map_err(|e| ApiTypeError::parsing(format!("invalid permit nonce: {e}")))?,
-            permit2Deadline: U256::from_str(&permit.deadline)
-                .map_err(|e| ApiTypeError::parsing(format!("invalid permit deadline: {e}")))?,
-            permit2Signature: Bytes::from(permit_signature_bytes),
-        })
+impl From<ApiDepositPermit> for DepositAuth {
+    fn from(permit: ApiDepositPermit) -> Self {
+        DepositAuth {
+            permit2Nonce: permit.nonce,
+            permit2Deadline: permit.deadline,
+            permit2Signature: Bytes::from(permit.signature),
+        }
     }
 }

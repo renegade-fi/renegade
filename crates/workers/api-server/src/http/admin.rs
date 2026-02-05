@@ -524,8 +524,8 @@ impl TypedHandler for AdminCreateOrderInPoolHandler {
 
         // Convert order auth to an internal type
         let order_id = req.order.id;
-        let auth = req.get_order_auth(self.executor)?;
-        let (intent, ring, metadata) = req.into_order_components()?;
+        let auth = req.get_order_auth(self.executor);
+        let (intent, ring, metadata) = req.into_order_components();
 
         // Create the task descriptor with the specified matching pool
         let descriptor = CreateOrderTaskDescriptor::new(
