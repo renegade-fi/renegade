@@ -9,6 +9,7 @@ use external_api::{
     },
 };
 use hyper::HeaderMap;
+use job_types::task_driver::TaskDriverQueue;
 use state::State;
 use types_account::keychain::{KeyChain, PrivateKeyChain};
 use types_core::HmacKey;
@@ -17,7 +18,7 @@ use types_tasks::{NewAccountTaskDescriptor, RefreshAccountTaskDescriptor};
 use crate::{
     error::{ApiServerError, bad_request, not_found},
     http::helpers::append_task,
-    param_parsing::{parse_account_id_from_params, parse_scalar_from_string},
+    param_parsing::{parse_account_id_from_params, parse_scalar_from_string, should_block_on_task},
     router::{QueryParams, TypedHandler, UrlParams},
 };
 
@@ -69,12 +70,14 @@ impl TypedHandler for GetAccountByIdHandler {
 pub struct CreateAccountHandler {
     /// A handle to the state
     state: State,
+    /// The task driver queue
+    task_queue: TaskDriverQueue,
 }
 
 impl CreateAccountHandler {
     /// Constructor
-    pub fn new(state: State) -> Self {
-        Self { state }
+    pub fn new(state: State, task_queue: TaskDriverQueue) -> Self {
+        Self { state, task_queue }
     }
 }
 
@@ -88,12 +91,13 @@ impl TypedHandler for CreateAccountHandler {
         _headers: HeaderMap,
         req: Self::Request,
         _params: UrlParams,
-        _query_params: QueryParams,
+        query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
+        let blocking = should_block_on_task(&query_params);
         let auth_key = HmacKey::from_base64_string(&req.auth_hmac_key).map_err(bad_request)?;
         let keychain = KeyChain::new(PrivateKeyChain::new(auth_key, req.master_view_seed));
         let task = NewAccountTaskDescriptor::new(req.account_id, keychain, req.address);
-        append_task(task.into(), &self.state).await?;
+        append_task(task.into(), blocking, &self.state, &self.task_queue).await?;
 
         Ok(EmptyRequestResponse {})
     }
@@ -140,12 +144,14 @@ impl TypedHandler for GetAccountSeedsHandler {
 pub struct SyncAccountHandler {
     /// A handle to the state
     state: State,
+    /// The task driver queue
+    task_queue: TaskDriverQueue,
 }
 
 impl SyncAccountHandler {
     /// Constructor
-    pub fn new(state: State) -> Self {
-        Self { state }
+    pub fn new(state: State, task_queue: TaskDriverQueue) -> Self {
+        Self { state, task_queue }
     }
 }
 
@@ -159,8 +165,10 @@ impl TypedHandler for SyncAccountHandler {
         _headers: HeaderMap,
         req: Self::Request,
         params: UrlParams,
-        _query_params: QueryParams,
+        query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
+        let blocking = should_block_on_task(&query_params);
+
         // Parse account_id from URL params
         let account_id = parse_account_id_from_params(&params)?;
 
@@ -171,8 +179,9 @@ impl TypedHandler for SyncAccountHandler {
 
         // Create and append the task
         let descriptor = RefreshAccountTaskDescriptor::new(account_id, keychain);
-        let task_id = append_task(descriptor.into(), &self.state).await?;
+        let task_id =
+            append_task(descriptor.into(), blocking, &self.state, &self.task_queue).await?;
 
-        Ok(SyncAccountResponse { task_id, completed: false })
+        Ok(SyncAccountResponse { task_id, completed: true })
     }
 }

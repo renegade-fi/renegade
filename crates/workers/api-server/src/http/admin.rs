@@ -17,6 +17,7 @@ use external_api::{
     },
 };
 use hyper::HeaderMap;
+use job_types::task_driver::TaskDriverQueue;
 use state::State;
 use tracing::info;
 use types_core::{Chain, Token, get_all_tokens};
@@ -28,7 +29,7 @@ use crate::{
     http::helpers::append_task,
     param_parsing::{
         parse_account_id_from_params, parse_matching_pool_from_url_params,
-        parse_order_id_from_params,
+        parse_order_id_from_params, should_block_on_task,
     },
     router::{QueryParams, TypedHandler, UrlParams},
 };
@@ -481,12 +482,14 @@ pub struct AdminCreateOrderInPoolHandler {
     executor: Address,
     /// A handle to the relayer state
     state: State,
+    /// The task driver queue
+    task_queue: TaskDriverQueue,
 }
 
 impl AdminCreateOrderInPoolHandler {
     /// Constructor
-    pub fn new(executor: Address, state: State) -> Self {
-        Self { executor, state }
+    pub fn new(executor: Address, state: State, task_queue: TaskDriverQueue) -> Self {
+        Self { executor, state, task_queue }
     }
 }
 
@@ -500,8 +503,10 @@ impl TypedHandler for AdminCreateOrderInPoolHandler {
         _headers: HeaderMap,
         req: Self::Request,
         params: UrlParams,
-        _query_params: QueryParams,
+        query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
+        let blocking = should_block_on_task(&query_params);
+
         // Parse account ID from URL params
         let account_id = parse_account_id_from_params(&params)?;
 
@@ -533,8 +538,9 @@ impl TypedHandler for AdminCreateOrderInPoolHandler {
             matching_pool,
         )
         .map_err(bad_request)?;
-        let task_id = append_task(descriptor.into(), &self.state).await?;
+        let task_id =
+            append_task(descriptor.into(), blocking, &self.state, &self.task_queue).await?;
 
-        Ok(CreateOrderResponse { task_id, completed: false })
+        Ok(CreateOrderResponse { task_id, completed: true })
     }
 }

@@ -13,7 +13,7 @@ use circuit_types::Amount;
 use darkpool_types::bounded_match_result::BoundedMatchResult;
 use job_types::matching_engine::ExternalMatchingEngineOptions;
 use system_bus::SystemBusMessage;
-use tracing::{info, instrument};
+use tracing::{info, instrument, warn};
 use types_account::{account::OrderId, order::Order};
 use types_tasks::SettleExternalMatchTaskDescriptor;
 
@@ -42,6 +42,14 @@ impl MatchingEngineExecutor {
         response_topic: String,
         options: ExternalMatchingEngineOptions,
     ) -> Result<(), MatchingEngineError> {
+        // Check if either asset in the pair is disabled for matching
+        let pair = order.pair();
+        if self.is_asset_disabled(&pair.in_token) || self.is_asset_disabled(&pair.out_token) {
+            warn!("Asset disabled for matching, skipping external matching engine...");
+            self.handle_no_match(response_topic);
+            return Ok(());
+        }
+
         let matching_pool = options.matching_pool.clone();
         let res = self.find_external_match(&order, matching_pool)?;
         let successful_match = match res {

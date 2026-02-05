@@ -10,10 +10,11 @@ use constants::Scalar;
 use crypto::fields::{scalar_to_u256, u256_to_scalar};
 use renegade_solidity_abi::v2::IDarkpoolV2::{
     self, DepositAuth, DepositProofBundle, ObligationBundle, OrderCancellationAuth,
-    PublicIntentPermit, SettlementBundle, SignatureWithNonce,
+    PublicIntentPermit, SettlementBundle, SignatureWithNonce, WithdrawalAuth,
+    WithdrawalProofBundle,
 };
 use tracing::{info, instrument};
-use types_proofs::{ValidBalanceCreateBundle, ValidDepositBundle};
+use types_proofs::{ValidBalanceCreateBundle, ValidDepositBundle, ValidWithdrawalBundle};
 use util::telemetry::helpers::backfill_trace_field;
 
 use crate::errors::DarkpoolClientError;
@@ -188,6 +189,37 @@ impl DarkpoolClient {
         let tx_hash = format!("{:#x}", receipt.transaction_hash);
         backfill_trace_field("tx_hash", &tx_hash);
         info!("`deposit` tx hash: {tx_hash}");
+
+        Ok(receipt)
+    }
+
+    /// Withdraw funds from an existing balance in the darkpool contract
+    ///
+    /// Awaits until the transaction is confirmed on-chain
+    #[instrument(skip_all, err, fields(
+        tx_hash,
+        recovery_id = %proof_bundle.statement.recovery_id
+    ))]
+    pub async fn withdraw(
+        &self,
+        auth: WithdrawalAuth,
+        proof_bundle: ValidWithdrawalBundle,
+    ) -> Result<TransactionReceipt, DarkpoolClientError> {
+        let bundle = proof_bundle.into_inner();
+        let contract_statement: IDarkpoolV2::ValidWithdrawalStatement = bundle.statement.into();
+        let proof = bundle.proof.into();
+
+        let calldata_bundle = WithdrawalProofBundle {
+            merkleDepth: self.merkle_depth(),
+            statement: contract_statement,
+            proof,
+        };
+        let tx = self.darkpool().withdraw(auth, calldata_bundle);
+        let receipt = self.send_tx(tx).await?;
+
+        let tx_hash = format!("{:#x}", receipt.transaction_hash);
+        backfill_trace_field("tx_hash", &tx_hash);
+        info!("`withdraw` tx hash: {tx_hash}");
 
         Ok(receipt)
     }

@@ -38,24 +38,22 @@ impl From<PoseidonCSPRNG> for ApiPoseidonCSPRNG {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ApiBabyJubJubPoint {
     /// The x-coordinate
-    pub x: String,
+    #[serde(with = "serde_helpers::scalar_as_string")]
+    pub x: Scalar,
     /// The y-coordinate
-    pub y: String,
+    #[serde(with = "serde_helpers::scalar_as_string")]
+    pub y: Scalar,
 }
 
 impl From<BabyJubJubPoint> for ApiBabyJubJubPoint {
     fn from(point: BabyJubJubPoint) -> Self {
-        Self { x: point.x.to_string(), y: point.y.to_string() }
+        Self { x: point.x, y: point.y }
     }
 }
 
-impl TryFrom<ApiBabyJubJubPoint> for BabyJubJubPoint {
-    type Error = ApiTypeError;
-
-    fn try_from(point: ApiBabyJubJubPoint) -> Result<Self, Self::Error> {
-        let x = Scalar::from_hex_string(&point.x).map_err(ApiTypeError::parsing)?;
-        let y = Scalar::from_hex_string(&point.y).map_err(ApiTypeError::parsing)?;
-        Ok(BabyJubJubPoint { x, y })
+impl From<ApiBabyJubJubPoint> for BabyJubJubPoint {
+    fn from(point: ApiBabyJubJubPoint) -> Self {
+        BabyJubJubPoint { x: point.x, y: point.y }
     }
 }
 
@@ -73,7 +71,7 @@ impl TryFrom<ApiSchnorrSignature> for SchnorrSignature {
 
     fn try_from(signature: ApiSchnorrSignature) -> Result<Self, Self::Error> {
         let s = embedded_scalar_from_decimal_string(&signature.s).map_err(ApiTypeError::parsing)?;
-        let r = BabyJubJubPoint::try_from(signature.r)?;
+        let r = signature.r.into();
         Ok(SchnorrSignature { s, r })
     }
 }
@@ -88,6 +86,12 @@ pub struct ApiSchnorrPublicKey {
 impl From<SchnorrPublicKey> for ApiSchnorrPublicKey {
     fn from(key: SchnorrPublicKey) -> Self {
         Self { point: key.point.into() }
+    }
+}
+
+impl From<ApiSchnorrPublicKey> for SchnorrPublicKey {
+    fn from(key: ApiSchnorrPublicKey) -> Self {
+        SchnorrPublicKey { point: key.point.into() }
     }
 }
 

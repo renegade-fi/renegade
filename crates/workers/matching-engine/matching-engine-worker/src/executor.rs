@@ -1,6 +1,9 @@
 //! The matching engine module handles the execution of matching orders
 //! a pair of orders to match, all the way through settling any resulting match
 
+use std::collections::HashSet;
+
+use alloy::primitives::Address;
 use circuit_types::Amount;
 use constants::in_bootstrap_mode;
 use job_types::{
@@ -36,6 +39,8 @@ pub struct MatchingEngineExecutor {
     pub(crate) min_fill_size: Amount,
     /// The number of blocks an external match bundle remains valid
     pub(crate) external_match_validity_window: u64,
+    /// Assets for which matching is disabled
+    pub(crate) disabled_assets: HashSet<Address>,
     /// The channel on which other workers enqueue jobs for the protocol
     /// executor
     pub(crate) job_channel: DefaultOption<MatchingEngineWorkerReceiver>,
@@ -60,6 +65,7 @@ impl MatchingEngineExecutor {
     pub fn new(
         min_fill_size: Amount,
         external_match_validity_window: u64,
+        disabled_assets: HashSet<Address>,
         job_channel: MatchingEngineWorkerReceiver,
         price_streams: PriceStreamStates,
         state: State,
@@ -71,6 +77,7 @@ impl MatchingEngineExecutor {
         Ok(Self {
             min_fill_size,
             external_match_validity_window,
+            disabled_assets,
             job_channel: DefaultOption::new(Some(job_channel)),
             price_streams,
             state,

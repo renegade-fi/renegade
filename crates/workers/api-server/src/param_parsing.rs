@@ -62,6 +62,8 @@ const TASK_ID_URL_PARAM: &str = "task_id";
 const MATCHING_POOL_PARAM: &str = "matching_pool";
 /// The tickers param in a query string
 const TICKERS_PARAM: &str = "tickers";
+/// The non_blocking param in a query string
+const NON_BLOCKING_PARAM: &str = "non_blocking";
 
 // -----------
 // | Parsing |
@@ -180,4 +182,13 @@ pub(super) fn parse_tickers_from_query_params(
     let tickers_param = params.get(TICKERS_PARAM).ok_or_else(|| bad_request(ERR_TICKERS_PARSE))?;
     let tickers = tickers_param.split(',').map(|t| t.to_string()).collect();
     Ok(tickers)
+}
+
+/// Parse the `non_blocking` flag from query params
+///
+/// Returns `true` if `non_blocking=true` is present, `false` otherwise
+pub(super) fn should_block_on_task(params: &QueryParams) -> bool {
+    let non_blocking =
+        params.get(NON_BLOCKING_PARAM).is_some_and(|v| v.eq_ignore_ascii_case("true"));
+    !non_blocking
 }
