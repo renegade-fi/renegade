@@ -477,6 +477,8 @@ impl Default for RelayerConfig {
         // Set the default addresses for the config
         let zero_addr = "0x0000000000000000000000000000000000000000".to_string();
         let hmac_key = HmacKey::random().to_base64_string();
+        let executor_key = PrivateKeySigner::random();
+        let executor_key_str = format!("{:#x}", executor_key.to_bytes());
         let args_string = [
             "relayer".to_string(),
             "--contract-address".to_string(),
@@ -489,6 +491,8 @@ impl Default for RelayerConfig {
             "http://localhost:8080".to_string(),
             "--indexer-hmac-key".to_string(),
             hmac_key,
+            "--executor-private-key".to_string(),
+            executor_key_str,
         ];
 
         // Parse a dummy set of command line args and convert this to a config
