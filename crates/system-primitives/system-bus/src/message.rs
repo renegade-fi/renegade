@@ -1,5 +1,6 @@
 //! Defines types broadcast onto the system bus and thereby websockets
 
+use alloy::primitives::Address;
 use darkpool_types::bounded_match_result::BoundedMatchResult;
 use renegade_solidity_abi::v2::IDarkpoolV2::SettlementBundle;
 use types_account::{
@@ -27,6 +28,11 @@ pub const ALL_WALLET_UPDATES_TOPIC: &str = "wallet-updates";
 pub const ADMIN_ORDER_UPDATES_TOPIC: &str = "admin-order-updates";
 /// The system bus topic for admin balance updates
 pub const ADMIN_BALANCE_UPDATES_TOPIC: &str = "admin-balance-updates";
+/// The system bus topic published to when a new owner is indexed
+///
+/// This notifies the chain-events worker to refresh its Transfer event
+/// subscriptions to include the new owner address
+pub const OWNER_INDEX_CHANGED_TOPIC: &str = "owner-index-changed";
 
 /// Get the topic name for a given wallet
 pub fn account_topic(account_id: &AccountId) -> String {
@@ -127,7 +133,8 @@ pub enum SystemBusMessage {
     NoExternalMatchFound,
 
     // --- Admin -- //
-    /// A message indicating that an order has been updated, for admin consumption
+    /// A message indicating that an order has been updated, for admin
+    /// consumption
     AdminOrderUpdate {
         /// The ID of the account that owns the order
         account_id: AccountId,
@@ -138,12 +145,24 @@ pub enum SystemBusMessage {
         /// The type of update
         update_type: AdminOrderUpdateType,
     },
-    /// A message indicating that a balance has been updated, for admin consumption
+    /// A message indicating that a balance has been updated, for admin
+    /// consumption
     AdminBalanceUpdate {
         /// The ID of the account that owns the balance
         account_id: AccountId,
         /// The updated balance
         balance: Box<Balance>,
+    },
+
+    // --- Chain Events -- //
+    /// A message indicating that the owner index changed
+    ///
+    /// Signals the chain-events worker to update its tracked owner cache
+    OwnerIndexChanged {
+        /// The owner address that was added or removed
+        owner: Address,
+        /// Whether the owner was added (true) or removed (false)
+        added: bool,
     },
 }
 

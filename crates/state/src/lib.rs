@@ -134,6 +134,7 @@ pub const ALL_TABLES: [&str; NUM_TABLES] = [
 pub mod test_helpers {
     use std::{mem, sync::Arc, time::Duration};
 
+    use alloy::signers::local::PrivateKeySigner;
     use config::RelayerConfig;
     use job_types::{
         event_manager::new_event_manager_queue,
@@ -190,10 +191,11 @@ pub mod test_helpers {
 
         let db = DB::new(&config).unwrap();
 
-        // Setup the tables
+        // Setup the tables and executor key
         let tx = db.new_write_tx().unwrap();
         tx.setup_tables().unwrap();
         tx.set_historical_state_enabled(true).unwrap();
+        tx.set_executor_key(&PrivateKeySigner::random()).unwrap();
         tx.commit().unwrap();
 
         db
