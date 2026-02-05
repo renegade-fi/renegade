@@ -2,7 +2,7 @@
 
 use alloy::{primitives::Address, signers::local::PrivateKeySigner};
 use darkpool_types::settlement_obligation::SettlementObligation;
-use renegade_solidity_abi::v2::IDarkpoolV2::FeeRate;
+use renegade_solidity_abi::v2::IDarkpoolV2::{FeeRate, PublicIntentPermit, SignatureWithNonce};
 use types_account::{
     OrderId,
     balance::{Balance, BalanceLocation},
@@ -52,6 +52,18 @@ impl SettlementProcessor {
             .get_account_order(&order_id)
             .await?
             .ok_or_else(|| SettlementError::state(format!("order not found: {order_id}")))
+    }
+
+    /// Get the public intent auth (permit + signature) for an order
+    async fn get_intent_auth(
+        &self,
+        order_id: OrderId,
+    ) -> Result<(PublicIntentPermit, SignatureWithNonce), SettlementError> {
+        let auth =
+            self.ctx.state.get_order_auth(&order_id).await?.ok_or_else(|| {
+                SettlementError::state(format!("order auth not found: {order_id}"))
+            })?;
+        Ok(auth.into_public())
     }
 
     /// Get the input balance for a given party

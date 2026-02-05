@@ -4,10 +4,9 @@ use darkpool_types::{
     bounded_match_result::BoundedMatchResult, settlement_obligation::SettlementObligation,
 };
 use renegade_solidity_abi::v2::IDarkpoolV2::{
-    self, FeeRate, PublicIntentAuthBundle, PublicIntentPermit, SettlementBundle,
-    SignatureWithNonce, SignedPermitSingle,
+    self, FeeRate, PublicIntentAuthBundle, SettlementBundle, SignatureWithNonce, SignedPermitSingle,
 };
-use types_account::{OrderId, order_auth::OrderAuth, pair::Pair};
+use types_account::{OrderId, pair::Pair};
 use util::on_chain::get_chain_id;
 
 use crate::tasks::settlement::helpers::{SettlementProcessor, error::SettlementError};
@@ -52,17 +51,8 @@ impl SettlementProcessor {
         relayer_fee: FeeRate,
         executor_sig: SignatureWithNonce,
     ) -> Result<SettlementBundle, SettlementError> {
-        let executor = self.get_executor_key().await?;
-        let order = self.get_order(order_id).await?;
+        let (intent_permit, user_sig) = self.get_intent_auth(order_id).await?;
 
-        // Build the intent permit
-        let intent_permit = PublicIntentPermit {
-            intent: order.intent().clone().into(),
-            executor: executor.address(),
-        };
-
-        // Build the auth and settlement bundle
-        let user_sig = self.get_intent_signature(order_id).await?;
         let auth_bundle = PublicIntentAuthBundle {
             intentPermit: intent_permit,
             intentSignature: user_sig,
@@ -78,7 +68,7 @@ impl SettlementProcessor {
         obligation: SettlementObligation,
         fee: &FeeRate,
     ) -> Result<SignatureWithNonce, SettlementError> {
-        let contract_obligation = IDarkpoolV2::SettlementObligation::from(obligation);
+        let contract_obligation = IDarkpoolV2::SettlementObligation::from(obligation.clone());
 
         let chain_id = get_chain_id();
         let signer = self.get_executor_key().await?;
@@ -95,7 +85,7 @@ impl SettlementProcessor {
         match_res: BoundedMatchResult,
         fee: &FeeRate,
     ) -> Result<SignatureWithNonce, SettlementError> {
-        let contract_match = IDarkpoolV2::BoundedMatchResult::from(match_res);
+        let contract_match = IDarkpoolV2::BoundedMatchResult::from(match_res.clone());
 
         let chain_id = get_chain_id();
         let executor = self.get_executor_key().await?;
@@ -103,27 +93,6 @@ impl SettlementProcessor {
             .create_executor_signature(fee.clone(), chain_id, &executor)
             .map_err(SettlementError::signing)?;
 
-        Ok(sig)
-    }
-
-    /// Get the order authorization for an order ID
-    async fn get_intent_signature(
-        &self,
-        order_id: OrderId,
-    ) -> Result<SignatureWithNonce, SettlementError> {
-        let auth =
-            self.ctx.state.get_order_auth(&order_id).await?.ok_or_else(|| {
-                SettlementError::state(format!("order auth not found: {order_id}"))
-            })?;
-
-        let sig = match auth {
-            OrderAuth::PublicOrder { intent_signature, .. } => intent_signature,
-            _ => {
-                return Err(SettlementError::state(format!(
-                    "invalid order auth type for order {order_id}"
-                )));
-            },
-        };
         Ok(sig)
     }
 }
