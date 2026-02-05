@@ -9,9 +9,9 @@ pub enum TaskError {
     /// An error related to descriptor operations
     #[error("Descriptor error: {0}")]
     Descriptor(String),
-    /// An order auth validation error
-    #[error("Order auth validation error: {0}")]
-    OrderAuthValidation(String),
+    /// A validation error
+    #[error("validation error: {0}")]
+    Validation(String),
 }
 
 impl TaskError {
@@ -21,9 +21,9 @@ impl TaskError {
         Self::Descriptor(msg.to_string())
     }
 
-    /// Create a new order auth validation error
+    /// Create a new validation error
     #[allow(clippy::needless_pass_by_value)]
-    pub fn order_auth_validation<T: ToString>(msg: T) -> Self {
-        Self::OrderAuthValidation(msg.to_string())
+    pub fn validation<T: ToString>(msg: T) -> Self {
+        Self::Validation(msg.to_string())
     }
 }

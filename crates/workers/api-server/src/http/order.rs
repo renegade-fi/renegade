@@ -161,7 +161,6 @@ impl TypedHandler for CreateOrderHandler {
         let descriptor = CreateOrderTaskDescriptor::new(
             account_id,
             order_id,
-            self.executor,
             intent,
             ring,
             metadata,
