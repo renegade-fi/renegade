@@ -3,8 +3,10 @@
 use std::str::FromStr;
 
 use alloy::primitives::{Bytes, U256};
-use circuit_types::{Amount, fixed_point::FixedPoint};
+use circuit_types::{Amount, fixed_point::FixedPoint, fixed_point::FixedPointShare};
 use constants::Scalar;
+#[cfg(feature = "full-api")]
+use darkpool_types::intent::DarkpoolStateIntent;
 use darkpool_types::intent::{Intent, IntentShare};
 use serde::{Deserialize, Serialize};
 use types_account::{
@@ -116,6 +118,24 @@ impl From<IntentShare> for ApiOrderShare {
     }
 }
 
+impl TryFrom<ApiOrderShare> for IntentShare {
+    type Error = ApiTypeError;
+
+    fn try_from(share: ApiOrderShare) -> Result<Self, Self::Error> {
+        let in_token =
+            Scalar::from_decimal_string(&share.in_token).map_err(ApiTypeError::parsing)?;
+        let out_token =
+            Scalar::from_decimal_string(&share.out_token).map_err(ApiTypeError::parsing)?;
+        let owner = Scalar::from_decimal_string(&share.owner).map_err(ApiTypeError::parsing)?;
+        let repr = Scalar::from_decimal_string(&share.min_price).map_err(ApiTypeError::parsing)?;
+        let min_price = FixedPointShare { repr };
+        let amount_in =
+            Scalar::from_decimal_string(&share.amount_in).map_err(ApiTypeError::parsing)?;
+
+        Ok(IntentShare { in_token, out_token, owner, min_price, amount_in })
+    }
+}
+
 /// The full order with metadata
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ApiOrder {
@@ -153,6 +173,20 @@ impl From<Order> for ApiOrder {
             fills: vec![],
             created: 0,
         }
+    }
+}
+
+#[cfg(feature = "full-api")]
+impl TryFrom<ApiOrder> for DarkpoolStateIntent {
+    type Error = ApiTypeError;
+
+    fn try_from(api_order: ApiOrder) -> Result<Self, Self::Error> {
+        let inner = api_order.order.get_intent()?;
+        let recovery_stream = api_order.recovery_stream.into();
+        let share_stream = api_order.share_stream.into();
+        let public_share = api_order.public_shares.try_into()?;
+
+        Ok(DarkpoolStateIntent { recovery_stream, share_stream, inner, public_share })
     }
 }
 

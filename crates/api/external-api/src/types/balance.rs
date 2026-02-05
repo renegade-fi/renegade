@@ -1,11 +1,20 @@
 //! API types for balances
 
 #[cfg(feature = "full-api")]
-use darkpool_types::balance::DarkpoolBalanceShare;
+use std::str::FromStr;
+
+#[cfg(feature = "full-api")]
+use circuit_types::Amount;
+#[cfg(feature = "full-api")]
+use constants::Scalar;
+#[cfg(feature = "full-api")]
+use darkpool_types::balance::{DarkpoolBalance, DarkpoolBalanceShare, DarkpoolStateBalance};
 #[cfg(feature = "full-api")]
 use renegade_solidity_abi::v2::IDarkpoolV2::DepositAuth;
 use serde::{Deserialize, Serialize};
 use types_account::balance::Balance;
+#[cfg(feature = "full-api")]
+use util::hex::address_from_hex_string;
 use util::hex::address_to_hex_string;
 
 use super::crypto_primitives::{ApiPoseidonCSPRNG, ApiSchnorrPublicKey, ApiSchnorrPublicKeyShare};
@@ -60,6 +69,44 @@ impl From<Balance> for ApiBalance {
     }
 }
 
+#[cfg(feature = "full-api")]
+impl TryFrom<ApiBalance> for DarkpoolStateBalance {
+    type Error = ApiTypeError;
+
+    fn try_from(api_balance: ApiBalance) -> Result<Self, Self::Error> {
+        let mint = address_from_hex_string(&api_balance.mint).map_err(ApiTypeError::parsing)?;
+
+        let owner = address_from_hex_string(&api_balance.owner).map_err(ApiTypeError::parsing)?;
+
+        let relayer_fee_recipient = address_from_hex_string(&api_balance.relayer_fee_recipient)
+            .map_err(ApiTypeError::parsing)?;
+
+        let authority = api_balance.authority.into();
+        let relayer_fee_balance =
+            Amount::from_str(&api_balance.relayer_fee_balance).map_err(ApiTypeError::parsing)?;
+
+        let protocol_fee_balance =
+            Amount::from_str(&api_balance.protocol_fee_balance).map_err(ApiTypeError::parsing)?;
+
+        let amount = Amount::from_str(&api_balance.amount).map_err(ApiTypeError::parsing)?;
+
+        let inner = DarkpoolBalance {
+            mint,
+            owner,
+            relayer_fee_recipient,
+            authority,
+            relayer_fee_balance,
+            protocol_fee_balance,
+            amount,
+        };
+        let recovery_stream = api_balance.recovery_stream.into();
+        let share_stream = api_balance.share_stream.into();
+        let public_share = api_balance.public_shares.try_into()?;
+
+        Ok(DarkpoolStateBalance { recovery_stream, share_stream, inner, public_share })
+    }
+}
+
 /// Public shares of a balance
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ApiBalanceShare {
@@ -91,6 +138,34 @@ impl From<DarkpoolBalanceShare> for ApiBalanceShare {
             protocol_fee_balance: share.protocol_fee_balance.to_string(),
             amount: share.amount.to_string(),
         }
+    }
+}
+
+#[cfg(feature = "full-api")]
+impl TryFrom<ApiBalanceShare> for DarkpoolBalanceShare {
+    type Error = ApiTypeError;
+
+    fn try_from(share: ApiBalanceShare) -> Result<Self, Self::Error> {
+        let mint = Scalar::from_decimal_string(&share.mint).map_err(ApiTypeError::parsing)?;
+        let owner = Scalar::from_decimal_string(&share.owner).map_err(ApiTypeError::parsing)?;
+        let relayer_fee_recipient = Scalar::from_decimal_string(&share.relayer_fee_recipient)
+            .map_err(ApiTypeError::parsing)?;
+        let authority = share.authority.try_into()?;
+        let relayer_fee_balance = Scalar::from_decimal_string(&share.relayer_fee_balance)
+            .map_err(ApiTypeError::parsing)?;
+        let protocol_fee_balance = Scalar::from_decimal_string(&share.protocol_fee_balance)
+            .map_err(ApiTypeError::parsing)?;
+        let amount = Scalar::from_decimal_string(&share.amount).map_err(ApiTypeError::parsing)?;
+
+        Ok(DarkpoolBalanceShare {
+            mint,
+            owner,
+            relayer_fee_recipient,
+            authority,
+            relayer_fee_balance,
+            protocol_fee_balance,
+            amount,
+        })
     }
 }
 

@@ -1,6 +1,8 @@
 //! Cryptographic primitive types for the API
 
 #[cfg(feature = "full-api")]
+use circuit_types::baby_jubjub::BabyJubJubPointShare;
+#[cfg(feature = "full-api")]
 use circuit_types::schnorr::SchnorrPublicKeyShare;
 use circuit_types::{
     baby_jubjub::BabyJubJubPoint,
@@ -9,7 +11,7 @@ use circuit_types::{
 use constants::Scalar;
 use darkpool_types::csprng::PoseidonCSPRNG;
 use serde::{Deserialize, Serialize};
-use util::hex::embedded_scalar_from_decimal_string;
+use util::hex::{embedded_scalar_from_decimal_string, embedded_scalar_to_decimal_string};
 
 use crate::error::ApiTypeError;
 use crate::serde_helpers;
@@ -31,6 +33,12 @@ pub struct ApiPoseidonCSPRNG {
 impl From<PoseidonCSPRNG> for ApiPoseidonCSPRNG {
     fn from(csprng: PoseidonCSPRNG) -> Self {
         Self { seed: csprng.seed, index: csprng.index }
+    }
+}
+
+impl From<ApiPoseidonCSPRNG> for PoseidonCSPRNG {
+    fn from(csprng: ApiPoseidonCSPRNG) -> Self {
+        PoseidonCSPRNG { seed: csprng.seed, index: csprng.index }
     }
 }
 
@@ -76,6 +84,12 @@ impl TryFrom<ApiSchnorrSignature> for SchnorrSignature {
     }
 }
 
+impl From<SchnorrSignature> for ApiSchnorrSignature {
+    fn from(signature: SchnorrSignature) -> Self {
+        Self { s: embedded_scalar_to_decimal_string(&signature.s), r: signature.r.into() }
+    }
+}
+
 /// A Schnorr public key
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ApiSchnorrPublicKey {
@@ -108,5 +122,16 @@ pub struct ApiSchnorrPublicKeyShare {
 impl From<SchnorrPublicKeyShare> for ApiSchnorrPublicKeyShare {
     fn from(share: SchnorrPublicKeyShare) -> Self {
         Self { x: share.point.x.to_string(), y: share.point.y.to_string() }
+    }
+}
+
+#[cfg(feature = "full-api")]
+impl TryFrom<ApiSchnorrPublicKeyShare> for SchnorrPublicKeyShare {
+    type Error = ApiTypeError;
+
+    fn try_from(share: ApiSchnorrPublicKeyShare) -> Result<Self, Self::Error> {
+        let x = Scalar::from_decimal_string(&share.x).map_err(ApiTypeError::parsing)?;
+        let y = Scalar::from_decimal_string(&share.y).map_err(ApiTypeError::parsing)?;
+        Ok(SchnorrPublicKeyShare { point: BabyJubJubPointShare { x, y } })
     }
 }
