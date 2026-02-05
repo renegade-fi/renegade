@@ -542,6 +542,7 @@ impl MockNodeController {
             price_streams,
             proof_generation_work_queue,
             matching_engine_worker_queue,
+            task_queue: self.task_queue.0.clone(),
             cancel_channel,
         };
 

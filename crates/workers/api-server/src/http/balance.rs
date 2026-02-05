@@ -16,6 +16,7 @@ use external_api::{
 };
 use hyper::HeaderMap;
 use itertools::Itertools;
+use job_types::task_driver::TaskDriverQueue;
 use renegade_solidity_abi::v2::{IDarkpoolV2::DepositAuth, auth_helpers::validate_signature};
 use state::State;
 use types_account::balance::{Balance, BalanceLocation};
@@ -33,7 +34,7 @@ use crate::{
     http::helpers::append_task,
     param_parsing::{
         parse_account_id_from_params, parse_address_from_hex_string, parse_amount_from_string,
-        parse_mint_from_params,
+        parse_mint_from_params, should_block_on_task,
     },
     router::{QueryParams, TypedHandler, UrlParams},
 };
@@ -118,12 +119,14 @@ impl TypedHandler for GetBalanceByMintHandler {
 pub struct DepositBalanceHandler {
     /// The global state
     state: State,
+    /// The task driver queue
+    task_queue: TaskDriverQueue,
 }
 
 impl DepositBalanceHandler {
     /// Constructor
-    pub fn new(state: State) -> Self {
-        Self { state }
+    pub fn new(state: State, task_queue: TaskDriverQueue) -> Self {
+        Self { state, task_queue }
     }
 }
 
@@ -137,8 +140,10 @@ impl TypedHandler for DepositBalanceHandler {
         _headers: HeaderMap,
         req: Self::Request,
         params: UrlParams,
-        _query_params: QueryParams,
+        query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
+        let blocking = should_block_on_task(&query_params);
+
         // Parse parameters
         let account_id = parse_account_id_from_params(&params)?;
         let token = parse_mint_from_params(&params)?;
@@ -180,14 +185,10 @@ impl TypedHandler for DepositBalanceHandler {
             DepositTaskDescriptor::new(account_id, from_address, token, amount, auth, authority)
                 .into()
         };
-        let task_id = append_task(descriptor, &self.state).await?;
+        let task_id =
+            append_task(descriptor, blocking, &self.state, &self.task_queue).await?;
 
-        Ok(DepositBalanceResponse {
-            task_id,
-            balance: updated_balance.into(),
-            // TODO: Expose synchronous api
-            completed: false,
-        })
+        Ok(DepositBalanceResponse { task_id, balance: updated_balance.into(), completed: true })
     }
 }
 
@@ -195,6 +196,8 @@ impl TypedHandler for DepositBalanceHandler {
 pub struct WithdrawBalanceHandler {
     /// The global state
     state: State,
+    /// The task driver queue
+    task_queue: TaskDriverQueue,
 }
 
 #[async_trait]
@@ -207,8 +210,9 @@ impl TypedHandler for WithdrawBalanceHandler {
         _headers: HeaderMap,
         req: Self::Request,
         params: UrlParams,
-        _query_params: QueryParams,
+        query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
+        let blocking = should_block_on_task(&query_params);
         let account_id = parse_account_id_from_params(&params)?;
         let token = parse_mint_from_params(&params)?;
 
@@ -218,16 +222,17 @@ impl TypedHandler for WithdrawBalanceHandler {
         // Enqueue the withdrawal task
         let descriptor: TaskDescriptor =
             WithdrawTaskDescriptor::new(account_id, token, req.amount, req.signature).into();
-        let task_id = append_task(descriptor, &self.state).await?;
+        let task_id =
+            append_task(descriptor, blocking, &self.state, &self.task_queue).await?;
 
-        Ok(WithdrawBalanceResponse { task_id, completed: false })
+        Ok(WithdrawBalanceResponse { task_id, completed: true })
     }
 }
 
 impl WithdrawBalanceHandler {
     /// Constructor
-    pub fn new(state: State) -> Self {
-        Self { state }
+    pub fn new(state: State, task_queue: TaskDriverQueue) -> Self {
+        Self { state, task_queue }
     }
 
     /// Validate a withdrawal

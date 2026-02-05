@@ -5,7 +5,7 @@ use darkpool_client::DarkpoolClient;
 use futures::executor::block_on;
 use job_types::{
     matching_engine::MatchingEngineWorkerQueue, network_manager::NetworkManagerQueue,
-    proof_manager::ProofManagerQueue,
+    proof_manager::ProofManagerQueue, task_driver::TaskDriverQueue,
 };
 use price_state::PriceStreamStates;
 use reqwest::Url;
@@ -71,6 +71,8 @@ pub struct ApiServerConfig {
     pub proof_generation_work_queue: ProofManagerQueue,
     /// The worker job queue for the MatchingEngineManager
     pub matching_engine_worker_queue: MatchingEngineWorkerQueue,
+    /// The task driver queue, used to await task completion
+    pub task_queue: TaskDriverQueue,
     /// The relayer-global state
     pub state: State,
     /// The system pubsub bus that all workers have access to

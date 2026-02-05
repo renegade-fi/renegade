@@ -331,6 +331,7 @@ async fn main() -> Result<(), CoordinatorError> {
         price_streams: price_streams.clone(),
         proof_generation_work_queue: proof_generation_worker_sender,
         matching_engine_worker_queue: matching_engine_worker_sender.clone(),
+        task_queue: task_sender.clone(),
         cancel_channel: api_cancel_receiver,
     })
     .await
