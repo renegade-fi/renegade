@@ -15,6 +15,7 @@ use state::State;
 use system_bus::SystemBus;
 use tokio::runtime::Builder as RuntimeBuilder;
 use tracing::info;
+use types_core::Token;
 use types_runtime::{CancelChannel, Worker};
 
 use crate::{
@@ -32,6 +33,8 @@ pub struct MatchingEngineConfig {
     pub min_fill_size: Amount,
     /// The number of blocks an external match bundle remains valid
     pub external_match_validity_window: u64,
+    /// Assets for which matching is disabled (by ticker)
+    pub disabled_assets: Vec<String>,
     /// The relayer-global state
     pub state: State,
     /// The matching engine instance
@@ -65,11 +68,17 @@ impl Worker for MatchingEngineManager {
     type Error = MatchingEngineError;
 
     async fn new(mut config: Self::WorkerConfig) -> Result<Self, Self::Error> {
-        // Start a timer thread, periodically asks workers to begin handshakes with
-        // peers
+        // Convert disabled asset tickers to addresses
+        let disabled_assets = config
+            .disabled_assets
+            .iter()
+            .map(|ticker| Token::from_ticker(ticker).get_alloy_address())
+            .collect();
+
         let executor = MatchingEngineExecutor::new(
             config.min_fill_size,
             config.external_match_validity_window,
+            disabled_assets,
             config.job_receiver.take().unwrap(),
             config.price_streams.clone(),
             config.state.clone(),

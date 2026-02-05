@@ -93,6 +93,11 @@ impl Balance {
     pub fn amount_mut(&mut self) -> &mut Amount {
         &mut self.state_wrapper.inner.amount
     }
+
+    /// Withdraw an amount from the balance
+    pub fn withdraw(&mut self, amount: Amount) {
+        *self.amount_mut() -= amount;
+    }
 }
 
 impl From<StateWrapper<DarkpoolBalance>> for Balance {

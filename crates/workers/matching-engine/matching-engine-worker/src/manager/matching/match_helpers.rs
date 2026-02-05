@@ -1,5 +1,6 @@
 //! Helpers for matching orders
 
+use alloy::primitives::Address;
 use circuit_types::Amount;
 use matching_engine_core::SuccessfulMatch;
 use types_account::{MatchingPoolName, account::order::Order, pair::Pair};
@@ -103,5 +104,10 @@ impl MatchingEngineExecutor {
     pub fn validate_min_fill_size(&self, res: &SuccessfulMatch) -> bool {
         let quote_volume = res.match_result.quote_token_volume();
         quote_volume >= self.min_fill_size
+    }
+
+    /// Check if an asset is disabled for matching
+    pub(crate) fn is_asset_disabled(&self, addr: &Address) -> bool {
+        self.disabled_assets.contains(addr)
     }
 }

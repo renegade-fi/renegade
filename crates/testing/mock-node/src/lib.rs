@@ -462,6 +462,7 @@ impl MockNodeController {
         let task_queue = self.task_queue.0.clone();
 
         let conf = MatchingEngineConfig {
+            disabled_assets: vec![],
             min_fill_size: self.config.min_fill_size,
             external_match_validity_window: self.config.external_match_validity_window,
             state: state.clone(),

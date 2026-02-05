@@ -15,6 +15,9 @@ futures = { workspace = true }
 libp2p = { workspace = true }
 tokio = { workspace = true }
 
+# === External Dependencies === #
+alloy = { workspace = true }
+
 #=== Workspace Dependencies === #
 darkpool-client = { workspace = true }
 darkpool-types = { workspace = true }
