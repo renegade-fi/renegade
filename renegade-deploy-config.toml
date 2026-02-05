@@ -54,7 +54,7 @@ service_name_override = "base-mainnet-relayer-service"
 [services.ethereum-sepolia-relayer]
 [services.ethereum-sepolia-relayer.build]
 dockerfile = "docker/release/Dockerfile"
-ecr_repo = "relayer-ethereum-sepolia"
+ecr_repo = "relayer-ethereum-sepolia-v2"
 cargo_features = "default"
 
 [services.ethereum-sepolia-relayer.deploy]
@@ -66,7 +66,7 @@ service_name_override = "ethereum-sepolia-relayer-service"
 [services.ethereum-mainnet-relayer]
 [services.ethereum-mainnet-relayer.build]
 dockerfile = "docker/release/Dockerfile"
-ecr_repo = "relayer-ethereum-mainnet"
+ecr_repo = "relayer-ethereum-mainnet-v2"
 cargo_features = "default"
 
 [services.ethereum-mainnet-relayer.deploy]
