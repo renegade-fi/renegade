@@ -271,35 +271,6 @@ impl CreateBalanceTask {
         Ok(())
     }
 
-    /// Generate a witness and statement for a valid balance create
-    async fn get_balance_create_witness_statement(
-        &self,
-    ) -> Result<(ValidBalanceCreateWitness, ValidBalanceCreateStatement)> {
-        // Fetch the account keychain
-        let mut keychain = self.get_account_keychain().await?;
-        let recovery_id_stream = keychain.sample_recovery_id_stream_seed();
-        let share_stream = keychain.sample_share_stream_seed();
-
-        let mut bal = self.create_balance(share_stream.seed, recovery_id_stream.seed).await?;
-        let witness = ValidBalanceCreateWitness {
-            initial_share_stream: share_stream,
-            initial_recovery_stream: recovery_id_stream,
-            balance: bal.inner().clone(),
-        };
-
-        let deposit = self.create_deposit();
-
-        let recovery_id = bal.state_wrapper.compute_recovery_id();
-        let balance_commitment = bal.state_wrapper.compute_commitment();
-        let statement = ValidBalanceCreateStatement {
-            deposit,
-            balance_commitment,
-            recovery_id,
-            new_balance_share: bal.state_wrapper.public_share(),
-        };
-        Ok((witness, statement))
-    }
-
     /// Submit the deposit transaction to the darkpool
     pub async fn submit_deposit(&self) -> Result<()> {
         let proof_bundle = self.proof_bundle.clone().unwrap();
