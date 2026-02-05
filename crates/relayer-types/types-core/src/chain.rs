@@ -3,6 +3,7 @@
 use std::{fmt::Display, str::FromStr};
 
 use serde::{Deserialize, Serialize};
+use alloy::primitives::{Address, address};
 
 /// The chain environment
 #[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -66,6 +67,19 @@ impl Chain {
             Chain::EthereumSepolia => 11155111,
             Chain::EthereumMainnet => 1,
             Chain::Devnet => 31337,
+        }
+    }
+
+    /// Get the Permit2 address for this chain
+    pub fn permit2_addr(&self) -> Address {
+        match self {
+            Chain::ArbitrumSepolia => address!("0x000000000022D473030F116dDEE9F6B43aC78BA3"),
+            Chain::ArbitrumOne => address!("0x000000000022D473030F116dDEE9F6B43aC78BA3"),
+            Chain::BaseSepolia => address!("0x000000000022D473030F116dDEE9F6B43aC78BA3"),
+            Chain::BaseMainnet => address!("0x000000000022D473030F116dDEE9F6B43aC78BA3"),
+            Chain::EthereumSepolia => address!("0x000000000022D473030F116dDEE9F6B43aC78BA3"),
+            Chain::EthereumMainnet => address!("0x000000000022D473030F116dDEE9F6B43aC78BA3"),
+            Chain::Devnet => address!("0x000000000022D473030F116dDEE9F6B43aC78BA3"),
         }
     }
 }
