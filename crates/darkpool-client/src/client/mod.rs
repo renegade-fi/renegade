@@ -17,7 +17,8 @@ use alloy_primitives::{Address, BlockNumber, ChainId, U256};
 use alloy_sol_types::SolEvent;
 use constants::{
     ARBITRUM_ONE_DEPLOY_BLOCK, ARBITRUM_SEPOLIA_DEPLOY_BLOCK, BASE_MAINNET_DEPLOY_BLOCK,
-    BASE_SEPOLIA_DEPLOY_BLOCK, DEVNET_DEPLOY_BLOCK, MERKLE_HEIGHT,
+    BASE_SEPOLIA_DEPLOY_BLOCK, DEVNET_DEPLOY_BLOCK, ETHEREUM_MAINNET_DEPLOY_BLOCK,
+    ETHEREUM_SEPOLIA_DEPLOY_BLOCK, MERKLE_HEIGHT,
 };
 use renegade_solidity_abi::v2::IDarkpoolV2::{self, IDarkpoolV2Instance};
 use tracing::info;
@@ -76,13 +77,15 @@ impl DarkpoolClientConfig {
             Chain::ArbitrumOne => ARBITRUM_ONE_DEPLOY_BLOCK,
             Chain::BaseSepolia => BASE_SEPOLIA_DEPLOY_BLOCK,
             Chain::BaseMainnet => BASE_MAINNET_DEPLOY_BLOCK,
+            Chain::EthereumSepolia => ETHEREUM_SEPOLIA_DEPLOY_BLOCK,
+            Chain::EthereumMainnet => ETHEREUM_MAINNET_DEPLOY_BLOCK,
             Chain::Devnet => DEVNET_DEPLOY_BLOCK,
         }
     }
 
     /// Constructs RPC clients capable of signing transactions from the
     /// configuration
-    fn get_provider(&self) -> Result<RenegadeProvider, DarkpoolClientConfigError> {
+    pub fn get_provider(&self) -> Result<RenegadeProvider, DarkpoolClientConfigError> {
         let url = Url::parse(&self.rpc_url)
             .map_err(err_str!(DarkpoolClientConfigError::RpcClientInitialization))?;
         let key = self.private_key.clone();
