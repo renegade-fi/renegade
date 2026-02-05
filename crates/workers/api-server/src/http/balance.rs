@@ -185,8 +185,7 @@ impl TypedHandler for DepositBalanceHandler {
             DepositTaskDescriptor::new(account_id, from_address, token, amount, auth, authority)
                 .into()
         };
-        let task_id =
-            append_task(descriptor, blocking, &self.state, &self.task_queue).await?;
+        let task_id = append_task(descriptor, blocking, &self.state, &self.task_queue).await?;
 
         Ok(DepositBalanceResponse { task_id, balance: updated_balance.into(), completed: true })
     }
@@ -222,8 +221,7 @@ impl TypedHandler for WithdrawBalanceHandler {
         // Enqueue the withdrawal task
         let descriptor: TaskDescriptor =
             WithdrawTaskDescriptor::new(account_id, token, req.amount, req.signature).into();
-        let task_id =
-            append_task(descriptor, blocking, &self.state, &self.task_queue).await?;
+        let task_id = append_task(descriptor, blocking, &self.state, &self.task_queue).await?;
 
         Ok(WithdrawBalanceResponse { task_id, completed: true })
     }
