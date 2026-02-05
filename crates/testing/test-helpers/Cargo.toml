@@ -6,7 +6,6 @@ description = "Helpers for setting up and running integration tests for the rela
 
 [features]
 default = ["test-harness"]
-base = ["blockchain"]
 blockchain = [
     "dep:alloy",
     "dep:alloy-primitives",

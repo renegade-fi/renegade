@@ -18,5 +18,4 @@ jobs:
       uses: actions-rs/cargo@v1
       with: 
         command: test
-        # We only run tests with the arbitrum feature for now
-        args: --workspace --features "ci,arbitrum" --verbose -- --skip integration
+        args: --workspace --features "ci" --verbose -- --skip integration
