@@ -46,7 +46,8 @@ pub struct CreateAccountRequest {
     #[serde(with = "serde_helpers::scalar_as_string")]
     pub master_view_seed: Scalar,
     /// The HMAC key for authenticating requests
-    pub auth_hmac_key: String,
+    #[serde(with = "serde_helpers::bytes_as_base64_string")]
+    pub auth_hmac_key: Vec<u8>,
 }
 
 /// Response for get account seeds
@@ -64,9 +65,11 @@ pub struct SyncAccountRequest {
     /// The account identifier
     pub account_id: Uuid,
     /// The master view seed for deriving keys
-    pub master_view_seed: String,
+    #[serde(with = "serde_helpers::scalar_as_hex_string")]
+    pub master_view_seed: Scalar,
     /// The HMAC key for authenticating requests
-    pub auth_hmac_key: String,
+    #[serde(with = "serde_helpers::bytes_as_base64_string")]
+    pub auth_hmac_key: Vec<u8>,
 }
 
 /// Response from syncing an account

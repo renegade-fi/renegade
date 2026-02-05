@@ -12,8 +12,6 @@ use types_account::{
 };
 use uuid::Uuid;
 
-#[cfg(feature = "full-api")]
-use crate::error::ApiTypeError;
 use crate::types::{ApiOrder, ApiOrderCore, OrderAuth, SignatureWithNonce};
 
 // ---------------
@@ -66,51 +64,39 @@ pub struct CreateOrderRequest {
 #[cfg(feature = "full-api")]
 impl CreateOrderRequest {
     /// Return the components of an order from the request
-    pub fn into_order_components(
-        self,
-    ) -> Result<(Intent, PrivacyRing, OrderMetadata), ApiTypeError> {
-        let intent = self.order.get_intent()?;
+    pub fn into_order_components(self) -> (Intent, PrivacyRing, OrderMetadata) {
+        let intent = self.order.get_intent();
         let ring = self.order.order_type.into();
-        let meta = self.order.get_order_metadata()?;
+        let meta = self.order.get_order_metadata();
 
-        Ok((intent, ring, meta))
+        (intent, ring, meta)
     }
 
     /// Get the order auth from the request
-    pub fn get_order_auth(&self, executor: Address) -> Result<AccountOrderAuth, ApiTypeError> {
-        use circuit_types::schnorr::SchnorrSignature;
+    pub fn get_order_auth(&self, executor: Address) -> AccountOrderAuth {
         use renegade_solidity_abi::v2::IDarkpoolV2;
 
-        let auth = match self.auth.clone() {
+        match self.auth.clone() {
             OrderAuth::PublicOrder { intent_signature } => {
-                let intent = self.order.get_intent()?;
+                let intent = self.order.get_intent();
                 let permit = IDarkpoolV2::PublicIntentPermit { intent: intent.into(), executor };
-                let intent_signature = IDarkpoolV2::SignatureWithNonce::try_from(intent_signature)
-                    .map_err(ApiTypeError::parsing)?;
+                let intent_signature = intent_signature.into();
 
                 AccountOrderAuth::PublicOrder { permit, intent_signature }
             },
             OrderAuth::NativelySettledPrivateOrder { intent_signature } => {
-                let intent_signature =
-                    SchnorrSignature::try_from(intent_signature).map_err(ApiTypeError::parsing)?;
-
+                let intent_signature = intent_signature.into();
                 AccountOrderAuth::NativelySettledPrivateOrder { intent_signature }
             },
             OrderAuth::RenegadeSettledOrder { intent_signature, new_output_balance_signature } => {
-                let intent_signature =
-                    SchnorrSignature::try_from(intent_signature).map_err(ApiTypeError::parsing)?;
-                let new_output_balance_signature =
-                    SchnorrSignature::try_from(new_output_balance_signature)
-                        .map_err(ApiTypeError::parsing)?;
-
+                let intent_signature = intent_signature.into();
+                let new_output_balance_signature = new_output_balance_signature.into();
                 AccountOrderAuth::RenegadeSettledOrder {
                     intent_signature,
                     new_output_balance_signature,
                 }
             },
-        };
-
-        Ok(auth)
+        }
     }
 }
 
@@ -167,50 +153,39 @@ pub struct CreateOrderInPoolRequest {
 #[cfg(feature = "full-api")]
 impl CreateOrderInPoolRequest {
     /// Return the components of an order from the request
-    pub fn into_order_components(
-        self,
-    ) -> Result<(Intent, PrivacyRing, OrderMetadata), ApiTypeError> {
-        let intent = self.order.get_intent()?;
+    pub fn into_order_components(self) -> (Intent, PrivacyRing, OrderMetadata) {
+        let intent = self.order.get_intent();
         let ring = self.order.order_type.into();
-        let meta = self.order.get_order_metadata()?;
+        let meta = self.order.get_order_metadata();
 
-        Ok((intent, ring, meta))
+        (intent, ring, meta)
     }
 
     /// Get the order auth from the request
-    pub fn get_order_auth(&self, executor: Address) -> Result<AccountOrderAuth, ApiTypeError> {
-        use circuit_types::schnorr::SchnorrSignature;
+    pub fn get_order_auth(&self, executor: Address) -> AccountOrderAuth {
         use renegade_solidity_abi::v2::IDarkpoolV2;
 
-        let auth = match self.auth.clone() {
+        match self.auth.clone() {
             OrderAuth::PublicOrder { intent_signature } => {
-                let intent = self.order.get_intent()?;
+                let intent = self.order.get_intent();
                 let permit = IDarkpoolV2::PublicIntentPermit { intent: intent.into(), executor };
-                let intent_signature = IDarkpoolV2::SignatureWithNonce::try_from(intent_signature)
-                    .map_err(ApiTypeError::parsing)?;
+                let intent_signature = intent_signature.into();
 
                 AccountOrderAuth::PublicOrder { permit, intent_signature }
             },
             OrderAuth::NativelySettledPrivateOrder { intent_signature } => {
-                let intent_signature =
-                    SchnorrSignature::try_from(intent_signature).map_err(ApiTypeError::parsing)?;
-
+                let intent_signature = intent_signature.into();
                 AccountOrderAuth::NativelySettledPrivateOrder { intent_signature }
             },
             OrderAuth::RenegadeSettledOrder { intent_signature, new_output_balance_signature } => {
-                let intent_signature =
-                    SchnorrSignature::try_from(intent_signature).map_err(ApiTypeError::parsing)?;
-                let new_output_balance_signature =
-                    SchnorrSignature::try_from(new_output_balance_signature)
-                        .map_err(ApiTypeError::parsing)?;
+                let intent_signature = intent_signature.into();
+                let new_output_balance_signature = new_output_balance_signature.into();
 
                 AccountOrderAuth::RenegadeSettledOrder {
                     intent_signature,
                     new_output_balance_signature,
                 }
             },
-        };
-
-        Ok(auth)
+        }
     }
 }

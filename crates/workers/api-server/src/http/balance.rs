@@ -32,10 +32,7 @@ use crate::{
         not_found,
     },
     http::helpers::append_task,
-    param_parsing::{
-        parse_account_id_from_params, parse_address_from_hex_string, parse_amount_from_string,
-        parse_mint_from_params, should_block_on_task,
-    },
+    param_parsing::{parse_account_id_from_params, parse_mint_from_params, should_block_on_task},
     router::{QueryParams, TypedHandler, UrlParams},
 };
 
@@ -147,9 +144,9 @@ impl TypedHandler for DepositBalanceHandler {
         // Parse parameters
         let account_id = parse_account_id_from_params(&params)?;
         let token = parse_mint_from_params(&params)?;
-        let from_address = parse_address_from_hex_string(&req.from_address)?;
-        let amount = parse_amount_from_string(&req.amount)?;
-        let auth = DepositAuth::try_from(req.permit).map_err(bad_request)?;
+        let from_address = req.from_address;
+        let amount = req.amount;
+        let auth = DepositAuth::from(req.permit);
         let authority = req.authority.into();
 
         // Update the account for simulation

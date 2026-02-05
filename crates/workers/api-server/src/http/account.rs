@@ -18,7 +18,7 @@ use types_tasks::{NewAccountTaskDescriptor, RefreshAccountTaskDescriptor};
 use crate::{
     error::{ApiServerError, bad_request, not_found},
     http::helpers::append_task,
-    param_parsing::{parse_account_id_from_params, parse_scalar_from_string, should_block_on_task},
+    param_parsing::{parse_account_id_from_params, should_block_on_task},
     router::{QueryParams, TypedHandler, UrlParams},
 };
 
@@ -94,7 +94,7 @@ impl TypedHandler for CreateAccountHandler {
         query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
         let blocking = should_block_on_task(&query_params);
-        let auth_key = HmacKey::from_base64_string(&req.auth_hmac_key).map_err(bad_request)?;
+        let auth_key = HmacKey::from_bytes(&req.auth_hmac_key).map_err(bad_request)?;
         let keychain = KeyChain::new(PrivateKeyChain::new(auth_key, req.master_view_seed));
         let task = NewAccountTaskDescriptor::new(req.account_id, keychain, req.address);
         append_task(task.into(), blocking, &self.state, &self.task_queue).await?;
@@ -173,8 +173,8 @@ impl TypedHandler for SyncAccountHandler {
         let account_id = parse_account_id_from_params(&params)?;
 
         // Build keychain from request
-        let auth_key = HmacKey::from_base64_string(&req.auth_hmac_key).map_err(bad_request)?;
-        let master_view_seed = parse_scalar_from_string(&req.master_view_seed)?;
+        let auth_key = HmacKey::from_bytes(&req.auth_hmac_key).map_err(bad_request)?;
+        let master_view_seed = req.master_view_seed;
         let keychain = KeyChain::new(PrivateKeyChain::new(auth_key, master_view_seed));
 
         // Create and append the task

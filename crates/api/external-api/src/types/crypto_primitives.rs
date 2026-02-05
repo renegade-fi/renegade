@@ -8,12 +8,10 @@ use circuit_types::{
     baby_jubjub::BabyJubJubPoint,
     schnorr::{SchnorrPublicKey, SchnorrSignature},
 };
-use constants::Scalar;
+use constants::{EmbeddedScalarField, Scalar};
 use darkpool_types::csprng::PoseidonCSPRNG;
 use serde::{Deserialize, Serialize};
-use util::hex::{embedded_scalar_from_decimal_string, embedded_scalar_to_decimal_string};
 
-use crate::error::ApiTypeError;
 use crate::serde_helpers;
 
 // -----------------------
@@ -68,25 +66,22 @@ impl From<ApiBabyJubJubPoint> for BabyJubJubPoint {
 /// A Schnorr signature over a Baby JubJub curve
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ApiSchnorrSignature {
-    /// The scalar component of the signature
-    pub s: String,
+    /// The embedded scalar component of the signature
+    #[serde(with = "serde_helpers::embedded_scalar_as_string")]
+    pub s: EmbeddedScalarField,
     /// The point component of the signature
     pub r: ApiBabyJubJubPoint,
 }
 
-impl TryFrom<ApiSchnorrSignature> for SchnorrSignature {
-    type Error = ApiTypeError;
-
-    fn try_from(signature: ApiSchnorrSignature) -> Result<Self, Self::Error> {
-        let s = embedded_scalar_from_decimal_string(&signature.s).map_err(ApiTypeError::parsing)?;
-        let r = signature.r.into();
-        Ok(SchnorrSignature { s, r })
+impl From<ApiSchnorrSignature> for SchnorrSignature {
+    fn from(signature: ApiSchnorrSignature) -> Self {
+        SchnorrSignature { s: signature.s, r: signature.r.into() }
     }
 }
 
 impl From<SchnorrSignature> for ApiSchnorrSignature {
     fn from(signature: SchnorrSignature) -> Self {
-        Self { s: embedded_scalar_to_decimal_string(&signature.s), r: signature.r.into() }
+        Self { s: signature.s, r: signature.r.into() }
     }
 }
 
@@ -113,25 +108,23 @@ impl From<ApiSchnorrPublicKey> for SchnorrPublicKey {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ApiSchnorrPublicKeyShare {
     /// The x-coordinate share
-    pub x: String,
+    #[serde(with = "serde_helpers::scalar_as_string")]
+    pub x: Scalar,
     /// The y-coordinate share
-    pub y: String,
+    #[serde(with = "serde_helpers::scalar_as_string")]
+    pub y: Scalar,
 }
 
 #[cfg(feature = "full-api")]
 impl From<SchnorrPublicKeyShare> for ApiSchnorrPublicKeyShare {
     fn from(share: SchnorrPublicKeyShare) -> Self {
-        Self { x: share.point.x.to_string(), y: share.point.y.to_string() }
+        Self { x: share.point.x, y: share.point.y }
     }
 }
 
 #[cfg(feature = "full-api")]
-impl TryFrom<ApiSchnorrPublicKeyShare> for SchnorrPublicKeyShare {
-    type Error = ApiTypeError;
-
-    fn try_from(share: ApiSchnorrPublicKeyShare) -> Result<Self, Self::Error> {
-        let x = Scalar::from_decimal_string(&share.x).map_err(ApiTypeError::parsing)?;
-        let y = Scalar::from_decimal_string(&share.y).map_err(ApiTypeError::parsing)?;
-        Ok(SchnorrPublicKeyShare { point: BabyJubJubPointShare { x, y } })
+impl From<ApiSchnorrPublicKeyShare> for SchnorrPublicKeyShare {
+    fn from(share: ApiSchnorrPublicKeyShare) -> Self {
+        SchnorrPublicKeyShare { point: BabyJubJubPointShare { x: share.x, y: share.y } }
     }
 }
