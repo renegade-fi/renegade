@@ -124,7 +124,7 @@ pub const BASE_SEPOLIA_DEPLOY_BLOCK: u64 = 0; // Placeholder
 /// The block number at which the darkpool was deployed on Base Mainnet
 // TODO: Fill in w/ correct value once deployed
 pub const BASE_MAINNET_DEPLOY_BLOCK: u64 = 0; // Placeholder
-                                              //
+//
 /// The block number at which the darkpool was deployed on Ethereum Sepolia
 pub const ETHEREUM_SEPOLIA_DEPLOY_BLOCK: u64 = 10144455; // Placeholder
 
