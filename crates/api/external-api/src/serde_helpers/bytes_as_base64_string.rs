@@ -1,6 +1,6 @@
 //! Serialize bytes as base64 strings
 
-use base64::{Engine, engine::general_purpose::STANDARD};
+use base64::{Engine, engine::general_purpose::STANDARD_NO_PAD as BASE64_ENGINE};
 use serde::{Deserialize, Deserializer, Serializer};
 
 /// Serialize a `Vec<u8>` as a base64 string
@@ -8,7 +8,7 @@ pub fn serialize<S>(val: &[u8], serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
-    serializer.serialize_str(&STANDARD.encode(val))
+    serializer.serialize_str(&BASE64_ENGINE.encode(val))
 }
 
 /// Deserialize a `Vec<u8>` from a base64 string
@@ -17,7 +17,7 @@ where
     D: Deserializer<'de>,
 {
     let base64_str = String::deserialize(deserializer)?;
-    STANDARD.decode(&base64_str).map_err(serde::de::Error::custom)
+    BASE64_ENGINE.decode(&base64_str).map_err(serde::de::Error::custom)
 }
 
 #[cfg(test)]
