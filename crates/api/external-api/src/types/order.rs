@@ -3,18 +3,16 @@
 use std::str::FromStr;
 
 use alloy::primitives::{Bytes, U256};
-use circuit_types::{Amount, fixed_point::FixedPoint, schnorr::SchnorrSignature};
+use circuit_types::{Amount, fixed_point::FixedPoint};
 use constants::Scalar;
 use darkpool_types::intent::{Intent, IntentShare};
-#[cfg(feature = "full-api")]
-use renegade_solidity_abi::v2::IDarkpoolV2;
 use serde::{Deserialize, Serialize};
 use types_account::{
     OrderId,
     order::{Order, OrderMetadata, PrivacyRing},
 };
 use util::{
-    base64::bytes_from_base64_string,
+    base64::{bytes_from_base64_string, bytes_to_base64_string},
     hex::{address_from_hex_string, address_to_hex_string},
 };
 use uuid::Uuid;
@@ -233,39 +231,6 @@ pub enum OrderAuth {
     },
 }
 
-#[cfg(feature = "full-api")]
-impl TryFrom<OrderAuth> for types_account::order_auth::OrderAuth {
-    type Error = ApiTypeError;
-
-    fn try_from(auth: OrderAuth) -> Result<Self, Self::Error> {
-        match auth {
-            OrderAuth::PublicOrder { intent_signature } => {
-                let intent_signature = IDarkpoolV2::SignatureWithNonce::try_from(intent_signature)
-                    .map_err(ApiTypeError::parsing)?;
-                Ok(types_account::order_auth::OrderAuth::PublicOrder { intent_signature })
-            },
-            OrderAuth::NativelySettledPrivateOrder { intent_signature } => {
-                let intent_signature =
-                    SchnorrSignature::try_from(intent_signature).map_err(ApiTypeError::parsing)?;
-                Ok(types_account::order_auth::OrderAuth::NativelySettledPrivateOrder {
-                    intent_signature,
-                })
-            },
-            OrderAuth::RenegadeSettledOrder { intent_signature, new_output_balance_signature } => {
-                let intent_signature =
-                    SchnorrSignature::try_from(intent_signature).map_err(ApiTypeError::parsing)?;
-                let new_output_balance_signature =
-                    SchnorrSignature::try_from(new_output_balance_signature)
-                        .map_err(ApiTypeError::parsing)?;
-                Ok(types_account::order_auth::OrderAuth::RenegadeSettledOrder {
-                    intent_signature,
-                    new_output_balance_signature,
-                })
-            },
-        }
-    }
-}
-
 /// A signature with an associated nonce
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SignatureWithNonce {
@@ -282,10 +247,22 @@ impl TryFrom<SignatureWithNonce> for renegade_solidity_abi::v2::IDarkpoolV2::Sig
     fn try_from(signature_with_nonce: SignatureWithNonce) -> Result<Self, Self::Error> {
         let nonce = U256::from_str(&signature_with_nonce.nonce)
             .map_err(|e| ApiTypeError::parsing(format!("invalid nonce: {e}")))?;
+
         let signature_bytes = bytes_from_base64_string(&signature_with_nonce.signature)
             .map_err(ApiTypeError::parsing)?;
+
         let signature = Bytes::from(signature_bytes);
         Ok(renegade_solidity_abi::v2::IDarkpoolV2::SignatureWithNonce { nonce, signature })
+    }
+}
+
+#[cfg(feature = "full-api")]
+impl From<renegade_solidity_abi::v2::IDarkpoolV2::SignatureWithNonce> for SignatureWithNonce {
+    fn from(sig: renegade_solidity_abi::v2::IDarkpoolV2::SignatureWithNonce) -> Self {
+        SignatureWithNonce {
+            nonce: sig.nonce.to_string(),
+            signature: bytes_to_base64_string(&sig.signature),
+        }
     }
 }
 

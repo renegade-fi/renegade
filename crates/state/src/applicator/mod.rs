@@ -92,8 +92,8 @@ impl StateApplicator {
     ) -> Result<ApplicatorReturnType> {
         match *transition {
             StateTransition::CreateAccount { account } => self.create_account(&account),
-            StateTransition::AddOrderToAccount { account_id, order, auth } => {
-                self.add_order_to_account(account_id, &order, &auth)
+            StateTransition::AddOrderToAccount { account_id, order, auth, pool_name } => {
+                self.add_order_to_account(account_id, &order, &auth, pool_name)
             },
             StateTransition::RemoveOrderFromAccount { account_id, order_id } => {
                 self.remove_order_from_account(account_id, order_id)
@@ -101,6 +101,12 @@ impl StateApplicator {
             StateTransition::UpdateOrder { order } => self.update_order(&order),
             StateTransition::UpdateAccountBalance { account_id, balance } => {
                 self.update_account_balance(account_id, &balance)
+            },
+            StateTransition::UpdateAccountKeychain { account_id, keychain } => {
+                self.update_account_keychain(account_id, &keychain)
+            },
+            StateTransition::RefreshAccount { account_id, orders, balances } => {
+                self.refresh_account(account_id, orders, &balances)
             },
             StateTransition::AddOrderValidityProof { order_id, proof } => {
                 self.add_order_validity_proof(order_id, proof)

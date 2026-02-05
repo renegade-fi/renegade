@@ -10,7 +10,7 @@
 use std::mem;
 
 use api_server::worker::{ApiServer, ApiServerConfig};
-use chain_events::listener::{OnChainEventListener, OnChainEventListenerConfig};
+use chain_events::{OnChainEventListener, OnChainEventListenerConfig};
 use config::RelayerConfig;
 use darkpool_client::{
     DarkpoolClient, client::DarkpoolClientConfig, constants::BLOCK_POLLING_INTERVAL,
@@ -382,6 +382,8 @@ impl MockNodeController {
             self.matching_engine_worker_queue.0.clone(),
             bus,
             state,
+            self.config.indexer_url.clone(),
+            self.config.indexer_hmac_key,
         );
         let mut driver = run_fut(TaskDriver::new(conf)).expect("Failed to create task driver");
         driver.start().expect("Failed to start task driver");
@@ -501,6 +503,8 @@ impl MockNodeController {
             global_state,
             cancel_channel,
             event_queue: self.event_queue.0.clone(),
+            matching_engine_queue: self.matching_engine_worker_queue.0.clone(),
+            system_bus: self.bus.clone(),
         };
 
         let mut listener = run_fut(OnChainEventListener::new(conf))

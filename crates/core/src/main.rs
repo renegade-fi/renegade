@@ -13,7 +13,7 @@ mod setup;
 use std::{thread, time::Duration};
 
 use api_server::worker::{ApiServer, ApiServerConfig};
-use chain_events::listener::{OnChainEventListener, OnChainEventListenerConfig};
+use chain_events::{OnChainEventListener, OnChainEventListenerConfig};
 use constants::in_bootstrap_mode;
 use darkpool_client::client::DarkpoolClientConfig;
 use darkpool_client::constants::{BLOCK_POLLING_INTERVAL, EVENT_FILTER_POLLING_INTERVAL};
@@ -185,6 +185,8 @@ async fn main() -> Result<(), CoordinatorError> {
         matching_engine_worker_sender.clone(),
         system_bus.clone(),
         global_state.clone(),
+        args.indexer_url.clone(),
+        args.indexer_hmac_key,
     );
     let mut task_driver =
         TaskDriver::new(task_driver_config).await.expect("failed to build task driver");
@@ -302,6 +304,8 @@ async fn main() -> Result<(), CoordinatorError> {
         global_state: global_state.clone(),
         cancel_channel: chain_listener_cancel_receiver,
         event_queue: event_manager_sender.clone(),
+        matching_engine_queue: matching_engine_worker_sender.clone(),
+        system_bus: system_bus.clone(),
     })
     .await
     .expect("failed to build on-chain event listener");

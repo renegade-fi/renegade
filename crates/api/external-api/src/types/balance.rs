@@ -113,7 +113,7 @@ impl TryFrom<ApiDepositPermit> for DepositAuth {
         use std::str::FromStr;
 
         use alloy::primitives::{Bytes, U256};
-        use base64::{Engine, engine::general_purpose::STANDARD as BASE64_ENGINE};
+        use base64::{Engine, engine::general_purpose::STANDARD_NO_PAD as BASE64_ENGINE};
 
         let permit_signature_bytes = BASE64_ENGINE
             .decode(&permit.signature)

@@ -178,6 +178,16 @@ impl NotEqualGadget {
         let eq = EqGadget::eq(&a, &b, cs)?;
         cs.logic_neg(eq)
     }
+
+    /// Enforce that two variable assignments are not equal
+    pub fn constrain_not_equal<V>(a: &V, b: &V, cs: &mut PlonkCircuit) -> Result<(), CircuitError>
+    where
+        V: CircuitVarType,
+    {
+        let eq = EqGadget::eq(a, b, cs)?;
+        let res = cs.logic_neg(eq)?;
+        cs.enforce_true(res)
+    }
 }
 
 /// A gadget that enforces a value of a given bitlength is positive

@@ -40,10 +40,25 @@ pub struct BabyJubJubPoint {
 }
 
 impl BabyJubJubPoint {
+    /// Whether the point is the additive identity
+    pub fn is_zero(&self) -> bool {
+        let affine = EmbeddedCurveGroupAffine::new_unchecked(self.x.inner(), self.y.inner());
+        affine.is_zero()
+    }
+
     /// Check that the point is on the curve
     pub fn is_on_curve(&self) -> bool {
         let affine = EmbeddedCurveGroupAffine::new_unchecked(self.x.inner(), self.y.inner());
         affine.is_on_curve()
+    }
+
+    /// Check whether the point is in the prime-order subgroup
+    ///
+    /// Returns true if the point has no small subgroup component, meaning it
+    /// is safe to use for cryptographic operations.
+    pub fn in_correct_subgroup(&self) -> bool {
+        let affine = EmbeddedCurveGroupAffine::new_unchecked(self.x.inner(), self.y.inner());
+        affine.is_in_correct_subgroup_assuming_on_curve()
     }
 }
 

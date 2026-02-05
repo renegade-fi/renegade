@@ -10,10 +10,10 @@ ecr_repo = "relayer-arbitrum-sepolia-v2"
 cargo_features = "default"
 
 [services.arbitrum-sepolia-relayer.deploy]
-environment = "arbitrum-sepolia"
+environment = "arbitrum-sepolia-v2"
 resource = "relayer"
-cluster_name_override = "arbitrum-sepolia-relayer-v2"
-service_name_override = "arbitrum-sepolia-relayer-v2-service"
+cluster_name_override = "arbitrum-sepolia-v2-relayer"
+service_name_override = "arbitrum-sepolia-v2-relayer-service"
 
 [services.arbitrum-one-relayer]
 [services.arbitrum-one-relayer.build]
@@ -34,7 +34,7 @@ ecr_repo = "relayer-base-sepolia-v2"
 cargo_features = "default"
 
 [services.base-sepolia-relayer.deploy]
-environment = "base-sepolia"
+environment = "base-sepolia-v2"
 resource = "relayer"
 cluster_name_override = "base-sepolia-v2-relayer"
 service_name_override = "base-sepolia-v2-relayer-service"

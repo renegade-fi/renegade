@@ -38,6 +38,9 @@ RUN cargo build --release --package snapshot-sidecar
 # Build the event export sidecar
 RUN cargo build --release --package event-export-sidecar
 
+# Build the indexer message sidecar
+RUN cargo build --release --package indexer-message-sidecar
+
 # Build the relayer
 RUN cargo build --release --bin renegade-relayer --features "$CARGO_FEATURES"
 
@@ -53,6 +56,7 @@ RUN apt-get update && \
 COPY --from=builder /build/target/release/bootloader /bin/bootloader
 COPY --from=builder /build/target/release/snapshot-sidecar /bin/snapshot-sidecar
 COPY --from=builder /build/target/release/event-export-sidecar /bin/event-export-sidecar
+COPY --from=builder /build/target/release/indexer-message-sidecar /bin/indexer-message-sidecar
 COPY --from=builder /build/target/release/renegade-relayer /bin/renegade-relayer
 
 # Set the bootloader as the entrypoint

@@ -12,7 +12,7 @@ use circuit_types::{
 use constants::{Scalar, ScalarField};
 use darkpool_types::{
     balance::{DarkpoolBalance, PostMatchBalanceShare},
-    fee::FeeRatesVar,
+    fee::{FeeRatesVar, FeeTakeVar},
     intent::Intent,
     settlement_obligation::SettlementObligation,
 };
@@ -32,7 +32,7 @@ use crate::{
         OUTPUT_BALANCE_SETTLEMENT_PARTY0_LINK, OUTPUT_BALANCE_SETTLEMENT_PARTY1_LINK,
         settlement_lib::SettlementGadget,
     },
-    zk_gadgets::{comparators::EqGadget, primitives::bitlength::AmountGadget},
+    zk_gadgets::{comparators::EqGadget, fee::FeeGadget, primitives::bitlength::AmountGadget},
 };
 
 // ----------------------
@@ -51,6 +51,9 @@ impl IntentAndBalancePrivateSettlementCircuit {
         // 1. Verify that the two settlement obligations are compatible with one another
         Self::validate_obligation_compatibility(witness, cs)?;
 
+        // 2. Compute the fee take from the fee rates
+        let (fee_take0, fee_take1) = Self::get_fee_takes(statement, witness, cs)?;
+
         // 2. Verify the settlement obligation constraints for each party
         // Party 0
         SettlementGadget::verify_intent_and_balance_obligation_constraints(
@@ -58,6 +61,7 @@ impl IntentAndBalancePrivateSettlementCircuit {
             &witness.input_balance0,
             &witness.output_balance0,
             &witness.settlement_obligation0,
+            &fee_take0,
             cs,
         )?;
 
@@ -67,22 +71,15 @@ impl IntentAndBalancePrivateSettlementCircuit {
             &witness.input_balance1,
             &witness.output_balance1,
             &witness.settlement_obligation1,
+            &fee_take1,
             cs,
         )?;
 
         // 3. Verify the state updates for each party
-        let fee_rate0 = FeeRatesVar {
-            relayer_fee_rate: statement.relayer_fee0,
-            protocol_fee_rate: statement.protocol_fee,
-        };
-        let fee_rate1 = FeeRatesVar {
-            relayer_fee_rate: statement.relayer_fee1,
-            protocol_fee_rate: statement.protocol_fee,
-        };
 
         // Party 0
         SettlementGadget::verify_state_updates(
-            &fee_rate0,
+            &fee_take0,
             witness.pre_settlement_amount_public_share0,
             statement.new_amount_public_share0,
             &witness.pre_settlement_in_balance_shares0,
@@ -95,7 +92,7 @@ impl IntentAndBalancePrivateSettlementCircuit {
 
         // Party 1
         SettlementGadget::verify_state_updates(
-            &fee_rate1,
+            &fee_take1,
             witness.pre_settlement_amount_public_share1,
             statement.new_amount_public_share1,
             &witness.pre_settlement_in_balance_shares1,
@@ -105,6 +102,31 @@ impl IntentAndBalancePrivateSettlementCircuit {
             &witness.settlement_obligation1,
             cs,
         )
+    }
+
+    /// Get the fee takes for the settlement
+    fn get_fee_takes(
+        statement: &IntentAndBalancePrivateSettlementStatementVar,
+        witness: &IntentAndBalancePrivateSettlementWitnessVar,
+        cs: &mut PlonkCircuit,
+    ) -> Result<(FeeTakeVar, FeeTakeVar), CircuitError> {
+        // Compute the fee rates
+        let fee_rate0 = FeeRatesVar {
+            relayer_fee_rate: statement.relayer_fee0,
+            protocol_fee_rate: statement.protocol_fee,
+        };
+
+        let fee_rate1 = FeeRatesVar {
+            relayer_fee_rate: statement.relayer_fee1,
+            protocol_fee_rate: statement.protocol_fee,
+        };
+
+        // Compute fee takes
+        let obligation0 = &witness.settlement_obligation0;
+        let obligation1 = &witness.settlement_obligation1;
+        let fee_take0 = FeeGadget::compute_fee_take(obligation0.amount_out, &fee_rate0, cs)?;
+        let fee_take1 = FeeGadget::compute_fee_take(obligation1.amount_out, &fee_rate1, cs)?;
+        Ok((fee_take0, fee_take1))
     }
 
     /// Verify that the two settlement obligations are compatible with one

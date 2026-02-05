@@ -15,8 +15,8 @@ full-api = [
     "admin-api",
     "task-api",
     "websocket",
-    "dep:renegade-solidity-abi",
     "darkpool-types/proof-system-types",
+    "dep:renegade-solidity-abi",
 ]
 
 [dependencies]

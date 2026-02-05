@@ -186,6 +186,7 @@ impl TypedHandler for DepositBalanceHandler {
                 authority,
                 auth,
             )
+            .map_err(bad_request)?
             .into()
         } else {
             DepositTaskDescriptor::new(account_id, from_address, token, amount, auth, authority)

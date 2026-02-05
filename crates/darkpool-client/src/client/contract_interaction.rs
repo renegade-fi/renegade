@@ -9,7 +9,8 @@ use circuit_types::{elgamal::EncryptionKey, fixed_point::FixedPoint, merkle::Mer
 use constants::Scalar;
 use crypto::fields::{scalar_to_u256, u256_to_scalar};
 use renegade_solidity_abi::v2::IDarkpoolV2::{
-    self, DepositAuth, DepositProofBundle, ObligationBundle, SettlementBundle,
+    self, DepositAuth, DepositProofBundle, ObligationBundle, OrderCancellationAuth,
+    PublicIntentPermit, SettlementBundle, SignatureWithNonce,
 };
 use tracing::{info, instrument};
 use types_proofs::{ValidBalanceCreateBundle, ValidDepositBundle};
@@ -205,6 +206,26 @@ impl DarkpoolClient {
         let tx_hash = format!("{:#x}", receipt.transaction_hash);
         backfill_trace_field("tx_hash", &tx_hash);
         info!("`settle_match` tx hash: {tx_hash}");
+
+        Ok(receipt)
+    }
+
+    /// Cancel a public order
+    ///
+    /// Awaits until the transaction is confirmed on-chain
+    #[instrument(skip_all, err, fields(tx_hash))]
+    pub async fn cancel_public_order(
+        &self,
+        auth: OrderCancellationAuth,
+        permit: PublicIntentPermit,
+        intent_signature: SignatureWithNonce,
+    ) -> Result<TransactionReceipt, DarkpoolClientError> {
+        let tx = self.darkpool().cancelPublicOrder(auth, permit, intent_signature);
+        let receipt = self.send_tx(tx).await?;
+
+        let tx_hash = format!("{:#x}", receipt.transaction_hash);
+        backfill_trace_field("tx_hash", &tx_hash);
+        info!("`cancel_public_order` tx hash: {tx_hash}");
 
         Ok(receipt)
     }

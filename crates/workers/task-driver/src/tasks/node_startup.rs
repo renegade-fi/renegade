@@ -388,9 +388,13 @@ impl NodeStartupTask {
     // | Helpers |
     // -----------
 
-    /// Enqueue a account lookup task to refresh an account
-    async fn refresh_account(&self, _account_id: AccountId) -> Result<(), NodeStartupTaskError> {
-        // TODO(@akirillo): Re-implement this
+    /// Enqueue an account refresh task
+    async fn refresh_account(&self, account_id: AccountId) -> Result<(), NodeStartupTaskError> {
+        self.state
+            .append_account_refresh_task(account_id)
+            .await
+            .map_err(|e| NodeStartupTaskError::State(e.to_string()))?;
+
         Ok(())
     }
 

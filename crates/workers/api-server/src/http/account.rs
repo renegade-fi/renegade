@@ -12,7 +12,7 @@ use hyper::HeaderMap;
 use state::State;
 use types_account::keychain::{KeyChain, PrivateKeyChain};
 use types_core::HmacKey;
-use types_tasks::NewAccountTaskDescriptor;
+use types_tasks::{NewAccountTaskDescriptor, RefreshAccountTaskDescriptor};
 
 use crate::{
     error::{ApiServerError, bad_request, not_found},
@@ -25,8 +25,6 @@ use crate::{
 // | Error Messages |
 // ------------------
 
-/// Error message for not implemented
-const ERR_NOT_IMPLEMENTED: &str = "not implemented";
 /// Error message for account not found
 const ERR_ACCOUNT_NOT_FOUND: &str = "account not found";
 
@@ -93,9 +91,8 @@ impl TypedHandler for CreateAccountHandler {
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
         let auth_key = HmacKey::from_base64_string(&req.auth_hmac_key).map_err(bad_request)?;
-        let master_view_seed = parse_scalar_from_string(&req.master_view_seed)?;
-        let keychain = KeyChain::new(PrivateKeyChain::new(auth_key, master_view_seed));
-        let task = NewAccountTaskDescriptor::new(req.account_id, keychain);
+        let keychain = KeyChain::new(PrivateKeyChain::new(auth_key, req.master_view_seed));
+        let task = NewAccountTaskDescriptor::new(req.account_id, keychain, req.address);
         append_task(task.into(), &self.state).await?;
 
         Ok(EmptyRequestResponse {})
@@ -140,12 +137,15 @@ impl TypedHandler for GetAccountSeedsHandler {
 }
 
 /// Handler for POST /v2/account/:account_id/sync
-pub struct SyncAccountHandler;
+pub struct SyncAccountHandler {
+    /// A handle to the state
+    state: State,
+}
 
 impl SyncAccountHandler {
     /// Constructor
-    pub fn new() -> Self {
-        Self
+    pub fn new(state: State) -> Self {
+        Self { state }
     }
 }
 
@@ -157,10 +157,22 @@ impl TypedHandler for SyncAccountHandler {
     async fn handle_typed(
         &self,
         _headers: HeaderMap,
-        _req: Self::Request,
-        _params: UrlParams,
+        req: Self::Request,
+        params: UrlParams,
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
-        Err(ApiServerError::not_implemented(ERR_NOT_IMPLEMENTED))
+        // Parse account_id from URL params
+        let account_id = parse_account_id_from_params(&params)?;
+
+        // Build keychain from request
+        let auth_key = HmacKey::from_base64_string(&req.auth_hmac_key).map_err(bad_request)?;
+        let master_view_seed = parse_scalar_from_string(&req.master_view_seed)?;
+        let keychain = KeyChain::new(PrivateKeyChain::new(auth_key, master_view_seed));
+
+        // Create and append the task
+        let descriptor = RefreshAccountTaskDescriptor::new(account_id, keychain);
+        let task_id = append_task(descriptor.into(), &self.state).await?;
+
+        Ok(SyncAccountResponse { task_id, completed: false })
     }
 }

@@ -3,10 +3,10 @@
 //! Account index updates must go through raft consensus so that the leader may
 //! order them
 
-use alloy_primitives::Address;
+use alloy_primitives::{Address, B256};
 use circuit_types::Amount;
 use types_account::{
-    MatchingPoolName,
+    MatchingPoolName, OrderRefreshData,
     account::{Account, OrderId},
     balance::{Balance, BalanceLocation},
     keychain::KeyChain,
@@ -17,8 +17,8 @@ use types_core::{AccountId, HmacKey};
 use util::res_some;
 
 use crate::{
-    StateInner, error::StateError, notifications::ProposalWaiter,
-    state_transition::StateTransition, storage::traits::RkyvValue,
+    StateInner, applicator::account_index::update_matchable_amounts, error::StateError,
+    notifications::ProposalWaiter, state_transition::StateTransition, storage::traits::RkyvValue,
 };
 
 impl StateInner {
@@ -169,11 +169,43 @@ impl StateInner {
         .await
     }
 
+    /// Get all orders for an account with their matching pool
+    pub async fn get_account_orders_with_matching_pool(
+        &self,
+        account_id: &AccountId,
+    ) -> Result<Vec<(Order, MatchingPoolName)>, StateError> {
+        let account_id = *account_id;
+        self.with_read_tx(move |tx| {
+            let orders = tx.get_account_orders(&account_id)?;
+            let mut result = Vec::with_capacity(orders.len());
+            for order in orders {
+                let matching_pool = tx.get_matching_pool_for_order(&order.id)?;
+                result.push((order, matching_pool));
+            }
+            Ok(result)
+        })
+        .await
+    }
+
+    /// Get the account ID by owner
+    ///
+    /// Used to route balance update events to the correct account
+    pub async fn get_account_by_owner(
+        &self,
+        owner: &Address,
+    ) -> Result<Option<AccountId>, StateError> {
+        let owner = *owner;
+        self.with_read_tx(move |tx| {
+            let account_id = tx.get_account_by_owner(&owner)?;
+            Ok(account_id)
+        })
+        .await
+    }
+
     /// Get all orders across all accounts with their matching pool
     ///
     /// Returns a vector of tuples containing (AccountId, Order,
-    /// MatchingPoolName) for each order in the state. MatchingPoolName) for
-    /// each order in the state.
+    /// MatchingPoolName) for each order in the state.
     ///
     /// Warning: this can be slow when the state has many orders
     pub async fn get_all_orders_with_matching_pool(
@@ -194,6 +226,21 @@ impl StateInner {
                 }
             }
 
+            Ok(result)
+        })
+        .await
+    }
+
+    /// Get the order by intent hash
+    ///
+    /// Used to route public intent events to the correct order
+    pub async fn get_order_by_intent_hash(
+        &self,
+        intent_hash: &B256,
+    ) -> Result<Option<(AccountId, OrderId)>, StateError> {
+        let intent_hash = *intent_hash;
+        self.with_read_tx(move |tx| {
+            let result = tx.get_order_by_intent_hash(&intent_hash)?;
             Ok(result)
         })
         .await
@@ -266,6 +313,19 @@ impl StateInner {
         .await
     }
 
+    /// Get all tracked owners from the owner index
+    ///
+    /// Returns a deduplicated list of owner addresses that have balances
+    pub async fn get_all_tracked_owners(&self) -> Result<Vec<Address>, StateError> {
+        self.with_read_tx(|tx| {
+            let entries = tx.get_all_owner_index_entries()?;
+            let owners: std::collections::HashSet<_> =
+                entries.into_iter().map(|(owner, _)| owner).collect();
+            Ok(owners.into_iter().collect())
+        })
+        .await
+    }
+
     // -----------
     // | Setters |
     // -----------
@@ -283,8 +343,15 @@ impl StateInner {
         account_id: AccountId,
         order: Order,
         auth: OrderAuth,
+        pool_name: MatchingPoolName,
     ) -> Result<ProposalWaiter, StateError> {
-        self.send_proposal(StateTransition::AddOrderToAccount { account_id, order, auth }).await
+        self.send_proposal(StateTransition::AddOrderToAccount {
+            account_id,
+            order,
+            auth,
+            pool_name,
+        })
+        .await
     }
 
     /// Remove an order from an account
@@ -309,10 +376,51 @@ impl StateInner {
     ) -> Result<ProposalWaiter, StateError> {
         self.send_proposal(StateTransition::UpdateAccountBalance { account_id, balance }).await
     }
+
+    /// Update an account's keychain
+    pub async fn update_account_keychain(
+        &self,
+        account_id: AccountId,
+        keychain: KeyChain,
+    ) -> Result<ProposalWaiter, StateError> {
+        self.send_proposal(StateTransition::UpdateAccountKeychain { account_id, keychain }).await
+    }
+
+    /// Refresh an account's state with updated orders and balances
+    pub async fn refresh_account(
+        &self,
+        account_id: AccountId,
+        orders: Vec<OrderRefreshData>,
+        balances: Vec<Balance>,
+    ) -> Result<ProposalWaiter, StateError> {
+        self.send_proposal(StateTransition::RefreshAccount { account_id, orders, balances }).await
+    }
+
+    /// Update the matching engine cache for orders affected by a balance change
+    ///
+    /// This method updates the matching engine's in-memory cache without
+    /// persisting to DB or going through raft consensus. It should be called
+    /// before `update_account_balance` to enable low-latency matching while
+    /// the raft proposal is in flight.
+    pub async fn update_matching_engine_for_balance(
+        &self,
+        account_id: AccountId,
+        balance: &Balance,
+    ) -> Result<(), StateError> {
+        let balance = balance.clone();
+        let engine = self.matching_engine.clone();
+
+        self.with_read_tx(move |tx| {
+            update_matchable_amounts(account_id, &balance, &engine, tx)?;
+            Ok(())
+        })
+        .await
+    }
 }
 
 #[cfg(test)]
 mod test {
+    use constants::GLOBAL_MATCHING_POOL;
     use types_account::{
         account::mocks::mock_empty_account, order::mocks::mock_order,
         order_auth::mocks::mock_order_auth,
@@ -346,7 +454,9 @@ mod test {
         // Add a local order to the account
         let order = mock_order();
         let auth = mock_order_auth();
-        let waiter = state.add_order_to_account(account.id, order.clone(), auth).await.unwrap();
+        let pool_name = GLOBAL_MATCHING_POOL.to_string();
+        let waiter =
+            state.add_order_to_account(account.id, order.clone(), auth, pool_name).await.unwrap();
         waiter.await.unwrap();
 
         // Verify the account was updated
@@ -367,7 +477,9 @@ mod test {
         // Add a local order to the account
         let order = mock_order();
         let auth = mock_order_auth();
-        let waiter = state.add_order_to_account(account.id, order.clone(), auth).await.unwrap();
+        let pool_name = GLOBAL_MATCHING_POOL.to_string();
+        let waiter =
+            state.add_order_to_account(account.id, order.clone(), auth, pool_name).await.unwrap();
         waiter.await.unwrap();
 
         // Verify the order was added

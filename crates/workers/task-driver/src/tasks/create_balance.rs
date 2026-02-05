@@ -47,6 +47,8 @@ pub enum CreateBalanceTaskState {
     Proving,
     /// The task is submitting the deposit transaction
     Submitting,
+    /// The task is updating the raft state
+    UpdatingState,
     /// The task is completed
     Completed,
 }
@@ -67,6 +69,7 @@ impl Display for CreateBalanceTaskState {
             CreateBalanceTaskState::Pending => write!(f, "Pending"),
             CreateBalanceTaskState::Proving => write!(f, "Proving"),
             CreateBalanceTaskState::Submitting => write!(f, "Submitting"),
+            CreateBalanceTaskState::UpdatingState => write!(f, "UpdatingState"),
             CreateBalanceTaskState::Completed => write!(f, "Completed"),
         }
     }
@@ -151,6 +154,8 @@ pub struct CreateBalanceTask {
     pub authority: SchnorrPublicKey,
     /// The deposit authorization
     pub auth: DepositAuth,
+    /// The updated balance and keychain
+    pub updated_balance_keychain: Option<(Balance, KeyChain)>,
     /// A proof of `VALID BALANCE CREATE` created in the proving step
     pub proof_bundle: Option<ValidBalanceCreateBundle>,
     /// The state of the task's execution
@@ -173,6 +178,7 @@ impl Task for CreateBalanceTask {
             amount: descriptor.amount,
             authority: descriptor.authority,
             auth: descriptor.auth,
+            updated_balance_keychain: None,
             proof_bundle: None,
             task_state: CreateBalanceTaskState::Pending,
             ctx,
@@ -195,6 +201,11 @@ impl Task for CreateBalanceTask {
             CreateBalanceTaskState::Submitting => {
                 // Submit the deposit transaction to the darkpool
                 self.submit_deposit().await?;
+                self.task_state = CreateBalanceTaskState::UpdatingState;
+            },
+            CreateBalanceTaskState::UpdatingState => {
+                // Update the raft state
+                self.update_state().await?;
                 self.task_state = CreateBalanceTaskState::Completed;
             },
             CreateBalanceTaskState::Completed => {
@@ -238,7 +249,15 @@ impl CreateBalanceTask {
     /// Generate a proof of `VALID BALANCE CREATE` for the balance
     pub async fn generate_proof(&mut self) -> Result<()> {
         info!("Generating balance create proof...");
-        let (witness, statement) = self.get_balance_create_witness_statement().await?;
+
+        // Create a new balance and update the wallet keychain
+        let (mut balance, keychain) = self.create_balance_and_update_keychain().await?;
+
+        // Generate a witness and statement for a valid balance create
+        // This method mutates the balance, so we store the updated balance only after
+        // this method updates the balance and returns
+        let (witness, statement) = self.get_balance_create_witness_statement(&mut balance).await?;
+        self.updated_balance_keychain = Some((balance, keychain));
 
         // Forward to the proof manager
         let job = ProofJob::ValidBalanceCreate { statement, witness };
@@ -250,34 +269,6 @@ impl CreateBalanceTask {
             proof_recv.await.map_err(|e| CreateBalanceTaskError::ProofGeneration(e.to_string()))?;
         self.proof_bundle = Some(bundle.into());
         Ok(())
-    }
-
-    /// Generate a witness and statement for a valid balance create
-    async fn get_balance_create_witness_statement(
-        &self,
-    ) -> Result<(ValidBalanceCreateWitness, ValidBalanceCreateStatement)> {
-        // Fetch the account keychain
-        let mut keychain = self.get_account_keychain().await?;
-        let recovery_id_stream = keychain.sample_recovery_id_stream_seed();
-        let share_stream = keychain.sample_share_stream_seed();
-
-        let mut bal = self.create_balance(share_stream.seed, recovery_id_stream.seed).await?;
-        let witness = ValidBalanceCreateWitness {
-            initial_share_stream: share_stream,
-            initial_recovery_stream: recovery_id_stream,
-            balance: bal.inner().clone(),
-        };
-
-        let deposit = self.create_deposit();
-        let recovery_id = bal.state_wrapper.compute_recovery_id();
-        let balance_commitment = bal.state_wrapper.compute_commitment();
-        let statement = ValidBalanceCreateStatement {
-            deposit,
-            balance_commitment,
-            recovery_id,
-            new_balance_share: bal.state_wrapper.public_share(),
-        };
-        Ok((witness, statement))
     }
 
     /// Submit the deposit transaction to the darkpool
@@ -296,6 +287,21 @@ impl CreateBalanceTask {
         let waiter =
             self.state().add_balance_merkle_proof(self.account_id, self.token, opening).await?;
         waiter.await?;
+        Ok(())
+    }
+
+    /// Update the account state with the new balance
+    pub async fn update_state(&self) -> Result<()> {
+        let (balance, keychain) = self.updated_balance_keychain.clone().unwrap();
+
+        // Update the balance
+        let waiter = self.state().update_account_balance(self.account_id, balance).await?;
+        waiter.await?;
+
+        // Update the keychain
+        let waiter = self.state().update_account_keychain(self.account_id, keychain).await?;
+        waiter.await?;
+
         Ok(())
     }
 }
@@ -324,6 +330,11 @@ impl CreateBalanceTask {
             .ok_or_else(|| CreateBalanceTaskError::Missing("keychain not found".to_string()))
     }
 
+    /// Create a deposit for the descriptor
+    fn create_deposit(&self) -> Deposit {
+        Deposit::new(self.from_address, self.token, self.amount)
+    }
+
     /// Create a balance for the descriptor
     async fn create_balance(
         &self,
@@ -339,8 +350,41 @@ impl CreateBalanceTask {
         Ok(bal)
     }
 
-    /// Create a deposit for the descriptor
-    fn create_deposit(&self) -> Deposit {
-        Deposit::new(self.from_address, self.token, self.amount)
+    /// Create a new balance and update the wallet keychain
+    async fn create_balance_and_update_keychain(&self) -> Result<(Balance, KeyChain)> {
+        // Read the current keychain
+        let mut keychain = self.get_account_keychain().await?;
+        let recovery_id_stream = keychain.sample_recovery_id_stream_seed();
+        let share_stream = keychain.sample_share_stream_seed();
+
+        // Create a new balance
+        let balance = self.create_balance(share_stream.seed, recovery_id_stream.seed).await?;
+        Ok((balance, keychain))
+    }
+
+    /// Generate a witness and statement for a valid balance create
+    async fn get_balance_create_witness_statement(
+        &self,
+        bal: &mut Balance,
+    ) -> Result<(ValidBalanceCreateWitness, ValidBalanceCreateStatement)> {
+        let share_stream = bal.state_wrapper.get_original_share_stream();
+        let recovery_id_stream = bal.state_wrapper.get_original_recovery_stream();
+        let witness = ValidBalanceCreateWitness {
+            initial_share_stream: share_stream,
+            initial_recovery_stream: recovery_id_stream,
+            balance: bal.inner().clone(),
+        };
+
+        let deposit = self.create_deposit();
+        let recovery_id = bal.state_wrapper.compute_recovery_id();
+        let balance_commitment = bal.state_wrapper.compute_commitment();
+
+        let statement = ValidBalanceCreateStatement {
+            deposit,
+            balance_commitment,
+            recovery_id,
+            new_balance_share: bal.state_wrapper.public_share(),
+        };
+        Ok((witness, statement))
     }
 }

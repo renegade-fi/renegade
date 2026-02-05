@@ -60,6 +60,12 @@ pub struct Cli {
     /// The password for the prover service
     #[clap(long, value_parser, env = "PROVER_SERVICE_PASSWORD", requires = "prover_service_url")]
     pub prover_service_password: Option<String>,
+    /// The URL of the darkpool indexer service
+    #[clap(long, value_parser, env = "INDEXER_URL")]
+    pub indexer_url: String,
+    /// The HMAC key for authenticating requests to the indexer service (base64-encoded)
+    #[clap(long, value_parser, env = "INDEXER_HMAC_KEY")]
+    pub indexer_hmac_key: String,
 
     // -----------------------------
     // | Application Level Configs |
@@ -236,11 +242,7 @@ pub struct Cli {
     )]
     pub private_key: String,
     /// The executor private key used for order execution
-    #[clap(
-        value_parser,
-        long = "executor-private-key",
-        default_value = "0xb6b15c8cb491557369f3c7d2c287b053eb229daa9c22138887752191c9520659",
-    )]
+    #[clap(value_parser, long = "executor-private-key", env = "EXECUTOR_PRIVATE_KEY")]
     pub executor_private_key: String,
 
     // -------------
@@ -319,6 +321,10 @@ pub struct RelayerConfig {
     pub prover_service_url: Option<Url>,
     /// The password for the prover service
     pub prover_service_password: Option<String>,
+    /// The URL of the darkpool indexer service
+    pub indexer_url: Url,
+    /// The HMAC key for authenticating requests to the indexer service
+    pub indexer_hmac_key: HmacKey,
 
     // -----------------------
     // | Environment Configs |
@@ -470,6 +476,9 @@ impl Default for RelayerConfig {
     fn default() -> Self {
         // Set the default addresses for the config
         let zero_addr = "0x0000000000000000000000000000000000000000".to_string();
+        let hmac_key = HmacKey::random().to_base64_string();
+        let executor_key = PrivateKeySigner::random();
+        let executor_key_str = format!("{:#x}", executor_key.to_bytes());
         let args_string = [
             "relayer".to_string(),
             "--contract-address".to_string(),
@@ -478,6 +487,12 @@ impl Default for RelayerConfig {
             zero_addr.clone(),
             "--permit2-address".to_string(),
             zero_addr.clone(),
+            "--indexer-url".to_string(),
+            "http://localhost:8080".to_string(),
+            "--indexer-hmac-key".to_string(),
+            hmac_key,
+            "--executor-private-key".to_string(),
+            executor_key_str,
         ];
 
         // Parse a dummy set of command line args and convert this to a config

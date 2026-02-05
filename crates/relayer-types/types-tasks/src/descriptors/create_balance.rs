@@ -9,6 +9,8 @@ use renegade_solidity_abi::v2::IDarkpoolV2::DepositAuth;
 use types_account::account::deposit::DepositAuthDef;
 use types_core::AccountId;
 
+use crate::TaskError;
+
 use super::TaskDescriptor;
 
 /// The task descriptor containing only the parameterization of the
@@ -44,8 +46,28 @@ impl CreateBalanceTaskDescriptor {
         amount: Amount,
         authority: SchnorrPublicKey,
         auth: DepositAuth,
-    ) -> Self {
-        Self { account_id, from_address, token, amount, authority, auth }
+    ) -> Result<Self, TaskError> {
+        Self::validate_authority(&authority)?;
+        Ok(Self { account_id, from_address, token, amount, authority, auth })
+    }
+
+    /// Validate the authority curve point
+    ///
+    /// This amounts to validating that the point is on the curve and in the
+    /// prime-order subgroup.
+    fn validate_authority(authority: &SchnorrPublicKey) -> Result<(), TaskError> {
+        if authority.point.is_zero() {
+            return Err(TaskError::descriptor("authority point is zero"));
+        }
+
+        if !authority.point.is_on_curve() {
+            return Err(TaskError::descriptor("authority point is not on the curve"));
+        }
+
+        if !authority.point.in_correct_subgroup() {
+            return Err(TaskError::descriptor("authority point is not in the correct subgroup"));
+        }
+        Ok(())
     }
 }
 

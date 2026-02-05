@@ -65,3 +65,9 @@ impl From<ReplicationError> for StateError {
         StateError::Replication(e)
     }
 }
+
+impl From<StateApplicatorError> for StateError {
+    fn from(e: StateApplicatorError) -> Self {
+        StateError::Applicator(e)
+    }
+}

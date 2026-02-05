@@ -2,6 +2,7 @@
 
 use alloy::primitives::Address;
 use async_trait::async_trait;
+use constants::GLOBAL_MATCHING_POOL;
 use external_api::{
     EmptyRequestResponse,
     http::order::{
@@ -12,9 +13,11 @@ use external_api::{
 };
 use hyper::HeaderMap;
 use itertools::Itertools;
+use renegade_solidity_abi::v2::IDarkpoolV2::SignatureWithNonce;
 use state::State;
-use types_account::order_auth::OrderAuth;
-use types_tasks::CreateOrderTaskDescriptor;
+use types_account::{OrderId, order::PrivacyRing};
+use types_core::AccountId;
+use types_tasks::{CancelOrderTaskDescriptor, CreateOrderTaskDescriptor};
 
 use crate::{
     error::{ApiServerError, bad_request, not_found},
@@ -31,6 +34,13 @@ use crate::{
 const ERR_NOT_IMPLEMENTED: &str = "not implemented";
 /// Error message for order not found
 const ERR_ORDER_NOT_FOUND: &str = "order not found";
+/// Error message for invalid order type (not Ring0)
+const ERR_INVALID_ORDER_TYPE: &str =
+    "only public orders (Ring0) can be cancelled via this endpoint";
+/// Error message for missing order auth
+const ERR_ORDER_AUTH_NOT_FOUND: &str = "order auth not found";
+/// Error message for invalid order auth type
+const ERR_INVALID_ORDER_AUTH: &str = "order auth is not for a public order";
 
 // -------------------
 // | Order Handlers  |
@@ -97,16 +107,7 @@ impl TypedHandler for GetOrderByIdHandler {
     ) -> Result<Self::Response, ApiServerError> {
         let acct_id = parse_account_id_from_params(&params)?;
         let order_id = parse_order_id_from_params(&params)?;
-        let order_account = self
-            .state
-            .get_account_id_for_order(&order_id)
-            .await?
-            .ok_or(ApiServerError::order_not_found(order_id))?;
-
-        // Check the account id matches the order's account id
-        if order_account != acct_id {
-            return Err(ApiServerError::order_not_found(order_id));
-        }
+        verify_order_belongs_to_account(order_id, acct_id, &self.state).await?;
 
         // Fetch the order
         let order =
@@ -152,20 +153,19 @@ impl TypedHandler for CreateOrderHandler {
         }
 
         // Convert order auth to an internal type
-        let auth = OrderAuth::try_from(req.auth.clone())
-            .map_err(|e| bad_request(format!("invalid order auth: {e}")))?;
         let order_id = req.order.id;
+        let auth = req.get_order_auth(self.executor)?;
         let (intent, ring, metadata) = req.into_order_components()?;
 
-        // Create the task descriptor
+        // Create the task descriptor with the global matching pool
         let descriptor = CreateOrderTaskDescriptor::new(
             account_id,
             order_id,
-            self.executor,
             intent,
             ring,
             metadata,
             auth,
+            GLOBAL_MATCHING_POOL.to_string(),
         )
         .map_err(bad_request)?;
         let task_id = append_task(descriptor.into(), &self.state).await?;
@@ -176,7 +176,6 @@ impl TypedHandler for CreateOrderHandler {
 
 /// Handler for POST /v2/account/:account_id/orders/:order_id/update
 pub struct UpdateOrderHandler;
-
 impl UpdateOrderHandler {
     /// Constructor
     pub fn new() -> Self {
@@ -201,12 +200,15 @@ impl TypedHandler for UpdateOrderHandler {
 }
 
 /// Handler for POST /v2/account/:account_id/orders/:order_id/cancel
-pub struct CancelOrderHandler;
+pub struct CancelOrderHandler {
+    /// A handle to the relayer's state
+    state: State,
+}
 
 impl CancelOrderHandler {
     /// Constructor
-    pub fn new() -> Self {
-        Self
+    pub fn new(state: State) -> Self {
+        Self { state }
     }
 }
 
@@ -218,10 +220,65 @@ impl TypedHandler for CancelOrderHandler {
     async fn handle_typed(
         &self,
         _headers: HeaderMap,
-        _req: Self::Request,
-        _params: UrlParams,
+        req: Self::Request,
+        params: UrlParams,
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
-        Err(ApiServerError::not_implemented(ERR_NOT_IMPLEMENTED))
+        // Parse account_id and order_id from URL params
+        let account_id = parse_account_id_from_params(&params)?;
+        let order_id = parse_order_id_from_params(&params)?;
+        verify_order_belongs_to_account(order_id, account_id, &self.state).await?;
+
+        // Convert the cancel signature from the request
+        let cancel_signature: SignatureWithNonce =
+            req.cancel_signature.try_into().map_err(bad_request)?;
+
+        // Fetch the order and verify it
+        let order = self
+            .state
+            .get_account_order(&order_id)
+            .await?
+            .ok_or(ApiServerError::order_not_found(order_id))?;
+        if order.ring != PrivacyRing::Ring0 {
+            return Err(bad_request(ERR_INVALID_ORDER_TYPE));
+        }
+
+        // Fetch the order auth and extract the intent signature
+        let order_auth = self
+            .state
+            .get_order_auth(&order_id)
+            .await?
+            .ok_or(not_found(ERR_ORDER_AUTH_NOT_FOUND))?;
+
+        // Create the task descriptor
+        let descriptor =
+            CancelOrderTaskDescriptor::new(account_id, order_id, order_auth, cancel_signature)
+                .map_err(bad_request)?;
+
+        // Append the task and return the task ID
+        let task_id = append_task(descriptor.into(), &self.state).await?;
+        Ok(CancelOrderResponse { task_id, completed: false })
     }
+}
+
+// -----------
+// | Helpers |
+// -----------
+
+/// Verify that an order belongs to a given account
+async fn verify_order_belongs_to_account(
+    order_id: OrderId,
+    account_id: AccountId,
+    state: &State,
+) -> Result<(), ApiServerError> {
+    let order_account = state
+        .get_account_id_for_order(&order_id)
+        .await?
+        .ok_or(ApiServerError::order_not_found(order_id))?;
+
+    if order_account != account_id {
+        return Err(ApiServerError::order_not_found(order_id));
+    }
+
+    Ok(())
 }

@@ -65,6 +65,9 @@ util = { workspace = true }
 rkyv = { workspace = true, features = ["unaligned"] }
 serde = { workspace = true }
 
+# === Contract ABIs === #
+renegade-solidity-abi = { workspace = true }
+
 # === Misc === #
 async-trait = { workspace = true }
 itertools = "0.10"

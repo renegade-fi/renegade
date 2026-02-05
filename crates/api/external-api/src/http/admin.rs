@@ -18,6 +18,20 @@ pub const ADMIN_REFRESH_MATCH_FEES_ROUTE: &str = "/v2/admin/refresh-match-fees";
 pub const ADMIN_GET_ORDERS_ROUTE: &str = "/v2/relayer-admin/orders";
 /// Route to get an order by ID as an admin
 pub const ADMIN_GET_ORDER_BY_ID_ROUTE: &str = "/v2/relayer-admin/orders/:order_id";
+/// Route to get orders for an account as an admin
+pub const ADMIN_GET_ACCOUNT_ORDERS_ROUTE: &str = "/v2/relayer-admin/account/:account_id/orders";
+/// Route to check if task queue is paused for an account
+pub const ADMIN_GET_TASK_QUEUE_PAUSED_ROUTE: &str =
+    "/v2/relayer-admin/account/:account_id/tasks/paused";
+
+/// Route to create a matching pool
+pub const ADMIN_MATCHING_POOL_CREATE_ROUTE: &str = "/v2/admin/matching-pools/:matching_pool";
+/// Route to destroy a matching pool
+pub const ADMIN_MATCHING_POOL_DESTROY_ROUTE: &str =
+    "/v2/admin/matching-pools/:matching_pool/destroy";
+/// Route to create an order in a specific matching pool
+pub const ADMIN_CREATE_ORDER_IN_POOL_ROUTE: &str =
+    "/v2/relayer-admin/account/:account_id/orders/create-order-in-pool";
 
 // -------------------
 // | Request/Response |
@@ -31,4 +45,6 @@ pub struct IsLeaderResponse {
 }
 
 // Re-export v2 admin types from types module
-pub use crate::types::{ApiAdminOrder, GetOrderAdminResponse, GetOrdersAdminResponse};
+pub use crate::types::{
+    ApiAdminOrder, GetOrderAdminResponse, GetOrdersAdminResponse, TaskQueuePausedResponse,
+};

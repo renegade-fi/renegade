@@ -47,6 +47,11 @@ impl Pair {
         Token::from_alloy_address(&self.out_token)
     }
 
+    /// Whether the input token is the quote token
+    pub fn is_input_quote(&self) -> bool {
+        self.in_token == Token::usdc().get_alloy_address()
+    }
+
     /// Get the base token for the pair
     pub fn base_token(&self) -> Token {
         let usdc = Token::usdc().get_alloy_address();
