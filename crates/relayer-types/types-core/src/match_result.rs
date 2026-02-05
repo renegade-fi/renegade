@@ -4,6 +4,7 @@
 
 #![allow(missing_docs, clippy::missing_docs_in_private_items)]
 
+use circuit_types::Amount;
 use darkpool_types::settlement_obligation::SettlementObligation;
 use serde::{Deserialize, Serialize};
 
@@ -51,5 +52,12 @@ impl MatchResult {
         };
 
         Token::from_alloy_address(&addr)
+    }
+
+    /// Get the quote token volume of the match
+    pub fn quote_token_volume(&self) -> Amount {
+        let usdc = Token::usdc().get_alloy_address();
+        let obligation = &self.party0_obligation;
+        if obligation.input_token == usdc { obligation.amount_in } else { obligation.amount_out }
     }
 }

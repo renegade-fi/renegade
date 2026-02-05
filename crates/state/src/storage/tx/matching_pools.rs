@@ -65,6 +65,24 @@ impl<T: TransactionKind> StateTxn<'_, T> {
         let exists = self.inner().read::<_, bool>(POOL_TABLE, &pool_exists_key)?.is_some();
         Ok(exists)
     }
+
+    /// Whether or not a matching pool is empty (has no orders assigned to it)
+    pub fn matching_pool_is_empty(&self, pool_name: &str) -> Result<bool, StorageError> {
+        let cursor = self
+            .inner()
+            .cursor::<String, MatchingPoolName>(POOL_TABLE)?
+            .with_key_prefix(POOL_KEY_PREFIX);
+
+        for entry in cursor.into_iter() {
+            let (_key, value) = entry?;
+            let pool_name_value = value.deserialize()?;
+            if pool_name_value == pool_name {
+                return Ok(false);
+            }
+        }
+
+        Ok(true)
+    }
 }
 
 // -----------
@@ -284,5 +302,33 @@ mod test {
         tx.commit().unwrap();
 
         assert!(res.is_err());
+    }
+
+    /// Tests checking if a matching pool is empty
+    #[test]
+    fn test_matching_pool_is_empty() {
+        let db = mock_db();
+        let pool_name = TEST_POOL_NAME.to_string();
+        let order_id = OrderId::new_v4();
+
+        // Create a matching pool
+        let tx = db.new_write_tx().unwrap();
+        tx.create_matching_pool(&pool_name).unwrap();
+        tx.commit().unwrap();
+
+        // Assert the pool is empty
+        let tx = db.new_read_tx().unwrap();
+        assert!(tx.matching_pool_is_empty(&pool_name).unwrap());
+        tx.commit().unwrap();
+
+        // Assign an order to the pool
+        let tx = db.new_write_tx().unwrap();
+        tx.assign_order_to_matching_pool(&order_id, &pool_name).unwrap();
+        tx.commit().unwrap();
+
+        // Assert the pool is not empty
+        let tx = db.new_read_tx().unwrap();
+        assert!(!tx.matching_pool_is_empty(&pool_name).unwrap());
+        tx.commit().unwrap();
     }
 }

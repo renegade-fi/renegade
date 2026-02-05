@@ -54,6 +54,11 @@ impl TimestampedPrice {
 
         Ok(TimestampedPrice { price: corrected_price, timestamp })
     }
+
+    /// Invert the price
+    pub fn invert(self) -> Self {
+        Self { price: 1.0 / self.price, timestamp: self.timestamp }
+    }
 }
 
 impl From<&PriceReport> for TimestampedPrice {

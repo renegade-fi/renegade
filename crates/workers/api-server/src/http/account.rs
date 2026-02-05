@@ -25,8 +25,6 @@ use crate::{
 // | Error Messages |
 // ------------------
 
-/// Error message for not implemented
-const ERR_NOT_IMPLEMENTED: &str = "not implemented";
 /// Error message for account not found
 const ERR_ACCOUNT_NOT_FOUND: &str = "account not found";
 
@@ -93,9 +91,8 @@ impl TypedHandler for CreateAccountHandler {
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
         let auth_key = HmacKey::from_base64_string(&req.auth_hmac_key).map_err(bad_request)?;
-        let master_view_seed = parse_scalar_from_string(&req.master_view_seed)?;
-        let keychain = KeyChain::new(PrivateKeyChain::new(auth_key, master_view_seed));
-        let task = NewAccountTaskDescriptor::new(req.account_id, keychain);
+        let keychain = KeyChain::new(PrivateKeyChain::new(auth_key, req.master_view_seed));
+        let task = NewAccountTaskDescriptor::new(req.account_id, keychain, req.address);
         append_task(task.into(), &self.state).await?;
 
         Ok(EmptyRequestResponse {})

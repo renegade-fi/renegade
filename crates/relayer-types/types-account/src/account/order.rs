@@ -14,7 +14,9 @@ use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "rkyv")]
 use crate::balance::ArchivedBalanceLocation;
-use crate::{OrderId, balance::BalanceLocation, pair::Pair};
+use crate::{
+    MatchingPoolName, OrderId, balance::BalanceLocation, order_auth::OrderAuth, pair::Pair,
+};
 
 /// The order type for an account
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -234,6 +236,19 @@ impl ArchivedPrivacyRing {
             },
         }
     }
+}
+
+/// Data for refreshing an order in an account
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "rkyv", derive(Archive, RkyvDeserialize, RkyvSerialize))]
+#[cfg_attr(feature = "rkyv", rkyv(derive(Debug)))]
+pub struct OrderRefreshData {
+    /// The order
+    pub order: Order,
+    /// The matching pool assignment
+    pub matching_pool: MatchingPoolName,
+    /// The order authorization
+    pub auth: OrderAuth,
 }
 
 #[cfg(feature = "mocks")]

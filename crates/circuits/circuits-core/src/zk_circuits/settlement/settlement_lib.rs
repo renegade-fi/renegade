@@ -6,7 +6,7 @@ use circuit_types::{AMOUNT_BITS, PRICE_BITS, PlonkCircuit};
 use darkpool_types::{
     balance::{DarkpoolBalanceVar, PostMatchBalanceShareVar},
     bounded_match_result::BoundedMatchResultVar,
-    fee::FeeRatesVar,
+    fee::FeeTakeVar,
     intent::IntentVar,
     settlement_obligation::SettlementObligationVar,
 };
@@ -31,13 +31,14 @@ impl SettlementGadget {
         in_balance: &DarkpoolBalanceVar,
         out_balance: &DarkpoolBalanceVar,
         obligation: &SettlementObligationVar,
+        fee_take: &FeeTakeVar,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
         // Verify the cross constraints which the intent and balances place on the
         // settlement obligation
         Self::verify_intent_constraints(intent, obligation, cs)?;
         Self::verify_in_balance_constraints(in_balance, obligation, cs)?;
-        Self::verify_out_balance_constraints(intent, out_balance, obligation, cs)
+        Self::verify_out_balance_constraints(intent, out_balance, fee_take, obligation, cs)
     }
 
     /// Verify that the intent's constraints are satisfied
@@ -97,6 +98,7 @@ impl SettlementGadget {
     fn verify_out_balance_constraints(
         intent: &IntentVar,
         out_balance: &DarkpoolBalanceVar,
+        fee_take: &FeeTakeVar,
         obligation: &SettlementObligationVar,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
@@ -107,8 +109,19 @@ impl SettlementGadget {
         EqGadget::constrain_eq(&out_balance.owner, &intent.owner, cs)?;
 
         // The output amount must not overflow the receive balance
-        let new_bal_amount = cs.add(out_balance.amount, obligation.amount_out)?;
-        AmountGadget::constrain_valid_amount(new_bal_amount, cs)
+        let total_fee = FeeGadget::total_fee(fee_take, cs)?;
+        let net_receive = cs.sub(obligation.amount_out, total_fee)?;
+        let new_bal_amount = cs.add(out_balance.amount, net_receive)?;
+        AmountGadget::constrain_valid_amount(new_bal_amount, cs)?;
+
+        let new_relayer_fee_balance =
+            cs.add(out_balance.relayer_fee_balance, fee_take.relayer_fee)?;
+        let new_protocol_fee_balance =
+            cs.add(out_balance.protocol_fee_balance, fee_take.protocol_fee)?;
+        AmountGadget::constrain_valid_amount(new_relayer_fee_balance, cs)?;
+        AmountGadget::constrain_valid_amount(new_protocol_fee_balance, cs)?;
+
+        Ok(())
     }
 
     // --- State Update Constraints --- //
@@ -129,7 +142,7 @@ impl SettlementGadget {
     /// for each of these updates.
     #[allow(clippy::too_many_arguments)]
     pub fn verify_state_updates(
-        fee_rates: &FeeRatesVar,
+        fee_take: &FeeTakeVar,
         intent_amount_public_share: Variable,
         new_amount_public_share: Variable,
         in_balance_public_shares: &PostMatchBalanceShareVar,
@@ -151,7 +164,7 @@ impl SettlementGadget {
 
         // Output balance update
         Self::verify_output_balance_share_updates(
-            fee_rates,
+            fee_take,
             out_balance_public_shares,
             new_out_balance_public_shares,
             obligation,
@@ -164,15 +177,14 @@ impl SettlementGadget {
     /// This includes verifying the computation of the fees from their rates.
     /// Each trader pays a fee on the receive side of the settlement.
     fn verify_output_balance_share_updates(
-        fee_rates: &FeeRatesVar,
+        fee_take: &FeeTakeVar,
         old_shares: &PostMatchBalanceShareVar,
         new_shares: &PostMatchBalanceShareVar,
         obligation: &SettlementObligationVar,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
-        // Compute the fee take from the rate
-        let fee_take = FeeGadget::compute_fee_take(obligation.amount_out, fee_rates, cs)?;
-        let total_fee = FeeGadget::total_fee(&fee_take, cs)?;
+        // Compute the trader's receive amount net of fees
+        let total_fee = FeeGadget::total_fee(fee_take, cs)?;
         let net_receive = cs.sub(obligation.amount_out, total_fee)?;
 
         // Apply the receive amount and fees to the shares

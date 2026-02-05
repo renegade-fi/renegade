@@ -8,8 +8,8 @@ use circuit_types::Nullifier;
 use darkpool_types::rkyv_remotes::ScalarDef;
 use serde::{Deserialize, Serialize};
 use types_account::{
-    Account, MatchingPoolName, MerkleAuthenticationPath, account::OrderId, balance::Balance,
-    order::Order, order_auth::OrderAuth,
+    Account, MatchingPoolName, MerkleAuthenticationPath, OrderRefreshData, account::OrderId,
+    balance::Balance, keychain::KeyChain, order::Order, order_auth::OrderAuth,
 };
 use types_core::AccountId;
 use types_gossip::WrappedPeerId;
@@ -49,19 +49,21 @@ pub enum StateTransition {
     /// Create a new account
     CreateAccount { account: Account },
     /// Update an account by adding an order, marking it as local, and storing its auth
-    AddOrderToAccount { account_id: AccountId, order: Order, auth: OrderAuth },
+    AddOrderToAccount { account_id: AccountId, order: Order, auth: OrderAuth, pool_name: MatchingPoolName },
     /// Remove an order from an account
     RemoveOrderFromAccount { account_id: AccountId, order_id: OrderId },
     /// Update an existing order in an account
     UpdateOrder { order: Order },
     /// Update a balance in an account
     UpdateAccountBalance { account_id: AccountId, balance: Balance },
+    /// Update an account's keychain
+    UpdateAccountKeychain { account_id: AccountId, keychain: KeyChain },
     /// Refresh an account's state
     RefreshAccount {
         /// The account ID to refresh
         account_id: AccountId,
-        /// The up-to-date ring 0 orders with their matching pool assignments
-        orders: Vec<(Order, MatchingPoolName)>,
+        /// The up-to-date ring 0 orders with their matching pool assignments and auth
+        orders: Vec<OrderRefreshData>,
         /// The up-to-date balances
         balances: Vec<Balance>,
     },

@@ -11,7 +11,9 @@ use darkpool_client::errors::DarkpoolClientError;
 use serde::Serialize;
 use state::error::StateError;
 use tracing::{info, instrument};
-use types_account::{Account, OrderId, keychain::KeyChain, order::Order};
+use types_account::{
+    Account, OrderId, OrderRefreshData, keychain::KeyChain, order_auth::OrderAuth,
+};
 use types_core::AccountId;
 use types_tasks::RefreshAccountTaskDescriptor;
 
@@ -77,6 +79,9 @@ impl From<RefreshAccountTaskState> for TaskStateWrapper {
 /// The error type thrown by the refresh account task
 #[derive(Debug, thiserror::Error)]
 pub enum RefreshAccountTaskError {
+    /// An error converting types
+    #[error("conversion error: {0}")]
+    Conversion(String),
     /// An error interacting with the darkpool client
     #[error("darkpool client error: {0}")]
     DarkpoolClient(String),
@@ -92,6 +97,12 @@ pub enum RefreshAccountTaskError {
 }
 
 impl RefreshAccountTaskError {
+    /// Create a new conversion error
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn conversion<T: ToString>(msg: T) -> Self {
+        Self::Conversion(msg.to_string())
+    }
+
     /// Create a new setup error
     #[allow(clippy::needless_pass_by_value)]
     pub fn setup<T: ToString>(msg: T) -> Self {
@@ -269,14 +280,29 @@ impl RefreshAccountTask {
             }
         }
 
-        // Convert public intents to orders with matching pool assignments
-        let orders: Vec<(Order, String)> = public_intents
+        // Convert public intents to orders with matching pool assignments and auth
+        let orders: Vec<OrderRefreshData> = public_intents
             .iter()
-            .map(|intent| (intent.order.clone(), intent.matching_pool.clone()))
-            .collect();
+            .map(|intent| {
+                let intent_signature = intent
+                    .intent_signature
+                    .clone()
+                    .try_into()
+                    .map_err(RefreshAccountTaskError::conversion)?;
+
+                let auth =
+                    OrderAuth::PublicOrder { permit: intent.permit.clone(), intent_signature };
+
+                Ok(OrderRefreshData {
+                    order: intent.order.clone(),
+                    matching_pool: intent.matching_pool.clone(),
+                    auth,
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
 
         // Collect order IDs for the success hook
-        self.refreshed_order_ids = orders.iter().map(|(order, _)| order.id).collect();
+        self.refreshed_order_ids = orders.iter().map(|o| o.order.id).collect();
 
         // Propose the state transition
         info!("Proposing refresh with {} orders and {} balances", orders.len(), balances.len());

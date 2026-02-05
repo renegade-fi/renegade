@@ -2,6 +2,7 @@
 
 use std::{ops::RangeInclusive, sync::Arc};
 
+use circuit_types::validate_price_bitlength;
 use circuit_types::{Amount, fixed_point::FixedPoint};
 use crypto::fields::scalar_to_u128;
 use darkpool_types::settlement_obligation::SettlementObligation;

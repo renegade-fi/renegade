@@ -42,6 +42,18 @@ impl StateInner {
         .await
     }
 
+    /// Whether or not a matching pool is empty (has no orders assigned to it)
+    pub async fn matching_pool_is_empty(
+        &self,
+        pool_name: MatchingPoolName,
+    ) -> Result<bool, StateError> {
+        self.with_read_tx(move |tx| {
+            let is_empty = tx.matching_pool_is_empty(&pool_name)?;
+            Ok(is_empty)
+        })
+        .await
+    }
+
     // -----------
     // | Setters |
     // -----------

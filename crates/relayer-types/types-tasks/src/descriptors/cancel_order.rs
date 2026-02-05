@@ -75,10 +75,10 @@ fn validate_cancel_signature(
     let owner = permit.intent.owner;
     let valid = cancel_signature
         .validate(&cancel_payload, chain_id, owner)
-        .map_err(TaskError::order_auth_validation)?;
+        .map_err(TaskError::validation)?;
 
     if !valid {
-        return Err(TaskError::order_auth_validation(INVALID_CANCEL_SIGNATURE));
+        return Err(TaskError::validation(INVALID_CANCEL_SIGNATURE));
     }
     Ok(())
 }

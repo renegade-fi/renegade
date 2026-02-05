@@ -7,6 +7,7 @@ mod external_match;
 mod helpers;
 mod market;
 mod metadata;
+mod network;
 mod order;
 mod rate_limit;
 mod task;
@@ -15,8 +16,10 @@ use account::{
     CreateAccountHandler, GetAccountByIdHandler, GetAccountSeedsHandler, SyncAccountHandler,
 };
 use admin::{
-    AdminGetOrderByIdHandler, AdminGetOrdersHandler, AdminRefreshMatchFeesHandler,
-    AdminRefreshTokenMappingHandler, AdminTriggerSnapshotHandler, IsLeaderHandler,
+    AdminCreateMatchingPoolHandler, AdminCreateOrderInPoolHandler, AdminDestroyMatchingPoolHandler,
+    AdminGetAccountOrdersHandler, AdminGetOrderByIdHandler, AdminGetOrdersHandler,
+    AdminGetTaskQueuePausedHandler, AdminRefreshMatchFeesHandler, AdminRefreshTokenMappingHandler,
+    AdminTriggerSnapshotHandler, IsLeaderHandler,
 };
 use async_trait::async_trait;
 use balance::{
@@ -31,8 +34,11 @@ use external_api::{
             SYNC_ACCOUNT_ROUTE,
         },
         admin::{
-            ADMIN_GET_ORDER_BY_ID_ROUTE, ADMIN_GET_ORDERS_ROUTE, ADMIN_REFRESH_MATCH_FEES_ROUTE,
-            ADMIN_REFRESH_TOKEN_MAPPING_ROUTE, ADMIN_TRIGGER_SNAPSHOT_ROUTE, IS_LEADER_ROUTE,
+            ADMIN_CREATE_ORDER_IN_POOL_ROUTE, ADMIN_GET_ACCOUNT_ORDERS_ROUTE,
+            ADMIN_GET_ORDER_BY_ID_ROUTE, ADMIN_GET_ORDERS_ROUTE, ADMIN_GET_TASK_QUEUE_PAUSED_ROUTE,
+            ADMIN_MATCHING_POOL_CREATE_ROUTE, ADMIN_MATCHING_POOL_DESTROY_ROUTE,
+            ADMIN_REFRESH_MATCH_FEES_ROUTE, ADMIN_REFRESH_TOKEN_MAPPING_ROUTE,
+            ADMIN_TRIGGER_SNAPSHOT_ROUTE, IS_LEADER_ROUTE,
         },
         balance::{
             DEPOSIT_BALANCE_ROUTE, GET_BALANCE_BY_MINT_ROUTE, GET_BALANCES_ROUTE,
@@ -44,6 +50,7 @@ use external_api::{
             GET_MARKETS_ROUTE,
         },
         metadata::GET_EXCHANGE_METADATA_ROUTE,
+        network::GET_NETWORK_TOPOLOGY_ROUTE,
         order::{
             CANCEL_ORDER_ROUTE, CREATE_ORDER_ROUTE, GET_ORDER_BY_ID_ROUTE, GET_ORDERS_ROUTE,
             UPDATE_ORDER_ROUTE,
@@ -61,6 +68,7 @@ use market::{
     GetMarketDepthByMintHandler, GetMarketDepthsHandler, GetMarketPriceHandler, GetMarketsHandler,
 };
 use metadata::GetExchangeMetadataHandler;
+use network::GetNetworkTopologyHandler;
 use order::{
     CancelOrderHandler, CreateOrderHandler, GetOrderByIdHandler, GetOrdersHandler,
     UpdateOrderHandler,
@@ -294,6 +302,15 @@ impl HttpServer {
             GetExchangeMetadataHandler::new(state.clone(), darkpool_client.clone()),
         );
 
+        // --- Network Routes (v2) --- //
+
+        // GET /v2/network
+        router.add_unauthenticated_route(
+            &Method::GET,
+            GET_NETWORK_TOPOLOGY_ROUTE.to_string(),
+            GetNetworkTopologyHandler::new(config.chain, state.clone()),
+        );
+
         // --- Admin Routes --- //
 
         // GET /v2/admin/is-leader (preserved)
@@ -336,6 +353,43 @@ impl HttpServer {
             &Method::GET,
             ADMIN_GET_ORDER_BY_ID_ROUTE.to_string(),
             AdminGetOrderByIdHandler::new(state.clone()),
+        );
+
+        // GET /v2/relayer-admin/account/:account_id/orders
+        router.add_admin_authenticated_route(
+            &Method::GET,
+            ADMIN_GET_ACCOUNT_ORDERS_ROUTE.to_string(),
+            AdminGetAccountOrdersHandler::new(state.clone()),
+        );
+
+        // GET /v2/relayer-admin/account/:account_id/tasks/paused
+        router.add_admin_authenticated_route(
+            &Method::GET,
+            ADMIN_GET_TASK_QUEUE_PAUSED_ROUTE.to_string(),
+            AdminGetTaskQueuePausedHandler::new(state.clone()),
+        );
+
+        // --- Matching Pool Routes (v2) --- //
+
+        // POST /v2/admin/matching-pools/:matching_pool
+        router.add_admin_authenticated_route(
+            &Method::POST,
+            ADMIN_MATCHING_POOL_CREATE_ROUTE.to_string(),
+            AdminCreateMatchingPoolHandler::new(state.clone()),
+        );
+
+        // POST /v2/admin/matching-pools/:matching_pool/destroy
+        router.add_admin_authenticated_route(
+            &Method::POST,
+            ADMIN_MATCHING_POOL_DESTROY_ROUTE.to_string(),
+            AdminDestroyMatchingPoolHandler::new(state.clone()),
+        );
+
+        // POST /v2/relayer-admin/account/:account_id/orders/create-order-in-pool
+        router.add_admin_authenticated_route(
+            &Method::POST,
+            ADMIN_CREATE_ORDER_IN_POOL_ROUTE.to_string(),
+            AdminCreateOrderInPoolHandler::new(executor, state.clone()),
         );
 
         Ok(router)

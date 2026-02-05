@@ -1,14 +1,12 @@
 //! Helpers for matching orders
 
-use circuit_types::{Amount, fixed_point::FixedPoint};
+use circuit_types::Amount;
 use matching_engine_core::SuccessfulMatch;
 use types_account::{MatchingPoolName, account::order::Order, pair::Pair};
 use types_core::{AccountId, TimestampedPrice, TimestampedPriceFp};
-use util::get_current_time_millis;
 
 use crate::{error::MatchingEngineError, executor::MatchingEngineExecutor};
 
-// TODO: Global min fill size
 impl MatchingEngineExecutor {
     /// Find an internal match for an order
     pub fn find_internal_match(
@@ -29,7 +27,11 @@ impl MatchingEngineExecutor {
         }
 
         // Forward to the matching engine
-        let res = self.matching_engine.find_match(aid, pair, input_range, pool, price);
+        let res = self
+            .matching_engine
+            .find_match(aid, pair, input_range, pool, price)
+            .filter(|res| self.validate_min_fill_size(res));
+
         Ok(res)
     }
 
@@ -60,12 +62,15 @@ impl MatchingEngineExecutor {
         let res = match matching_pool {
             Some(pool) => self.matching_engine.find_match_external(pair, input_range, pool, price),
             None => self.matching_engine.find_match_external_all_pools(pair, input_range, price),
-        };
+        }
+        .filter(|res| self.validate_min_fill_size(res));
 
         Ok(res)
     }
 
     /// Fetch the execution price for an order
+    ///
+    /// Returns the price in units of output token / input token
     pub(crate) fn get_execution_price(
         &self,
         pair: &Pair,
@@ -82,9 +87,21 @@ impl MatchingEngineExecutor {
         let price: TimestampedPrice = state.into();
 
         // Correct the price for decimals
-        let corrected_price = price
+        let mut corrected_price = price
             .get_decimal_corrected_price(&base, &quote)
             .map_err(MatchingEngineError::no_price)?;
+
+        // The decimal corrected price is in units of quote / base. If the input token
+        // is the quote token, we need to invert the price.
+        if pair.is_input_quote() {
+            corrected_price = corrected_price.invert();
+        }
         Ok(corrected_price.into())
+    }
+
+    /// Validate that the minimum fill size is not violated by an order
+    pub fn validate_min_fill_size(&self, res: &SuccessfulMatch) -> bool {
+        let quote_volume = res.match_result.quote_token_volume();
+        quote_volume >= self.min_fill_size
     }
 }
