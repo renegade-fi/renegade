@@ -2,8 +2,8 @@
 
 use std::{fmt::Display, str::FromStr};
 
-use serde::{Deserialize, Serialize};
 use alloy::primitives::{Address, address};
+use serde::{Deserialize, Serialize};
 
 /// The chain environment
 #[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
