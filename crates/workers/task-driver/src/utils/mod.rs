@@ -1,7 +1,5 @@
 //! Helpers for the task driver
 
-use std::cmp;
-
 use alloy::primitives::{Address, U256};
 use circuit_types::{Amount, schnorr::SchnorrPublicKey};
 use constants::Scalar;
@@ -53,14 +51,9 @@ pub(crate) async fn fetch_ring0_balance(
 ) -> eyre::Result<Option<Balance>> {
     info!("Checking for balance of {token} for owner {owner}");
     let darkpool_client = &ctx.darkpool_client;
-    let erc20_bal = darkpool_client.get_erc20_balance(token, owner).await?;
-    let permit_allowance = darkpool_client.get_darkpool_allowance(owner, token).await?;
-    let usable_balance = cmp::min(erc20_bal, permit_allowance);
+    let usable_balance = darkpool_client.get_erc20_usable_balance(token, owner).await?;
     if usable_balance == U256::ZERO {
-        info!(
-            "No usable balance found for token {token} [balance = {}, permit = {}]",
-            erc20_bal, permit_allowance
-        );
+        info!("No usable balance found for token {token}");
         return Ok(None);
     }
 

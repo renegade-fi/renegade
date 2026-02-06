@@ -1,5 +1,7 @@
 //! ERC20 implementation on the Darkpool client
 
+use std::cmp;
+
 use alloy_primitives::{Address, U256};
 
 use crate::{
@@ -15,15 +17,20 @@ impl DarkpoolClient {
         Ok(ticker)
     }
 
-    /// Get the erc20 balance of a given address
-    pub async fn get_erc20_balance(
+    /// Get the usable ring-0 balance for a token and owner.
+    ///
+    /// Usable balance is defined as the minimum of the wallet's ERC20 balance
+    /// and the owner's Permit2 allowance to the darkpool.
+    pub async fn get_erc20_usable_balance(
         &self,
         token: Address,
-        address: Address,
+        owner: Address,
     ) -> Result<U256, DarkpoolClientError> {
         let erc20 = self.erc20_client(token);
-        let balance = erc20.balanceOf(address).call().await.map_err(DarkpoolClientError::erc20)?;
-        Ok(balance)
+        let erc20_balance =
+            erc20.balanceOf(owner).call().await.map_err(DarkpoolClientError::erc20)?;
+        let permit_allowance = self.get_darkpool_allowance(owner, token).await?;
+        Ok(cmp::min(erc20_balance, permit_allowance))
     }
 
     /// Get an instance of an erc20 contract client

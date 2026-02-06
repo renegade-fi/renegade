@@ -1,7 +1,5 @@
 //! ERC20 Transfer event handling and subscription management
 
-use std::cmp;
-
 use alloy::{
     primitives::{Address, B256, TxHash},
     providers::{DynProvider, Provider},
@@ -17,6 +15,7 @@ use futures_util::{
     stream::{self, LocalBoxStream},
 };
 use job_types::matching_engine::MatchingEngineWorkerJob;
+use renegade_solidity_abi::v2::relayer_types::u256_to_u128;
 use tracing::{info, warn};
 use types_account::balance::{Balance, BalanceLocation};
 use types_core::{AccountId, get_all_tokens};
@@ -25,10 +24,6 @@ use crate::{error::OnChainEventListenerError, executor::OnChainEventListenerExec
 
 /// Boxed local stream type for chain event log subscriptions.
 type LogStream = LocalBoxStream<'static, Log>;
-
-/// Error message for balance overflow
-const ERR_BALANCE_OVERFLOW: &str = "Balance overflow";
-
 impl OnChainEventListenerExecutor {
     /// Create transfer subscriptions for current tracked owners
     pub(crate) async fn create_transfer_subscriptions(
@@ -113,7 +108,7 @@ impl OnChainEventListenerExecutor {
         token: Address,
         tx_hash: TxHash,
     ) -> Result<(), OnChainEventListenerError> {
-        let amount = self.fetch_usable_amount(token, owner).await?;
+        let amount = self.get_usable_balance(token, owner).await?;
 
         // Get or create balance (returns None if amount == 0 and no record)
         let Some(mut balance) =
@@ -130,7 +125,7 @@ impl OnChainEventListenerExecutor {
         if !self.should_execute_update(tx_hash).await? {
             self.sleep_for_crash_recovery().await;
 
-            let local_amount = self.fetch_usable_amount(token, owner).await?;
+            let local_amount = self.get_usable_balance(token, owner).await?;
             let Some(mut local_balance) =
                 self.get_or_create_balance(account_id, owner, token, local_amount).await?
             else {
@@ -150,17 +145,14 @@ impl OnChainEventListenerExecutor {
         self.apply_balance_update(account_id, balance, token).await
     }
 
-    /// Fetch usable balance from chain and convert to Amount
-    async fn fetch_usable_amount(
+    /// Fetch the current usable balance from chain for an owner/token pair.
+    async fn get_usable_balance(
         &self,
         token: Address,
         owner: Address,
     ) -> Result<Amount, OnChainEventListenerError> {
-        let client = self.darkpool_client();
-        let erc20_balance = client.get_erc20_balance(token, owner).await?;
-        let permit_allowance = client.get_darkpool_allowance(owner, token).await?;
-        let usable = cmp::min(erc20_balance, permit_allowance);
-        usable.try_into().map_err(|_| OnChainEventListenerError::State(ERR_BALANCE_OVERFLOW.into()))
+        let usable_u256 = self.darkpool_client().get_erc20_usable_balance(token, owner).await?;
+        Ok(u256_to_u128(usable_u256))
     }
 
     /// Get existing balance or create Ring 0 balance if amount > 0
