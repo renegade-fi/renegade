@@ -367,8 +367,6 @@ impl TypedHandler for AdminGetTaskQueuePausedHandler {
 // | Matching Pool Handlers |
 // --------------------------
 
-/// Error message when a matching pool already exists
-const ERR_MATCHING_POOL_EXISTS: &str = "matching pool already exists";
 /// Error message when a matching pool does not exist
 const ERR_MATCHING_POOL_NOT_FOUND: &str = "matching pool does not exist";
 /// Error message when trying to destroy a non-empty matching pool
@@ -411,7 +409,7 @@ impl TypedHandler for AdminCreateMatchingPoolHandler {
 
         // Check that the matching pool does not already exist
         if self.state.matching_pool_exists(matching_pool.clone()).await? {
-            return Err(bad_request(ERR_MATCHING_POOL_EXISTS));
+            return Ok(EmptyRequestResponse {});
         }
 
         let waiter = self.state.create_matching_pool(matching_pool).await?;
