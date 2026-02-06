@@ -16,10 +16,12 @@ pub async fn submit_message(
 
     let mut request = sqs_client.send_message().queue_url(queue_url).message_body(message_body);
 
-    // Set the message group ID if present (for FIFO queue ordering)
-    if let Message::UpdatePublicIntentMetadata(msg) = &message {
-        request = request.message_group_id(msg.order_id.to_string());
-    }
+    // Set the message group ID for FIFO queue ordering
+    let group_id = match &message {
+        Message::RegisterMasterViewSeed(msg) => msg.account_id.to_string(),
+        Message::UpdatePublicIntentMetadata(msg) => msg.order_id.to_string(),
+    };
+    request = request.message_group_id(group_id);
 
     // No deduplication ID - using content-based deduplication
     request.send().await.map_err(|e| eyre!("failed to send SQS message: {e}"))?;
