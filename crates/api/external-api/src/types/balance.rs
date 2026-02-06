@@ -4,9 +4,7 @@ use alloy::primitives::Address;
 #[cfg(feature = "full-api")]
 use alloy::primitives::Bytes;
 use alloy::primitives::U256;
-#[cfg(feature = "full-api")]
 use circuit_types::Amount;
-#[cfg(feature = "full-api")]
 use constants::Scalar;
 #[cfg(feature = "full-api")]
 use darkpool_types::balance::{DarkpoolBalance, DarkpoolBalanceShare, DarkpoolStateBalance};
