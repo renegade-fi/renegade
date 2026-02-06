@@ -1,7 +1,8 @@
 //! Conversion from system bus messages to websocket message bodies
 
 use external_api::types::{
-    ApiAdminOrder, ApiBalance, ApiOrder, ApiOrderUpdateType, ServerWebsocketMessageBody,
+    AdminBalanceUpdateMessage, AdminOrderUpdateMessage, ApiAdminOrder, ApiBalance, ApiOrder,
+    ApiOrderUpdateType, ServerWebsocketMessageBody,
 };
 use system_bus::{AdminOrderUpdateType, SystemBusMessage};
 
@@ -46,11 +47,11 @@ fn convert_admin_order_update(
 
     // Convert the update type
     let api_update_type = convert_admin_order_update_type(update_type);
-    ServerWebsocketMessageBody::AdminOrderUpdate {
+    ServerWebsocketMessageBody::AdminOrderUpdate(AdminOrderUpdateMessage {
         account_id,
         order: admin_order,
         update_type: api_update_type,
-    }
+    })
 }
 
 /// Convert an AdminBalanceUpdate system bus message to a websocket message body
@@ -59,7 +60,10 @@ fn convert_admin_balance_update(
     balance: types_account::balance::Balance,
 ) -> ServerWebsocketMessageBody {
     let api_balance: ApiBalance = balance.into();
-    ServerWebsocketMessageBody::AdminBalanceUpdate { account_id, balance: api_balance }
+    ServerWebsocketMessageBody::AdminBalanceUpdate(AdminBalanceUpdateMessage {
+        account_id,
+        balance: api_balance,
+    })
 }
 
 /// Convert an AdminOrderUpdateType to an ApiOrderUpdateType
