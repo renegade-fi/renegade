@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use types_account::{
     OrderId,
     order::{Order, OrderMetadata, PrivacyRing},
+    order_auth::OrderAuth as AccountOrderAuth,
 };
 use uuid::Uuid;
 
@@ -21,11 +22,9 @@ use crate::serde_helpers;
 // | Core Types |
 // --------------
 
-/// The core order data
+/// The intent of an order
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ApiOrderCore {
-    /// The order identifier
-    pub id: Uuid,
+pub struct ApiIntent {
     /// The input token mint address
     #[serde(with = "serde_helpers::address_as_string")]
     pub in_token: Address,
@@ -41,6 +40,40 @@ pub struct ApiOrderCore {
     /// The input amount
     #[serde(with = "serde_helpers::amount_as_string")]
     pub amount_in: Amount,
+}
+
+impl From<ApiIntent> for Intent {
+    fn from(api: ApiIntent) -> Self {
+        Intent {
+            in_token: api.in_token,
+            out_token: api.out_token,
+            owner: api.owner,
+            min_price: api.min_price,
+            amount_in: api.amount_in,
+        }
+    }
+}
+
+#[cfg(feature = "full-api")]
+impl From<Intent> for ApiIntent {
+    fn from(intent: Intent) -> Self {
+        Self {
+            in_token: intent.in_token,
+            out_token: intent.out_token,
+            owner: intent.owner,
+            min_price: intent.min_price,
+            amount_in: intent.amount_in,
+        }
+    }
+}
+
+/// The core order data
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ApiOrderCore {
+    /// The order identifier
+    pub id: Uuid,
+    /// The intent of the order
+    pub intent: ApiIntent,
     /// The minimum fill size
     #[serde(with = "serde_helpers::amount_as_string")]
     pub min_fill_size: Amount,
@@ -61,13 +94,7 @@ impl ApiOrderCore {
 
     /// Get the intent from the core order
     pub fn get_intent(&self) -> Intent {
-        Intent {
-            in_token: self.in_token,
-            out_token: self.out_token,
-            owner: self.owner,
-            min_price: self.min_price,
-            amount_in: self.amount_in,
-        }
+        self.intent.clone().into()
     }
 }
 
@@ -76,11 +103,7 @@ impl From<Order> for ApiOrderCore {
     fn from(order: Order) -> Self {
         Self {
             id: order.id,
-            in_token: order.intent().in_token,
-            out_token: order.intent().out_token,
-            owner: order.intent().owner,
-            min_price: order.intent().min_price,
-            amount_in: order.intent().amount_in,
+            intent: order.intent().clone().into(),
             min_fill_size: order.metadata.min_fill_size,
             order_type: order.ring.into(),
             allow_external_matches: order.metadata.allow_external_matches,
@@ -202,7 +225,7 @@ impl From<ApiOrder> for Order {
 }
 
 /// The type of order
-#[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub enum OrderType {
     /// A public order visible to all
@@ -253,12 +276,41 @@ pub enum OrderState {
     Cancelled,
 }
 
+/// A public intent permit for a public order
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ApiPublicIntentPermit {
+    /// The intent this permit authorizes
+    pub intent: ApiIntent,
+    /// The executor address
+    #[serde(with = "serde_helpers::address_as_string")]
+    pub executor: Address,
+}
+
+#[cfg(feature = "full-api")]
+impl From<renegade_solidity_abi::v2::IDarkpoolV2::PublicIntentPermit> for ApiPublicIntentPermit {
+    fn from(permit: renegade_solidity_abi::v2::IDarkpoolV2::PublicIntentPermit) -> Self {
+        // Convert through circuit Intent as intermediate
+        let intent: Intent = permit.intent.into();
+        Self { intent: intent.into(), executor: permit.executor }
+    }
+}
+
+#[cfg(feature = "full-api")]
+impl From<ApiPublicIntentPermit> for renegade_solidity_abi::v2::IDarkpoolV2::PublicIntentPermit {
+    fn from(permit: ApiPublicIntentPermit) -> Self {
+        let intent: Intent = permit.intent.into();
+        Self { intent: intent.into(), executor: permit.executor }
+    }
+}
+
 /// Authentication for an order
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum OrderAuth {
     /// Authentication for a public order
     PublicOrder {
+        /// The public intent permit
+        permit: ApiPublicIntentPermit,
         /// The intent signature with nonce
         intent_signature: SignatureWithNonce,
     },
@@ -274,6 +326,28 @@ pub enum OrderAuth {
         /// The Schnorr signature for the new output balance, if one is needed
         new_output_balance_signature: ApiSchnorrSignature,
     },
+}
+
+#[cfg(feature = "full-api")]
+impl From<AccountOrderAuth> for OrderAuth {
+    fn from(auth: AccountOrderAuth) -> Self {
+        match auth {
+            AccountOrderAuth::PublicOrder { permit, intent_signature } => OrderAuth::PublicOrder {
+                permit: permit.into(),
+                intent_signature: intent_signature.into(),
+            },
+            AccountOrderAuth::NativelySettledPrivateOrder { intent_signature } => {
+                OrderAuth::NativelySettledPrivateOrder { intent_signature: intent_signature.into() }
+            },
+            AccountOrderAuth::RenegadeSettledOrder {
+                intent_signature,
+                new_output_balance_signature,
+            } => OrderAuth::RenegadeSettledOrder {
+                intent_signature: intent_signature.into(),
+                new_output_balance_signature: new_output_balance_signature.into(),
+            },
+        }
+    }
 }
 
 /// A partial fill of an order

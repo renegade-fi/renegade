@@ -12,7 +12,13 @@ use types_account::{
 };
 use uuid::Uuid;
 
+#[cfg(feature = "full-api")]
+use crate::error::ApiTypeError;
 use crate::types::{ApiOrder, ApiOrderCore, OrderAuth, SignatureWithNonce};
+
+/// Error message for permit mismatch
+#[cfg(feature = "full-api")]
+const ERR_PERMIT_MISMATCH: &str = "client permit does not match order";
 
 // ---------------
 // | HTTP Routes |
@@ -48,6 +54,8 @@ pub struct GetOrdersResponse {
 pub struct GetOrderByIdResponse {
     /// The order
     pub order: ApiOrder,
+    /// The order authentication
+    pub auth: OrderAuth,
 }
 
 /// Request to create a new order
@@ -72,29 +80,33 @@ impl CreateOrderRequest {
         (intent, ring, meta)
     }
 
-    /// Get the order auth from the request
-    pub fn get_order_auth(&self, executor: Address) -> AccountOrderAuth {
-        use renegade_solidity_abi::v2::IDarkpoolV2;
-
+    /// Get the order auth from the request, validating the permit
+    pub fn get_order_auth(&self, executor: Address) -> Result<AccountOrderAuth, ApiTypeError> {
         match self.auth.clone() {
-            OrderAuth::PublicOrder { intent_signature } => {
-                let intent = self.order.get_intent();
-                let permit = IDarkpoolV2::PublicIntentPermit { intent: intent.into(), executor };
-                let intent_signature = intent_signature.into();
+            OrderAuth::PublicOrder { permit, intent_signature } => {
+                // Validate the permit intent and executor match the order
+                let order_intent = self.order.get_intent();
+                let permit_intent: Intent = permit.intent.clone().into();
 
-                AccountOrderAuth::PublicOrder { permit, intent_signature }
+                if permit_intent != order_intent || permit.executor != executor {
+                    return Err(ApiTypeError::validation(ERR_PERMIT_MISMATCH));
+                }
+
+                let permit = permit.into();
+                let intent_signature = intent_signature.into();
+                Ok(AccountOrderAuth::PublicOrder { permit, intent_signature })
             },
             OrderAuth::NativelySettledPrivateOrder { intent_signature } => {
                 let intent_signature = intent_signature.into();
-                AccountOrderAuth::NativelySettledPrivateOrder { intent_signature }
+                Ok(AccountOrderAuth::NativelySettledPrivateOrder { intent_signature })
             },
             OrderAuth::RenegadeSettledOrder { intent_signature, new_output_balance_signature } => {
                 let intent_signature = intent_signature.into();
                 let new_output_balance_signature = new_output_balance_signature.into();
-                AccountOrderAuth::RenegadeSettledOrder {
+                Ok(AccountOrderAuth::RenegadeSettledOrder {
                     intent_signature,
                     new_output_balance_signature,
-                }
+                })
             },
         }
     }
@@ -161,30 +173,32 @@ impl CreateOrderInPoolRequest {
         (intent, ring, meta)
     }
 
-    /// Get the order auth from the request
-    pub fn get_order_auth(&self, executor: Address) -> AccountOrderAuth {
-        use renegade_solidity_abi::v2::IDarkpoolV2;
-
+    /// Get the order auth from the request, validating the permit
+    pub fn get_order_auth(&self, executor: Address) -> Result<AccountOrderAuth, ApiTypeError> {
         match self.auth.clone() {
-            OrderAuth::PublicOrder { intent_signature } => {
-                let intent = self.order.get_intent();
-                let permit = IDarkpoolV2::PublicIntentPermit { intent: intent.into(), executor };
-                let intent_signature = intent_signature.into();
+            OrderAuth::PublicOrder { permit, intent_signature } => {
+                // Validate the permit intent matches the order intent
+                let order_intent = self.order.get_intent();
+                let permit_intent: Intent = permit.intent.clone().into();
+                if permit_intent != order_intent || permit.executor != executor {
+                    return Err(ApiTypeError::validation(ERR_PERMIT_MISMATCH));
+                }
 
-                AccountOrderAuth::PublicOrder { permit, intent_signature }
+                let permit = permit.into();
+                let intent_signature = intent_signature.into();
+                Ok(AccountOrderAuth::PublicOrder { permit, intent_signature })
             },
             OrderAuth::NativelySettledPrivateOrder { intent_signature } => {
                 let intent_signature = intent_signature.into();
-                AccountOrderAuth::NativelySettledPrivateOrder { intent_signature }
+                Ok(AccountOrderAuth::NativelySettledPrivateOrder { intent_signature })
             },
             OrderAuth::RenegadeSettledOrder { intent_signature, new_output_balance_signature } => {
                 let intent_signature = intent_signature.into();
                 let new_output_balance_signature = new_output_balance_signature.into();
-
-                AccountOrderAuth::RenegadeSettledOrder {
+                Ok(AccountOrderAuth::RenegadeSettledOrder {
                     intent_signature,
                     new_output_balance_signature,
-                }
+                })
             },
         }
     }
