@@ -7,10 +7,16 @@ use alloy::{
     sol_types::SolEvent,
 };
 use darkpool_client::client::erc20::abis::permit2::IPermit2;
-use futures_util::Stream;
+use futures_util::{
+    StreamExt,
+    stream::{self, LocalBoxStream},
+};
 use tracing::{info, warn};
 
 use crate::{error::OnChainEventListenerError, executor::OnChainEventListenerExecutor};
+
+/// Boxed local stream type for chain event log subscriptions.
+type LogStream = LocalBoxStream<'static, Log>;
 
 impl OnChainEventListenerExecutor {
     /// Create Permit2 subscriptions for Approval and Permit events
@@ -21,11 +27,16 @@ impl OnChainEventListenerExecutor {
     pub(crate) async fn create_permit2_subscriptions(
         &self,
         client: &DynProvider,
-    ) -> Result<(impl Stream<Item = Log>, impl Stream<Item = Log>), OnChainEventListenerError> {
+    ) -> Result<(LogStream, LogStream), OnChainEventListenerError> {
         let owners = self.get_tracked_owners();
         info!("Tracking {} owners for Permit2", owners.len());
 
         let owner_topics: Vec<B256> = owners.into_iter().map(|addr| addr.into_word()).collect();
+        if owner_topics.is_empty() {
+            info!("No tracked owners; skipping Permit2 subscriptions");
+            return Ok((stream::empty().boxed_local(), stream::empty().boxed_local()));
+        }
+
         let permit2_addr = self.darkpool_client().permit2_addr();
         let spender_topic = self.darkpool_client().darkpool_addr().into_word();
 
@@ -43,8 +54,10 @@ impl OnChainEventListenerExecutor {
             .topic1(owner_topics)
             .topic3(vec![spender_topic]);
 
-        let approval_stream = client.subscribe_logs(&approval_filter).await?.into_stream();
-        let permit_stream = client.subscribe_logs(&permit_filter).await?.into_stream();
+        let approval_stream =
+            client.subscribe_logs(&approval_filter).await?.into_stream().boxed_local();
+        let permit_stream =
+            client.subscribe_logs(&permit_filter).await?.into_stream().boxed_local();
 
         Ok((approval_stream, permit_stream))
     }

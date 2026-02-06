@@ -12,13 +12,19 @@ use circuit_types::{Amount, schnorr::SchnorrPublicKey};
 use constants::Scalar;
 use darkpool_client::client::erc20::abis::erc20::IERC20;
 use darkpool_types::{balance::DarkpoolBalance, state_wrapper::StateWrapper};
-use futures_util::Stream;
+use futures_util::{
+    StreamExt,
+    stream::{self, LocalBoxStream},
+};
 use job_types::matching_engine::MatchingEngineWorkerJob;
 use tracing::{info, warn};
 use types_account::balance::{Balance, BalanceLocation};
 use types_core::{AccountId, get_all_tokens};
 
 use crate::{error::OnChainEventListenerError, executor::OnChainEventListenerExecutor};
+
+/// Boxed local stream type for chain event log subscriptions.
+type LogStream = LocalBoxStream<'static, Log>;
 
 /// Error message for balance overflow
 const ERR_BALANCE_OVERFLOW: &str = "Balance overflow";
@@ -28,12 +34,17 @@ impl OnChainEventListenerExecutor {
     pub(crate) async fn create_transfer_subscriptions(
         &self,
         client: &DynProvider,
-    ) -> Result<(impl Stream<Item = Log>, impl Stream<Item = Log>), OnChainEventListenerError> {
+    ) -> Result<(LogStream, LogStream), OnChainEventListenerError> {
         let owners = self.get_tracked_owners();
         info!("Tracking {} owners", owners.len());
 
         // Convert owners to topic format for log filtering
         let owner_topics: Vec<B256> = owners.into_iter().map(|addr| addr.into_word()).collect();
+        if owner_topics.is_empty() {
+            info!("No tracked owners; skipping ERC20 transfer subscriptions");
+            return Ok((stream::empty().boxed_local(), stream::empty().boxed_local()));
+        }
+
         let token_addresses: Vec<Address> =
             get_all_tokens().into_iter().map(|t| t.get_alloy_address()).collect();
 
@@ -48,8 +59,8 @@ impl OnChainEventListenerExecutor {
             .topic2(owner_topics);
 
         // Subscribe to both streams
-        let from_stream = client.subscribe_logs(&from_filter).await?.into_stream();
-        let to_stream = client.subscribe_logs(&to_filter).await?.into_stream();
+        let from_stream = client.subscribe_logs(&from_filter).await?.into_stream().boxed_local();
+        let to_stream = client.subscribe_logs(&to_filter).await?.into_stream().boxed_local();
 
         Ok((from_stream, to_stream))
     }
