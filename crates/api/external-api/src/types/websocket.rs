@@ -54,55 +54,85 @@ pub struct ServerWebsocketMessage {
     pub body: ServerWebsocketMessageBody,
 }
 
+// --- Individual message body types ---
+
+/// A subscriptions list message
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SubscriptionsMessage {
+    /// The list of subscribed topics
+    pub subscriptions: Vec<String>,
+}
+
+/// A balance update message
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct BalanceUpdateMessage {
+    /// The updated balance
+    pub balance: ApiBalance,
+}
+
+/// An order update message
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct OrderUpdateMessage {
+    /// The updated order
+    pub order: ApiOrder,
+    /// The type of update
+    pub update_type: ApiOrderUpdateType,
+}
+
+/// A fill message
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct FillMessage {
+    /// The fill details
+    pub fill: ApiPartialOrderFill,
+    /// The order that was filled
+    pub order: ApiOrderCore,
+    /// Whether the order is now fully filled
+    pub filled: bool,
+}
+
+/// A task update message
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TaskUpdateMessage {
+    /// The updated task
+    pub task: ApiTask,
+}
+
+/// An admin balance update message
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AdminBalanceUpdateMessage {
+    /// The account ID
+    pub account_id: Uuid,
+    /// The updated balance
+    pub balance: ApiBalance,
+}
+
+/// An admin order update message
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AdminOrderUpdateMessage {
+    /// The account ID
+    pub account_id: Uuid,
+    /// The updated order
+    pub order: ApiAdminOrder,
+    /// The type of update
+    pub update_type: ApiOrderUpdateType,
+}
+
 /// The body of a server WebSocket message
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "event", rename_all = "snake_case")]
 pub enum ServerWebsocketMessageBody {
     /// List of current subscriptions
-    Subscriptions {
-        /// The list of subscribed topics
-        subscriptions: Vec<String>,
-    },
+    Subscriptions(SubscriptionsMessage),
     /// A balance update event
-    BalanceUpdate {
-        /// The updated balance
-        balance: ApiBalance,
-    },
+    BalanceUpdate(BalanceUpdateMessage),
     /// An order update event
-    OrderUpdate {
-        /// The updated order
-        order: ApiOrder,
-        /// The type of update
-        update_type: ApiOrderUpdateType,
-    },
+    OrderUpdate(OrderUpdateMessage),
     /// A fill event
-    Fill {
-        /// The fill details
-        fill: ApiPartialOrderFill,
-        /// The order that was filled
-        order: ApiOrderCore,
-        /// Whether the order is now fully filled
-        filled: bool,
-    },
+    Fill(FillMessage),
     /// A task update event
-    TaskUpdate {
-        /// The updated task
-        task: ApiTask,
-    },
+    TaskUpdate(TaskUpdateMessage),
     /// An admin balance update event
-    AdminBalanceUpdate {
-        /// The account ID
-        account_id: Uuid,
-        /// The updated balance
-        balance: ApiBalance,
-    },
+    AdminBalanceUpdate(AdminBalanceUpdateMessage),
     /// An admin order update event
-    AdminOrderUpdate {
-        /// The account ID
-        account_id: Uuid,
-        /// The updated order
-        order: ApiAdminOrder,
-        /// The type of update
-        update_type: ApiOrderUpdateType,
-    },
+    AdminOrderUpdate(AdminOrderUpdateMessage),
 }
