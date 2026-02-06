@@ -112,6 +112,9 @@ impl OnChainEventListenerExecutor {
         // Update or remove order based on remaining amount
         if amount_remaining == 0 {
             self.state().remove_order_from_account(account_id, order_id).await?.await?;
+            info!(
+                "Removed order {order_id} from account {account_id} via PublicIntentUpdated (amount_remaining=0)"
+            );
         } else {
             let Some(mut order) = self.state().get_account_order(&order_id).await? else {
                 return Ok(());
@@ -165,6 +168,7 @@ impl OnChainEventListenerExecutor {
 
         // Remove the cancelled order
         self.state().remove_order_from_account(account_id, order_id).await?.await?;
+        info!("Removed order {order_id} from account {account_id} via PublicIntentCancelled");
 
         // TODO: Emit cancellation event to notify clients
 
