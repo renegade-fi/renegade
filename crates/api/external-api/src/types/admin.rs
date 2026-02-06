@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::order::ApiOrder;
+use super::order::{ApiOrder, OrderAuth};
 
 // -------------------
 // | v2 Admin Types  |
@@ -35,6 +35,8 @@ pub struct GetOrdersAdminResponse {
 pub struct GetOrderAdminResponse {
     /// The order
     pub order: ApiAdminOrder,
+    /// The order authentication
+    pub auth: OrderAuth,
 }
 
 /// Response for checking if an account's task queue is paused

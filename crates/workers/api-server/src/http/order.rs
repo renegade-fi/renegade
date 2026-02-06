@@ -113,7 +113,15 @@ impl TypedHandler for GetOrderByIdHandler {
         // Fetch the order
         let order =
             self.state.get_account_order(&order_id).await?.ok_or(not_found(ERR_ORDER_NOT_FOUND))?;
-        Ok(GetOrderByIdResponse { order: order.into() })
+
+        // Fetch the order auth
+        let auth = self
+            .state
+            .get_order_auth(&order_id)
+            .await?
+            .ok_or(not_found(ERR_ORDER_AUTH_NOT_FOUND))?;
+
+        Ok(GetOrderByIdResponse { order: order.into(), auth: auth.into() })
     }
 }
 
@@ -157,9 +165,9 @@ impl TypedHandler for CreateOrderHandler {
             return Err(bad_request("Only public orders are currently supported"));
         }
 
-        // Convert order auth to an internal type
+        // Convert order auth to an internal type, validating the permit
         let order_id = req.order.id;
-        let auth = req.get_order_auth(self.executor);
+        let auth = req.get_order_auth(self.executor).map_err(bad_request)?;
         let (intent, ring, metadata) = req.into_order_components();
 
         // Create the task descriptor with the global matching pool
@@ -240,8 +248,7 @@ impl TypedHandler for CancelOrderHandler {
         verify_order_belongs_to_account(order_id, account_id, &self.state).await?;
 
         // Convert the cancel signature from the request
-        let cancel_signature: SignatureWithNonce =
-            req.cancel_signature.try_into().map_err(bad_request)?;
+        let cancel_signature: SignatureWithNonce = req.cancel_signature.into();
 
         // Fetch the order and verify it
         let order = self

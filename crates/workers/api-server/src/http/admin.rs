@@ -234,6 +234,9 @@ impl TypedHandler for AdminGetOrdersHandler {
     }
 }
 
+/// Error message for order auth not found
+const ERR_ORDER_AUTH_NOT_FOUND: &str = "order auth not found";
+
 /// Handler for GET /v2/relayer-admin/orders/:order_id
 pub struct AdminGetOrderByIdHandler {
     /// A handle to the relayer state
@@ -272,12 +275,20 @@ impl TypedHandler for AdminGetOrderByIdHandler {
             .await?
             .ok_or(ApiServerError::order_not_found(order_id))?;
 
+        // Fetch the order auth
+        let auth = self
+            .state
+            .get_order_auth(&order_id)
+            .await?
+            .ok_or(not_found(ERR_ORDER_AUTH_NOT_FOUND))?
+            .into();
+
         // Convert to API type
         let matching_pool = self.state.get_matching_pool_for_order(&order_id).await?;
         let order: ApiAdminOrder =
             ApiAdminOrder { order: ApiOrder::from(order), account_id, matching_pool };
 
-        Ok(GetOrderAdminResponse { order })
+        Ok(GetOrderAdminResponse { order, auth })
     }
 }
 
@@ -520,9 +531,9 @@ impl TypedHandler for AdminCreateOrderInPoolHandler {
             return Err(not_found(ERR_MATCHING_POOL_NOT_FOUND));
         }
 
-        // Convert order auth to an internal type
+        // Convert order auth to an internal type, validating the permit
         let order_id = req.order.id;
-        let auth = req.get_order_auth(self.executor);
+        let auth = req.get_order_auth(self.executor).map_err(bad_request)?;
         let (intent, ring, metadata) = req.into_order_components();
 
         // Create the task descriptor with the specified matching pool
