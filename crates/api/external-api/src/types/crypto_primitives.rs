@@ -1,17 +1,17 @@
 //! Cryptographic primitive types for the API
 
 #[cfg(feature = "full-api")]
+use circuit_types::baby_jubjub::BabyJubJubPointShare;
+#[cfg(feature = "full-api")]
 use circuit_types::schnorr::SchnorrPublicKeyShare;
 use circuit_types::{
     baby_jubjub::BabyJubJubPoint,
     schnorr::{SchnorrPublicKey, SchnorrSignature},
 };
-use constants::Scalar;
+use constants::{EmbeddedScalarField, Scalar};
 use darkpool_types::csprng::PoseidonCSPRNG;
 use serde::{Deserialize, Serialize};
-use util::hex::embedded_scalar_from_decimal_string;
 
-use crate::error::ApiTypeError;
 use crate::serde_helpers;
 
 // -----------------------
@@ -34,47 +34,54 @@ impl From<PoseidonCSPRNG> for ApiPoseidonCSPRNG {
     }
 }
 
+impl From<ApiPoseidonCSPRNG> for PoseidonCSPRNG {
+    fn from(csprng: ApiPoseidonCSPRNG) -> Self {
+        PoseidonCSPRNG { seed: csprng.seed, index: csprng.index }
+    }
+}
+
 /// A Baby JubJub curve point
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ApiBabyJubJubPoint {
     /// The x-coordinate
-    pub x: String,
+    #[serde(with = "serde_helpers::scalar_as_string")]
+    pub x: Scalar,
     /// The y-coordinate
-    pub y: String,
+    #[serde(with = "serde_helpers::scalar_as_string")]
+    pub y: Scalar,
 }
 
 impl From<BabyJubJubPoint> for ApiBabyJubJubPoint {
     fn from(point: BabyJubJubPoint) -> Self {
-        Self { x: point.x.to_string(), y: point.y.to_string() }
+        Self { x: point.x, y: point.y }
     }
 }
 
-impl TryFrom<ApiBabyJubJubPoint> for BabyJubJubPoint {
-    type Error = ApiTypeError;
-
-    fn try_from(point: ApiBabyJubJubPoint) -> Result<Self, Self::Error> {
-        let x = Scalar::from_hex_string(&point.x).map_err(ApiTypeError::parsing)?;
-        let y = Scalar::from_hex_string(&point.y).map_err(ApiTypeError::parsing)?;
-        Ok(BabyJubJubPoint { x, y })
+impl From<ApiBabyJubJubPoint> for BabyJubJubPoint {
+    fn from(point: ApiBabyJubJubPoint) -> Self {
+        BabyJubJubPoint { x: point.x, y: point.y }
     }
 }
 
 /// A Schnorr signature over a Baby JubJub curve
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ApiSchnorrSignature {
-    /// The scalar component of the signature
-    pub s: String,
+    /// The embedded scalar component of the signature
+    #[serde(with = "serde_helpers::embedded_scalar_as_string")]
+    pub s: EmbeddedScalarField,
     /// The point component of the signature
     pub r: ApiBabyJubJubPoint,
 }
 
-impl TryFrom<ApiSchnorrSignature> for SchnorrSignature {
-    type Error = ApiTypeError;
+impl From<ApiSchnorrSignature> for SchnorrSignature {
+    fn from(signature: ApiSchnorrSignature) -> Self {
+        SchnorrSignature { s: signature.s, r: signature.r.into() }
+    }
+}
 
-    fn try_from(signature: ApiSchnorrSignature) -> Result<Self, Self::Error> {
-        let s = embedded_scalar_from_decimal_string(&signature.s).map_err(ApiTypeError::parsing)?;
-        let r = BabyJubJubPoint::try_from(signature.r)?;
-        Ok(SchnorrSignature { s, r })
+impl From<SchnorrSignature> for ApiSchnorrSignature {
+    fn from(signature: SchnorrSignature) -> Self {
+        Self { s: signature.s, r: signature.r.into() }
     }
 }
 
@@ -91,18 +98,33 @@ impl From<SchnorrPublicKey> for ApiSchnorrPublicKey {
     }
 }
 
+impl From<ApiSchnorrPublicKey> for SchnorrPublicKey {
+    fn from(key: ApiSchnorrPublicKey) -> Self {
+        SchnorrPublicKey { point: key.point.into() }
+    }
+}
+
 /// A share of a Schnorr public key
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ApiSchnorrPublicKeyShare {
     /// The x-coordinate share
-    pub x: String,
+    #[serde(with = "serde_helpers::scalar_as_string")]
+    pub x: Scalar,
     /// The y-coordinate share
-    pub y: String,
+    #[serde(with = "serde_helpers::scalar_as_string")]
+    pub y: Scalar,
 }
 
 #[cfg(feature = "full-api")]
 impl From<SchnorrPublicKeyShare> for ApiSchnorrPublicKeyShare {
     fn from(share: SchnorrPublicKeyShare) -> Self {
-        Self { x: share.point.x.to_string(), y: share.point.y.to_string() }
+        Self { x: share.point.x, y: share.point.y }
+    }
+}
+
+#[cfg(feature = "full-api")]
+impl From<ApiSchnorrPublicKeyShare> for SchnorrPublicKeyShare {
+    fn from(share: ApiSchnorrPublicKeyShare) -> Self {
+        SchnorrPublicKeyShare { point: BabyJubJubPointShare { x: share.x, y: share.y } }
     }
 }

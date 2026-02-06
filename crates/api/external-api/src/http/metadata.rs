@@ -6,10 +6,3 @@
 
 /// Route to get exchange metadata
 pub const GET_EXCHANGE_METADATA_ROUTE: &str = "/v2/metadata/exchange";
-
-// -------------------
-// | Request/Response |
-// -------------------
-
-// Response is re-exported from types
-pub use crate::types::ExchangeMetadataResponse;

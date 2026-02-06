@@ -1,5 +1,6 @@
 //! HTTP route definitions and request/response types for balance operations
 
+use alloy::primitives::Address;
 use circuit_types::Amount;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -42,9 +43,11 @@ pub struct GetBalanceByMintResponse {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DepositBalanceRequest {
     /// The address to deposit from
-    pub from_address: String,
+    #[serde(with = "serde_helpers::address_as_string")]
+    pub from_address: Address,
     /// The amount to deposit
-    pub amount: String,
+    #[serde(with = "serde_helpers::amount_as_string")]
+    pub amount: Amount,
     /// The authority public key
     pub authority: ApiSchnorrPublicKey,
     /// The permit for the deposit

@@ -2,7 +2,7 @@
 
 use circuit_types::Amount;
 use matching_engine_core::SuccessfulMatch;
-use tracing::{error, info, instrument};
+use tracing::{error, info, instrument, warn};
 use types_account::{MatchingPoolName, OrderId, order::Order};
 use types_core::AccountId;
 use types_tasks::{SettleInternalMatchTaskDescriptor, TaskDescriptor};
@@ -32,6 +32,13 @@ impl MatchingEngineExecutor {
         // Lookup the order, matchable amount, and matching pool
         let (order, matchable_amount) = self.fetch_order_and_matchable_amount(&order_id).await?;
         let matching_pool = self.fetch_matching_pool(&order_id).await?;
+
+        // Check if either asset in the pair is disabled for matching
+        let pair = order.pair();
+        if self.is_asset_disabled(&pair.in_token) || self.is_asset_disabled(&pair.out_token) {
+            warn!("Asset disabled for matching, skipping internal matching engine for {order_id}");
+            return Ok(());
+        }
 
         // Find a match
         let res = self.find_internal_match(account_id, &order, matchable_amount, matching_pool)?;

@@ -8,14 +8,19 @@ use std::{
 use alloy::primitives::Address;
 use async_trait::async_trait;
 use circuit_types::{Amount, primitives::schnorr::SchnorrPublicKey};
-use circuits_core::zk_circuits::valid_deposit::{SizedValidDepositWitness, ValidDepositStatement};
+use circuits_core::zk_circuits::valid_deposit::{
+    SizedValidDepositWitness, ValidDepositStatement, ValidDepositWitness,
+};
+use darkpool_client::DarkpoolClient;
 use darkpool_types::deposit::Deposit;
-use job_types::proof_manager::{ProofJob, ProofManagerResponse};
+use job_types::proof_manager::ProofJob;
 use renegade_solidity_abi::v2::IDarkpoolV2::DepositAuth;
 use serde::Serialize;
-use state::error::StateError;
+use state::{State, error::StateError};
 use tracing::{info, instrument};
+use types_account::{MerkleAuthenticationPath, balance::Balance};
 use types_core::AccountId;
+use types_proofs::ValidDepositBundle;
 use types_tasks::DepositTaskDescriptor;
 
 use crate::{
@@ -41,8 +46,8 @@ pub enum DepositTaskState {
     Proving,
     /// The task is submitting the deposit transaction
     Submitting,
-    /// The task is waiting for confirmation
-    Confirming,
+    /// The task is updating the relayer state
+    UpdatingState,
     /// The task is completed
     Completed,
 }
@@ -63,7 +68,7 @@ impl Display for DepositTaskState {
             DepositTaskState::Pending => write!(f, "Pending"),
             DepositTaskState::Proving => write!(f, "Proving"),
             DepositTaskState::Submitting => write!(f, "Submitting"),
-            DepositTaskState::Confirming => write!(f, "Confirming"),
+            DepositTaskState::UpdatingState => write!(f, "UpdatingState"),
             DepositTaskState::Completed => write!(f, "Completed"),
         }
     }
@@ -88,6 +93,14 @@ pub enum DepositTaskError {
     ProofGeneration(String),
     /// A state element was not found that is necessary for task execution
     Missing(String),
+}
+
+impl DepositTaskError {
+    /// Error generating a proof of `VALID DEPOSIT`
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn proof_generation<T: ToString>(msg: T) -> Self {
+        Self::ProofGeneration(msg.to_string())
+    }
 }
 
 impl DepositTaskError {
@@ -145,8 +158,10 @@ pub struct DepositTask {
     pub auth: DepositAuth,
     /// The authority public key
     pub authority: SchnorrPublicKey,
+    /// The updated balance after the deposit
+    pub updated_balance: Option<Balance>,
     /// A proof of `VALID DEPOSIT` created in the proving step
-    pub proof_bundle: Option<ProofManagerResponse>,
+    pub proof_bundle: Option<ValidDepositBundle>,
     /// The state of the task's execution
     pub task_state: DepositTaskState,
     /// The context of the task
@@ -167,6 +182,7 @@ impl Task for DepositTask {
             amount: descriptor.amount,
             auth: descriptor.auth,
             authority: descriptor.authority,
+            updated_balance: None,
             proof_bundle: None,
             task_state: DepositTaskState::Pending,
             ctx,
@@ -187,12 +203,13 @@ impl Task for DepositTask {
                 self.task_state = DepositTaskState::Submitting;
             },
             DepositTaskState::Submitting => {
+                // Submit the deposit transaction to the darkpool
                 self.submit_deposit().await?;
-                self.task_state = DepositTaskState::Confirming;
+                self.task_state = DepositTaskState::UpdatingState;
             },
-            DepositTaskState::Confirming => {
-                // The deposit transaction has been submitted and confirmed
-                // The receipt is already returned from submit_deposit
+            DepositTaskState::UpdatingState => {
+                // Update the relayer state with the new balance
+                self.update_state().await?;
                 self.task_state = DepositTaskState::Completed;
             },
             DepositTaskState::Completed => {
@@ -236,50 +253,128 @@ impl DepositTask {
     /// Generate a proof of `VALID DEPOSIT` for the deposit
     pub async fn generate_proof(&mut self) -> Result<()> {
         info!("Generating deposit proof...");
-        self.existing_balance_proof().await?;
-        Ok(())
-    }
+        let (witness, statement, updated_balance) =
+            self.get_valid_deposit_witness_statement().await?;
+        self.updated_balance = Some(updated_balance);
 
-    /// Submit the deposit transaction to the darkpool
-    pub async fn submit_deposit(&self) -> Result<()> {
-        // TODO: Use the proof_bundle when submitting
-        // let proof = self.proof_bundle.as_ref()
-        //     .ok_or_else(|| DepositTaskError::Missing("proof bundle not
-        // found".to_string()))?;
-        //
-        // let tx = self.ctx.darkpool_client.deposit(
-        //     self.auth.clone(),
-        //     proof.clone(),
-        // ).await?;
-        //
-        // // Store transaction receipt if needed
-        // info!("Deposit transaction submitted: {:?}", tx);
-
-        info!("Submitting deposit...");
-        Ok(())
-    }
-
-    // --- Helpers --- //
-
-    /// Generate a proof for an existing balance deposit
-    async fn existing_balance_proof(&mut self) -> Result<()> {
-        let (witness, statement) = self.get_existing_balance_witness_statement().await?;
         let job = ProofJob::ValidDeposit { statement, witness };
         let proof_recv =
             enqueue_proof_job(job, &self.ctx).map_err(DepositTaskError::ProofGeneration)?;
 
         // Await the proof
-        let bundle =
-            proof_recv.await.map_err(|e| DepositTaskError::ProofGeneration(e.to_string()))?;
-        self.proof_bundle = Some(bundle);
+        let bundle = proof_recv.await.map_err(DepositTaskError::proof_generation)?;
+        self.proof_bundle = Some(bundle.into());
         Ok(())
     }
 
+    /// Submit the deposit transaction to the darkpool
+    pub async fn submit_deposit(&self) -> Result<()> {
+        // Submit the deposit transaction to the darkpool
+        info!("Submitting deposit...");
+        let proof_bundle = self
+            .proof_bundle
+            .clone()
+            .ok_or_else(|| DepositTaskError::Missing("proof bundle not found".to_string()))?;
+
+        let commitment = proof_bundle.statement.new_balance_commitment;
+        let receipt = self.darkpool_client().deposit(self.auth.clone(), proof_bundle).await?;
+
+        // Parse a Merkle opening for the balance from the receipt
+        let opening =
+            self.darkpool_client().find_merkle_authentication_path_with_tx(commitment, &receipt)?;
+
+        // Store the Merkle opening in state
+        let waiter =
+            self.state().add_balance_merkle_proof(self.account_id, self.token, opening).await?;
+        waiter.await?;
+        Ok(())
+    }
+
+    /// Update the relayer state with the post-deposit balance
+    pub async fn update_state(&self) -> Result<()> {
+        info!("Updating relayer state after deposit...");
+        let balance = self
+            .updated_balance
+            .clone()
+            .ok_or_else(|| DepositTaskError::Missing("updated balance not found".to_string()))?;
+
+        let waiter = self.state().update_account_balance(self.account_id, balance).await?;
+        waiter.await?;
+        Ok(())
+    }
+
+    // --- Helpers --- //
+
     /// Generate a witness and statement for an existing balance deposit
-    async fn get_existing_balance_witness_statement(
+    ///
+    /// Returns the witness, statement, and the updated balance after the
+    /// deposit has been applied.
+    async fn get_valid_deposit_witness_statement(
         &self,
-    ) -> Result<(SizedValidDepositWitness, ValidDepositStatement)> {
-        todo!("Implement existing balance witness and statement generation")
+    ) -> Result<(SizedValidDepositWitness, ValidDepositStatement, Balance)> {
+        // Get the balance and its Merkle proof
+        let mut balance = self.get_balance().await?;
+        let old_balance = balance.state_wrapper.clone();
+        let balance_opening = self.get_balance_merkle_proof().await?;
+        let merkle_root = balance_opening.compute_root();
+        let old_balance_nullifier = balance.state_wrapper.compute_nullifier();
+
+        // Add the deposit amount to the balance
+        *balance.amount_mut() += self.amount;
+        let new_amount_share = balance.state_wrapper.reencrypt_amount_share();
+
+        // Compute a new recovery ID and commitment
+        let recovery_id = balance.state_wrapper.compute_recovery_id();
+        let new_balance_commitment = balance.state_wrapper.compute_commitment();
+
+        // Build the witness
+        let witness =
+            ValidDepositWitness { old_balance, old_balance_opening: balance_opening.into() };
+
+        // Build the statement
+        let deposit = self.create_deposit();
+        let statement = ValidDepositStatement {
+            deposit,
+            merkle_root,
+            old_balance_nullifier,
+            new_balance_commitment,
+            recovery_id,
+            new_amount_share,
+        };
+
+        Ok((witness, statement, balance))
+    }
+
+    // --- State Access Helpers --- //
+
+    /// Get a reference to the relayer state
+    fn state(&self) -> &State {
+        &self.ctx.state
+    }
+
+    /// Get a reference to the darkpool client
+    fn darkpool_client(&self) -> &DarkpoolClient {
+        &self.ctx.darkpool_client
+    }
+
+    /// Get the balance to deposit into
+    async fn get_balance(&self) -> Result<Balance> {
+        let balance = self
+            .state()
+            .get_account_darkpool_balance(&self.account_id, &self.token)
+            .await?
+            .ok_or_else(|| DepositTaskError::missing("balance not found"))?;
+        Ok(balance)
+    }
+
+    /// Get a Merkle proof for the balance
+    async fn get_balance_merkle_proof(&self) -> Result<MerkleAuthenticationPath> {
+        let proof = self
+            .state()
+            .get_balance_merkle_proof(&self.account_id, &self.token)
+            .await?
+            .ok_or_else(|| DepositTaskError::missing("balance merkle proof not found"))?;
+        Ok(proof)
     }
 }
 

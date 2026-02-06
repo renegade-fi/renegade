@@ -117,6 +117,7 @@ impl HttpServer {
         let darkpool_client = &config.darkpool_client;
         let bus = &config.system_bus;
         let matching_engine_worker_queue = &config.matching_engine_worker_queue;
+        let task_queue = &config.task_queue;
 
         // --- Misc Routes --- //
 
@@ -129,7 +130,7 @@ impl HttpServer {
         router.add_unauthenticated_route(
             &Method::POST,
             CREATE_ACCOUNT_ROUTE.to_string(),
-            CreateAccountHandler::new(state.clone()),
+            CreateAccountHandler::new(state.clone(), task_queue.clone()),
         );
 
         // GET /v2/account/:account_id
@@ -150,7 +151,7 @@ impl HttpServer {
         router.add_account_authenticated_route(
             &Method::POST,
             SYNC_ACCOUNT_ROUTE.to_string(),
-            SyncAccountHandler::new(state.clone()),
+            SyncAccountHandler::new(state.clone(), task_queue.clone()),
         );
 
         // --- Order Routes (v2) --- //
@@ -167,7 +168,7 @@ impl HttpServer {
         router.add_account_authenticated_route(
             &Method::POST,
             CREATE_ORDER_ROUTE.to_string(),
-            CreateOrderHandler::new(executor, state.clone()),
+            CreateOrderHandler::new(executor, state.clone(), task_queue.clone()),
         );
 
         // GET /v2/account/:account_id/orders/:order_id
@@ -188,7 +189,7 @@ impl HttpServer {
         router.add_account_authenticated_route(
             &Method::POST,
             CANCEL_ORDER_ROUTE.to_string(),
-            CancelOrderHandler::new(state.clone()),
+            CancelOrderHandler::new(state.clone(), task_queue.clone()),
         );
 
         // --- Balance Routes (v2) --- //
@@ -211,14 +212,14 @@ impl HttpServer {
         router.add_account_authenticated_route(
             &Method::POST,
             DEPOSIT_BALANCE_ROUTE.to_string(),
-            DepositBalanceHandler::new(state.clone()),
+            DepositBalanceHandler::new(state.clone(), task_queue.clone()),
         );
 
         // POST /v2/account/:account_id/balances/:mint/withdraw
         router.add_account_authenticated_route(
             &Method::POST,
             WITHDRAW_BALANCE_ROUTE.to_string(),
-            WithdrawBalanceHandler::new(state.clone()),
+            WithdrawBalanceHandler::new(state.clone(), task_queue.clone()),
         );
 
         // --- Task Routes (v2) --- //
@@ -389,7 +390,7 @@ impl HttpServer {
         router.add_admin_authenticated_route(
             &Method::POST,
             ADMIN_CREATE_ORDER_IN_POOL_ROUTE.to_string(),
-            AdminCreateOrderInPoolHandler::new(executor, state.clone()),
+            AdminCreateOrderInPoolHandler::new(executor, state.clone(), task_queue.clone()),
         );
 
         Ok(router)

@@ -259,6 +259,14 @@ impl StateWrapper<DarkpoolBalance> {
         self.public_share.update_from_post_match(post);
     }
 
+    /// Re-encrypt the amount share
+    pub fn reencrypt_amount_share(&mut self) -> Scalar {
+        let amount = self.inner.amount;
+        let new_amount_share = self.stream_cipher_encrypt(&amount);
+        self.public_share.amount = new_amount_share;
+        new_amount_share
+    }
+
     /// Re-encrypt the post match balance shares and update the public share
     pub fn reencrypt_post_match_share(&mut self) -> PostMatchBalanceShare {
         let post_match_balance = PostMatchBalance::from(self.inner.clone());

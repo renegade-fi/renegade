@@ -13,6 +13,7 @@ use external_api::{
 };
 use hyper::HeaderMap;
 use itertools::Itertools;
+use job_types::task_driver::TaskDriverQueue;
 use renegade_solidity_abi::v2::IDarkpoolV2::SignatureWithNonce;
 use state::State;
 use types_account::{OrderId, order::PrivacyRing};
@@ -22,7 +23,9 @@ use types_tasks::{CancelOrderTaskDescriptor, CreateOrderTaskDescriptor};
 use crate::{
     error::{ApiServerError, bad_request, not_found},
     http::helpers::append_task,
-    param_parsing::{parse_account_id_from_params, parse_order_id_from_params},
+    param_parsing::{
+        parse_account_id_from_params, parse_order_id_from_params, should_block_on_task,
+    },
     router::{QueryParams, TypedHandler, UrlParams},
 };
 
@@ -39,8 +42,6 @@ const ERR_INVALID_ORDER_TYPE: &str =
     "only public orders (Ring0) can be cancelled via this endpoint";
 /// Error message for missing order auth
 const ERR_ORDER_AUTH_NOT_FOUND: &str = "order auth not found";
-/// Error message for invalid order auth type
-const ERR_INVALID_ORDER_AUTH: &str = "order auth is not for a public order";
 
 // -------------------
 // | Order Handlers  |
@@ -122,12 +123,14 @@ pub struct CreateOrderHandler {
     executor: Address,
     /// A handle to the relayer's state
     state: State,
+    /// The task driver queue
+    task_queue: TaskDriverQueue,
 }
 
 impl CreateOrderHandler {
     /// Constructor
-    pub fn new(executor: Address, state: State) -> Self {
-        Self { executor, state }
+    pub fn new(executor: Address, state: State, task_queue: TaskDriverQueue) -> Self {
+        Self { executor, state, task_queue }
     }
 }
 
@@ -141,8 +144,10 @@ impl TypedHandler for CreateOrderHandler {
         _headers: HeaderMap,
         req: Self::Request,
         params: UrlParams,
-        _query_params: QueryParams,
+        query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
+        let blocking = should_block_on_task(&query_params);
+
         // Parse account ID from URL params
         let account_id = parse_account_id_from_params(&params)?;
 
@@ -154,8 +159,8 @@ impl TypedHandler for CreateOrderHandler {
 
         // Convert order auth to an internal type
         let order_id = req.order.id;
-        let auth = req.get_order_auth(self.executor)?;
-        let (intent, ring, metadata) = req.into_order_components()?;
+        let auth = req.get_order_auth(self.executor);
+        let (intent, ring, metadata) = req.into_order_components();
 
         // Create the task descriptor with the global matching pool
         let descriptor = CreateOrderTaskDescriptor::new(
@@ -168,9 +173,10 @@ impl TypedHandler for CreateOrderHandler {
             GLOBAL_MATCHING_POOL.to_string(),
         )
         .map_err(bad_request)?;
-        let task_id = append_task(descriptor.into(), &self.state).await?;
+        let task_id =
+            append_task(descriptor.into(), blocking, &self.state, &self.task_queue).await?;
 
-        Ok(CreateOrderResponse { task_id, completed: false })
+        Ok(CreateOrderResponse { task_id, completed: true })
     }
 }
 
@@ -203,12 +209,14 @@ impl TypedHandler for UpdateOrderHandler {
 pub struct CancelOrderHandler {
     /// A handle to the relayer's state
     state: State,
+    /// The task driver queue
+    task_queue: TaskDriverQueue,
 }
 
 impl CancelOrderHandler {
     /// Constructor
-    pub fn new(state: State) -> Self {
-        Self { state }
+    pub fn new(state: State, task_queue: TaskDriverQueue) -> Self {
+        Self { state, task_queue }
     }
 }
 
@@ -222,8 +230,10 @@ impl TypedHandler for CancelOrderHandler {
         _headers: HeaderMap,
         req: Self::Request,
         params: UrlParams,
-        _query_params: QueryParams,
+        query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
+        let blocking = should_block_on_task(&query_params);
+
         // Parse account_id and order_id from URL params
         let account_id = parse_account_id_from_params(&params)?;
         let order_id = parse_order_id_from_params(&params)?;
@@ -256,8 +266,9 @@ impl TypedHandler for CancelOrderHandler {
                 .map_err(bad_request)?;
 
         // Append the task and return the task ID
-        let task_id = append_task(descriptor.into(), &self.state).await?;
-        Ok(CancelOrderResponse { task_id, completed: false })
+        let task_id =
+            append_task(descriptor.into(), blocking, &self.state, &self.task_queue).await?;
+        Ok(CancelOrderResponse { task_id, completed: true })
     }
 }
 
