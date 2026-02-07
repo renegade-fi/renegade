@@ -7,11 +7,12 @@ use circuit_types::Amount;
 use constants::Scalar;
 use darkpool_types::intent::Intent;
 use external_api::{auth::add_expiring_auth_to_headers, types::SignatureWithNonce};
-use http::HeaderMap;
+use http::{HeaderMap, HeaderValue, header::CONTENT_TYPE};
 use renegade_solidity_abi::v2::IDarkpoolV2::PublicIntentPermit;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use tracing::info;
 use types_account::order::Order;
 use types_core::{AccountId, HmacKey};
 use url::Url;
@@ -218,16 +219,14 @@ impl IndexerClient {
         let url = self.base_url.join(&path).map_err(IndexerClientError::url_build)?;
 
         // Serialize the message
-        let body = serde_json::to_string(&message).map_err(IndexerClientError::serde)?;
+        let body = serde_json::to_vec(&message).map_err(IndexerClientError::serde)?;
+
+        let mut headers = HeaderMap::new();
+        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+        add_expiring_auth_to_headers(&path, &mut headers, &body, &self.hmac_key, AUTH_EXPIRATION);
 
         // Send the request (no auth required for local sidecar)
-        let response = self
-            .client
-            .post(url)
-            .header("Content-Type", "application/json")
-            .body(body)
-            .send()
-            .await?;
+        let response = self.client.post(url).headers(headers).body(body).send().await?;
 
         // Check for errors
         let status = response.status();
