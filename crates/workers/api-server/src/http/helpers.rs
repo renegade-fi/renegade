@@ -91,11 +91,12 @@ pub(crate) async fn append_create_order_task(
             )
             .await
         },
-        PrivacyRing::Ring2 => {
-            create_ring2_order_task_descriptor(
+        PrivacyRing::Ring2 | PrivacyRing::Ring3 => {
+            create_renegade_settled_order_task_descriptor(
                 account_id,
                 order_id,
                 intent,
+                ring,
                 metadata,
                 auth,
                 matching_pool,
@@ -103,7 +104,6 @@ pub(crate) async fn append_create_order_task(
             )
             .await
         },
-        _ => unreachable!("ring must be Ring0, Ring1, or Ring2, got {ring:?}"),
     }?;
 
     append_task(descriptor.into(), blocking, state, task_queue).await
@@ -162,11 +162,17 @@ async fn create_ring1_order_task_descriptor(
     Ok(descriptor)
 }
 
-/// Create a ring 2 order task descriptor
-async fn create_ring2_order_task_descriptor(
+/// Create a ring 2 or ring 3 order task descriptor
+///
+/// Ring 2 and Ring 3 use the same auth validation (Renegade-settled order
+/// with Schnorr signatures). Ring 3 additionally restricts the order to
+/// private fills only.
+#[allow(clippy::too_many_arguments)]
+async fn create_renegade_settled_order_task_descriptor(
     account_id: AccountId,
     order_id: OrderId,
     intent: Intent,
+    ring: PrivacyRing,
     metadata: OrderMetadata,
     auth: OrderAuth,
     matching_pool: MatchingPoolName,
@@ -186,7 +192,6 @@ async fn create_ring2_order_task_descriptor(
     let mut balance_commitment = None;
     let out_token = intent.out_token;
     if state.get_account_darkpool_balance(&account_id, &out_token).await?.is_none() {
-        // New balance needs to be created
         let relayer_fee_recipient = state.get_relayer_fee_addr()?;
         let inner = DarkpoolBalance::new(out_token, intent.owner, relayer_fee_recipient, authority);
 
@@ -196,17 +201,31 @@ async fn create_ring2_order_task_descriptor(
         balance_commitment = Some(balance.compute_commitment());
     }
 
-    let descriptor = CreateOrderTaskDescriptor::new_ring2(
-        account_id,
-        order_id,
-        intent,
-        intent_commitment,
-        balance_commitment,
-        authority,
-        metadata,
-        auth,
-        matching_pool,
-    )
+    let descriptor = match ring {
+        PrivacyRing::Ring2 => CreateOrderTaskDescriptor::new_ring2(
+            account_id,
+            order_id,
+            intent,
+            intent_commitment,
+            balance_commitment,
+            authority,
+            metadata,
+            auth,
+            matching_pool,
+        ),
+        PrivacyRing::Ring3 => CreateOrderTaskDescriptor::new_ring3(
+            account_id,
+            order_id,
+            intent,
+            intent_commitment,
+            balance_commitment,
+            authority,
+            metadata,
+            auth,
+            matching_pool,
+        ),
+        _ => unreachable!("only ring 2 and ring 3 use this helper"),
+    }
     .map_err(bad_request)?;
     Ok(descriptor)
 }

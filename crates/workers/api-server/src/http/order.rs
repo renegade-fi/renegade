@@ -9,7 +9,6 @@ use external_api::{
         CancelOrderRequest, CancelOrderResponse, CreateOrderRequest, CreateOrderResponse,
         GetOrderByIdResponse, GetOrdersResponse, UpdateOrderRequest, UpdateOrderResponse,
     },
-    types::OrderType,
 };
 use hyper::HeaderMap;
 use itertools::Itertools;
@@ -157,12 +156,6 @@ impl TypedHandler for CreateOrderHandler {
         // Parse query and URL params
         let blocking = should_block_on_task(&query_params);
         let account_id = parse_account_id_from_params(&params)?;
-
-        // TODO: Allow all order types
-        let ty = req.order.order_type;
-        if matches!(ty, OrderType::RenegadeSettledPrivateFillOrder) {
-            return Err(bad_request("Only Ring {0, 1, 2} orders are currently supported"));
-        }
 
         // Create the task descriptor with the global matching pool
         let auth = req.get_order_auth(self.executor).map_err(bad_request)?;

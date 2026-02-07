@@ -173,12 +173,6 @@ impl Task for CreateOrderTask {
     type Descriptor = CreateOrderTaskDescriptor;
 
     async fn new(descriptor: Self::Descriptor, ctx: TaskContext) -> Result<Self> {
-        let ring = descriptor.ring;
-        if matches!(ring, PrivacyRing::Ring3) {
-            let msg = format!("ring must be Ring0, Ring1, or Ring2, got {ring:?}");
-            return Err(CreateOrderTaskError::invalid_descriptor(msg));
-        }
-
         Ok(Self {
             account_id: descriptor.account_id,
             order_id: descriptor.order_id,
