@@ -119,6 +119,37 @@ impl CreateOrderTaskDescriptor {
         let ring = PrivacyRing::Ring2;
         Ok(Self { account_id, order_id, intent, ring, metadata, auth, matching_pool })
     }
+
+    /// Create a new ring 3 descriptor
+    ///
+    /// Ring 3 uses the same auth as ring 2 (Schnorr signatures over intent
+    /// and balance commitments), but restricts the order to private fills
+    /// only.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_ring3(
+        account_id: AccountId,
+        order_id: OrderId,
+        intent: Intent,
+        intent_commitment: Commitment,
+        new_balance_commitment: Option<Commitment>,
+        authority: SchnorrPublicKey,
+        metadata: OrderMetadata,
+        auth: OrderAuth,
+        matching_pool: MatchingPoolName,
+    ) -> Result<Self, TaskError> {
+        // Validate the order auth (same as ring 2)
+        let (intent_signature, new_output_balance_signature) = auth.into_renegade_settled_order();
+        validate_renegade_settled_order_auth(
+            intent_commitment,
+            new_balance_commitment,
+            &intent_signature,
+            &new_output_balance_signature,
+            authority,
+        )?;
+
+        let ring = PrivacyRing::Ring3;
+        Ok(Self { account_id, order_id, intent, ring, metadata, auth, matching_pool })
+    }
 }
 
 impl From<CreateOrderTaskDescriptor> for TaskDescriptor {
