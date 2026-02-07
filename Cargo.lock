@@ -10004,6 +10004,7 @@ version = "0.1.0"
 dependencies = [
  "abi",
  "alloy",
+ "ark-ff 0.4.2",
  "circuit-types",
  "constants",
  "crypto",
@@ -10098,6 +10099,7 @@ dependencies = [
  "abi",
  "alloy",
  "circuit-types",
+ "crypto",
  "darkpool-types",
  "rkyv",
  "serde",

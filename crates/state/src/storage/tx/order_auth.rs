@@ -64,7 +64,10 @@ mod test {
     use constants::EmbeddedScalarField;
     use types_account::{
         account::OrderId,
-        order_auth::{OrderAuth, mocks::mock_order_auth},
+        order_auth::{
+            OrderAuth,
+            mocks::{mock_order_auth, mock_signature_with_nonce},
+        },
     };
 
     use crate::{ORDER_AUTH_TABLE, test_helpers::mock_db};
@@ -103,8 +106,9 @@ mod test {
         db.create_table(ORDER_AUTH_TABLE).unwrap();
 
         let order_id = OrderId::new_v4();
-        let auth =
-            OrderAuth::NativelySettledPrivateOrder { intent_signature: dummy_schnorr_signature() };
+        let auth = OrderAuth::NativelySettledPrivateOrder {
+            intent_signature: mock_signature_with_nonce(),
+        };
 
         // Check that auth doesn't exist initially
         let tx = db.new_read_tx().unwrap();

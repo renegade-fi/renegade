@@ -16,6 +16,7 @@ use tracing::{info, instrument, warn};
 use types_account::{
     MatchingPoolName, OrderId,
     balance::BalanceLocation,
+    keychain::KeyChain,
     order::{Order, OrderMetadata, PrivacyRing},
     order_auth::OrderAuth,
 };
@@ -173,8 +174,8 @@ impl Task for CreateOrderTask {
 
     async fn new(descriptor: Self::Descriptor, ctx: TaskContext) -> Result<Self> {
         let ring = descriptor.ring;
-        if !matches!(ring, PrivacyRing::Ring0) {
-            let msg = format!("ring must be Ring0, got {ring:?}");
+        if matches!(ring, PrivacyRing::Ring3) {
+            let msg = format!("ring must be Ring0, Ring1, or Ring2, got {ring:?}");
             return Err(CreateOrderTaskError::invalid_descriptor(msg));
         }
 
@@ -245,23 +246,46 @@ impl Descriptor for CreateOrderTaskDescriptor {}
 impl CreateOrderTask {
     /// Create a new order
     pub async fn create_order(&self) -> Result<()> {
-        let CreateOrderTask {
-            order_id,
-            account_id,
-            intent,
-            ring,
-            metadata,
-            auth,
-            matching_pool,
-            ..
-        } = self.clone();
+        println!("Creating order");
+        let CreateOrderTask { order_id, account_id, ring, metadata, auth, matching_pool, .. } =
+            self.clone();
 
-        // Create the order in the state
-        let state_intent = create_ring0_state_wrapper(intent);
+        // Create the order in the state with ring-specific state wrapper
+        let state_intent = self.create_state_wrapper().await?;
         let order = Order::new_with_ring(order_id, state_intent, metadata, ring);
         let waiter =
             self.state().add_order_to_account(account_id, order, auth, matching_pool).await?;
         waiter.await.map_err(CreateOrderTaskError::state).map(|_| ())
+    }
+
+    // --- State Wrapper Creation ---
+
+    /// Create a state wrapper for the intent based on ring level
+    async fn create_state_wrapper(&self) -> Result<StateWrapper<Intent>> {
+        match self.ring {
+            PrivacyRing::Ring0 => Ok(self.create_ring0_state_wrapper()),
+            _ => self.create_private_intent_state_wrapper().await,
+        }
+    }
+
+    /// Ring 0: Zero seeds (public, no privacy needed)
+    fn create_ring0_state_wrapper(&self) -> StateWrapper<Intent> {
+        let share_stream_seed = Scalar::zero();
+        let recovery_stream_seed = Scalar::zero();
+        DarkpoolStateIntent::new(self.intent.clone(), share_stream_seed, recovery_stream_seed)
+    }
+
+    /// Ring 1+: Derive seeds from keychain for privacy
+    async fn create_private_intent_state_wrapper(&self) -> Result<StateWrapper<Intent>> {
+        let mut keychain = self.get_account_keychain().await?;
+        let share_stream = keychain.sample_share_stream();
+        let recovery_stream = keychain.sample_recovery_id_stream();
+
+        // Persist updated keychain (seeds consumed)
+        let waiter = self.state().update_account_keychain(self.account_id, keychain).await?;
+        waiter.await.map_err(CreateOrderTaskError::state)?;
+
+        Ok(DarkpoolStateIntent::new(self.intent.clone(), share_stream.seed, recovery_stream.seed))
     }
 
     /// Check for a balance on-chain approved to the darkpool
@@ -334,14 +358,13 @@ impl CreateOrderTask {
     fn state(&self) -> &State {
         &self.ctx.state
     }
-}
 
-/// Create a state wrapper for a ring 0 intent
-///
-/// A ring 0 intent does not have secret share or a recovery id stream, so we
-/// use the default stream seeds.
-fn create_ring0_state_wrapper(intent: Intent) -> StateWrapper<Intent> {
-    let share_stream_seed = Scalar::zero();
-    let recovery_stream_seed = Scalar::zero();
-    DarkpoolStateIntent::new(intent, share_stream_seed, recovery_stream_seed)
+    /// Fetch the account's keychain
+    async fn get_account_keychain(&self) -> Result<KeyChain> {
+        self.ctx
+            .state
+            .get_account_keychain(&self.account_id)
+            .await?
+            .ok_or_else(|| CreateOrderTaskError::state("keychain not found"))
+    }
 }

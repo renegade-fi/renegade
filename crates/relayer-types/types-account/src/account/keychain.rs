@@ -1,9 +1,10 @@
 //! Keychain helpers for the wallet
 
+use circuit_types::schnorr::SchnorrPublicKey;
 use constants::Scalar;
 use darkpool_types::csprng::PoseidonCSPRNG;
 #[cfg(feature = "rkyv")]
-use darkpool_types::rkyv_remotes::ScalarDef;
+use darkpool_types::rkyv_remotes::{ScalarDef, SchnorrPublicKeyDef};
 use derivative::Derivative;
 #[cfg(feature = "rkyv")]
 use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
@@ -69,12 +70,15 @@ impl PrivateKeyChain {
 pub struct KeyChain {
     /// The private keys in the wallet
     pub secret_keys: PrivateKeyChain,
+    /// The Schnorr public key used for in-circuit verification
+    #[cfg_attr(feature = "rkyv", rkyv(with = SchnorrPublicKeyDef))]
+    pub schnorr_public_key: SchnorrPublicKey,
 }
 
 impl KeyChain {
-    /// Create a new keychain from a private keychain
-    pub fn new(secret_keys: PrivateKeyChain) -> Self {
-        Self { secret_keys }
+    /// Create a new keychain from a private keychain and Schnorr public key
+    pub fn new(secret_keys: PrivateKeyChain, schnorr_public_key: SchnorrPublicKey) -> Self {
+        Self { secret_keys, schnorr_public_key }
     }
 
     /// Get the symmetric key
@@ -85,7 +89,7 @@ impl KeyChain {
     /// Sample a new recovery id stream seed from the master keychain
     ///
     /// Mutates the underlying CSPRNG state.
-    pub fn sample_recovery_id_stream_seed(&mut self) -> PoseidonCSPRNG {
+    pub fn sample_recovery_id_stream(&mut self) -> PoseidonCSPRNG {
         let master_seed = &mut self.secret_keys.master_recovery_seed_csprng;
         let seed = master_seed.next().unwrap(); // CSPRNG is infallible
         PoseidonCSPRNG::new(seed)
@@ -94,7 +98,7 @@ impl KeyChain {
     /// Sample a new share stream seed from the master keychain
     ///
     /// Mutates the underlying CSPRNG state.
-    pub fn sample_share_stream_seed(&mut self) -> PoseidonCSPRNG {
+    pub fn sample_share_stream(&mut self) -> PoseidonCSPRNG {
         let master_seed = &mut self.secret_keys.master_share_seed_csprng;
         let seed = master_seed.next().unwrap(); // CSPRNG is infallible
         PoseidonCSPRNG::new(seed)

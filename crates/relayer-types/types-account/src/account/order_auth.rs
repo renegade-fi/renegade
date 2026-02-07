@@ -24,9 +24,10 @@ pub enum OrderAuth {
     },
     /// Authentication for a natively settled private order (ring 1)
     NativelySettledPrivateOrder {
-        /// The Schnorr signature for the intent
-        #[cfg_attr(feature = "rkyv", rkyv(with = SchnorrSignatureDef))]
-        intent_signature: SchnorrSignature,
+        /// The signature over the intent's initial commitment by the owner's
+        /// address
+        #[cfg_attr(feature = "rkyv", rkyv(with = SignatureWithNonceDef))]
+        intent_signature: SignatureWithNonce,
     },
     /// Authentication for a Renegade-settled order
     RenegadeSettledOrder {
@@ -40,7 +41,7 @@ pub enum OrderAuth {
 }
 
 impl OrderAuth {
-    /// Monomorphize the order auth into a public intent permit and intent
+    /// Extract the order auth into a public intent permit and intent
     /// signature
     pub fn into_public(&self) -> (PublicIntentPermit, SignatureWithNonce) {
         match self {
@@ -48,6 +49,25 @@ impl OrderAuth {
                 (permit.clone(), intent_signature.clone())
             },
             _ => panic!("Order auth is not a public order"),
+        }
+    }
+
+    /// Extract the order auth into a natively settled private order intent
+    /// signature
+    pub fn into_natively_settled_private_order(&self) -> SignatureWithNonce {
+        match self {
+            OrderAuth::NativelySettledPrivateOrder { intent_signature } => intent_signature.clone(),
+            _ => panic!("Order auth is not a natively settled private order"),
+        }
+    }
+
+    /// Extract the order auth into a renegade-settled order intent signature
+    pub fn into_renegade_settled_order(&self) -> (SchnorrSignature, SchnorrSignature) {
+        match self {
+            OrderAuth::RenegadeSettledOrder { intent_signature, new_output_balance_signature } => {
+                (*intent_signature, *new_output_balance_signature)
+            },
+            _ => panic!("Order auth is not a renegade-settled order"),
         }
     }
 }

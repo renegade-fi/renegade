@@ -4,7 +4,9 @@ use alloy::{
     primitives::{B256, keccak256},
     signers::{SignerSync, local::PrivateKeySigner},
 };
-use constants::Scalar;
+use ark_ff::PrimeField;
+use circuit_types::schnorr::SchnorrPrivateKey;
+use constants::{EmbeddedScalarField, Scalar};
 use darkpool_types::csprng::PoseidonCSPRNG;
 use k256::ecdsa::SigningKey;
 use lazy_static::lazy_static;
@@ -26,6 +28,8 @@ const MASTER_SHARE_SEED_CSPRNG_MESSAGE: &[u8] = b"share-seed-csprng";
 /// The message which is hashed alongside a master view seed to generate the
 /// recovery seed CSPRNG seed
 const MASTER_RECOVERY_SEED_CSPRNG_MESSAGE: &[u8] = b"recovery-seed-csprng";
+/// The message prefix used to derive the Schnorr key
+const SCHNORR_KEY_MESSAGE_PREFIX: &[u8] = b"schnorr key";
 /// The message used to derive the wallet's symmetric key
 const SYMMETRIC_KEY_MESSAGE: &[u8] = b"symmetric key";
 /// The message used to derive the wallet's ID
@@ -75,9 +79,13 @@ pub fn derive_wallet_keychain(
     let master_view_seed = derive_scalar(MASTER_VIEW_SEED_MESSAGE, &root_signer)?;
     let symmetric_key = derive_symmetric_key(&root_signer)?;
 
+    // Derive the Schnorr key pair
+    let schnorr_private_key = derive_schnorr_key(&root_signer, chain_id)?;
+    let schnorr_public_key = schnorr_private_key.public_key();
+
     // Build the keychain
     let private_keychain = PrivateKeyChain::new(symmetric_key, master_view_seed);
-    Ok(KeyChain::new(private_keychain))
+    Ok(KeyChain::new(private_keychain, schnorr_public_key))
 }
 
 /// Derive a master share stream seed from a master view seed
@@ -95,6 +103,13 @@ pub fn derive_recovery_stream_seed(master_view_seed: &Scalar) -> PoseidonCSPRNG 
     let seed = hash_to_scalar(&msg);
     PoseidonCSPRNG::new(seed)
 }
+/// Derive a Schnorr private key from a signing key and chain ID
+fn derive_schnorr_key(key: &PrivateKeySigner, chain_id: u64) -> Result<SchnorrPrivateKey, String> {
+    let sig_bytes = get_extended_sig_bytes(&schnorr_key_message(chain_id), key)?;
+    let inner = EmbeddedScalarField::from_be_bytes_mod_order(&sig_bytes);
+    Ok(SchnorrPrivateKey { inner })
+}
+
 // -----------
 // | Helpers |
 // -----------
@@ -102,6 +117,13 @@ pub fn derive_recovery_stream_seed(master_view_seed: &Scalar) -> PoseidonCSPRNG 
 /// Get the root key message for the given chain ID
 fn get_root_key_msg(chain_id: u64) -> Vec<u8> {
     format!("{} {}", ROOT_KEY_MESSAGE_PREFIX, chain_id).as_bytes().to_vec()
+}
+
+/// Generate the message to sign for Schnorr key derivation
+fn schnorr_key_message(chain_id: u64) -> Vec<u8> {
+    let mut message = Vec::from(SCHNORR_KEY_MESSAGE_PREFIX);
+    message.extend_from_slice(&chain_id.to_be_bytes());
+    message
 }
 
 /// Get a `Scalar` from a signature on a message

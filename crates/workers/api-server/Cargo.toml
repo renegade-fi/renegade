@@ -52,7 +52,7 @@ types-tasks = { workspace = true }
 types-account = { workspace = true }
 types-runtime = { workspace = true }
 constants = { workspace = true }
-crypto = { workspace = true }
+crypto = { workspace = true, features = ["fields"] }
 external-api = { workspace = true, features = ["auth", "full-api"] }
 gossip-api = { workspace = true }
 job-types = { workspace = true }
