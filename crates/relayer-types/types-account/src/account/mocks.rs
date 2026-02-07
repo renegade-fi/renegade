@@ -1,5 +1,6 @@
 //! Mock types for wallet testing
 
+use circuit_types::schnorr::SchnorrPrivateKey;
 use constants::{MERKLE_HEIGHT, Scalar};
 use darkpool_types::fuzzing::{random_address, random_amount, random_price};
 use darkpool_types::intent::Intent;
@@ -35,8 +36,9 @@ pub fn mock_keychain() -> KeyChain {
     let mut rng = thread_rng();
     let hmac_key = HmacKey::random();
     let master_view_seed = Scalar::random(&mut rng);
+    let schnorr_public_key = SchnorrPrivateKey::random().public_key();
     let private_keychain = PrivateKeyChain::new(hmac_key, master_view_seed);
-    KeyChain::new(private_keychain)
+    KeyChain::new(private_keychain, schnorr_public_key)
 }
 
 /// Create a mock Merkle path for a wallet

@@ -21,12 +21,11 @@ use job_types::task_driver::TaskDriverQueue;
 use state::State;
 use tracing::info;
 use types_core::{Chain, Token, get_all_tokens};
-use types_tasks::CreateOrderTaskDescriptor;
 use util::on_chain::{set_default_protocol_fee, set_protocol_fee};
 
 use crate::{
     error::{ApiServerError, bad_request, internal_error, not_found},
-    http::helpers::append_task,
+    http::helpers::append_create_order_task,
     param_parsing::{
         parse_account_id_from_params, parse_matching_pool_from_url_params,
         parse_order_id_from_params, should_block_on_task,
@@ -531,24 +530,18 @@ impl TypedHandler for AdminCreateOrderInPoolHandler {
             return Err(not_found(ERR_MATCHING_POOL_NOT_FOUND));
         }
 
-        // Convert order auth to an internal type, validating the permit
-        let order_id = req.order.id;
+        // Append the task to the task queue
         let auth = req.get_order_auth(self.executor).map_err(bad_request)?;
-        let (intent, ring, metadata) = req.into_order_components();
-
-        // Create the task descriptor with the specified matching pool
-        let descriptor = CreateOrderTaskDescriptor::new(
+        let task_id = append_create_order_task(
             account_id,
-            order_id,
-            intent,
-            ring,
-            metadata,
+            req.order,
             auth,
             matching_pool,
+            blocking,
+            &self.state,
+            &self.task_queue,
         )
-        .map_err(bad_request)?;
-        let task_id =
-            append_task(descriptor.into(), blocking, &self.state, &self.task_queue).await?;
+        .await?;
 
         Ok(CreateOrderResponse { task_id, completed: true })
     }

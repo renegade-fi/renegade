@@ -10,4 +10,5 @@ pub mod hmac_key_as_base64_string;
 pub mod option_address_as_string;
 pub mod scalar_as_hex_string;
 pub mod scalar_as_string;
+pub mod schnorr_public_key_as_string;
 pub mod u256_as_string;

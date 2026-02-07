@@ -96,6 +96,16 @@ impl ApiOrderCore {
     pub fn get_intent(&self) -> Intent {
         self.intent.clone().into()
     }
+
+    /// Return the components of an order
+    #[cfg(feature = "full-api")]
+    pub fn into_order_components(self) -> (Intent, PrivacyRing, OrderMetadata) {
+        let intent = self.get_intent();
+        let ring = self.order_type.into();
+        let meta = self.get_order_metadata();
+
+        (intent, ring, meta)
+    }
 }
 
 #[cfg(feature = "full-api")]
@@ -316,8 +326,8 @@ pub enum OrderAuth {
     },
     /// Authentication for a natively settled private order
     NativelySettledPrivateOrder {
-        /// The Schnorr signature for intent
-        intent_signature: ApiSchnorrSignature,
+        /// The intent signature with nonce
+        intent_signature: SignatureWithNonce,
     },
     /// Authentication for a Renegade-settled order
     RenegadeSettledOrder {

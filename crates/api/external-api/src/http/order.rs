@@ -6,10 +6,7 @@ use alloy::primitives::Address;
 use darkpool_types::intent::Intent;
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "full-api")]
-use types_account::{
-    order::{OrderMetadata, PrivacyRing},
-    order_auth::OrderAuth as AccountOrderAuth,
-};
+use types_account::order_auth::OrderAuth as AccountOrderAuth;
 use uuid::Uuid;
 
 #[cfg(feature = "full-api")]
@@ -71,15 +68,6 @@ pub struct CreateOrderRequest {
 
 #[cfg(feature = "full-api")]
 impl CreateOrderRequest {
-    /// Return the components of an order from the request
-    pub fn into_order_components(self) -> (Intent, PrivacyRing, OrderMetadata) {
-        let intent = self.order.get_intent();
-        let ring = self.order.order_type.into();
-        let meta = self.order.get_order_metadata();
-
-        (intent, ring, meta)
-    }
-
     /// Get the order auth from the request, validating the permit
     pub fn get_order_auth(&self, executor: Address) -> Result<AccountOrderAuth, ApiTypeError> {
         match self.auth.clone() {
@@ -164,15 +152,6 @@ pub struct CreateOrderInPoolRequest {
 
 #[cfg(feature = "full-api")]
 impl CreateOrderInPoolRequest {
-    /// Return the components of an order from the request
-    pub fn into_order_components(self) -> (Intent, PrivacyRing, OrderMetadata) {
-        let intent = self.order.get_intent();
-        let ring = self.order.order_type.into();
-        let meta = self.order.get_order_metadata();
-
-        (intent, ring, meta)
-    }
-
     /// Get the order auth from the request, validating the permit
     pub fn get_order_auth(&self, executor: Address) -> Result<AccountOrderAuth, ApiTypeError> {
         match self.auth.clone() {

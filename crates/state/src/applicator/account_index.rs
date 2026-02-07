@@ -100,14 +100,10 @@ impl StateApplicator {
         tx.assign_order_to_matching_pool(&order.id, &pool)?;
 
         // Index the intent hash for on-chain event correlation
-        // TODO: When multiple rings are enabled, only index Ring 0/1 orders
-        if !matches!(auth, OrderAuth::PublicOrder { .. }) {
-            return Err(StateApplicatorError::reject("Ring 0/1 order must have PublicOrder auth"));
-        }
-        let executor = tx.get_executor_key()?.address();
-        let permit = PublicIntentPermit { intent: order.intent().clone().into(), executor };
-        let intent_hash = keccak256(permit.abi_encode());
-        tx.set_intent_to_order_and_account(&intent_hash, &account_id, &order.id)?;
+        if let OrderAuth::PublicOrder { permit, .. } = auth {
+            let intent_hash = keccak256(permit.abi_encode());
+            tx.set_intent_to_order_and_account(&intent_hash, &account_id, &order.id)?;
+        };
 
         // Index the owner for balance event routing
         // TODO: When multiple rings are enabled, only index Ring 0/1 orders

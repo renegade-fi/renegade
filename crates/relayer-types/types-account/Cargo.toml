@@ -11,6 +11,7 @@ rkyv = ["dep:rkyv", "darkpool-types/rkyv", "types-core/rkyv"]
 
 [dependencies]
 # === Cryptography === #
+ark-ff = "0.4"
 k256 = { version = "0.13", features = ["ecdsa"] }
 num-bigint = { workspace = true }
 num-traits = "0.2"

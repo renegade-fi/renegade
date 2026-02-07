@@ -18,11 +18,11 @@ use renegade_solidity_abi::v2::IDarkpoolV2::SignatureWithNonce;
 use state::State;
 use types_account::{OrderId, order::PrivacyRing};
 use types_core::AccountId;
-use types_tasks::{CancelOrderTaskDescriptor, CreateOrderTaskDescriptor};
+use types_tasks::CancelOrderTaskDescriptor;
 
 use crate::{
     error::{ApiServerError, bad_request, not_found},
-    http::helpers::append_task,
+    http::helpers::{append_create_order_task, append_task},
     param_parsing::{
         parse_account_id_from_params, parse_order_id_from_params, should_block_on_task,
     },
@@ -154,37 +154,31 @@ impl TypedHandler for CreateOrderHandler {
         params: UrlParams,
         query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
+        // Parse query and URL params
         let blocking = should_block_on_task(&query_params);
-
-        // Parse account ID from URL params
         let account_id = parse_account_id_from_params(&params)?;
 
         // TODO: Allow all order types
         let ty = req.order.order_type;
-        if !matches!(ty, OrderType::PublicOrder) {
-            return Err(bad_request("Only public orders are currently supported"));
+        if matches!(ty, OrderType::RenegadeSettledPrivateFillOrder) {
+            return Err(bad_request("Only Ring {0, 1, 2} orders are currently supported"));
         }
 
-        // Convert order auth to an internal type, validating the permit
-        let order_id = req.order.id;
-        let auth = req.get_order_auth(self.executor).map_err(bad_request)?;
-        let (intent, ring, metadata) = req.into_order_components();
-
         // Create the task descriptor with the global matching pool
-        let descriptor = CreateOrderTaskDescriptor::new(
+        let auth = req.get_order_auth(self.executor).map_err(bad_request)?;
+        let task_id = append_create_order_task(
             account_id,
-            order_id,
-            intent,
-            ring,
-            metadata,
+            req.order,
             auth,
             GLOBAL_MATCHING_POOL.to_string(),
+            blocking,
+            &self.state,
+            &self.task_queue,
         )
-        .map_err(bad_request)?;
-        let task_id =
-            append_task(descriptor.into(), blocking, &self.state, &self.task_queue).await?;
+        .await?;
 
-        Ok(CreateOrderResponse { task_id, completed: true })
+        // If the task is blocking, getting here means it completed
+        Ok(CreateOrderResponse { task_id, completed: blocking })
     }
 }
 

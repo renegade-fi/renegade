@@ -25,8 +25,10 @@ use crate::{
 // | Error Messages |
 // ------------------
 
-/// Error message for account not found
-const ERR_ACCOUNT_NOT_FOUND: &str = "account not found";
+/// Create an account not found error
+pub(crate) fn account_not_found() -> ApiServerError {
+    not_found("account not found")
+}
 
 // --------------------
 // | Account Handlers |
@@ -58,8 +60,7 @@ impl TypedHandler for GetAccountByIdHandler {
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
         let account_id = parse_account_id_from_params(&params)?;
-        let acct =
-            self.state.get_account(&account_id).await?.ok_or(not_found(ERR_ACCOUNT_NOT_FOUND))?;
+        let acct = self.state.get_account(&account_id).await?.ok_or_else(account_not_found)?;
 
         Ok(GetAccountResponse { account: acct.into() })
     }
@@ -93,7 +94,8 @@ impl TypedHandler for CreateAccountHandler {
         query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
         let blocking = should_block_on_task(&query_params);
-        let keychain = KeyChain::new(PrivateKeyChain::new(req.auth_hmac_key, req.master_view_seed));
+        let private_keys = PrivateKeyChain::new(req.auth_hmac_key, req.master_view_seed);
+        let keychain = KeyChain::new(private_keys, req.schnorr_public_key);
         let task = NewAccountTaskDescriptor::new(req.account_id, keychain, req.address);
         append_task(task.into(), blocking, &self.state, &self.task_queue).await?;
 
@@ -127,8 +129,7 @@ impl TypedHandler for GetAccountSeedsHandler {
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
         let account_id = parse_account_id_from_params(&params)?;
-        let acct =
-            self.state.get_account(&account_id).await?.ok_or(not_found(ERR_ACCOUNT_NOT_FOUND))?;
+        let acct = self.state.get_account(&account_id).await?.ok_or_else(account_not_found)?;
 
         let secret_keys = acct.keychain.secret_keys;
         Ok(GetAccountSeedsResponse {
@@ -171,8 +172,8 @@ impl TypedHandler for SyncAccountHandler {
         let account_id = parse_account_id_from_params(&params)?;
 
         // Build keychain from request
-        let master_view_seed = req.master_view_seed;
-        let keychain = KeyChain::new(PrivateKeyChain::new(req.auth_hmac_key, master_view_seed));
+        let private_keys = PrivateKeyChain::new(req.auth_hmac_key, req.master_view_seed);
+        let keychain = KeyChain::new(private_keys, req.schnorr_public_key);
 
         // Create and append the task
         let descriptor = RefreshAccountTaskDescriptor::new(account_id, keychain);

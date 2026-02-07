@@ -24,6 +24,7 @@ rustc-ice-*
 .cursor/hooks.json
 secrets.env
 /.gitattributes
+**/CLAUDE.md
 
 # macos
 **/.DS_Store

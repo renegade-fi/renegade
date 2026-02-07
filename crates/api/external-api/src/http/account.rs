@@ -1,6 +1,7 @@
 //! HTTP route definitions and request/response types for account operations
 
 use alloy::primitives::Address;
+use circuit_types::schnorr::SchnorrPublicKey;
 use constants::Scalar;
 use serde::{Deserialize, Serialize};
 use types_core::HmacKey;
@@ -49,6 +50,9 @@ pub struct CreateAccountRequest {
     /// The HMAC key for authenticating requests
     #[serde(with = "serde_helpers::hmac_key_as_base64_string")]
     pub auth_hmac_key: HmacKey,
+    /// The schnorr public key used for in-circuit verification
+    #[serde(with = "serde_helpers::schnorr_public_key_as_string")]
+    pub schnorr_public_key: SchnorrPublicKey,
 }
 
 /// Response for get account seeds
@@ -71,6 +75,9 @@ pub struct SyncAccountRequest {
     /// The HMAC key for authenticating requests
     #[serde(with = "serde_helpers::hmac_key_as_base64_string")]
     pub auth_hmac_key: HmacKey,
+    /// The schnorr public key used for in-circuit verification
+    #[serde(with = "serde_helpers::schnorr_public_key_as_string")]
+    pub schnorr_public_key: SchnorrPublicKey,
 }
 
 /// Response from syncing an account

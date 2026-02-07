@@ -354,8 +354,8 @@ impl CreateBalanceTask {
     async fn create_balance_and_update_keychain(&self) -> Result<(Balance, KeyChain)> {
         // Read the current keychain
         let mut keychain = self.get_account_keychain().await?;
-        let recovery_id_stream = keychain.sample_recovery_id_stream_seed();
-        let share_stream = keychain.sample_share_stream_seed();
+        let recovery_id_stream = keychain.sample_recovery_id_stream();
+        let share_stream = keychain.sample_share_stream();
 
         // Create a new balance
         let balance = self.create_balance(share_stream.seed, recovery_id_stream.seed).await?;
