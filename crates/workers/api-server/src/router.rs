@@ -384,6 +384,12 @@ impl Router {
                     .authenticate_account_request(account_id, path, headers, req_body)
                     .await?;
             },
+            AuthType::AccountIfExists => {
+                let account_id = parse_account_id_from_params(url_params)?;
+                self.auth_middleware
+                    .authenticate_account_request_if_exists(account_id, path, headers, req_body)
+                    .await?;
+            },
             AuthType::Admin => {
                 self.auth_middleware.authenticate_admin_request(path, headers, req_body)?;
             },

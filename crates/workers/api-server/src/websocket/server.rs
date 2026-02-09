@@ -318,7 +318,7 @@ impl WebsocketServer {
             AuthType::Admin => {
                 self.auth_middleware.authenticate_admin_request(topic, &headers, &body_serialized)
             },
-            AuthType::None => unreachable!(),
+            AuthType::AccountIfExists | AuthType::None => unreachable!(),
         }
     }
 

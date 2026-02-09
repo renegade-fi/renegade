@@ -286,7 +286,9 @@ impl CreateOrderTask {
         let order = Order::new_with_ring(order_id, state_intent, metadata, ring);
         let waiter =
             self.state().add_order_to_account(account_id, order, auth, matching_pool).await?;
+
         waiter.await?;
+        self.send_indexer_message().await;
 
         // Choose a next state based on ring
         let next_state = match ring {
@@ -372,7 +374,6 @@ impl CreateOrderTask {
             waiter.await.map_err(CreateOrderTaskError::state)?;
         }
 
-        self.send_indexer_message().await;
         Ok(())
     }
 

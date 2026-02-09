@@ -20,6 +20,9 @@ pub enum AuthType {
     Account,
     /// An admin request
     Admin,
+    /// Validates the signature if the account exists,
+    /// otherwise allows the request through
+    AccountIfExists,
     /// No authentication is required
     None,
 }
@@ -60,6 +63,25 @@ impl AuthMiddleware {
             .ok_or_else(|| not_found(ERR_WALLET_NOT_FOUND.to_string()))?;
 
         validate_expiring_auth(path, headers, payload, &key)?;
+        Ok(())
+    }
+
+    /// Authenticate a sync request
+    ///
+    /// If the account exists in state, validates the signature. If the account
+    /// does not exist, allows the request through without validation.
+    pub async fn authenticate_account_request_if_exists(
+        &self,
+        account_id: AccountId,
+        path: &str,
+        headers: &HeaderMap,
+        payload: &[u8],
+    ) -> Result<(), ApiServerError> {
+        let key = self.state.get_account_symmetric_key(&account_id).await?;
+        if let Some(key) = key {
+            validate_expiring_auth(path, headers, payload, &key)?;
+        }
+
         Ok(())
     }
 

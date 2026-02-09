@@ -284,11 +284,7 @@ impl RefreshAccountTask {
         let orders: Vec<OrderRefreshData> = public_intents
             .iter()
             .map(|intent| {
-                let intent_signature = intent
-                    .intent_signature
-                    .clone()
-                    .try_into()
-                    .map_err(RefreshAccountTaskError::conversion)?;
+                let intent_signature = intent.intent_signature.clone().into();
 
                 let auth =
                     OrderAuth::PublicOrder { permit: intent.permit.clone(), intent_signature };
