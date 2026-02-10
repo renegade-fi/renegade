@@ -7,11 +7,12 @@ use std::path::PathBuf;
 use flate2::Compression;
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
+use matching_engine_core::MatchingEngine;
 use openraft::{
     ErrorSubject, ErrorVerb, LogId, RaftSnapshotBuilder, Snapshot, SnapshotMeta,
     StorageError as RaftStorageError, StoredMembership,
 };
-use tracing::warn;
+use tracing::info;
 use util::{err_str, get_current_time_millis};
 
 use crate::replication::error::{ReplicationError, new_snapshot_error};
@@ -250,20 +251,41 @@ impl StateMachine {
         self.write_snapshot_metadata(meta)?;
 
         let db_clone = self.db_owned();
-        warn!("order cache not hydrated from snapshot");
-        // let order_cache_clone = self.applicator.config.order_cache.clone();
+        let engine = self.applicator.matching_engine();
         let jh = tokio::task::spawn_blocking(move || {
             Self::copy_db_data(&snapshot_db, &db_clone)?;
-            // let rt = tokio::runtime::Handle::current();
-            // rt.block_on(async move {
-            //     if let Err(e) = order_cache_clone.hydrate_from_db(&snapshot_db).await {
-            //         error!("error hydrating order cache from snapshot: {e}");
-            //     };
-            // });
-
-            Ok(())
+            Self::hydrate_matching_engine(&db_clone, &engine)
         });
         jh.await.map_err(|_| ReplicationError::Snapshot(ERR_AWAIT_INSTALL.to_string()))?
+    }
+
+    /// Hydrate the matching engine from the database
+    ///
+    /// This populates the matching engine with all orders that have a
+    /// non-zero matchable amount, restoring the in-memory order book
+    /// after a snapshot recovery
+    fn hydrate_matching_engine(db: &DB, engine: &MatchingEngine) -> Result<(), ReplicationError> {
+        let tx = db.new_read_tx()?;
+        let account_ids = tx.get_all_account_ids()?;
+
+        let mut n_hydrated = 0;
+        for account_id in account_ids {
+            let orders = tx.get_account_orders(&account_id)?;
+            for order in orders {
+                let matching_pool = tx.get_matching_pool_for_order(&order.id)?;
+                let matchable_amount =
+                    tx.get_order_matchable_amount(&order.id)?.unwrap_or_default();
+
+                if matchable_amount > 0 {
+                    engine.upsert_order(account_id, &order, matchable_amount, matching_pool);
+                    n_hydrated += 1;
+                }
+            }
+        }
+
+        tx.commit()?;
+        info!("hydrated {n_hydrated} orders into the matching engine from snapshot");
+        Ok(())
     }
 
     /// Deletes the snapshot data
@@ -325,9 +347,15 @@ impl StateMachine {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
+    use constants::GLOBAL_MATCHING_POOL;
     use libmdbx::Error as MdbxError;
     use types_account::MatchingPoolName;
     use types_account::account::{Account, mocks::mock_empty_account};
+    use types_account::{
+        balance::mocks::mock_balance, order::mocks::mock_order, order_auth::mocks::mock_order_auth,
+    };
 
     use crate::{
         ACCOUNTS_TABLE, replication::mock_raft::mock_state_machine,
@@ -522,8 +550,6 @@ mod tests {
     /// pools
     #[tokio::test]
     async fn test_apply_snapshot_accounts_and_pools() {
-        use std::sync::Arc;
-
         let snapshot_sm = mock_state_machine().await;
         let mut target_sm = mock_state_machine().await;
 
@@ -558,81 +584,63 @@ mod tests {
         assert_eq!(recovered_accounts.len(), 2);
     }
 
-    // TODO: Re-enable this test once order cache hydration is implemented
-    // /// Tests that applying a snapshot properly backfills the order cache
-    // #[tokio::test]
-    // async fn test_apply_snapshot_order_cache() {
-    //     use std::sync::Arc;
-    //     use types_account::account::OrderId;
-    //     use types_account::account::mocks::mock_intent;
-    //     // use crate::caching::order_cache::OrderBookFilter;
-    //
-    //     let snapshot_sm = mock_state_machine().await;
-    //     let mut target_sm = mock_state_machine().await;
-    //     // let order_cache = target_sm.applicator.config.order_cache.clone();
-    //
-    //     // Create three intents/orders, the first allows external matches and
-    // is ready for match     // The second does not allow external matches,
-    // but is ready for matching     // The third is neither ready for
-    // matching nor allows external matches     let oid1 =
-    // OrderId::new_v4();     let oid2 =
-    // OrderId::new_v4();     let oid3 =
-    // OrderId::new_v4();     // NOTE: Order types with
-    // allow_external_matches are not currently used     // let mut order1 =
-    // mock_order();     // let mut order2 = mock_order();
-    //     // let mut order3 = mock_order();
-    //     // order1.allow_external_matches = true;
-    //     // order2.allow_external_matches = false;
-    //     // order3.allow_external_matches = false;
-    //
-    //     // Add two accounts containing these intents
-    //     let mut account1 = mock_empty_account();
-    //     add_account_to_sm(&snapshot_sm, account1.clone()).await;
-    //     account1.intents.insert(oid1, mock_intent());
-    //
-    //     let mut account2 = mock_empty_account();
-    //     add_account_to_sm(&snapshot_sm, account2.clone()).await;
-    //     account2.intents.insert(oid2, mock_intent());
-    //     account2.intents.insert(oid3, mock_intent());
-    //
-    //     update_account_in_sm(&snapshot_sm, account1).await;
-    //     update_account_in_sm(&snapshot_sm, account2).await;
-    //
-    //     // Add validity proofs for the first two orders so that they are
-    // ready for match     // NOTE: Validity proofs are not currently
-    // implemented, so this is commented out     //
-    // add_dummy_validity_proof_to_sm(& snapshot_sm, oid1).await;     //
-    // add_dummy_validity_proof_to_sm(& snapshot_sm, oid2).await;
-    //
-    //     // Update the target state machine from the snapshot
-    //     let snapshot_db = Arc::try_unwrap(snapshot_sm.applicator.config.db)
-    //         .unwrap_or_else(|_| panic!("Failed to unwrap DB"));
-    //     let meta = SnapshotMeta::default();
-    //
-    //     let test_tx = snapshot_db.new_read_tx().unwrap();
-    //     let accounts = test_tx.get_all_accounts().unwrap();
-    //     assert_eq!(accounts.len(), 2);
-    //     test_tx.commit().unwrap();
-    //
-    //     target_sm.update_from_snapshot(&meta, snapshot_db).await.unwrap();
-    //
-    //     // Check that the order cache has the correct orders
-    //     // NOTE: Order cache hydration is currently commented out in
-    // update_from_snapshot     // let order1_filter =
-    //     //     OrderBookFilter::new(order1.pair(), order1.side, true /*
-    // external */);     // let matchable_orders =
-    // order_cache.get_orders(order1_filter).await;     // assert_eq!
-    // (matchable_orders.len(), 1);     // assert!(matchable_orders.
-    // contains(&oid1));     //
-    //     // let order2_filter =
-    //     //     OrderBookFilter::new(order2.pair(), order2.side, false /*
-    // external */);     // let matchable_orders =
-    // order_cache.get_orders(order2_filter).await;     // assert_eq!
-    // (matchable_orders.len(), 1);     // assert!(matchable_orders.
-    // contains(&oid2));     //
-    //     // let order3_filter =
-    //     //     OrderBookFilter::new(order3.pair(), order3.side, false /*
-    // external */);     // let matchable_orders =
-    // order_cache.get_orders(order3_filter).await;     // assert_eq!
-    // (matchable_orders.len(), 0); }
+    /// Tests that applying a snapshot properly hydrates the matching engine
+    #[tokio::test]
+    async fn test_apply_snapshot_matching_engine_hydration() {
+        let snapshot_sm = mock_state_machine().await;
+        let mut target_sm = mock_state_machine().await;
+
+        // Create an account with an order and a matching balance
+        let account = mock_empty_account();
+        add_account_to_sm(&snapshot_sm, account.clone()).await;
+
+        let order = mock_order();
+        let auth = mock_order_auth();
+        let mut balance = mock_balance();
+        balance.state_wrapper.inner.mint = order.input_token();
+
+        // Add a balance then an order so the order has a non-zero matchable
+        // amount
+        let add_balance = StateTransition::UpdateAccountBalance {
+            account_id: account.id,
+            balance: balance.clone(),
+        };
+        apply_test_transition(&snapshot_sm, add_balance).await;
+
+        let add_order = StateTransition::AddOrderToAccount {
+            account_id: account.id,
+            order: order.clone(),
+            auth,
+            pool_name: GLOBAL_MATCHING_POOL.to_string(),
+        };
+        apply_test_transition(&snapshot_sm, add_order).await;
+
+        // Create a second account with an order but no balance (zero matchable
+        // amount)
+        let account2 = mock_empty_account();
+        add_account_to_sm(&snapshot_sm, account2.clone()).await;
+
+        let order2 = mock_order();
+        let auth2 = mock_order_auth();
+        let add_order2 = StateTransition::AddOrderToAccount {
+            account_id: account2.id,
+            order: order2.clone(),
+            auth: auth2,
+            pool_name: GLOBAL_MATCHING_POOL.to_string(),
+        };
+        apply_test_transition(&snapshot_sm, add_order2).await;
+
+        // Apply the snapshot to the target state machine
+        let snapshot_db = Arc::try_unwrap(snapshot_sm.applicator.config.db)
+            .unwrap_or_else(|_| panic!("Failed to unwrap DB"));
+        let meta = SnapshotMeta::default();
+        target_sm.update_from_snapshot(&meta, snapshot_db).await.unwrap();
+
+        // The target matching engine should contain order1 (has balance) but
+        // not order2 (no balance)
+        let engine = target_sm.applicator.matching_engine();
+        let pool = GLOBAL_MATCHING_POOL.to_string();
+        assert!(engine.contains_order(&order, pool.clone()));
+        assert!(!engine.contains_order(&order2, pool));
+    }
 }
