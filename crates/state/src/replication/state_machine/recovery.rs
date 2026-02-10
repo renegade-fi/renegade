@@ -35,25 +35,22 @@ impl StateMachine {
         };
 
         self.update_from_snapshot(&dummy_meta, snap_db).await?;
-        self.clear_wallet_task_queues()?;
+        self.clear_account_task_queues()?;
         self.delete_snapshot_data().await
     }
 
-    /// Clear all wallet task queues
+    /// Clear all account task queues
     ///
-    /// We do this when recovering to prevent wallets from being blocked on a
+    /// We do this when recovering to prevent accounts from being blocked on a
     /// task queue that failed
-    fn clear_wallet_task_queues(&self) -> Result<(), ReplicationError> {
-        todo!("implement wallet task queue clear logic")
-        // let tx = self.db().new_write_tx().unwrap();
-        // let wallets = tx.get_all_wallets()?;
-        // for wallet in wallets.into_iter() {
-        //     let queue_key = wallet.wallet_id;
-        //     tx.clear_task_queue(&queue_key)?;
-        // }
+    fn clear_account_task_queues(&self) -> Result<(), ReplicationError> {
+        let tx = self.db().new_write_tx()?;
+        let account_ids = tx.get_all_account_ids()?;
+        for account_id in account_ids {
+            tx.clear_task_queue(&account_id)?;
+        }
 
-        // tx.commit()?;
-
-        // Ok(())
+        tx.commit()?;
+        Ok(())
     }
 }
