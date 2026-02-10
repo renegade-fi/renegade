@@ -18,14 +18,14 @@ service_name_override = "arbitrum-sepolia-v2-relayer-service"
 [services.arbitrum-one-relayer]
 [services.arbitrum-one-relayer.build]
 dockerfile = "docker/release/Dockerfile"
-ecr_repo = "relayer-arbitrum-one"
-cargo_features = "default,arbitrum"
+ecr_repo = "relayer-arbitrum-one-v2"
+cargo_features = "default"
 
 [services.arbitrum-one-relayer.deploy]
-environment = "arbitrum-one"
+environment = "arbitrum-one-v2"
 resource = "relayer"
-cluster_name_override = "arbitrum-one-relayer"
-service_name_override = "arbitrum-one-relayer-service"
+cluster_name_override = "arbitrum-one-v2-relayer"
+service_name_override = "arbitrum-one-v2-relayer-service"
 
 [services.base-sepolia-relayer]
 [services.base-sepolia-relayer.build]
@@ -42,14 +42,14 @@ service_name_override = "base-sepolia-v2-relayer-service"
 [services.base-mainnet-relayer]
 [services.base-mainnet-relayer.build]
 dockerfile = "docker/release/Dockerfile"
-ecr_repo = "relayer-base-mainnet"
+ecr_repo = "relayer-base-mainnet-v2"
 cargo_features = "default"
 
 [services.base-mainnet-relayer.deploy]
-environment = "base-mainnet"
+environment = "base-mainnet-v2"
 resource = "relayer"
-cluster_name_override = "base-mainnet-relayer"
-service_name_override = "base-mainnet-relayer-service"
+cluster_name_override = "base-mainnet-v2-relayer"
+service_name_override = "base-mainnet-v2-relayer-service"
 
 [services.ethereum-sepolia-relayer]
 [services.ethereum-sepolia-relayer.build]

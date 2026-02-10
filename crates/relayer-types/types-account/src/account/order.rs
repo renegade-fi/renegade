@@ -42,6 +42,8 @@ pub struct OrderMetadata {
     pub min_fill_size: Amount,
     /// Whether or not to allow external matches
     pub allow_external_matches: bool,
+    /// Whether the order has received at least one fill
+    pub has_been_filled: bool,
 }
 
 impl Order {
@@ -152,7 +154,12 @@ impl OrderMetadata {
     /// Create a new order metadata from the given min fill size and allow
     /// external matches
     pub fn new(min_fill_size: Amount, allow_external_matches: bool) -> Self {
-        Self { min_fill_size, allow_external_matches }
+        Self { min_fill_size, allow_external_matches, has_been_filled: false }
+    }
+
+    /// Mark the order as having received its first fill
+    pub fn mark_filled(&mut self) {
+        self.has_been_filled = true;
     }
 }
 
@@ -170,7 +177,7 @@ impl From<StateWrapper<Intent>> for Order {
 
 impl Default for OrderMetadata {
     fn default() -> Self {
-        Self { min_fill_size: 0, allow_external_matches: true }
+        Self { min_fill_size: 0, allow_external_matches: true, has_been_filled: false }
     }
 }
 

@@ -1,12 +1,9 @@
 //! Applicator methods for the network order book, separated out for
 //! discoverability
 
-use circuit_types::Nullifier;
 use serde::{Deserialize, Serialize};
 use tracing::warn;
-use types_account::{OrderId, order::Order};
-
-use crate::{applicator::error::StateApplicatorError, storage::traits::RkyvValue};
+use types_proofs::{ValidityProofBundle, ValidityProofLocator};
 
 use super::{Result, StateApplicator, return_type::ApplicatorReturnType};
 
@@ -18,9 +15,6 @@ use super::{Result, StateApplicator, return_type::ApplicatorReturnType};
 pub const CLUSTER_DEFAULT_PRIORITY: u32 = 1;
 /// The default priority for an order
 pub const ORDER_DEFAULT_PRIORITY: u32 = 1;
-
-/// The error message emitted when an order is missing from the message
-const ERR_ORDER_MISSING: &str = "Order missing from message";
 
 // ----------------------------
 // | Orderbook Implementation |
@@ -57,40 +51,24 @@ impl StateApplicator {
     // | Interface |
     // -------------
 
-    /// Add a validity proof for an order
-    pub fn add_order_validity_proof(
+    /// Add a validity proof bundle at the given locator
+    pub fn add_validity_proof(
         &self,
-        order_id: OrderId,
-        proof: Nullifier,
+        locator: &ValidityProofLocator,
+        bundle: &ValidityProofBundle,
     ) -> Result<ApplicatorReturnType> {
         let tx = self.db().new_write_tx()?;
-        if tx.get_order_info(&order_id)?.is_none() {
-            warn!("Order {order_id} not found in state, aborting `add_order_validity_proof`");
+
+        // For intent-located proofs, ensure the order exists before writing
+        if let ValidityProofLocator::Intent { order_id } = locator
+            && tx.get_order(order_id)?.is_none()
+        {
+            warn!("Order {order_id} not found in state, aborting `add_validity_proof`");
             return Ok(ApplicatorReturnType::None);
         }
 
-        // Write the proof and witness
-        tx.attach_validity_proof(&order_id, proof)?;
-        // tx.write_validity_proof_witness(&order_id, witness)?;
-
-        // Get the order and matchable amount
-        let order = tx
-            .get_order(&order_id)?
-            .ok_or_else(|| StateApplicatorError::reject(ERR_ORDER_MISSING))?;
-        let matchable_amount = tx.get_order_matchable_amount(&order_id)?.unwrap_or_default();
-        let order_deser = Order::from_archived(&order)?;
-
-        // Get the account ID and matching pool for the order
-        let account_id = tx
-            .get_account_id_for_order(&order_id)?
-            .ok_or_else(|| StateApplicatorError::reject("order not associated with account"))?;
-        let matching_pool = tx.get_matching_pool_for_order(&order_id)?;
-
-        // Update the matching engine
-        let matching_engine = self.matching_engine();
-        matching_engine.upsert_order(account_id, &order_deser, matchable_amount, matching_pool);
+        tx.write_validity_proof_bundle(locator, bundle)?;
         tx.commit()?;
-
         Ok(ApplicatorReturnType::None)
     }
 }
@@ -101,19 +79,18 @@ impl StateApplicator {
 
 #[cfg(test)]
 mod test {
-    use constants::{GLOBAL_MATCHING_POOL, Scalar};
-    use rand::thread_rng;
+    use constants::GLOBAL_MATCHING_POOL;
     use types_account::{
         account::mocks::mock_empty_account, order::mocks::mock_order,
         order_auth::mocks::mock_order_auth,
     };
-    use types_gossip::network_order::{
-        ArchivedNetworkOrderState, test_helpers::dummy_network_order,
+    use types_proofs::{
+        ValidityProofBundle, ValidityProofLocator, mocks::mock_intent_only_validity_bundle,
     };
 
     use crate::applicator::test_helpers::mock_applicator;
 
-    /// Test adding a validity proof to an order
+    /// Test adding a validity proof bundle at an intent locator
     ///
     /// Run in a Tokio test as lower level components assume a Tokio runtime
     /// exists
@@ -133,23 +110,15 @@ mod test {
             .add_order_to_account(account.id, &order, &auth, GLOBAL_MATCHING_POOL.to_string())
             .unwrap();
 
-        // Create a network order and add it to the order book
-        // The order must exist in the order book for add_order_validity_proof to work
-        let mut network_order = dummy_network_order();
-        network_order.id = order_id;
-        let tx = applicator.db().new_write_tx().unwrap();
-        tx.write_order(&network_order).unwrap();
-        tx.commit().unwrap();
+        let locator = ValidityProofLocator::Intent { order_id };
+        let bundle = ValidityProofBundle::IntentOnly(mock_intent_only_validity_bundle());
+        applicator.add_validity_proof(&locator, &bundle).unwrap();
 
-        // Add a validity proof (using a random nullifier)
-        let mut rng = thread_rng();
-        let proof_nullifier = Scalar::random(&mut rng);
-        applicator.add_order_validity_proof(order_id, proof_nullifier).unwrap();
-
-        // Verify that the order's state is updated
+        // Verify that the bundle is stored
         let db = applicator.db();
         let tx = db.new_read_tx().unwrap();
-        let order_info = tx.get_order_info(&order_id).unwrap().unwrap();
-        assert!(matches!(order_info.state, ArchivedNetworkOrderState::Verified));
+        let stored =
+            tx.get_validity_proof::<types_proofs::IntentOnlyValidityBundle>(&locator).unwrap();
+        assert!(stored.is_some());
     }
 }

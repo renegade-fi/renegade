@@ -89,6 +89,7 @@ impl ApiOrderCore {
         OrderMetadata {
             min_fill_size: self.min_fill_size,
             allow_external_matches: self.allow_external_matches,
+            has_been_filled: false,
         }
     }
 

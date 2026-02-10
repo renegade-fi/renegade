@@ -21,7 +21,7 @@ use crate::{
     hooks::{RunMatchingEngineHook, TaskHook},
     task_state::TaskStateWrapper,
     traits::{Descriptor, Task, TaskContext, TaskError, TaskState},
-    utils::fetch_ring0_balance,
+    utils::fetch_eoa_balance,
     utils::indexer_client::{ApiPublicIntent, ApiStateObject, IndexerClientError},
 };
 
@@ -272,7 +272,7 @@ impl RefreshAccountTask {
         let owner = public_intents.first().unwrap().order.intent.inner.owner;
         let mut balances = Vec::new();
         for token in input_tokens {
-            if let Some(balance) = fetch_ring0_balance(&self.ctx, token, owner)
+            if let Some(balance) = fetch_eoa_balance(&self.ctx, token, owner)
                 .await
                 .map_err(RefreshAccountTaskError::darkpool_client)?
             {

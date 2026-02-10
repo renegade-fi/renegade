@@ -62,7 +62,7 @@ use circuits_core::zk_circuits::{
 use http_auth_basic::Credentials;
 use job_types::proof_manager::ProofManagerResponse;
 use reqwest::{
-    Client, Url,
+    Client,
     header::{AUTHORIZATION, HeaderMap, HeaderValue},
 };
 use serde::{Deserialize, Serialize};
@@ -155,8 +155,8 @@ const VALID_PUBLIC_RELAYER_FEE_PAYMENT_PATH: &str = "/prove-valid-public-relayer
 pub(crate) struct ProofServiceClient {
     /// The HTTP client to use for connecting to the prover service
     client: Client,
-    /// The URL of the prover service
-    url: Url,
+    /// The base URL of the prover service (without trailing slash)
+    url: String,
     /// The password for the prover service
     password: String,
 }
@@ -167,8 +167,11 @@ impl ProofServiceClient {
         let client = Client::new();
         let url = config
             .prover_service_url
-            .clone()
-            .ok_or(ProofManagerError::setup("no prover service URL provided"))?;
+            .as_ref()
+            .ok_or(ProofManagerError::setup("no prover service URL provided"))?
+            .as_str()
+            .trim_end_matches('/')
+            .to_string();
         let password = config
             .prover_service_password
             .clone()

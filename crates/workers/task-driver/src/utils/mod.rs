@@ -44,7 +44,7 @@ pub(crate) fn enqueue_proof_job(
 ///
 /// Queries the ERC20 balance and permit2 allowance for the given token and
 /// owner, returning a Balance if there is usable liquidity.
-pub(crate) async fn fetch_ring0_balance(
+pub(crate) async fn fetch_eoa_balance(
     ctx: &TaskContext,
     token: Address,
     owner: Address,

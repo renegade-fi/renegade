@@ -26,9 +26,12 @@ use types_tasks::CreateOrderTaskDescriptor;
 use crate::{
     hooks::{RefreshAccountHook, RunMatchingEngineHook, TaskHook},
     task_state::TaskStateWrapper,
+    tasks::validity_proofs::{
+        error::ValidityProofsError, intent_only::update_intent_only_validity_proof,
+    },
     traits::{Descriptor, Task, TaskContext, TaskError, TaskState},
     utils::{
-        fetch_ring0_balance,
+        fetch_eoa_balance,
         indexer_client::{Message, PublicIntentMetadataUpdateMessage},
     },
 };
@@ -49,6 +52,10 @@ pub enum CreateOrderTaskState {
     Creating,
     /// The task is checking for a balance on-chain approved to the darkpool
     CheckingAllowance,
+    /// The task is generating validity proofs for the order
+    GeneratingPrivateIntentValidityProofs,
+    /// The task is generating validity proofs for ring 2/3
+    GeneratingPrivateFillValidityProofs,
     /// The task is completed
     Completed,
 }
@@ -69,6 +76,12 @@ impl Display for CreateOrderTaskState {
             CreateOrderTaskState::Pending => write!(f, "Pending"),
             CreateOrderTaskState::Creating => write!(f, "Creating"),
             CreateOrderTaskState::CheckingAllowance => write!(f, "CheckingAllowance"),
+            CreateOrderTaskState::GeneratingPrivateIntentValidityProofs => {
+                write!(f, "GeneratingPrivateIntentValidityProofs")
+            },
+            CreateOrderTaskState::GeneratingPrivateFillValidityProofs => {
+                write!(f, "GeneratingPrivateFillValidityProofs")
+            },
             CreateOrderTaskState::Completed => write!(f, "Completed"),
         }
     }
@@ -96,6 +109,9 @@ pub enum CreateOrderTaskError {
     /// Error interacting with global state
     #[error("state error: {0}")]
     State(String),
+    /// Error generating validity proof
+    #[error("validity proof error: {0}")]
+    ValidityProof(String),
 }
 
 impl CreateOrderTaskError {
@@ -116,6 +132,12 @@ impl CreateOrderTaskError {
     pub fn state<T: ToString>(msg: T) -> Self {
         Self::State(msg.to_string())
     }
+
+    /// Create a new validity proof error
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn validity_proof<T: ToString>(msg: T) -> Self {
+        Self::ValidityProof(msg.to_string())
+    }
 }
 
 impl TaskError for CreateOrderTaskError {
@@ -133,6 +155,12 @@ impl From<DarkpoolClientError> for CreateOrderTaskError {
 impl From<StateError> for CreateOrderTaskError {
     fn from(e: StateError) -> Self {
         CreateOrderTaskError::state(e)
+    }
+}
+
+impl From<ValidityProofsError> for CreateOrderTaskError {
+    fn from(e: ValidityProofsError) -> Self {
+        CreateOrderTaskError::validity_proof(e.to_string())
     }
 }
 
@@ -195,8 +223,16 @@ impl Task for CreateOrderTask {
                 self.task_state = CreateOrderTaskState::Creating;
             },
             CreateOrderTaskState::Creating => {
-                self.create_order().await?;
-                self.task_state = CreateOrderTaskState::CheckingAllowance;
+                let next_state = self.create_order().await?;
+                self.task_state = next_state;
+            },
+            CreateOrderTaskState::GeneratingPrivateIntentValidityProofs => {
+                self.generate_private_intent_validity_proofs().await?;
+                self.task_state = CreateOrderTaskState::Completed;
+            },
+            CreateOrderTaskState::GeneratingPrivateFillValidityProofs => {
+                self.generate_private_fill_validity_proofs().await?;
+                self.task_state = CreateOrderTaskState::Completed;
             },
             CreateOrderTaskState::CheckingAllowance => {
                 self.check_allowance().await?;
@@ -239,8 +275,9 @@ impl Descriptor for CreateOrderTaskDescriptor {}
 
 impl CreateOrderTask {
     /// Create a new order
-    pub async fn create_order(&self) -> Result<()> {
-        println!("Creating order");
+    ///
+    /// Returns the next state that the task should transition to
+    pub async fn create_order(&self) -> Result<CreateOrderTaskState> {
         let CreateOrderTask { order_id, account_id, ring, metadata, auth, matching_pool, .. } =
             self.clone();
 
@@ -249,10 +286,37 @@ impl CreateOrderTask {
         let order = Order::new_with_ring(order_id, state_intent, metadata, ring);
         let waiter =
             self.state().add_order_to_account(account_id, order, auth, matching_pool).await?;
-        waiter.await.map_err(CreateOrderTaskError::state).map(|_| ())
+        waiter.await?;
+
+        // Choose a next state based on ring
+        let next_state = match ring {
+            PrivacyRing::Ring0 => CreateOrderTaskState::CheckingAllowance,
+            PrivacyRing::Ring1 => CreateOrderTaskState::GeneratingPrivateIntentValidityProofs,
+            PrivacyRing::Ring2 | PrivacyRing::Ring3 => {
+                CreateOrderTaskState::GeneratingPrivateFillValidityProofs
+            },
+        };
+
+        Ok(next_state)
     }
 
-    // --- State Wrapper Creation ---
+    /// Generate validity proofs for the private intent (Ring 1)
+    async fn generate_private_intent_validity_proofs(&self) -> Result<()> {
+        // Check the on-chain balance for the input token
+        self.check_allowance().await?;
+
+        // Generate intent-only first-fill validity proof
+        update_intent_only_validity_proof(self.order_id, &self.ctx).await?;
+        Ok(())
+    }
+
+    /// Generate validity proofs for the private fill
+    async fn generate_private_fill_validity_proofs(&self) -> Result<()> {
+        println!("Generating private fill validity proofs");
+        panic!("Not implemented");
+    }
+
+    // --- State Wrapper --- //
 
     /// Create a state wrapper for the intent based on ring level
     async fn create_state_wrapper(&self) -> Result<StateWrapper<Intent>> {
@@ -297,7 +361,7 @@ impl CreateOrderTask {
 
         // Otherwise, we need to check for an existing allowance on-chain
         let owner = self.intent.owner;
-        let balance = fetch_ring0_balance(&self.ctx, in_token, owner)
+        let balance = fetch_eoa_balance(&self.ctx, in_token, owner)
             .await
             .map_err(CreateOrderTaskError::darkpool_client)?;
 
