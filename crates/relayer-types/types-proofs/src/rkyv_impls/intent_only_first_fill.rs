@@ -5,7 +5,10 @@
 use circuit_types::{Commitment as PrimitiveCommitment, PlonkProof, ProofLinkingHint};
 use circuits_core::zk_circuits::validity_proofs::intent_only_first_fill::IntentOnlyFirstFillValidityStatement;
 use constants::Scalar;
-use darkpool_types::{intent::IntentShare, rkyv_remotes::{AddressDef, ScalarDef}};
+use darkpool_types::{
+    intent::IntentShare,
+    rkyv_remotes::{AddressDef, ScalarDef},
+};
 use rkyv::{Archive, Deserialize, Serialize};
 
 use crate::bundles::{IntentOnlyFirstFillValidityBundle, ProofAndHintBundleInner};

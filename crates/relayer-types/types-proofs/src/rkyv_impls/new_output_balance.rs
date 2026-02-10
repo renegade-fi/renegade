@@ -5,7 +5,9 @@
 use circuit_types::{Nullifier, PlonkProof, ProofLinkingHint, merkle::MerkleRoot};
 use circuits_core::zk_circuits::validity_proofs::new_output_balance::NewOutputBalanceValidityStatement;
 use constants::Scalar;
-use darkpool_types::{balance::PreMatchBalanceShare, rkyv_remotes::ScalarDef, state_wrapper::PartialCommitment};
+use darkpool_types::{
+    balance::PreMatchBalanceShare, rkyv_remotes::ScalarDef, state_wrapper::PartialCommitment,
+};
 use rkyv::{Archive, Deserialize, Serialize};
 
 use crate::bundles::{NewOutputBalanceValidityBundle, ProofAndHintBundleInner};

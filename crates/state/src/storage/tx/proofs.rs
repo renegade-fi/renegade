@@ -71,13 +71,19 @@ impl StateTxn<'_, RW> {
         bundle: &ValidityProofBundle,
     ) -> Result<(), StorageError> {
         match bundle {
-            ValidityProofBundle::IntentOnlyFirstFill(inner) => self.write_validity_proof(locator, inner),
+            ValidityProofBundle::IntentOnlyFirstFill(inner) => {
+                self.write_validity_proof(locator, inner)
+            },
             ValidityProofBundle::IntentOnly(inner) => self.write_validity_proof(locator, inner),
             ValidityProofBundle::IntentAndBalanceFirstFill(inner) => {
                 self.write_validity_proof(locator, inner)
             },
-            ValidityProofBundle::IntentAndBalance(inner) => self.write_validity_proof(locator, inner),
-            ValidityProofBundle::NewOutputBalance(inner) => self.write_validity_proof(locator, inner),
+            ValidityProofBundle::IntentAndBalance(inner) => {
+                self.write_validity_proof(locator, inner)
+            },
+            ValidityProofBundle::NewOutputBalance(inner) => {
+                self.write_validity_proof(locator, inner)
+            },
             ValidityProofBundle::OutputBalance(inner) => self.write_validity_proof(locator, inner),
         }
     }
@@ -205,10 +211,8 @@ mod test {
         let db = mock_db();
         db.create_table(PROOFS_TABLE).unwrap();
 
-        let locator = ValidityProofLocator::Balance {
-            account_id: AccountId::new_v4(),
-            mint: Address::ZERO,
-        };
+        let locator =
+            ValidityProofLocator::Balance { account_id: AccountId::new_v4(), mint: Address::ZERO };
         let bundle = mock_intent_only_validity_bundle();
 
         let tx = db.new_write_tx().unwrap();
