@@ -7,7 +7,9 @@ use circuit_types::{
 };
 use circuits_core::zk_circuits::validity_proofs::intent_and_balance_first_fill::IntentAndBalanceFirstFillValidityStatement;
 use constants::Scalar;
-use darkpool_types::{intent::PreMatchIntentShare, rkyv_remotes::ScalarDef, state_wrapper::PartialCommitment};
+use darkpool_types::{
+    intent::PreMatchIntentShare, rkyv_remotes::ScalarDef, state_wrapper::PartialCommitment,
+};
 use rkyv::{Archive, Deserialize, Serialize};
 
 use crate::bundles::{IntentAndBalanceFirstFillValidityBundle, ProofAndHintBundleInner};

@@ -179,7 +179,7 @@ impl HttpServer {
         );
 
         // POST /v2/account/:account_id/orders/:order_id/update
-        router.add_unauthenticated_route(
+        router.add_account_authenticated_route(
             &Method::POST,
             UPDATE_ORDER_ROUTE.to_string(),
             UpdateOrderHandler::new(),
@@ -225,14 +225,14 @@ impl HttpServer {
         // --- Task Routes (v2) --- //
 
         // GET /v2/account/:account_id/tasks
-        router.add_unauthenticated_route(
+        router.add_account_authenticated_route(
             &Method::GET,
             GET_TASKS_ROUTE.to_string(),
             GetTasksHandler::new(),
         );
 
         // GET /v2/account/:account_id/tasks/:task_id
-        router.add_unauthenticated_route(
+        router.add_account_authenticated_route(
             &Method::GET,
             GET_TASK_BY_ID_ROUTE.to_string(),
             GetTaskByIdHandler::new(),

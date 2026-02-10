@@ -137,6 +137,12 @@ pub(crate) fn not_found<E: ToString>(e: E) -> ApiServerError {
     ApiServerError::HttpStatusCode(StatusCode::NOT_FOUND, e.to_string())
 }
 
+/// Create an `ApiServerError` with a 409 conflict code
+#[allow(clippy::needless_pass_by_value)]
+pub(crate) fn conflict<E: ToString>(e: E) -> ApiServerError {
+    ApiServerError::HttpStatusCode(StatusCode::CONFLICT, e.to_string())
+}
+
 /// Create an `ApiServerError` with a 500 internal server error code
 #[allow(clippy::needless_pass_by_value)]
 pub(crate) fn internal_error<E: ToString>(e: E) -> ApiServerError {

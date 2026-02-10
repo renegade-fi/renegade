@@ -6,8 +6,8 @@
 
 use crate::bundles::{
     IntentAndBalanceFirstFillValidityBundle, IntentAndBalanceValidityBundle,
-    IntentOnlyFirstFillValidityBundle, IntentOnlyValidityBundle,
-    NewOutputBalanceValidityBundle, OutputBalanceValidityBundle,
+    IntentOnlyFirstFillValidityBundle, IntentOnlyValidityBundle, NewOutputBalanceValidityBundle,
+    OutputBalanceValidityBundle,
 };
 use crate::rkyv_impls::{
     IntentAndBalanceFirstFillValidityBundleDef, IntentAndBalanceValidityBundleDef,

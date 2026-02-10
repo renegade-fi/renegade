@@ -5,7 +5,10 @@
 use circuit_types::{Nullifier, PlonkProof, ProofLinkingHint, merkle::MerkleRoot};
 use circuits_core::zk_circuits::validity_proofs::intent_only::IntentOnlyValidityStatement;
 use constants::Scalar;
-use darkpool_types::{rkyv_remotes::{AddressDef, ScalarDef}, state_wrapper::PartialCommitment};
+use darkpool_types::{
+    rkyv_remotes::{AddressDef, ScalarDef},
+    state_wrapper::PartialCommitment,
+};
 use rkyv::{Archive, Deserialize, Serialize};
 
 use crate::bundles::{IntentOnlyValidityBundle, ProofAndHintBundleInner};
@@ -59,13 +62,17 @@ pub struct IntentOnlyValidityBundleInnerDef {
     pub linking_hint: ProofLinkingHint,
 }
 
-impl From<IntentOnlyValidityBundleInnerDef> for ProofAndHintBundleInner<IntentOnlyValidityStatement> {
+impl From<IntentOnlyValidityBundleInnerDef>
+    for ProofAndHintBundleInner<IntentOnlyValidityStatement>
+{
     fn from(value: IntentOnlyValidityBundleInnerDef) -> Self {
         Self { proof: value.proof, statement: value.statement, linking_hint: value.linking_hint }
     }
 }
 
-fn inner(bundle: &IntentOnlyValidityBundle) -> ProofAndHintBundleInner<IntentOnlyValidityStatement> {
+fn inner(
+    bundle: &IntentOnlyValidityBundle,
+) -> ProofAndHintBundleInner<IntentOnlyValidityStatement> {
     bundle.as_ref().clone()
 }
 

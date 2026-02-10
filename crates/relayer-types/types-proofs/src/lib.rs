@@ -25,7 +25,7 @@ pub use validity_storage::*;
 mod stored_validity_proof;
 
 #[cfg(feature = "rkyv")]
-pub use stored_validity_proof::{StoredValidityProof, ALL_VALIDITY_PROOF_KEYS};
+pub use stored_validity_proof::{ALL_VALIDITY_PROOF_KEYS, StoredValidityProof};
 
 // TODO: Redefine this as we add more order types
 /// A bundle of validity proofs for an order
