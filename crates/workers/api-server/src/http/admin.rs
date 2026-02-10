@@ -23,8 +23,10 @@ use tracing::info;
 use types_core::{Chain, Token, get_all_tokens};
 use util::on_chain::{set_default_protocol_fee, set_protocol_fee};
 
+use types_account::OrderId;
+
 use crate::{
-    error::{ApiServerError, bad_request, internal_error, not_found},
+    error::{ApiServerError, bad_request, conflict, internal_error, not_found},
     http::helpers::append_create_order_task,
     param_parsing::{
         parse_account_id_from_params, parse_matching_pool_from_url_params,
@@ -379,6 +381,8 @@ impl TypedHandler for AdminGetTaskQueuePausedHandler {
 
 /// Error message when a matching pool does not exist
 const ERR_MATCHING_POOL_NOT_FOUND: &str = "matching pool does not exist";
+/// Error message when an order already exists
+const ERR_ORDER_ALREADY_EXISTS: &str = "order already exists";
 /// Error message when trying to destroy a non-empty matching pool
 const ERR_MATCHING_POOL_NOT_EMPTY: &str = "matching pool is not empty";
 /// Error message when trying to create or destroy the global matching pool
@@ -522,6 +526,12 @@ impl TypedHandler for AdminCreateOrderInPoolHandler {
         let ty = req.order.order_type;
         if !matches!(ty, OrderType::PublicOrder) {
             return Err(bad_request("Only public orders are currently supported"));
+        }
+
+        // Check if order already exists
+        let order_id = OrderId::from(req.order.id);
+        if self.state.get_account_order(&order_id).await?.is_some() {
+            return Err(conflict(ERR_ORDER_ALREADY_EXISTS));
         }
 
         // Validate matching pool exists

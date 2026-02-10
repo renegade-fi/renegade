@@ -20,7 +20,7 @@ use types_core::AccountId;
 use types_tasks::CancelOrderTaskDescriptor;
 
 use crate::{
-    error::{ApiServerError, bad_request, not_found},
+    error::{ApiServerError, bad_request, conflict, not_found},
     http::helpers::{append_create_order_task, append_task},
     param_parsing::{
         parse_account_id_from_params, parse_order_id_from_params, should_block_on_task,
@@ -31,6 +31,9 @@ use crate::{
 // ------------------
 // | Error Messages |
 // ------------------
+
+/// Error message for order already exists
+const ERR_ORDER_ALREADY_EXISTS: &str = "order already exists";
 
 /// Error message for not implemented
 const ERR_NOT_IMPLEMENTED: &str = "not implemented";
@@ -156,6 +159,12 @@ impl TypedHandler for CreateOrderHandler {
         // Parse query and URL params
         let blocking = should_block_on_task(&query_params);
         let account_id = parse_account_id_from_params(&params)?;
+
+        // Check if order already exists
+        let order_id = OrderId::from(req.order.id);
+        if self.state.get_account_order(&order_id).await?.is_some() {
+            return Err(conflict(ERR_ORDER_ALREADY_EXISTS));
+        }
 
         // Create the task descriptor with the global matching pool
         let auth = req.get_order_auth(self.executor).map_err(bad_request)?;

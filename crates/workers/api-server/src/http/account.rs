@@ -15,7 +15,7 @@ use types_account::keychain::{KeyChain, PrivateKeyChain};
 use types_tasks::{NewAccountTaskDescriptor, RefreshAccountTaskDescriptor};
 
 use crate::{
-    error::{ApiServerError, not_found},
+    error::{ApiServerError, conflict, not_found},
     http::helpers::append_task,
     param_parsing::{parse_account_id_from_params, should_block_on_task},
     router::{QueryParams, TypedHandler, UrlParams},
@@ -28,6 +28,11 @@ use crate::{
 /// Create an account not found error
 pub(crate) fn account_not_found() -> ApiServerError {
     not_found("account not found")
+}
+
+/// Create an account already exists error
+pub(crate) fn account_already_exists() -> ApiServerError {
+    conflict("account already exists")
 }
 
 // --------------------
@@ -93,6 +98,11 @@ impl TypedHandler for CreateAccountHandler {
         _params: UrlParams,
         query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
+        // Check if account already exists
+        if self.state.get_account(&req.account_id).await?.is_some() {
+            return Err(account_already_exists());
+        }
+
         let blocking = should_block_on_task(&query_params);
         let private_keys = PrivateKeyChain::new(req.auth_hmac_key, req.master_view_seed);
         let keychain = KeyChain::new(private_keys, req.schnorr_public_key);
