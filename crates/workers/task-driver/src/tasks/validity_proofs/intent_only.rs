@@ -23,6 +23,12 @@ pub async fn update_intent_only_validity_proof(
     order_id: OrderId,
     ctx: &TaskContext,
 ) -> Result<(), ValidityProofsError> {
+    // No proof needed if the matchable amount is zero
+    let matchable_amount = ctx.state.get_order_matchable_amount(&order_id).await?;
+    if matchable_amount == 0 {
+        return Ok(());
+    }
+
     let order = ctx
         .state
         .get_account_order(&order_id)

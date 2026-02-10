@@ -111,6 +111,19 @@ impl StateInner {
         .await
     }
 
+    /// Get the matchable amount for a given order
+    ///
+    /// Returns the order's input amount capped by the account's balance for
+    /// the order's input token
+    pub async fn get_order_matchable_amount(&self, id: &OrderId) -> Result<Amount, StateError> {
+        let id = *id;
+        self.with_read_tx(move |tx| {
+            let amount = tx.get_order_matchable_amount(&id)?.unwrap_or_default();
+            Ok(amount)
+        })
+        .await
+    }
+
     /// Get the order for a given order ID and the balance that capitalizes it
     pub async fn get_account_order_and_matchable_amount(
         &self,
