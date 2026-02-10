@@ -79,7 +79,9 @@ use tokio::net::{TcpListener, TcpStream};
 use types_core::HmacKey;
 use util::get_current_time_millis;
 
-use crate::{http::external_match::processor::ExternalMatchProcessor, router::QueryParams};
+use crate::{
+    auth::AuthType, http::external_match::processor::ExternalMatchProcessor, router::QueryParams,
+};
 
 use super::{
     error::ApiServerError,
@@ -148,9 +150,10 @@ impl HttpServer {
         );
 
         // POST /v2/account/:account_id/sync
-        router.add_account_authenticated_route(
+        router.add_route(
             &Method::POST,
             SYNC_ACCOUNT_ROUTE.to_string(),
+            AuthType::AccountIfExists,
             SyncAccountHandler::new(state.clone(), task_queue.clone()),
         );
 
