@@ -108,8 +108,8 @@ impl StateApplicator {
             StateTransition::RefreshAccount { account_id, orders, balances } => {
                 self.refresh_account(account_id, orders, &balances)
             },
-            StateTransition::AddOrderValidityProof { order_id, proof } => {
-                self.add_order_validity_proof(order_id, proof)
+            StateTransition::AddValidityProof { ref locator, ref bundle } => {
+                self.add_validity_proof(locator, bundle)
             },
             StateTransition::CreateMatchingPool { pool_name } => {
                 self.create_matching_pool(&pool_name)

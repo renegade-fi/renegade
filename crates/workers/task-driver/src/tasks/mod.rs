@@ -7,5 +7,6 @@ pub mod create_order;
 pub mod deposit;
 pub mod node_startup;
 pub mod refresh_account;
-pub mod settlement;
+pub(crate) mod settlement;
+pub(crate) mod validity_proofs;
 pub mod withdraw;

@@ -13,21 +13,40 @@ mocks = [
     "dep:mpc-plonk",
     "dep:mpc-relation",
 ]
-rkyv = ["dep:rkyv"]
+rkyv = [
+    "dep:rkyv",
+    "dep:ark-bn254",
+    "dep:ark-ff",
+    "dep:ark-poly",
+    "dep:darkpool-types",
+    "dep:mpc-plonk",
+    "circuit-types/proof-system-types",
+    "darkpool-types/rkyv",
+    "darkpool-types/proof-system-types",
+]
 
 [dependencies]
 serde = { workspace = true }
 
 # === Optional === #
-rkyv = { workspace = true, optional = true, features = ["std", "alloc"] }
+rkyv = { workspace = true, optional = true, features = [
+    "std",
+    "alloc",
+    "uuid-1",
+] }
+ark-bn254 = { version = "0.4", optional = true }
+ark-ff = { version = "0.4", optional = true }
 ark-ec = { version = "0.4", optional = true }
 ark-poly = { version = "0.4", optional = true }
 jf-primitives = { workspace = true, optional = true }
 mpc-plonk = { workspace = true, optional = true }
 mpc-relation = { workspace = true, optional = true }
+darkpool-types = { workspace = true, default-features = false, optional = true }
+alloy-primitives = { workspace = true }
 
 # === Workspace Dependencies === #
 circuit-types = { workspace = true }
 circuits-core = { workspace = true, default-features = false }
 constants = { workspace = true }
+types-account = { workspace = true, default-features = false }
 types-core = { workspace = true, default-features = false }

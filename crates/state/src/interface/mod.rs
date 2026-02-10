@@ -1,13 +1,13 @@
 //! The `interface` module defines the interface to the state, methods for
 //! proposing state transitions and reading from state
 
+pub mod account_index;
 pub mod matching_pools;
 pub mod merkle_proofs;
 pub mod node_metadata;
-// pub mod order_book;
-pub mod account_index;
 pub mod order_book;
 pub mod peer_index;
+pub mod proofs;
 pub mod raft;
 pub mod task_queue;
 

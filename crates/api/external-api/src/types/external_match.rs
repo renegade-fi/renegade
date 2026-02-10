@@ -62,7 +62,11 @@ impl ExternalOrder {
 
     /// Parse the metadata for the order
     pub fn order_metadata(&self) -> OrderMetadata {
-        OrderMetadata { min_fill_size: self.min_fill_size, allow_external_matches: true }
+        OrderMetadata {
+            min_fill_size: self.min_fill_size,
+            allow_external_matches: true,
+            has_been_filled: false,
+        }
     }
 }
 

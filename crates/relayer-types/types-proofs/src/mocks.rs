@@ -56,3 +56,36 @@ fn dummy_poly_evals() -> ProofEvaluations<ScalarField> {
         perm_next_eval: ScalarField::default(),
     }
 }
+
+#[cfg(all(feature = "mocks", feature = "rkyv"))]
+mod bundle_mocks {
+    //! Mock utilities for creating validity proof bundles for testing
+    use alloy_primitives::Address;
+    use constants::Scalar;
+    use darkpool_types::state_wrapper::PartialCommitment;
+
+    use super::*;
+    use crate::bundles::IntentOnlyValidityBundle;
+    use circuits_core::zk_circuits::validity_proofs::intent_only::IntentOnlyValidityStatement;
+
+    /// Create a dummy `IntentOnlyValidityBundle` for storage tests.
+    ///
+    /// Requires both `mocks` and `rkyv` features.
+    pub fn mock_intent_only_validity_bundle() -> IntentOnlyValidityBundle {
+        let statement = IntentOnlyValidityStatement {
+            owner: Address::ZERO,
+            merkle_root: Scalar::zero(),
+            old_intent_nullifier: Scalar::zero(),
+            new_amount_public_share: Scalar::zero(),
+            new_intent_partial_commitment: PartialCommitment {
+                private_commitment: Scalar::zero(),
+                partial_public_commitment: Scalar::zero(),
+            },
+            recovery_id: Scalar::zero(),
+        };
+        IntentOnlyValidityBundle::new(dummy_proof(), statement, dummy_link_hint())
+    }
+}
+
+#[cfg(all(feature = "mocks", feature = "rkyv"))]
+pub use bundle_mocks::mock_intent_only_validity_bundle;

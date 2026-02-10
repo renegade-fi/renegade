@@ -49,6 +49,7 @@ types-core = { workspace = true }
 types-gossip = { workspace = true, features = ["rkyv"] }
 types-tasks = { workspace = true, features = ["rkyv"] }
 types-account = { workspace = true, features = ["rkyv"] }
+types-proofs = { workspace = true, features = ["rkyv"] }
 types-runtime = { workspace = true }
 config = { workspace = true }
 constants = { workspace = true }
@@ -95,6 +96,7 @@ uuid = "1.4"
 test-helpers = { workspace = true, features = ["mocks"] }
 types-account = { workspace = true, features = ["mocks", "rkyv"] }
 types-gossip = { workspace = true, features = ["mocks", "rkyv"] }
+types-proofs = { workspace = true, features = ["rkyv", "mocks"] }
 types-tasks = { workspace = true, features = ["mocks", "rkyv"] }
 tokio-stream = "0.1"
 

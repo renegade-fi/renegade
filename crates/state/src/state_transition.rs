@@ -4,8 +4,6 @@
 //! generates archived types with undocumented fields.
 #![allow(missing_docs)]
 
-use circuit_types::Nullifier;
-use darkpool_types::rkyv_remotes::ScalarDef;
 use serde::{Deserialize, Serialize};
 use types_account::{
     Account, MatchingPoolName, MerkleAuthenticationPath, OrderRefreshData, account::OrderId,
@@ -13,6 +11,7 @@ use types_account::{
 };
 use types_core::AccountId;
 use types_gossip::WrappedPeerId;
+use types_proofs::{ValidityProofBundle, ValidityProofLocator};
 use types_tasks::{QueuedTask, QueuedTaskState, TaskIdentifier, TaskQueueKey};
 use uuid::Uuid;
 
@@ -69,13 +68,13 @@ pub enum StateTransition {
     },
 
     // --- Orders --- //
-    /// Add a validity proof to an order
-    AddOrderValidityProof { 
-        /// The ID of the order
-        order_id: OrderId, 
-        /// The nullifier proof
-        #[rkyv(with = ScalarDef)]
-        proof: Nullifier },
+    /// Add a validity proof bundle at the given locator
+    AddValidityProof {
+        /// The locator at which to store the proof bundle
+        locator: ValidityProofLocator,
+        /// The validity proof bundle
+        bundle: ValidityProofBundle,
+    },
 
     // --- Merkle Proofs --- //
     /// Add a Merkle authentication path (proof) for an intent or balance

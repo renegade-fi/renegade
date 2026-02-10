@@ -10,11 +10,22 @@
 #![deny(clippy::missing_docs_in_private_items)]
 
 mod bundles;
+mod validity_storage;
+
+#[cfg(feature = "rkyv")]
+pub mod rkyv_impls;
 
 #[cfg(feature = "mocks")]
 pub mod mocks;
 
 pub use bundles::*;
+pub use validity_storage::*;
+
+#[cfg(feature = "rkyv")]
+mod stored_validity_proof;
+
+#[cfg(feature = "rkyv")]
+pub use stored_validity_proof::{StoredValidityProof, ALL_VALIDITY_PROOF_KEYS};
 
 // TODO: Redefine this as we add more order types
 /// A bundle of validity proofs for an order
