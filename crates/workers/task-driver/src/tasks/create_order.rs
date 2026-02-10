@@ -27,7 +27,8 @@ use crate::{
     hooks::{RefreshAccountHook, RunMatchingEngineHook, TaskHook},
     task_state::TaskStateWrapper,
     tasks::validity_proofs::{
-        error::ValidityProofsError, intent_only::update_intent_only_validity_proof,
+        error::ValidityProofsError, intent_and_balance::update_intent_and_balance_validity_proof,
+        intent_only::update_intent_only_validity_proof,
     },
     traits::{Descriptor, Task, TaskContext, TaskError, TaskState},
     utils::{
@@ -312,10 +313,26 @@ impl CreateOrderTask {
         Ok(())
     }
 
-    /// Generate validity proofs for the private fill
+    /// Generate validity proofs for the private fill (Ring 2/3)
+    ///
+    /// Both the intent and the capitalizing balance are in the darkpool
+    /// Merkle state, so we need an intent-and-balance validity proof.
     async fn generate_private_fill_validity_proofs(&self) -> Result<()> {
-        println!("Generating private fill validity proofs");
-        panic!("Not implemented");
+        let (intent_signature, _out_balance_signature) = match self.auth {
+            OrderAuth::RenegadeSettledOrder { intent_signature, new_output_balance_signature } => {
+                (intent_signature, new_output_balance_signature)
+            },
+            _ => return Err(CreateOrderTaskError::invalid_descriptor("invalid order auth")),
+        };
+
+        update_intent_and_balance_validity_proof(
+            self.account_id,
+            self.order_id,
+            intent_signature,
+            &self.ctx,
+        )
+        .await?;
+        Ok(())
     }
 
     // --- State Wrapper --- //
