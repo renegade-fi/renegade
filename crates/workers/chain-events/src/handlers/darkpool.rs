@@ -16,6 +16,8 @@ use crate::{error::OnChainEventListenerError, executor::OnChainEventListenerExec
 const ERR_AMOUNT_REMAINING_OVERFLOW: &str = "Amount remaining overflow";
 /// Error message for missing topic0 in log
 const ERR_LOG_MISSING_TOPIC: &str = "Log missing topic0";
+/// Error message for missing transaction hash in log
+const ERR_LOG_MISSING_TX_HASH: &str = "Log missing transaction hash";
 
 impl OnChainEventListenerExecutor {
     /// Create a subscription for darkpool events (PublicIntent updates and
@@ -40,6 +42,10 @@ impl OnChainEventListenerExecutor {
         &self,
         log: Log,
     ) -> Result<(), OnChainEventListenerError> {
+        if self.should_skip_non_external_match_tx(&log).await? {
+            return Ok(());
+        }
+
         // Extract event signature from first topic
         let topic0 = log
             .topics()
@@ -59,6 +65,25 @@ impl OnChainEventListenerExecutor {
                 Ok(())
             },
         }
+    }
+
+    /// Returns whether a darkpool event should be skipped because the
+    /// originating transaction is not an external match settlement call.
+    async fn should_skip_non_external_match_tx(
+        &self,
+        log: &Log,
+    ) -> Result<bool, OnChainEventListenerError> {
+        let tx_hash = log
+            .transaction_hash
+            .ok_or_else(|| OnChainEventListenerError::darkpool(ERR_LOG_MISSING_TX_HASH))?;
+
+        let is_external_match_tx = self.darkpool_client().is_external_match_tx(tx_hash).await?;
+        if !is_external_match_tx {
+            info!("Skipping darkpool event from non-external-match tx: tx={tx_hash:#x}");
+            return Ok(true);
+        }
+
+        Ok(false)
     }
 
     /// Handle a PublicIntentUpdated event emitted when a public intent is
