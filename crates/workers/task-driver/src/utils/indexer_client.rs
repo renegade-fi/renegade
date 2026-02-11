@@ -3,16 +3,13 @@
 use std::time::Duration;
 
 use alloy::primitives::{Address, B256};
-use circuit_types::Amount;
 use constants::Scalar;
-use darkpool_types::intent::Intent;
 use external_api::{auth::add_expiring_auth_to_headers, types::SignatureWithNonce};
 use http::{HeaderMap, HeaderValue, header::CONTENT_TYPE};
 use renegade_solidity_abi::v2::IDarkpoolV2::PublicIntentPermit;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use tracing::info;
 use types_account::order::Order;
 use types_core::{AccountId, HmacKey};
 use url::Url;
@@ -144,20 +141,14 @@ pub struct MasterViewSeedMessage {
 pub struct PublicIntentMetadataUpdateMessage {
     /// The intent hash
     pub intent_hash: B256,
-    /// The public intent
-    pub intent: Intent,
+    /// The order
+    pub order: Order,
     /// The intent signature
     pub intent_signature: SignatureWithNonce,
     /// The permit for the intent
     pub permit: PublicIntentPermit,
-    /// The order ID
-    pub order_id: Uuid,
     /// The matching pool to which the intent is allocated
     pub matching_pool: String,
-    /// Whether the intent allows external matches
-    pub allow_external_matches: bool,
-    /// The minimum fill size allowed for the intent
-    pub min_fill_size: Amount,
 }
 
 // -----------------
