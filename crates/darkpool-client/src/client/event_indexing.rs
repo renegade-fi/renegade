@@ -160,6 +160,19 @@ impl DarkpoolClient {
         Ok(matches)
     }
 
+    /// Check whether a transaction contains a darkpool `settleExternalMatch`
+    /// call.
+    pub async fn is_external_match_tx(&self, tx_hash: TxHash) -> Result<bool, DarkpoolClientError> {
+        let darkpool_calls = self.fetch_tx_darkpool_calls(tx_hash).await?;
+        for frame in darkpool_calls {
+            if Self::is_external_match_call(&frame.input) {
+                return Ok(true);
+            }
+        }
+
+        Ok(false)
+    }
+
     // -----------
     // | Helpers |
     // -----------
@@ -217,6 +230,15 @@ impl DarkpoolClient {
     }
 
     // --- Calldata Parsing --- //
+
+    /// Whether calldata corresponds to a `settleExternalMatch` call.
+    fn is_external_match_call(calldata: &[u8]) -> bool {
+        if calldata.len() < SELECTOR_LEN {
+            return false;
+        }
+
+        calldata[..SELECTOR_LEN] == IDarkpoolV2::settleExternalMatchCall::SELECTOR
+    }
 
     /// Parse an external match from calldata
     ///
