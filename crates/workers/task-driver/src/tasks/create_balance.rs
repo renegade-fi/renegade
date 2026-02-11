@@ -27,6 +27,7 @@ use types_tasks::CreateBalanceTaskDescriptor;
 use crate::{
     hooks::{RefreshAccountHook, RunMatchingEngineForBalanceHook, TaskHook},
     task_state::TaskStateWrapper,
+    tasks::validity_proofs::balance_update::refresh_validity_proofs_for_updated_balance,
     traits::{Descriptor, Task, TaskContext, TaskError, TaskState},
     utils::{enqueue_proof_job, get_relayer_fee_addr},
 };
@@ -49,6 +50,8 @@ pub enum CreateBalanceTaskState {
     Submitting,
     /// The task is updating the raft state
     UpdatingState,
+    /// The task is updating validity proofs for affected Ring 2/3 orders
+    UpdatingValidityProofs,
     /// The task is completed
     Completed,
 }
@@ -70,6 +73,7 @@ impl Display for CreateBalanceTaskState {
             CreateBalanceTaskState::Proving => write!(f, "Proving"),
             CreateBalanceTaskState::Submitting => write!(f, "Submitting"),
             CreateBalanceTaskState::UpdatingState => write!(f, "UpdatingState"),
+            CreateBalanceTaskState::UpdatingValidityProofs => write!(f, "UpdatingValidityProofs"),
             CreateBalanceTaskState::Completed => write!(f, "Completed"),
         }
     }
@@ -92,6 +96,8 @@ pub enum CreateBalanceTaskError {
     DarkpoolClient(String),
     /// Error generating a proof of `VALID BALANCE CREATE`
     ProofGeneration(String),
+    /// Error updating validity proofs affected by this balance update
+    ValidityProof(String),
     /// A state element was not found that is necessary for task execution
     Missing(String),
 }
@@ -102,13 +108,21 @@ impl CreateBalanceTaskError {
     pub fn missing<T: ToString>(msg: T) -> Self {
         Self::Missing(msg.to_string())
     }
+
+    /// Create a new validity proof error
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn validity_proof<T: ToString>(msg: T) -> Self {
+        Self::ValidityProof(msg.to_string())
+    }
 }
 
 impl TaskError for CreateBalanceTaskError {
     fn retryable(&self) -> bool {
         matches!(
             self,
-            CreateBalanceTaskError::DarkpoolClient(_) | CreateBalanceTaskError::ProofGeneration(_)
+            CreateBalanceTaskError::DarkpoolClient(_)
+                | CreateBalanceTaskError::ProofGeneration(_)
+                | CreateBalanceTaskError::ValidityProof(_)
         )
     }
 }
@@ -206,6 +220,10 @@ impl Task for CreateBalanceTask {
             CreateBalanceTaskState::UpdatingState => {
                 // Update the raft state
                 self.update_state().await?;
+                self.task_state = CreateBalanceTaskState::UpdatingValidityProofs;
+            },
+            CreateBalanceTaskState::UpdatingValidityProofs => {
+                self.update_validity_proofs().await?;
                 self.task_state = CreateBalanceTaskState::Completed;
             },
             CreateBalanceTaskState::Completed => {
@@ -303,6 +321,13 @@ impl CreateBalanceTask {
         waiter.await?;
 
         Ok(())
+    }
+
+    /// Refresh validity proofs for affected Ring 2/3 orders
+    pub async fn update_validity_proofs(&self) -> Result<()> {
+        refresh_validity_proofs_for_updated_balance(self.account_id, self.token, &self.ctx)
+            .await
+            .map_err(CreateBalanceTaskError::validity_proof)
     }
 }
 

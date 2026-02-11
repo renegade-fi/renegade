@@ -19,6 +19,7 @@ use types_account::{
     order_auth::OrderAuth,
 };
 use types_core::AccountId;
+use types_proofs::ValidityProofLocator;
 
 use crate::{
     applicator::error::StateApplicatorError,
@@ -161,6 +162,10 @@ impl StateApplicator {
         // Remove order from account storage
         tx.remove_order_with_auth(&account_id, &order_id)?;
 
+        // Remove all validity proofs keyed by this order
+        let locator = ValidityProofLocator::Intent { order_id };
+        tx.delete_all_validity_proofs(&locator)?;
+
         // Clean up owner index if account has no remaining orders
         let owner = order.intent().owner;
         let should_remove_owner = tx.get_account_orders(&account_id)?.is_empty();
@@ -230,6 +235,13 @@ impl StateApplicator {
             return Err(StateApplicatorError::reject("account not found"));
         }
         tx.update_balance(&account_id, balance)?;
+
+        // Remove balance validity proofs if the darkpool balance is zeroed
+        if balance.location.is_darkpool() && balance.amount() == 0 {
+            let locator = ValidityProofLocator::Balance { account_id, mint: balance.mint() };
+            tx.delete_all_validity_proofs(&locator)?;
+        }
+
         tx.commit()?;
 
         // Open a read transaction to get order info for matching engine updates
@@ -408,6 +420,9 @@ pub(crate) mod test {
         order_auth::mocks::mock_order_auth,
         pair::Pair,
     };
+    use types_proofs::{
+        IntentOnlyValidityBundle, ValidityProofLocator, mocks::mock_intent_only_validity_bundle,
+    };
 
     use crate::applicator::test_helpers::mock_applicator;
 
@@ -523,6 +538,13 @@ pub(crate) mod test {
             .add_order_to_account(account.id, &order, &auth, GLOBAL_MATCHING_POOL.to_string())
             .unwrap();
 
+        // Add an intent-located validity proof for the order
+        let locator = ValidityProofLocator::Intent { order_id: order.id };
+        let proof_bundle = mock_intent_only_validity_bundle();
+        let tx = applicator.db().new_write_tx().unwrap();
+        tx.write_validity_proof::<IntentOnlyValidityBundle>(&locator, &proof_bundle).unwrap();
+        tx.commit().unwrap();
+
         // Verify the order exists before removal
         let tx = applicator.db().new_read_tx().unwrap();
         let retrieved_account = tx.get_account(&account.id).unwrap().unwrap();
@@ -532,6 +554,7 @@ pub(crate) mod test {
         let matching_pool = tx.get_matching_pool_for_order(&order.id).unwrap();
         let contains_order = matching_engine.contains_order(&order, matching_pool.clone());
         assert!(contains_order);
+        assert!(tx.get_validity_proof::<IntentOnlyValidityBundle>(&locator).unwrap().is_some());
         drop(tx);
 
         // Remove the order from the account
@@ -549,6 +572,7 @@ pub(crate) mod test {
         // Verify the order cannot be retrieved
         assert!(tx.get_order(&order.id).unwrap().is_none());
         assert!(tx.get_order_auth(&order.id).unwrap().is_none());
+        assert!(tx.get_validity_proof::<IntentOnlyValidityBundle>(&locator).unwrap().is_none());
 
         // Verify the order is removed from the matching engine
         let matching_pool = tx.get_matching_pool_for_order(&order.id).unwrap();

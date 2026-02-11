@@ -22,6 +22,7 @@ use types_tasks::WithdrawTaskDescriptor;
 use crate::{
     hooks::TaskHook,
     task_state::TaskStateWrapper,
+    tasks::validity_proofs::balance_update::refresh_validity_proofs_for_updated_balance,
     traits::{Descriptor, Task, TaskContext, TaskError, TaskState},
     utils::enqueue_proof_job,
 };
@@ -45,6 +46,8 @@ pub enum WithdrawTaskState {
     SubmittingTx,
     /// The task is updating the relayer state
     UpdatingState,
+    /// The task is updating validity proofs for affected Ring 2/3 orders
+    UpdatingValidityProofs,
     /// The task is completed
     Completed,
 }
@@ -66,6 +69,7 @@ impl Display for WithdrawTaskState {
             WithdrawTaskState::Proving => write!(f, "Proving"),
             WithdrawTaskState::SubmittingTx => write!(f, "SubmittingTx"),
             WithdrawTaskState::UpdatingState => write!(f, "UpdatingState"),
+            WithdrawTaskState::UpdatingValidityProofs => write!(f, "UpdatingValidityProofs"),
             WithdrawTaskState::Completed => write!(f, "Completed"),
         }
     }
@@ -90,6 +94,9 @@ pub enum WithdrawTaskError {
     /// An error generating a proof of `VALID WITHDRAWAL`
     #[error("proof generation error: {0}")]
     ProofGeneration(String),
+    /// An error updating validity proofs affected by this balance update
+    #[error("validity proof update error: {0}")]
+    ValidityProof(String),
     /// An error interacting with global state
     #[error("state error: {0}")]
     State(String),
@@ -97,7 +104,12 @@ pub enum WithdrawTaskError {
 
 impl TaskError for WithdrawTaskError {
     fn retryable(&self) -> bool {
-        matches!(self, WithdrawTaskError::DarkpoolClient(_) | WithdrawTaskError::ProofGeneration(_))
+        matches!(
+            self,
+            WithdrawTaskError::DarkpoolClient(_)
+                | WithdrawTaskError::ProofGeneration(_)
+                | WithdrawTaskError::ValidityProof(_)
+        )
     }
 }
 
@@ -174,6 +186,10 @@ impl Task for WithdrawTask {
             WithdrawTaskState::UpdatingState => {
                 // Update the relayer state with the new balance
                 self.update_state().await?;
+                self.task_state = WithdrawTaskState::UpdatingValidityProofs;
+            },
+            WithdrawTaskState::UpdatingValidityProofs => {
+                self.update_validity_proofs().await?;
                 self.task_state = WithdrawTaskState::Completed;
             },
             WithdrawTaskState::Completed => {
@@ -235,7 +251,15 @@ impl WithdrawTask {
         let balance = self.updated_balance.clone().unwrap();
         let waiter = self.state().update_account_balance(self.account_id, balance).await?;
         waiter.await?;
+
         Ok(())
+    }
+
+    /// Refresh validity proofs for affected Ring 2/3 orders
+    pub async fn update_validity_proofs(&self) -> Result<()> {
+        refresh_validity_proofs_for_updated_balance(self.account_id, self.token, &self.ctx)
+            .await
+            .map_err(|e| WithdrawTaskError::ValidityProof(e.to_string()))
     }
 
     /// Submit the withdrawal transaction to the darkpool

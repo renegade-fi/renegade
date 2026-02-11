@@ -34,6 +34,18 @@ pub enum BalanceLocation {
     Darkpool,
 }
 
+impl BalanceLocation {
+    /// Whether the balance location is darkpool
+    pub fn is_darkpool(&self) -> bool {
+        matches!(self, BalanceLocation::Darkpool)
+    }
+
+    /// Whether the balance location is EOA
+    pub fn is_eoa(&self) -> bool {
+        matches!(self, BalanceLocation::EOA)
+    }
+}
+
 impl Display for BalanceLocation {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
