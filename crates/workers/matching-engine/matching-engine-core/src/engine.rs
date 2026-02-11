@@ -2,12 +2,11 @@
 
 use std::{ops::RangeInclusive, sync::Arc};
 
-use circuit_types::validate_price_bitlength;
 use circuit_types::{Amount, fixed_point::FixedPoint};
 use crypto::fields::scalar_to_u128;
 use darkpool_types::settlement_obligation::SettlementObligation;
 use dashmap::DashMap;
-use types_account::{MatchingPoolName, order::Order, pair::Pair};
+use types_account::{MatchingPoolName, order::Order, order::PrivacyRing, pair::Pair};
 use types_core::AccountId;
 use types_core::MatchResult;
 use types_core::TimestampedPriceFp;
@@ -156,6 +155,7 @@ impl MatchingEngine {
     pub fn find_match(
         &self,
         exclude_account_id: AccountId,
+        input_ring: PrivacyRing,
         input_pair: Pair,
         input_range: RangeInclusive<Amount>,
         matching_pool: MatchingPoolName,
@@ -163,6 +163,7 @@ impl MatchingEngine {
     ) -> Option<SuccessfulMatch> {
         self.find_match_helper(
             exclude_account_id,
+            input_ring,
             input_pair,
             input_range,
             matching_pool,
@@ -188,6 +189,7 @@ impl MatchingEngine {
     /// `externally_matchable` set to `true`.
     pub fn find_match_external(
         &self,
+        input_ring: PrivacyRing,
         input_pair: Pair,
         input_range: RangeInclusive<Amount>,
         matching_pool: MatchingPoolName,
@@ -197,6 +199,7 @@ impl MatchingEngine {
         let exclude_account_id = AccountId::nil();
         self.find_match_helper(
             exclude_account_id,
+            input_ring,
             input_pair,
             input_range,
             matching_pool,
@@ -222,6 +225,7 @@ impl MatchingEngine {
     /// `externally_matchable` set to `true`.
     pub fn find_match_external_all_pools(
         &self,
+        input_ring: PrivacyRing,
         input_pair: Pair,
         input_range: RangeInclusive<Amount>,
         ts_price: TimestampedPriceFp,
@@ -241,6 +245,7 @@ impl MatchingEngine {
         let (counterparty_oid, counterparty_input_amount, matchable_amount_bounds) = book
             .find_match(
                 exclude_account_id,
+                input_ring,
                 counterparty_price,
                 output_range,
                 true, // require_externally_matchable
@@ -273,9 +278,11 @@ impl MatchingEngine {
     /// If `require_externally_matchable` is `true`, only matches against
     /// orders that have `externally_matchable` set to `true`. If `false`, does
     /// not filter on externally matchable status.
+    #[allow(clippy::too_many_arguments)]
     fn find_match_helper(
         &self,
         exclude_account_id: AccountId,
+        input_ring: PrivacyRing,
         input_pair: Pair,
         input_range: RangeInclusive<Amount>,
         matching_pool: MatchingPoolName,
@@ -291,6 +298,7 @@ impl MatchingEngine {
         let (counterparty_oid, counterparty_input_amount, matchable_amount_bounds) = book
             .find_match(
                 exclude_account_id,
+                input_ring,
                 counterparty_price,
                 output_range,
                 require_externally_matchable,
@@ -364,7 +372,9 @@ fn input_range_to_output_range(
 mod tests {
     use super::*;
     use alloy_primitives::Address;
-    use types_account::{account::order::Order, order::mocks::mock_order_with_pair};
+    use types_account::{
+        account::order::Order, order::PrivacyRing, order::mocks::mock_order_with_pair,
+    };
 
     // -----------
     // | Helpers |
@@ -392,6 +402,17 @@ mod tests {
         order.intent.inner.amount_in = matchable_amount * 2;
         order.intent.inner.min_price = min_price;
         order.metadata.min_fill_size = 1;
+        order
+    }
+
+    /// Create a counterparty order with an explicit ring
+    fn create_counterparty_order_with_ring(
+        matchable_amount: Amount,
+        min_price: FixedPoint,
+        ring: PrivacyRing,
+    ) -> Order {
+        let mut order = create_counterparty_order(matchable_amount, min_price);
+        order.ring = ring;
         order
     }
 
@@ -472,6 +493,7 @@ mod tests {
 
         let result = engine.find_match(
             input_account_id,
+            PrivacyRing::Ring0,
             input_pair,
             input_range,
             pool,
@@ -512,6 +534,7 @@ mod tests {
 
         let result = engine.find_match(
             account_id,
+            PrivacyRing::Ring0,
             input_pair,
             input_range,
             pool,
@@ -540,6 +563,7 @@ mod tests {
 
         let result = engine.find_match(
             input_account_id,
+            PrivacyRing::Ring0,
             input_pair,
             input_range,
             pool,
@@ -565,6 +589,7 @@ mod tests {
 
         let result = engine.find_match(
             input_account_id,
+            PrivacyRing::Ring0,
             input_pair,
             input_range,
             pool,
@@ -598,6 +623,7 @@ mod tests {
 
         let result = engine.find_match(
             input_account_id,
+            PrivacyRing::Ring0,
             input_pair,
             input_range,
             pool,
@@ -635,6 +661,7 @@ mod tests {
 
         let result = engine.find_match(
             input_account_id,
+            PrivacyRing::Ring0,
             input_pair,
             input_range,
             pool,
@@ -671,6 +698,7 @@ mod tests {
         // Should find match in pool1
         let result1 = engine.find_match(
             input_account_id,
+            PrivacyRing::Ring0,
             input_pair,
             input_range.clone(),
             pool1.clone(),
@@ -683,6 +711,7 @@ mod tests {
         // Should not find match in pool2
         let result2 = engine.find_match(
             input_account_id,
+            PrivacyRing::Ring0,
             input_pair,
             input_range,
             pool2,
@@ -711,6 +740,7 @@ mod tests {
         // input_range max of 10 A -> 20 B, but counterparty needs at least 100 B
         let result = engine.find_match(
             input_account_id,
+            PrivacyRing::Ring0,
             input_pair,
             input_range,
             pool,
@@ -736,6 +766,7 @@ mod tests {
 
         let result = engine.find_match(
             input_account_id,
+            PrivacyRing::Ring0,
             input_pair,
             input_range,
             pool,
@@ -750,6 +781,110 @@ mod tests {
         // Due to floor rounding in fixed-point arithmetic, input amount is rounded down
         assert_eq!(ob1.amount_in, 99);
         assert_eq!(ob1.amount_out, 150);
+    }
+
+    #[test]
+    fn test_find_match_ring3_rejects_ring0_and_ring1() {
+        let engine = MatchingEngine::new();
+        let pool = test_matching_pool();
+        let input_account_id = AccountId::new_v4();
+        let counterparty_account_id = AccountId::new_v4();
+        let input_pair = test_pair();
+        let price = FixedPoint::from_integer(2);
+        let input_range = 0..=100;
+
+        let ring0_order = create_counterparty_order_with_ring(
+            400,
+            FixedPoint::from_f64_round_down(0.4),
+            PrivacyRing::Ring0,
+        );
+        let ring1_order = create_counterparty_order_with_ring(
+            300,
+            FixedPoint::from_f64_round_down(0.4),
+            PrivacyRing::Ring1,
+        );
+        engine.upsert_order(counterparty_account_id, &ring0_order, 400, pool.clone());
+        engine.upsert_order(counterparty_account_id, &ring1_order, 300, pool.clone());
+
+        let result = engine.find_match(
+            input_account_id,
+            PrivacyRing::Ring3,
+            input_pair,
+            input_range,
+            pool,
+            TimestampedPriceFp::from(price),
+        );
+        assert!(result.is_none(), "Ring3 must not match Ring0/Ring1 counterparties");
+    }
+
+    #[test]
+    fn test_find_match_ring3_accepts_ring2_and_ring3() {
+        let engine = MatchingEngine::new();
+        let pool = test_matching_pool();
+        let input_account_id = AccountId::new_v4();
+        let counterparty_account_id = AccountId::new_v4();
+        let input_pair = test_pair();
+        let price = FixedPoint::from_integer(2);
+        let input_range = 0..=1000;
+
+        let ring2_order = create_counterparty_order_with_ring(
+            500,
+            FixedPoint::from_f64_round_down(0.4),
+            PrivacyRing::Ring2,
+        );
+        let ring3_order = create_counterparty_order_with_ring(
+            300,
+            FixedPoint::from_f64_round_down(0.4),
+            PrivacyRing::Ring3,
+        );
+        engine.upsert_order(counterparty_account_id, &ring2_order, 500, pool.clone());
+        engine.upsert_order(counterparty_account_id, &ring3_order, 300, pool.clone());
+
+        let result = engine.find_match(
+            input_account_id,
+            PrivacyRing::Ring3,
+            input_pair,
+            input_range,
+            pool,
+            TimestampedPriceFp::from(price),
+        );
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().other_order_id, ring2_order.id);
+    }
+
+    #[test]
+    fn test_find_match_ring2_can_match_all_rings() {
+        let engine = MatchingEngine::new();
+        let pool = test_matching_pool();
+        let input_account_id = AccountId::new_v4();
+        let counterparty_account_id = AccountId::new_v4();
+        let input_pair = test_pair();
+        let price = FixedPoint::from_integer(2);
+        let input_range = 0..=1000;
+
+        let ring0_order = create_counterparty_order_with_ring(
+            600,
+            FixedPoint::from_f64_round_down(0.4),
+            PrivacyRing::Ring0,
+        );
+        let ring3_order = create_counterparty_order_with_ring(
+            500,
+            FixedPoint::from_f64_round_down(0.4),
+            PrivacyRing::Ring3,
+        );
+        engine.upsert_order(counterparty_account_id, &ring0_order, 600, pool.clone());
+        engine.upsert_order(counterparty_account_id, &ring3_order, 500, pool.clone());
+
+        let result = engine.find_match(
+            input_account_id,
+            PrivacyRing::Ring2,
+            input_pair,
+            input_range,
+            pool,
+            TimestampedPriceFp::from(price),
+        );
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().other_order_id, ring0_order.id);
     }
 
     #[test]
@@ -778,6 +913,7 @@ mod tests {
         // find_match (internal) should match with order2 (largest, 500)
         let result_internal = engine.find_match(
             input_account_id,
+            PrivacyRing::Ring0,
             input_pair,
             input_range.clone(),
             pool.clone(),
@@ -792,6 +928,7 @@ mod tests {
 
         // find_match_external should match with order1 (only externally matchable)
         let result_external = engine.find_match_external(
+            PrivacyRing::Ring0,
             input_pair,
             input_range,
             pool.clone(),
@@ -824,6 +961,7 @@ mod tests {
         // find_match (internal) should still match
         let result_internal = engine.find_match(
             input_account_id,
+            PrivacyRing::Ring0,
             input_pair,
             input_range.clone(),
             pool.clone(),
@@ -836,6 +974,7 @@ mod tests {
 
         // find_match_external should NOT match
         let result_external = engine.find_match_external(
+            PrivacyRing::Ring0,
             input_pair,
             input_range,
             pool,
@@ -869,6 +1008,7 @@ mod tests {
 
         let result = engine.find_match(
             input_account_id,
+            PrivacyRing::Ring0,
             input_pair,
             input_range,
             pool,
@@ -906,6 +1046,7 @@ mod tests {
 
         let result = engine.find_match(
             input_account_id,
+            PrivacyRing::Ring0,
             input_pair,
             input_range,
             pool,
@@ -937,6 +1078,7 @@ mod tests {
 
         let result = engine.find_match(
             input_account_id,
+            PrivacyRing::Ring0,
             input_pair,
             input_range,
             pool,
@@ -971,6 +1113,7 @@ mod tests {
 
         let result = engine.find_match(
             input_account_id,
+            PrivacyRing::Ring0,
             input_pair,
             input_range,
             pool,
@@ -1011,6 +1154,7 @@ mod tests {
 
         let result = engine.find_match(
             input_account_id,
+            PrivacyRing::Ring0,
             input_pair,
             input_range,
             pool,
@@ -1053,6 +1197,7 @@ mod tests {
 
         let result = engine.find_match(
             input_account_id,
+            PrivacyRing::Ring0,
             input_pair,
             input_range,
             pool,
@@ -1093,6 +1238,7 @@ mod tests {
 
         let result = engine.find_match(
             input_account_id,
+            PrivacyRing::Ring0,
             input_pair,
             input_range,
             pool,
@@ -1137,6 +1283,7 @@ mod tests {
 
         // All-pools external match should find the largest order (order1 from pool1)
         let result = engine.find_match_external_all_pools(
+            PrivacyRing::Ring0,
             input_pair,
             input_range,
             TimestampedPriceFp::from(price),
@@ -1177,6 +1324,7 @@ mod tests {
 
         // All-pools match should select order2 (largest at 500)
         let result = engine.find_match_external_all_pools(
+            PrivacyRing::Ring0,
             input_pair,
             input_range,
             TimestampedPriceFp::from(price),
@@ -1218,6 +1366,7 @@ mod tests {
 
         // All-pools external match should only find order2 (externally matchable)
         let result = engine.find_match_external_all_pools(
+            PrivacyRing::Ring0,
             input_pair,
             input_range,
             TimestampedPriceFp::from(price),
@@ -1253,6 +1402,7 @@ mod tests {
 
         // All-pools external match should find nothing
         let result = engine.find_match_external_all_pools(
+            PrivacyRing::Ring0,
             input_pair,
             input_range,
             TimestampedPriceFp::from(price),

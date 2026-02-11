@@ -30,7 +30,7 @@ impl MatchingEngineExecutor {
         // Forward to the matching engine
         let res = self
             .matching_engine
-            .find_match(aid, pair, input_range, pool, price)
+            .find_match(aid, order.ring, pair, input_range, pool, price)
             .filter(|res| self.validate_min_fill_size(res));
 
         Ok(res)
@@ -61,8 +61,15 @@ impl MatchingEngineExecutor {
 
         // Forward to the matching engine
         let res = match matching_pool {
-            Some(pool) => self.matching_engine.find_match_external(pair, input_range, pool, price),
-            None => self.matching_engine.find_match_external_all_pools(pair, input_range, price),
+            Some(pool) => {
+                self.matching_engine.find_match_external(order.ring, pair, input_range, pool, price)
+            },
+            None => self.matching_engine.find_match_external_all_pools(
+                order.ring,
+                pair,
+                input_range,
+                price,
+            ),
         }
         .filter(|res| self.validate_min_fill_size(res));
 
