@@ -26,6 +26,7 @@ use types_tasks::DepositTaskDescriptor;
 use crate::{
     hooks::{RefreshAccountHook, RunMatchingEngineForBalanceHook, TaskHook},
     task_state::TaskStateWrapper,
+    tasks::validity_proofs::balance_update::refresh_validity_proofs_for_updated_balance,
     traits::{Descriptor, Task, TaskContext, TaskError, TaskState},
     utils::enqueue_proof_job,
 };
@@ -48,6 +49,8 @@ pub enum DepositTaskState {
     Submitting,
     /// The task is updating the relayer state
     UpdatingState,
+    /// The task is updating validity proofs for affected Ring 2/3 orders
+    UpdatingValidityProofs,
     /// The task is completed
     Completed,
 }
@@ -69,6 +72,7 @@ impl Display for DepositTaskState {
             DepositTaskState::Proving => write!(f, "Proving"),
             DepositTaskState::Submitting => write!(f, "Submitting"),
             DepositTaskState::UpdatingState => write!(f, "UpdatingState"),
+            DepositTaskState::UpdatingValidityProofs => write!(f, "UpdatingValidityProofs"),
             DepositTaskState::Completed => write!(f, "Completed"),
         }
     }
@@ -91,6 +95,8 @@ pub enum DepositTaskError {
     DarkpoolClient(String),
     /// Error generating a proof of `VALID DEPOSIT`
     ProofGeneration(String),
+    /// Error updating validity proofs affected by this balance update
+    ValidityProof(String),
     /// A state element was not found that is necessary for task execution
     Missing(String),
 }
@@ -109,11 +115,22 @@ impl DepositTaskError {
     pub fn missing<T: ToString>(msg: T) -> Self {
         Self::Missing(msg.to_string())
     }
+
+    /// Create a new validity proof update error
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn validity_proof<T: ToString>(msg: T) -> Self {
+        Self::ValidityProof(msg.to_string())
+    }
 }
 
 impl TaskError for DepositTaskError {
     fn retryable(&self) -> bool {
-        matches!(self, DepositTaskError::DarkpoolClient(_) | DepositTaskError::ProofGeneration(_))
+        matches!(
+            self,
+            DepositTaskError::DarkpoolClient(_)
+                | DepositTaskError::ProofGeneration(_)
+                | DepositTaskError::ValidityProof(_)
+        )
     }
 }
 
@@ -210,6 +227,10 @@ impl Task for DepositTask {
             DepositTaskState::UpdatingState => {
                 // Update the relayer state with the new balance
                 self.update_state().await?;
+                self.task_state = DepositTaskState::UpdatingValidityProofs;
+            },
+            DepositTaskState::UpdatingValidityProofs => {
+                self.update_validity_proofs().await?;
                 self.task_state = DepositTaskState::Completed;
             },
             DepositTaskState::Completed => {
@@ -300,7 +321,15 @@ impl DepositTask {
 
         let waiter = self.state().update_account_balance(self.account_id, balance).await?;
         waiter.await?;
+
         Ok(())
+    }
+
+    /// Refresh validity proofs for affected Ring 2/3 orders
+    pub async fn update_validity_proofs(&self) -> Result<()> {
+        refresh_validity_proofs_for_updated_balance(self.account_id, self.token, &self.ctx)
+            .await
+            .map_err(DepositTaskError::validity_proof)
     }
 
     // --- Helpers --- //

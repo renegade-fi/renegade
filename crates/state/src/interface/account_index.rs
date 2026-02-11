@@ -166,6 +166,21 @@ impl StateInner {
         .await
     }
 
+    /// Get all order IDs for an account that use the given token as output
+    pub async fn get_orders_with_output_token(
+        &self,
+        account_id: &AccountId,
+        token: &Address,
+    ) -> Result<Vec<OrderId>, StateError> {
+        let account_id = *account_id;
+        let token = *token;
+        self.with_read_tx(move |tx| {
+            let orders = tx.get_orders_with_output_token(&account_id, &token)?;
+            Ok(orders)
+        })
+        .await
+    }
+
     /// Get all orders for an account without deserializing the full account
     ///
     /// This is more efficient than calling `get_account` when only orders are

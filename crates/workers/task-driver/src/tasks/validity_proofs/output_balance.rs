@@ -185,6 +185,10 @@ async fn update_new_output_balance_proof(
 
     let new_output_balance = create_new_output_balance(mint, &existing_balance, &mut keychain);
 
+    // Persist the updated keychain (streams were consumed when sampling seeds)
+    let waiter = ctx.state.update_account_keychain(account_id, keychain).await?;
+    waiter.await?;
+
     let (witness, statement) = generate_new_witness_statement(
         new_output_balance,
         existing_balance,
