@@ -7,7 +7,7 @@ use std::{cmp::Ordering, ops::RangeInclusive};
 
 use circuit_types::{Amount, fixed_point::FixedPoint};
 use rustc_hash::FxHashMap;
-use types_account::{OrderId, order::Order};
+use types_account::{OrderId, order::Order, order::PrivacyRing};
 use types_core::AccountId;
 
 /// A key for sorting orders by descending matchable amount
@@ -71,6 +71,8 @@ pub(crate) struct BookOrder {
     pub min_fill_size: Amount,
     /// Whether this order is externally matchable
     pub externally_matchable: bool,
+    /// The privacy ring of this order
+    pub ring: PrivacyRing,
 }
 
 impl BookOrder {
@@ -82,6 +84,7 @@ impl BookOrder {
             min_price: order.min_price(),
             min_fill_size: order.min_fill_size(),
             externally_matchable: order.allow_external_matches(),
+            ring: order.ring,
         }
     }
 }
@@ -144,6 +147,7 @@ impl Book {
     pub fn find_match(
         &self,
         exclude_account_id: AccountId,
+        input_ring: PrivacyRing,
         price: FixedPoint,
         amount_range: RangeInclusive<Amount>,
         require_externally_matchable: bool,
@@ -153,6 +157,11 @@ impl Book {
         for (oid, order) in orders {
             // Skip orders from the same account (prevent self-matches)
             if exclude_account_id == order.account_id {
+                continue;
+            }
+
+            // Enforce ring crossing constraints
+            if !input_ring.can_cross_with(order.ring) {
                 continue;
             }
 
@@ -204,7 +213,7 @@ fn ranges_intersect(range1: &RangeInclusive<Amount>, range2: &RangeInclusive<Amo
 #[cfg(test)]
 mod tests {
     use super::*;
-    use types_account::{account::order::Order, order::mocks::mock_order};
+    use types_account::{account::order::Order, order::mocks::mock_order, order::PrivacyRing};
 
     // -----------
     // | Helpers |
@@ -215,6 +224,12 @@ mod tests {
         let mut order = mock_order();
         order.intent.inner.amount_in = matchable_amount * 2;
         order.intent.inner.min_price = FixedPoint::from_integer(1);
+        order
+    }
+
+    fn create_test_order_with_ring(matchable_amount: Amount, ring: PrivacyRing) -> Order {
+        let mut order = create_test_order(matchable_amount);
+        order.ring = ring;
         order
     }
 
@@ -436,7 +451,7 @@ mod tests {
         // Try to find a match excluding the same account
         let price = FixedPoint::from_integer(1);
         let amount_range = 0..=100;
-        let result = book.find_match(same_account, price, amount_range, false);
+        let result = book.find_match(same_account, PrivacyRing::Ring0, price, amount_range, false);
 
         // Should not find a match (self-match prevention)
         assert!(result.is_none(), "Should not match orders from the same account");
@@ -459,11 +474,32 @@ mod tests {
         // Try to find a match as account A
         let price = FixedPoint::from_integer(1);
         let amount_range = 0..=50;
-        let result = book.find_match(account_a, price, amount_range, false);
+        let result = book.find_match(account_a, PrivacyRing::Ring0, price, amount_range, false);
 
         // Should skip order1 (same account) and match with order2
         assert!(result.is_some());
         let (matched_id, _, _) = result.unwrap();
         assert_eq!(matched_id, order2.id, "Should match order from different account");
+    }
+
+    #[test]
+    fn test_find_match_ring3_skips_larger_incompatible_order() {
+        let mut book = Book::new();
+        let input_account = AccountId::new_v4();
+        let account_a = AccountId::new_v4();
+        let account_b = AccountId::new_v4();
+        let price = FixedPoint::from_integer(1);
+        let amount_range = 0..=200;
+
+        let ring0_large = create_test_order_with_ring(200, PrivacyRing::Ring0);
+        let ring2_small = create_test_order_with_ring(100, PrivacyRing::Ring2);
+
+        book.add_order(account_a, &ring0_large, 200);
+        book.add_order(account_b, &ring2_small, 100);
+
+        let result = book.find_match(input_account, PrivacyRing::Ring3, price, amount_range, false);
+        assert!(result.is_some());
+        let (matched_id, _, _) = result.unwrap();
+        assert_eq!(matched_id, ring2_small.id, "Ring3 must skip incompatible Ring0 order");
     }
 }

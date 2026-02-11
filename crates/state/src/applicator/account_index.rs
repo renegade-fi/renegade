@@ -235,13 +235,6 @@ impl StateApplicator {
             return Err(StateApplicatorError::reject("account not found"));
         }
         tx.update_balance(&account_id, balance)?;
-
-        // Remove balance validity proofs if the darkpool balance is zeroed
-        if balance.location.is_darkpool() && balance.amount() == 0 {
-            let locator = ValidityProofLocator::Balance { account_id, mint: balance.mint() };
-            tx.delete_all_validity_proofs(&locator)?;
-        }
-
         tx.commit()?;
 
         // Open a read transaction to get order info for matching engine updates

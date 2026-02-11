@@ -221,6 +221,38 @@ pub enum PrivacyRing {
 }
 
 impl PrivacyRing {
+    /// Get the minimum counterparty ring this ring is allowed to cross with.
+    ///
+    /// Rings <= 2 accept counterparties from any ring, whereas Ring 3 only
+    /// accepts Ring 2/3 counterparties. Note that `can_cross_with` enforces
+    /// this bidirectionally, so Ring 0/1 cannot match with Ring 3.
+    pub fn min_counterparty_ring(&self) -> Self {
+        match self {
+            Self::Ring0 | Self::Ring1 | Self::Ring2 => Self::Ring0,
+            Self::Ring3 => Self::Ring2,
+        }
+    }
+
+    /// Get an ordinal rank for the ring.
+    fn rank(&self) -> u8 {
+        match self {
+            Self::Ring0 => 0,
+            Self::Ring1 => 1,
+            Self::Ring2 => 2,
+            Self::Ring3 => 3,
+        }
+    }
+
+    /// Whether this ring can cross with the given counterparty ring.
+    ///
+    /// This enforces compatibility in both directions:
+    /// - The counterparty must satisfy this ring's minimum counterparty ring.
+    /// - This ring must satisfy the counterparty's minimum counterparty ring.
+    pub fn can_cross_with(&self, counterparty: PrivacyRing) -> bool {
+        counterparty.rank() >= self.min_counterparty_ring().rank()
+            && self.rank() >= counterparty.min_counterparty_ring().rank()
+    }
+
     /// Get the balance location from which an order in the privacy ring is
     /// capitalized
     pub fn balance_location(&self) -> BalanceLocation {
