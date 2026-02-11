@@ -43,13 +43,8 @@ pub async fn update_intent_and_balance_validity_proof(
         return Ok(());
     }
 
-    let order = ctx
-        .state
-        .get_account_order(&order_id)
-        .await?
-        .ok_or(ValidityProofsError::state("Order not found"))?;
-
-    // Fetch the darkpool balance that capitalizes this intent
+    // Fetch the state elements input to this validity proof
+    let order = get_order(&order_id, ctx).await?;
     let balance = get_capitalizing_balance(account_id, &order, ctx).await?;
     let balance_merkle_proof = get_balance_merkle_proof(account_id, &order, ctx).await?;
 
@@ -260,6 +255,14 @@ fn generate_subsequent_fill_witness_statement(
 // -----------
 // | Helpers |
 // -----------
+
+/// Fetch an order from state by its ID
+async fn get_order(order_id: &OrderId, ctx: &TaskContext) -> Result<Order, ValidityProofsError> {
+    ctx.state
+        .get_account_order(order_id)
+        .await?
+        .ok_or(ValidityProofsError::state("Order not found"))
+}
 
 /// Fetch the darkpool balance that capitalizes the given order's intent
 async fn get_capitalizing_balance(

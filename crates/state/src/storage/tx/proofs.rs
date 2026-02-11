@@ -2,7 +2,8 @@
 
 use libmdbx::{RW, TransactionKind};
 use types_proofs::{
-    ALL_VALIDITY_PROOF_KEYS, StoredValidityProof, ValidityProofBundle, ValidityProofLocator,
+    ALL_VALIDITY_PROOF_KEYS, OUTPUT_BALANCE_VALIDITY_PROOF_KEYS, StoredValidityProof,
+    ValidityProofBundle, ValidityProofLocator,
 };
 
 use crate::{
@@ -41,6 +42,20 @@ impl<T: TransactionKind> StateTxn<'_, T> {
             Some(archived) => Ok(Some(archived.deserialize_with()?)),
             None => Ok(None),
         }
+    }
+
+    /// Check whether any output balance validity proof exists for a locator
+    pub fn has_output_balance_validity_proof(
+        &self,
+        locator: &ValidityProofLocator,
+    ) -> Result<bool, StorageError> {
+        for key_prefix in OUTPUT_BALANCE_VALIDITY_PROOF_KEYS {
+            let key = proof_key(key_prefix, locator);
+            if self.inner().read_bytes(PROOFS_TABLE, &key)?.is_some() {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 }
 
