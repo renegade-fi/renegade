@@ -285,11 +285,13 @@ impl CreateOrderTask {
         // Create the order in the state with ring-specific state wrapper
         let state_intent = self.create_state_wrapper().await?;
         let order = Order::new_with_ring(order_id, state_intent, metadata, ring);
-        let waiter =
-            self.state().add_order_to_account(account_id, order, auth, matching_pool).await?;
+        let waiter = self
+            .state()
+            .add_order_to_account(account_id, order.clone(), auth, matching_pool)
+            .await?;
 
         waiter.await?;
-        self.send_indexer_message().await;
+        self.send_indexer_message(order).await;
 
         // Choose a next state based on ring
         let next_state = match ring {
@@ -395,7 +397,7 @@ impl CreateOrderTask {
     }
 
     /// Send an indexer message to update public intent metadata
-    async fn send_indexer_message(&self) {
+    async fn send_indexer_message(&self, order: Order) {
         // Only send for public orders for now
         let (permit, intent_signature) = match &self.auth {
             OrderAuth::PublicOrder { permit, intent_signature } => (permit, intent_signature),
@@ -409,13 +411,10 @@ impl CreateOrderTask {
 
         let message = PublicIntentMetadataUpdateMessage {
             intent_hash,
-            intent: self.intent.clone(),
+            order,
             intent_signature: intent_signature_api,
             permit: permit.clone(),
-            order_id: self.order_id,
             matching_pool: self.matching_pool.clone(),
-            allow_external_matches: self.metadata.allow_external_matches,
-            min_fill_size: self.metadata.min_fill_size,
         };
 
         let msg = Message::UpdatePublicIntentMetadata(message);

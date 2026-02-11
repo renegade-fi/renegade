@@ -19,7 +19,7 @@ pub async fn submit_message(
     // Set the message group ID for FIFO queue ordering
     let group_id = match &message {
         Message::RegisterMasterViewSeed(msg) => msg.account_id.to_string(),
-        Message::UpdatePublicIntentMetadata(msg) => msg.order_id.to_string(),
+        Message::UpdatePublicIntentMetadata(msg) => msg.order.id.to_string(),
     };
     request = request.message_group_id(group_id);
 
