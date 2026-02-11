@@ -213,7 +213,7 @@ fn ranges_intersect(range1: &RangeInclusive<Amount>, range2: &RangeInclusive<Amo
 #[cfg(test)]
 mod tests {
     use super::*;
-    use types_account::{account::order::Order, order::mocks::mock_order, order::PrivacyRing};
+    use types_account::{account::order::Order, order::PrivacyRing, order::mocks::mock_order};
 
     // -----------
     // | Helpers |
