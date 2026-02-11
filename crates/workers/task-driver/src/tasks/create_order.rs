@@ -2,7 +2,6 @@
 
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
-use alloy::{primitives::keccak256, sol_types::SolValue};
 use async_trait::async_trait;
 use constants::Scalar;
 use darkpool_client::errors::DarkpoolClientError;
@@ -29,6 +28,7 @@ use crate::{
     tasks::validity_proofs::{
         error::ValidityProofsError, intent_and_balance::update_intent_and_balance_validity_proof,
         intent_only::update_intent_only_validity_proof,
+        output_balance::update_output_balance_validity_proof,
     },
     traits::{Descriptor, Task, TaskContext, TaskError, TaskState},
     utils::{
@@ -320,20 +320,29 @@ impl CreateOrderTask {
     /// Both the intent and the capitalizing balance are in the darkpool
     /// Merkle state, so we need an intent-and-balance validity proof.
     async fn generate_private_fill_validity_proofs(&self) -> Result<()> {
-        let (intent_signature, _out_balance_signature) = match self.auth {
+        let (intent_signature, out_balance_signature) = match self.auth {
             OrderAuth::RenegadeSettledOrder { intent_signature, new_output_balance_signature } => {
                 (intent_signature, new_output_balance_signature)
             },
             _ => return Err(CreateOrderTaskError::invalid_descriptor("invalid order auth")),
         };
 
-        update_intent_and_balance_validity_proof(
+        // Update the intent+balance and output balance validity proofs concurrently
+        let intent_and_balance_fut = update_intent_and_balance_validity_proof(
             self.account_id,
             self.order_id,
             intent_signature,
             &self.ctx,
-        )
-        .await?;
+        );
+        let output_balance_fut = update_output_balance_validity_proof(
+            self.account_id,
+            self.order_id,
+            out_balance_signature,
+            false, // force
+            &self.ctx,
+        );
+
+        tokio::try_join!(intent_and_balance_fut, output_balance_fut)?;
         Ok(())
     }
 
@@ -405,10 +414,8 @@ impl CreateOrderTask {
         };
 
         // Compute intent hash
-        let intent_hash = keccak256(permit.abi_encode());
-
+        let intent_hash = permit.compute_hash();
         let intent_signature_api = intent_signature.clone().into();
-
         let message = PublicIntentMetadataUpdateMessage {
             intent_hash,
             order,

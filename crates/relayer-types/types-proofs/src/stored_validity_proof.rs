@@ -66,3 +66,10 @@ pub const ALL_VALIDITY_PROOF_KEYS: [&str; 6] = [
     NewOutputBalanceValidityBundle::PROOF_TYPE_KEY,
     OutputBalanceValidityBundle::PROOF_TYPE_KEY,
 ];
+
+/// Output balance validity proof key prefixes.
+///
+/// Used to check whether any output balance proof (new or existing) is stored
+/// for a given locator.
+pub const OUTPUT_BALANCE_VALIDITY_PROOF_KEYS: [&str; 2] =
+    [NewOutputBalanceValidityBundle::PROOF_TYPE_KEY, OutputBalanceValidityBundle::PROOF_TYPE_KEY];
