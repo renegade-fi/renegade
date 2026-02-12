@@ -23,6 +23,9 @@ impl SettlementProcessor {
             PrivacyRing::Ring1 => {
                 self.build_ring1_internal_settlement_bundle(order, obligation).await
             },
+            PrivacyRing::Ring2 => {
+                self.build_ring2_internal_settlement_bundle(order, obligation).await
+            },
             _ => unimplemented!("implementing settlement bundle for ring {:?}", order.ring),
         }
     }

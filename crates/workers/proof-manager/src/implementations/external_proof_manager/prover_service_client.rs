@@ -77,8 +77,8 @@ use crate::{
         IntentOnlyFirstFillValidityRequest, IntentOnlyPublicSettlementRequest,
         IntentOnlyValidityRequest, NewOutputBalanceValidityRequest, OutputBalanceValidityRequest,
         PrivateSettlementProofResponse, ProofAndHintResponse, ProofResponse,
-        SettlementProofResponse, ValidBalanceCreateRequest, ValidDepositRequest,
-        ValidNoteRedemptionRequest, ValidOrderCancellationRequest,
+        PublicSettlementProofResponse, SettlementProofResponse, ValidBalanceCreateRequest,
+        ValidDepositRequest, ValidNoteRedemptionRequest, ValidOrderCancellationRequest,
         ValidPrivateProtocolFeePaymentRequest, ValidPrivateRelayerFeePaymentRequest,
         ValidPublicProtocolFeePaymentRequest, ValidPublicRelayerFeePaymentRequest,
         ValidWithdrawalRequest,
@@ -86,7 +86,8 @@ use crate::{
     worker::ProofManagerConfig,
 };
 use types_proofs::{
-    PrivateSettlementProofBundle, ProofAndHintBundle, ProofBundle, SettlementProofBundle,
+    IntentOnlySettlementProofBundle, PrivateSettlementProofBundle, ProofAndHintBundle, ProofBundle,
+    PublicSettlementProofBundle,
 };
 
 /// The HTTP basic auth user name to use
@@ -365,7 +366,7 @@ impl ProofServiceClient {
                 req,
             )
             .await?;
-        let bundle = SettlementProofBundle::new(res.proof, statement, res.link_proof);
+        let bundle = IntentOnlySettlementProofBundle::new(res.proof, statement, res.link_proof);
         Ok(ProofManagerResponse::IntentAndBalanceBoundedSettlement(bundle))
     }
 
@@ -413,20 +414,27 @@ impl ProofServiceClient {
         statement: IntentAndBalancePublicSettlementStatement,
         party_id: PartyId,
         validity_link_hint: ProofLinkingHint,
+        output_balance_link_hint: ProofLinkingHint,
     ) -> Result<ProofManagerResponse, ProofManagerError> {
         let req = IntentAndBalancePublicSettlementRequest {
             statement: statement.clone(),
             witness,
             party_id: party_id as u8,
             validity_link_hint,
+            output_balance_link_hint,
         };
         let res = self
-            .send_request::<_, SettlementProofResponse>(
+            .send_request::<_, PublicSettlementProofResponse>(
                 INTENT_AND_BALANCE_PUBLIC_SETTLEMENT_PATH,
                 req,
             )
             .await?;
-        let bundle = SettlementProofBundle::new(res.proof, statement, res.link_proof);
+        let bundle = PublicSettlementProofBundle::new(
+            res.proof,
+            statement,
+            res.validity_link_proof,
+            res.output_balance_link_proof,
+        );
         Ok(ProofManagerResponse::IntentAndBalancePublicSettlement(bundle))
     }
 
@@ -446,7 +454,7 @@ impl ProofServiceClient {
         let res = self
             .send_request::<_, SettlementProofResponse>(INTENT_ONLY_BOUNDED_SETTLEMENT_PATH, req)
             .await?;
-        let bundle = SettlementProofBundle::new(res.proof, statement, res.link_proof);
+        let bundle = IntentOnlySettlementProofBundle::new(res.proof, statement, res.link_proof);
         Ok(ProofManagerResponse::IntentOnlyBoundedSettlement(bundle))
     }
 
@@ -465,7 +473,7 @@ impl ProofServiceClient {
         let res = self
             .send_request::<_, SettlementProofResponse>(INTENT_ONLY_PUBLIC_SETTLEMENT_PATH, req)
             .await?;
-        let bundle = SettlementProofBundle::new(res.proof, statement, res.link_proof);
+        let bundle = IntentOnlySettlementProofBundle::new(res.proof, statement, res.link_proof);
         Ok(ProofManagerResponse::IntentOnlyPublicSettlement(bundle))
     }
 
