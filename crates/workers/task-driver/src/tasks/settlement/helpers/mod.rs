@@ -1,13 +1,15 @@
 //! Settlement helpers
 
-use alloy::{primitives::Address, signers::local::PrivateKeySigner};
+use alloy::{
+    primitives::Address, rpc::types::TransactionReceipt, signers::local::PrivateKeySigner,
+};
 use circuit_types::fixed_point::FixedPoint;
 use darkpool_types::settlement_obligation::SettlementObligation;
 use renegade_solidity_abi::v2::IDarkpoolV2::{FeeRate, PublicIntentPermit, SignatureWithNonce};
 use types_account::{
     OrderId,
     balance::{Balance, BalanceLocation},
-    order::Order,
+    order::{Order, PrivacyRing},
 };
 use types_core::{AccountId, Token};
 
@@ -49,7 +51,7 @@ impl SettlementProcessor {
     // --- Helper Methods --- //
 
     /// Get the order for an order ID
-    async fn get_order(&self, order_id: OrderId) -> Result<Order, SettlementError> {
+    pub(crate) async fn get_order(&self, order_id: OrderId) -> Result<Order, SettlementError> {
         self.ctx
             .state
             .get_account_order(&order_id)
@@ -126,16 +128,60 @@ impl SettlementProcessor {
 
     // --- State Updates --- //
 
-    /// Update the amount remaining on the order for a given party
-    pub async fn update_order_amount_in(
+    /// Update an intent after a match settlement
+    pub async fn build_updated_intent(
         &self,
         order_id: OrderId,
         obligation: &SettlementObligation,
-    ) -> Result<(), SettlementError> {
+    ) -> Result<Order, SettlementError> {
         let mut order = self.get_order(order_id).await?;
-        order.decrement_amount_in(obligation.amount_in);
+        match order.ring {
+            PrivacyRing::Ring0 => {
+                self.update_ring0_intent_after_match(&mut order, obligation).await?
+            },
+            PrivacyRing::Ring1 => {
+                self.update_ring1_intent_after_match(&mut order, obligation).await?
+            },
+            _ => unimplemented!("implementing updated intent for ring {:?}", order.ring),
+        };
+        Ok(order)
+    }
 
+    /// Update an order's state after a match settlement
+    ///
+    /// For Ring 0, this just decrements the amount remaining. For Ring 1+, this
+    /// also updates the streams and public share so the stored order matches
+    /// the post-settlement Merkle leaf.
+    pub async fn update_order_after_match(&self, order: Order) -> Result<(), SettlementError> {
         let waiter = self.ctx.state.update_order(order).await?;
+        waiter.await.map_err(SettlementError::from)?;
+        Ok(())
+    }
+
+    /// Extract and store the Merkle authentication path for a Ring 1+ order
+    /// from a settlement transaction receipt
+    ///
+    /// Computes the post-settlement intent commitment and looks it up in the
+    /// receipt's Merkle insertion events. For Ring 0 orders this is a no-op.
+    pub async fn update_intent_merkle_proof_after_match(
+        &self,
+        updated_order: &Order,
+        receipt: &TransactionReceipt,
+    ) -> Result<(), SettlementError> {
+        if updated_order.ring == PrivacyRing::Ring0 {
+            return Ok(());
+        }
+
+        // Extract the Merkle proof from the receipt
+        let commitment = updated_order.intent.compute_commitment();
+        let merkle_proof = self
+            .ctx
+            .darkpool_client
+            .find_merkle_authentication_path_with_tx(commitment, receipt)
+            .map_err(SettlementError::darkpool)?;
+
+        // Store the Merkle proof
+        let waiter = self.ctx.state.add_intent_merkle_proof(updated_order.id, merkle_proof).await?;
         waiter.await.map_err(SettlementError::from)?;
         Ok(())
     }

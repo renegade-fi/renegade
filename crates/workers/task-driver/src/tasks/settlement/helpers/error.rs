@@ -8,6 +8,9 @@ pub enum SettlementError {
     /// An error building bundle calldata
     #[error("error building bundle calldata: {0}")]
     BuildBundleCalldata(String),
+    /// A darkpool client error
+    #[error("darkpool client error: {0}")]
+    Darkpool(String),
     /// A proof generation error
     #[error("proof generation error: {0}")]
     ProofGeneration(String),
@@ -24,6 +27,12 @@ impl SettlementError {
     #[allow(clippy::needless_pass_by_value)]
     pub fn bundle_calldata<T: ToString>(e: T) -> Self {
         Self::BuildBundleCalldata(e.to_string())
+    }
+
+    /// Create a new darkpool client error
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn darkpool<T: ToString>(e: T) -> Self {
+        Self::Darkpool(e.to_string())
     }
 
     /// Create a new proof generation error

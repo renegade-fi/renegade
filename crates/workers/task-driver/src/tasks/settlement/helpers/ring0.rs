@@ -6,10 +6,14 @@ use darkpool_types::{
 use renegade_solidity_abi::v2::IDarkpoolV2::{
     self, FeeRate, PublicIntentAuthBundle, SettlementBundle, SignatureWithNonce, SignedPermitSingle,
 };
-use types_account::{order::Order, pair::Pair};
+use types_account::{OrderId, order::Order, pair::Pair};
 use util::on_chain::get_chain_id;
 
 use crate::tasks::settlement::helpers::{SettlementProcessor, error::SettlementError};
+
+// ----------------------
+// | Settlement Bundles |
+// ----------------------
 
 impl SettlementProcessor {
     /// Build a ring 0 settlement bundle for an internal match
@@ -92,5 +96,22 @@ impl SettlementProcessor {
             .map_err(SettlementError::signing)?;
 
         Ok(sig)
+    }
+}
+
+// -----------------
+// | State Updates |
+// -----------------
+
+impl SettlementProcessor {
+    /// Update an intent after a match settlement
+    pub async fn update_ring0_intent_after_match(
+        &self,
+        order: &mut Order,
+        obligation: &SettlementObligation,
+    ) -> Result<(), SettlementError> {
+        order.decrement_amount_in(obligation.amount_in);
+        order.metadata.mark_filled();
+        Ok(())
     }
 }

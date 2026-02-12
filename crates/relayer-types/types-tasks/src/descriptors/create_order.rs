@@ -1,6 +1,6 @@
 //! Descriptor for the create order task
 
-use alloy::primitives::{Address, keccak256};
+use alloy::primitives::Address;
 use circuit_types::{
     Commitment,
     schnorr::{SchnorrPublicKey, SchnorrSignature},
@@ -185,12 +185,11 @@ fn validate_natively_settled_private_order_auth(
 ) -> Result<(), TaskError> {
     let chain_id = get_chain_id();
     let commitment_u256 = scalar_to_u256(&intent_commitment);
-    let commitment_hash = keccak256(commitment_u256.to_be_bytes::<32>());
 
     // Validate the signature
-    let valid = intent_signature
-        .validate(commitment_hash.as_slice(), chain_id, owner)
-        .map_err(TaskError::validation)?;
+    let payload = commitment_u256.to_be_bytes::<32>();
+    let valid =
+        intent_signature.validate(&payload, chain_id, owner).map_err(TaskError::validation)?;
 
     if !valid {
         return Err(TaskError::validation(INVALID_INTENT_SIGNATURE));

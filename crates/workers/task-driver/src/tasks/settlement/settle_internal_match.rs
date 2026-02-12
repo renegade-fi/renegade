@@ -8,9 +8,10 @@ use darkpool_client::errors::DarkpoolClientError;
 use darkpool_types::settlement_obligation::SettlementObligation;
 use serde::Serialize;
 use state::error::StateError;
-use tracing::{info, instrument};
+use tracing::instrument;
 use types_account::OrderId;
 use types_account::balance::BalanceLocation;
+use types_account::order::{Order, PrivacyRing};
 use types_core::MatchResult;
 use types_core::{AccountId, TimestampedPriceFp};
 use types_tasks::SettleInternalMatchTaskDescriptor;
@@ -18,6 +19,8 @@ use types_tasks::SettleInternalMatchTaskDescriptor;
 use crate::hooks::RunMatchingEngineHook;
 use crate::tasks::settlement::helpers::error::SettlementError;
 use crate::tasks::settlement::helpers::{SettlementProcessor, branch_party};
+use crate::tasks::validity_proofs::error::ValidityProofsError;
+use crate::tasks::validity_proofs::intent_only::update_intent_only_validity_proof;
 use crate::{
     hooks::{RefreshAccountHook, TaskHook},
     task_state::TaskStateWrapper,
@@ -41,6 +44,8 @@ pub enum SettleInternalMatchTaskState {
     /// The task is updating the account state for the parties involved in the
     /// match
     UpdatingState,
+    /// The task is regenerating validity proofs for private (Ring 1+) orders
+    UpdatingValidityProofs,
     /// The task is completed
     Completed,
 }
@@ -61,6 +66,9 @@ impl Display for SettleInternalMatchTaskState {
             SettleInternalMatchTaskState::Pending => write!(f, "Pending"),
             SettleInternalMatchTaskState::SubmittingTx => write!(f, "SubmittingTx"),
             SettleInternalMatchTaskState::UpdatingState => write!(f, "UpdatingState"),
+            SettleInternalMatchTaskState::UpdatingValidityProofs => {
+                write!(f, "UpdatingValidityProofs")
+            },
             SettleInternalMatchTaskState::Completed => write!(f, "Completed"),
         }
     }
@@ -85,45 +93,12 @@ pub enum SettleInternalMatchTaskError {
     /// A settlement error
     #[error("settlement error: {0}")]
     Settlement(String),
-    /// A signing error
-    #[error("signing error: {0}")]
-    Signing(String),
     /// Error interacting with global state
     #[error("state error: {0}")]
     State(String),
-    /// A miscellaneous error
-    #[error("error: {0}")]
-    Misc(String),
-}
-
-impl SettleInternalMatchTaskError {
-    /// Create a signing error
-    #[allow(clippy::needless_pass_by_value)]
-    pub fn signing<T: ToString>(e: T) -> Self {
-        Self::Signing(e.to_string())
-    }
-
-    /// Create a state error
-    #[allow(clippy::needless_pass_by_value)]
-    pub fn state<T: ToString>(e: T) -> Self {
-        Self::State(e.to_string())
-    }
-
-    /// Create a miscellaneous error
-    #[allow(clippy::needless_pass_by_value)]
-    pub fn misc<T: ToString>(e: T) -> Self {
-        Self::Misc(e.to_string())
-    }
-
-    /// Create an order not found error
-    pub fn order_not_found(order_id: OrderId) -> Self {
-        Self::State(format!("Order not found: {order_id}"))
-    }
-
-    /// Create an order auth not found error
-    pub fn order_auth_not_found(order_id: OrderId) -> Self {
-        Self::State(format!("Order auth not found: {order_id}"))
-    }
+    /// A validity proof generation error
+    #[error("validity proof error: {0}")]
+    ValidityProofs(String),
 }
 
 impl TaskError for SettleInternalMatchTaskError {
@@ -150,6 +125,12 @@ impl From<DarkpoolClientError> for SettleInternalMatchTaskError {
     }
 }
 
+impl From<ValidityProofsError> for SettleInternalMatchTaskError {
+    fn from(e: ValidityProofsError) -> Self {
+        SettleInternalMatchTaskError::ValidityProofs(e.to_string())
+    }
+}
+
 /// A type alias for a result in this task
 type Result<T> = std::result::Result<T, SettleInternalMatchTaskError>;
 
@@ -172,6 +153,10 @@ pub struct SettleInternalMatchTask {
     pub execution_price: TimestampedPriceFp,
     /// The match result
     pub match_result: MatchResult,
+    /// The initiating order after settlement-derived intent updates
+    pub updated_order0: Option<Order>,
+    /// The counterparty order after settlement-derived intent updates
+    pub updated_order1: Option<Order>,
     /// The state of the task's execution
     pub task_state: SettleInternalMatchTaskState,
     /// The settlement processor
@@ -195,6 +180,8 @@ impl Task for SettleInternalMatchTask {
             other_order_id: descriptor.other_order_id,
             execution_price: descriptor.execution_price,
             match_result: descriptor.match_result,
+            updated_order0: None,
+            updated_order1: None,
             task_state: SettleInternalMatchTaskState::Pending,
             processor,
             ctx,
@@ -215,6 +202,10 @@ impl Task for SettleInternalMatchTask {
             },
             SettleInternalMatchTaskState::UpdatingState => {
                 self.update_state().await?;
+                self.task_state = SettleInternalMatchTaskState::UpdatingValidityProofs;
+            },
+            SettleInternalMatchTaskState::UpdatingValidityProofs => {
+                self.update_validity_proofs().await?;
                 self.task_state = SettleInternalMatchTaskState::Completed;
             },
             SettleInternalMatchTaskState::Completed => {
@@ -256,51 +247,116 @@ impl Descriptor for SettleInternalMatchTaskDescriptor {}
 // -----------------------
 
 impl SettleInternalMatchTask {
-    /// Submit the transaction to the contract
-    async fn submit_tx(&self) -> Result<()> {
+    /// Submit the settlement transaction and extract Merkle proofs
+    ///
+    /// After the transaction lands, Merkle proofs are extracted from the
+    /// receipt for any Ring 1+ orders so subsequent validity proofs can
+    /// reference the new Merkle leaf.
+    async fn submit_tx(&mut self) -> Result<()> {
         let obligation_bundle = self.processor.public_obligation_bundle(&self.match_result);
         let obligation0 = self.get_obligation(PARTY0)?.clone();
         let obligation1 = self.get_obligation(PARTY1)?.clone();
-        let settlement_bundle0 =
-            self.processor.build_internal_settlement_bundle(self.order_id, obligation0).await?;
+        let settlement_bundle0 = self
+            .processor
+            .build_internal_settlement_bundle(self.order_id, obligation0.clone())
+            .await?;
         let settlement_bundle1 = self
             .processor
-            .build_internal_settlement_bundle(self.other_order_id, obligation1)
+            .build_internal_settlement_bundle(self.other_order_id, obligation1.clone())
             .await?;
 
         // Submit the transaction
-        let tx = self
+        let receipt = self
             .ctx
             .darkpool_client
             .settle_match(obligation_bundle, settlement_bundle0, settlement_bundle1)
             .await?;
 
-        info!("Settled match with tx hash: {}", tx.transaction_hash);
+        // Get an updated version of the orders and store them for later steps
+        let order0 = self.processor.build_updated_intent(self.order_id, &obligation0).await?;
+        let order1 = self.processor.build_updated_intent(self.other_order_id, &obligation1).await?;
+        self.updated_order0 = Some(order0);
+        self.updated_order1 = Some(order1);
+
+        // Extract and store Merkle proofs for Ring 1+ orders
+        self.update_merkle_proofs(&receipt).await?;
+        Ok(())
+    }
+
+    /// Extract and store Merkle proofs for both parties from the settlement
+    /// receipt
+    async fn update_merkle_proofs(
+        &self,
+        receipt: &alloy::rpc::types::TransactionReceipt,
+    ) -> Result<()> {
+        let party0_fut = self.update_merkle_proof_for_party(PARTY0, receipt);
+        let party1_fut = self.update_merkle_proof_for_party(PARTY1, receipt);
+        tokio::try_join!(party0_fut, party1_fut)?;
+        Ok(())
+    }
+
+    /// Extract and store the Merkle proof for a single party's order
+    async fn update_merkle_proof_for_party(
+        &self,
+        party_id: PartyId,
+        receipt: &alloy::rpc::types::TransactionReceipt,
+    ) -> Result<()> {
+        let order =
+            branch_party!(party_id, &self.updated_order0, &self.updated_order1).as_ref().unwrap();
+        self.processor.update_intent_merkle_proof_after_match(order, receipt).await?;
         Ok(())
     }
 
     /// Update the account state for the parties involved in the match
     ///
     /// This involves decreasing the amount remaining on the matched orders and
-    /// the input balances.
+    /// the input balances. For Ring 1+ orders the intent shares and streams
+    /// are also advanced to match the post-settlement Merkle leaf.
     ///
     /// The output balances are not updated except by the chain events listener
     /// as we only update balances for amounts approved to the darkpool for
     /// matching.
     async fn update_state(&self) -> Result<()> {
-        self.update_state_for_party(PARTY0).await?;
-        self.update_state_for_party(PARTY1).await?;
+        let party0_fut = self.update_state_for_party(PARTY0);
+        let party1_fut = self.update_state_for_party(PARTY1);
+        tokio::try_join!(party0_fut, party1_fut)?;
         Ok(())
     }
 
     /// Update the state for a given party
     async fn update_state_for_party(&self, party_id: PartyId) -> Result<()> {
         let account_id = branch_party!(party_id, self.account_id, self.other_account_id);
-        let order_id = branch_party!(party_id, self.order_id, self.other_order_id);
         let obligation = self.get_obligation(party_id)?;
+        let order =
+            branch_party!(party_id, &self.updated_order0, &self.updated_order1).clone().unwrap();
 
         self.processor.update_input_balance(account_id, BalanceLocation::EOA, obligation).await?;
-        self.processor.update_order_amount_in(order_id, obligation).await?;
+        self.processor.update_order_after_match(order).await?;
+        Ok(())
+    }
+
+    /// Regenerate validity proofs for Ring 1+ orders after settlement
+    ///
+    /// The stored order already has the correct re-encrypted shares and
+    /// advanced stream states (from `update_order_after_match`), so the
+    /// validity proof generator can read the order directly from state.
+    async fn update_validity_proofs(&self) -> Result<()> {
+        let party0_fut = self.update_validity_proofs_for_party(PARTY0);
+        let party1_fut = self.update_validity_proofs_for_party(PARTY1);
+        tokio::try_join!(party0_fut, party1_fut)?;
+        Ok(())
+    }
+
+    /// Regenerate the validity proof for a single party's order if it is a
+    /// private (Ring 1+) order
+    async fn update_validity_proofs_for_party(&self, party_id: PartyId) -> Result<()> {
+        let order_id = branch_party!(party_id, self.order_id, self.other_order_id);
+        let order = self.processor.get_order(order_id).await?;
+        if order.ring == PrivacyRing::Ring0 {
+            return Ok(());
+        }
+
+        update_intent_only_validity_proof(order_id, &self.ctx).await?;
         Ok(())
     }
 }

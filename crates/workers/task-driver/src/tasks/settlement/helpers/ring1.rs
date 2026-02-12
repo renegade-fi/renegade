@@ -35,6 +35,10 @@ use crate::{
     utils::enqueue_proof_job,
 };
 
+// ----------------------
+// | Settlement Bundles |
+// ----------------------
+
 impl SettlementProcessor {
     /// Build a Ring 1 settlement bundle for an internal match
     pub async fn build_ring1_internal_settlement_bundle(
@@ -265,9 +269,7 @@ impl SettlementProcessor {
     }
 }
 
-// -----------
-// | Helpers |
-// -----------
+// --- Settlement Bundle Helpers --- //
 
 /// Build a first-fill auth bundle for a private intent (Ring 1)
 ///
@@ -301,5 +303,29 @@ fn build_subsequent_fill_auth_bundle(
         merkleDepth: U256::from(MERKLE_HEIGHT),
         statement,
         validityProof: proof,
+    }
+}
+
+// -----------------
+// | State Updates |
+// -----------------
+
+impl SettlementProcessor {
+    /// Update an intent after a match settlement
+    pub async fn update_ring1_intent_after_match(
+        &self,
+        order: &mut Order,
+        obligation: &SettlementObligation,
+    ) -> Result<(), SettlementError> {
+        // We only re-encrypt for subsequent fills; first fill uses the initial shares
+        if order.metadata.has_been_filled {
+            order.intent.reencrypt_amount_in();
+        }
+
+        // Decrement amount in then compute a recovery id to advance the stream
+        order.decrement_amount_in(obligation.amount_in);
+        order.intent.advance_recovery_stream();
+        order.metadata.mark_filled();
+        Ok(())
     }
 }

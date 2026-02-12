@@ -198,6 +198,11 @@ where
 
     // --- Recovery IDs --- //
 
+    /// Advance the recovery stream index by one
+    pub fn advance_recovery_stream(&mut self) {
+        self.recovery_stream.index += 1;
+    }
+
     /// Compute a recovery identifier for a state element
     ///
     /// This is just the current index in the recovery stream
