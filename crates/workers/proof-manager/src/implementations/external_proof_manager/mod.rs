@@ -165,6 +165,7 @@ impl ExternalProofManager {
                 statement,
                 party_id,
                 validity_link_hint,
+                output_balance_link_hint,
             } => {
                 client
                     .prove_intent_and_balance_public_settlement(
@@ -172,6 +173,7 @@ impl ExternalProofManager {
                         statement,
                         party_id,
                         validity_link_hint,
+                        output_balance_link_hint,
                     )
                     .await
             },

@@ -108,7 +108,8 @@ use job_types::proof_manager::{
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use tracing::{error, info, info_span, instrument};
 use types_proofs::{
-    PrivateSettlementProofBundle, ProofAndHintBundle, ProofBundle, SettlementProofBundle,
+    IntentOnlySettlementProofBundle, PrivateSettlementProofBundle, ProofAndHintBundle, ProofBundle,
+    PublicSettlementProofBundle,
 };
 use types_runtime::CancelChannel;
 use util::{DefaultOption, default_option};
@@ -263,11 +264,13 @@ impl NativeProofManager {
                 statement,
                 party_id,
                 validity_link_hint,
+                output_balance_link_hint,
             } => self.prove_intent_and_balance_public_settlement(
                 witness,
                 statement,
                 party_id,
                 validity_link_hint,
+                output_balance_link_hint,
             ),
             ProofJob::IntentOnlyBoundedSettlement { witness, statement, validity_link_hint } => {
                 self.prove_intent_only_bounded_settlement(witness, statement, validity_link_hint)
@@ -526,7 +529,7 @@ impl NativeProofManager {
             &settlement_link_hint,
         )?;
 
-        let bundle = SettlementProofBundle::new(proof, statement, link_proof);
+        let bundle = IntentOnlySettlementProofBundle::new(proof, statement, link_proof);
         Ok(ProofManagerResponse::IntentAndBalanceBoundedSettlement(bundle))
     }
 
@@ -578,18 +581,29 @@ impl NativeProofManager {
         statement: IntentAndBalancePublicSettlementStatement,
         party_id: PartyId,
         validity_link_hint: ProofLinkingHint,
+        output_balance_link_hint: ProofLinkingHint,
     ) -> Result<ProofManagerResponse, ProofManagerError> {
         let (proof, settlement_link_hint) = singleprover_prove_with_hint::<
             IntentAndBalancePublicSettlementCircuit,
         >(&witness, &statement)?;
 
-        let link_proof = link_sized_intent_and_balance_settlement_with_party(
+        let validity_link_proof = link_sized_intent_and_balance_settlement_with_party(
             party_id as u8,
             &validity_link_hint,
             &settlement_link_hint,
         )?;
+        let output_balance_link_proof = link_sized_output_balance_settlement_with_party(
+            party_id as u8,
+            &output_balance_link_hint,
+            &settlement_link_hint,
+        )?;
 
-        let bundle = SettlementProofBundle::new(proof, statement, link_proof);
+        let bundle = PublicSettlementProofBundle::new(
+            proof,
+            statement,
+            validity_link_proof,
+            output_balance_link_proof,
+        );
         Ok(ProofManagerResponse::IntentAndBalancePublicSettlement(bundle))
     }
 
@@ -608,7 +622,7 @@ impl NativeProofManager {
         let link_proof =
             link_sized_intent_only_settlement(&validity_link_hint, &settlement_link_hint)?;
 
-        let bundle = SettlementProofBundle::new(proof, statement, link_proof);
+        let bundle = IntentOnlySettlementProofBundle::new(proof, statement, link_proof);
         Ok(ProofManagerResponse::IntentOnlyBoundedSettlement(bundle))
     }
 
@@ -627,7 +641,7 @@ impl NativeProofManager {
         let link_proof =
             link_sized_intent_only_settlement(&validity_link_hint, &settlement_link_hint)?;
 
-        let bundle = SettlementProofBundle::new(proof, statement, link_proof);
+        let bundle = IntentOnlySettlementProofBundle::new(proof, statement, link_proof);
         Ok(ProofManagerResponse::IntentOnlyPublicSettlement(bundle))
     }
 

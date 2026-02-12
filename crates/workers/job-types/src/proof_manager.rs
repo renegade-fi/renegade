@@ -415,6 +415,8 @@ pub enum ProofJob {
         party_id: PartyId,
         /// The link hint for the validity proof
         validity_link_hint: ProofLinkingHint,
+        /// The link hint for the output balance validity proof
+        output_balance_link_hint: ProofLinkingHint,
     },
     /// Prove `INTENT ONLY BOUNDED SETTLEMENT`
     IntentOnlyBoundedSettlement {

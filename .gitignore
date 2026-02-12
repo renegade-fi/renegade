@@ -25,6 +25,7 @@ rustc-ice-*
 secrets.env
 /.gitattributes
 **/CLAUDE.md
+**/AGENTS.md
 
 # macos
 **/.DS_Store

@@ -19,6 +19,7 @@ pub mod error;
 pub mod obligation_bundle;
 pub mod ring0;
 pub mod ring1;
+pub mod ring2;
 pub mod settlement_bundle;
 
 /// A macro that branches between two parties in a settlement
@@ -84,8 +85,6 @@ impl SettlementProcessor {
             })?;
         Ok(auth.into_natively_settled_private_order())
     }
-
-    // --- Balance Retrieval --- //
 
     /// Get the input balance for a given party
     async fn get_input_balance(

@@ -93,7 +93,8 @@ use tokio::runtime::Handle;
 use tracing::{error, instrument};
 use types_proofs::mocks::{dummy_link_hint, dummy_link_proof, dummy_proof};
 use types_proofs::{
-    PrivateSettlementProofBundle, ProofAndHintBundle, ProofBundle, SettlementProofBundle,
+    IntentOnlySettlementProofBundle, PrivateSettlementProofBundle, ProofAndHintBundle, ProofBundle,
+    PublicSettlementProofBundle,
 };
 use util::channels::TracedMessage;
 
@@ -377,7 +378,7 @@ impl MockProofManager {
         }
         let proof = dummy_proof();
         let link_proof = dummy_link_proof();
-        let bundle = SettlementProofBundle::new(proof, statement, link_proof);
+        let bundle = IntentOnlySettlementProofBundle::new(proof, statement, link_proof);
         Ok(ProofManagerResponse::IntentAndBalanceBoundedSettlement(bundle))
     }
 
@@ -416,8 +417,12 @@ impl MockProofManager {
             )?;
         }
         let proof = dummy_proof();
-        let link_proof = dummy_link_proof();
-        let bundle = SettlementProofBundle::new(proof, statement, link_proof);
+        let bundle = PublicSettlementProofBundle::new(
+            proof,
+            statement,
+            dummy_link_proof(),
+            dummy_link_proof(),
+        );
         Ok(ProofManagerResponse::IntentAndBalancePublicSettlement(bundle))
     }
 
@@ -432,7 +437,7 @@ impl MockProofManager {
         }
         let proof = dummy_proof();
         let link_proof = dummy_link_proof();
-        let bundle = SettlementProofBundle::new(proof, statement, link_proof);
+        let bundle = IntentOnlySettlementProofBundle::new(proof, statement, link_proof);
         Ok(ProofManagerResponse::IntentOnlyBoundedSettlement(bundle))
     }
 
@@ -447,7 +452,7 @@ impl MockProofManager {
         }
         let proof = dummy_proof();
         let link_proof = dummy_link_proof();
-        let bundle = SettlementProofBundle::new(proof, statement, link_proof);
+        let bundle = IntentOnlySettlementProofBundle::new(proof, statement, link_proof);
         Ok(ProofManagerResponse::IntentOnlyPublicSettlement(bundle))
     }
 
