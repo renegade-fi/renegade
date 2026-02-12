@@ -144,7 +144,9 @@ impl OnChainEventListenerExecutor {
             let Some(mut order) = self.state().get_account_order(&order_id).await? else {
                 return Ok(());
             };
+
             order.intent.inner.amount_in = amount_remaining;
+            order.metadata.mark_filled();
             self.state().update_order(order).await?.await?;
         }
 

@@ -145,9 +145,12 @@ async fn create_ring1_order_task_descriptor(
         state.get_account_keychain(&account_id).await?.ok_or_else(account_not_found)?;
     let share_seed = keychain.sample_share_stream().seed;
     let recovery_seed = keychain.sample_recovery_id_stream().seed;
-    let original_intent = DarkpoolStateIntent::new(intent.clone(), share_seed, recovery_seed);
+    let mut original_intent = DarkpoolStateIntent::new(intent.clone(), share_seed, recovery_seed);
 
-    // The signature is over the intent's initial commitment
+    // The signature is over the intent's initial commitment.
+    // Must compute recovery_id first - this advances the recovery stream index,
+    // which is included in the private commitment.
+    original_intent.compute_recovery_id();
     let commitment = original_intent.compute_commitment();
     let descriptor = CreateOrderTaskDescriptor::new_ring1(
         account_id,
@@ -182,10 +185,13 @@ async fn create_renegade_settled_order_task_descriptor(
         state.get_account_keychain(&account_id).await?.ok_or_else(account_not_found)?;
     let authority = keychain.schnorr_public_key;
 
-    // Compute a commitment to the new intent
+    // Compute a commitment to the new intent.
+    // Must compute recovery_id first - this advances the recovery stream index,
+    // which is included in the private commitment.
     let share_seed = keychain.sample_share_stream().seed;
     let recovery_seed = keychain.sample_recovery_id_stream().seed;
-    let original_intent = DarkpoolStateIntent::new(intent.clone(), share_seed, recovery_seed);
+    let mut original_intent = DarkpoolStateIntent::new(intent.clone(), share_seed, recovery_seed);
+    original_intent.compute_recovery_id();
     let intent_commitment = original_intent.compute_commitment();
 
     // Compute a balance commitment if necessary

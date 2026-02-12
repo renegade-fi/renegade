@@ -5,6 +5,7 @@
 
 use alloy::primitives::Address;
 use circuit_types::{Amount, fixed_point::FixedPoint};
+use constants::Scalar;
 #[cfg(feature = "rkyv")]
 use darkpool_types::rkyv_remotes::ArchivedAddress;
 use darkpool_types::{intent::Intent, state_wrapper::StateWrapper};
@@ -98,6 +99,7 @@ impl Order {
             .expect("underflow when decrementing amount_in");
 
         self.intent.inner.amount_in = new_amount;
+        self.intent.public_share.amount_in -= Scalar::from(amount);
     }
 
     /// Whether the order is zero'd out
