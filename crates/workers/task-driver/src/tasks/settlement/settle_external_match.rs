@@ -249,11 +249,7 @@ impl SettleExternalMatchTask {
         let obligation = self.match_result.to_internal_obligation(self.amount_in);
         let settlement_bundle = self
             .processor
-            .build_ring0_external_settlement_bundle(
-                self.order_id,
-                obligation,
-                self.match_result.clone(),
-            )
+            .build_external_settlement_bundle(self.order_id, obligation, self.match_result.clone())
             .await?;
         self.settlement_bundle = Some(settlement_bundle);
 

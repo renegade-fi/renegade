@@ -4,7 +4,10 @@ use alloy_primitives::Address;
 use tracing::instrument;
 use types_account::OrderId;
 use types_core::AccountId;
-use types_proofs::{ValidityProofBundle, ValidityProofLocator};
+use types_proofs::{
+    IntentOnlyFirstFillValidityBundle, IntentOnlyValidityBundle, ValidityProofBundle,
+    ValidityProofLocator,
+};
 
 use crate::{error::StateError, notifications::ProposalWaiter, state_transition::StateTransition};
 
@@ -26,6 +29,32 @@ impl StateInner {
             let locator = ValidityProofLocator::Balance { account_id, mint };
             let exists = tx.has_output_balance_validity_proof(&locator)?;
             Ok(exists)
+        })
+        .await
+    }
+
+    /// Get the intent-only validity proof for a given order (subsequent fill)
+    pub async fn get_intent_only_validity_proof(
+        &self,
+        order_id: OrderId,
+    ) -> Result<Option<IntentOnlyValidityBundle>, StateError> {
+        self.with_read_tx(move |tx| {
+            let locator = ValidityProofLocator::Intent { order_id };
+            let bundle = tx.get_validity_proof::<IntentOnlyValidityBundle>(&locator)?;
+            Ok(bundle)
+        })
+        .await
+    }
+
+    /// Get the intent-only first-fill validity proof for a given order
+    pub async fn get_intent_only_first_fill_validity_proof(
+        &self,
+        order_id: OrderId,
+    ) -> Result<Option<IntentOnlyFirstFillValidityBundle>, StateError> {
+        self.with_read_tx(move |tx| {
+            let locator = ValidityProofLocator::Intent { order_id };
+            let bundle = tx.get_validity_proof::<IntentOnlyFirstFillValidityBundle>(&locator)?;
+            Ok(bundle)
         })
         .await
     }

@@ -261,13 +261,11 @@ impl SettleInternalMatchTask {
         let obligation_bundle = self.processor.public_obligation_bundle(&self.match_result);
         let obligation0 = self.get_obligation(PARTY0)?.clone();
         let obligation1 = self.get_obligation(PARTY1)?.clone();
-        let settlement_bundle0 = self
-            .processor
-            .build_ring0_internal_settlement_bundle(self.order_id, obligation0)
-            .await?;
+        let settlement_bundle0 =
+            self.processor.build_internal_settlement_bundle(self.order_id, obligation0).await?;
         let settlement_bundle1 = self
             .processor
-            .build_ring0_internal_settlement_bundle(self.other_order_id, obligation1)
+            .build_internal_settlement_bundle(self.other_order_id, obligation1)
             .await?;
 
         // Submit the transaction

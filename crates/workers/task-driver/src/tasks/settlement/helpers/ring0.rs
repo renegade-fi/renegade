@@ -6,7 +6,7 @@ use darkpool_types::{
 use renegade_solidity_abi::v2::IDarkpoolV2::{
     self, FeeRate, PublicIntentAuthBundle, SettlementBundle, SignatureWithNonce, SignedPermitSingle,
 };
-use types_account::{OrderId, pair::Pair};
+use types_account::{order::Order, pair::Pair};
 use util::on_chain::get_chain_id;
 
 use crate::tasks::settlement::helpers::{SettlementProcessor, error::SettlementError};
@@ -15,50 +15,48 @@ impl SettlementProcessor {
     /// Build a ring 0 settlement bundle for an internal match
     pub async fn build_ring0_internal_settlement_bundle(
         &self,
-        order_id: OrderId,
+        order: Order,
         obligation: SettlementObligation,
     ) -> Result<SettlementBundle, SettlementError> {
         // Get signatures from the executor and user
         let pair = Pair::from_obligation(&obligation);
         let base = pair.base_token();
-        let relayer_fee = self.relayer_fee(base).await?;
+        let relayer_fee = self.abi_relayer_fee(&base)?;
         let executor_sig = self.build_executor_signature(obligation.clone(), &relayer_fee).await?;
-        self.build_ring0_settlement_bundle_with_executor_sig(order_id, relayer_fee, executor_sig)
-            .await
+        self.build_ring0_settlement_bundle_with_executor_sig(order, relayer_fee, executor_sig).await
     }
 
     /// Build a ring 0 settlement bundle for an external match
     pub async fn build_ring0_external_settlement_bundle(
         &self,
-        order_id: OrderId,
+        order: Order,
         obligation: SettlementObligation,
         match_res: BoundedMatchResult,
     ) -> Result<SettlementBundle, SettlementError> {
         let pair = Pair::from_obligation(&obligation);
         let base = pair.base_token();
-        let relayer_fee = self.relayer_fee(base).await?;
+        let relayer_fee = self.abi_relayer_fee(&base)?;
 
         let executor_sig =
             self.build_bounded_match_executor_signature(match_res, &relayer_fee).await?;
-        self.build_ring0_settlement_bundle_with_executor_sig(order_id, relayer_fee, executor_sig)
-            .await
+        self.build_ring0_settlement_bundle_with_executor_sig(order, relayer_fee, executor_sig).await
     }
 
     /// Build a ring 0 settlement bundle for a given order
     async fn build_ring0_settlement_bundle_with_executor_sig(
         &self,
-        order_id: OrderId,
+        order: Order,
         relayer_fee: FeeRate,
         executor_sig: SignatureWithNonce,
     ) -> Result<SettlementBundle, SettlementError> {
-        let (intent_permit, user_sig) = self.get_intent_auth(order_id).await?;
-
+        let (intent_permit, user_sig) = self.get_public_intent_auth(order.id).await?;
         let auth_bundle = PublicIntentAuthBundle {
             intentPermit: intent_permit,
             intentSignature: user_sig,
             executorSignature: executor_sig,
             allowancePermit: SignedPermitSingle::default(),
         };
+
         Ok(SettlementBundle::public_intent_settlement(auth_bundle, relayer_fee))
     }
 

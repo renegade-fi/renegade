@@ -8,6 +8,9 @@ pub enum SettlementError {
     /// An error building bundle calldata
     #[error("error building bundle calldata: {0}")]
     BuildBundleCalldata(String),
+    /// A proof generation error
+    #[error("proof generation error: {0}")]
+    ProofGeneration(String),
     /// A state error
     #[error("state error: {0}")]
     State(String),
@@ -21,6 +24,12 @@ impl SettlementError {
     #[allow(clippy::needless_pass_by_value)]
     pub fn bundle_calldata<T: ToString>(e: T) -> Self {
         Self::BuildBundleCalldata(e.to_string())
+    }
+
+    /// Create a new proof generation error
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn proof_generation<T: ToString>(e: T) -> Self {
+        Self::ProofGeneration(e.to_string())
     }
 
     /// Create a new state error
