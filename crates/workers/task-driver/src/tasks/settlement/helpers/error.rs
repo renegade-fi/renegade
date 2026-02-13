@@ -20,6 +20,9 @@ pub enum SettlementError {
     /// A signing error
     #[error("signing error: {0}")]
     Signing(String),
+    /// An unsupported error
+    #[error("unsupported ring: {0}")]
+    UnsupportedRing(String),
 }
 
 impl SettlementError {
@@ -51,6 +54,12 @@ impl SettlementError {
     #[allow(clippy::needless_pass_by_value)]
     pub fn signing<T: ToString>(e: T) -> Self {
         Self::Signing(e.to_string())
+    }
+
+    /// Create a new unsupported ring error
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn unsupported<T: ToString>(e: T) -> Self {
+        Self::UnsupportedRing(e.to_string())
     }
 }
 

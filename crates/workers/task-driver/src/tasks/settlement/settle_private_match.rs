@@ -269,11 +269,25 @@ impl SettlePrivateMatchTask {
     /// Unlike the public settlement task, this builds a single
     /// `IntentAndBalancePrivateSettlement` proof covering both parties, then
     /// splits the result into two `SettlementBundle` values.
-    ///
-    /// TODO: Uncomment when `SettlementProcessor::build_private_settlement`
-    /// is implemented in the ring3 settlement helpers.
     async fn submit_tx(&mut self) -> Result<()> {
-        todo!("implement submit_tx for private settlement")
+        let (settlement_bundle0, settlement_bundle1, obligation_bundle) = self
+            .processor
+            .build_private_fill_calldata_bundle(
+                self.order_id,
+                self.other_order_id,
+                self.match_result.party0_obligation().clone(),
+                self.match_result.party1_obligation().clone(),
+            )
+            .await?;
+
+        // Send the transaction
+        let receipt = self
+            .ctx
+            .darkpool_client
+            .settle_match(obligation_bundle, settlement_bundle0, settlement_bundle1)
+            .await?;
+
+        Ok(())
     }
 
     /// Extract and store Merkle proofs for both parties from the settlement

@@ -20,9 +20,11 @@ use crate::{tasks::settlement::helpers::error::SettlementError, traits::TaskCont
 pub mod error;
 pub mod obligation_bundle;
 pub mod output_balance;
+pub mod private_fill_validity_bundle;
 pub mod ring0;
 pub mod ring1;
 pub mod ring2;
+pub mod ring3;
 pub mod settlement_bundle;
 
 /// A macro that branches between two parties in a settlement
