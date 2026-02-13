@@ -1,6 +1,6 @@
 //! Ring 2 settlement helpers
 
-use alloy::primitives::U256;
+use alloy::{primitives::U256, rpc::types::TransactionReceipt};
 use circuits_core::zk_circuits::settlement::intent_and_balance_public_settlement::{
     IntentAndBalancePublicSettlementStatement, IntentAndBalancePublicSettlementWitness,
 };
@@ -15,6 +15,7 @@ use job_types::proof_manager::ProofJob;
 use renegade_solidity_abi::v2::IDarkpoolV2::{
     RenegadeSettledIntentAuthBundle, RenegadeSettledIntentAuthBundleFirstFill, SettlementBundle,
 };
+use types_account::balance::{Balance, BalanceLocation};
 use types_account::{OrderId, order::Order, pair::Pair};
 use types_core::AccountId;
 use types_proofs::{
@@ -274,5 +275,192 @@ impl SettlementProcessor {
                     "subsequent fill validity proof not found for order {order_id}"
                 ))
             })
+    }
+}
+
+// -----------------
+// | State Updates |
+// -----------------
+
+impl SettlementProcessor {
+    /// Update an intent after a Ring 2 match settlement
+    ///
+    /// The intent update mirrors Ring 1: re-encrypt the `amount_in` share on
+    /// subsequent fills, decrement the remaining amount, and advance the
+    /// recovery stream so the stored order matches the post-settlement
+    /// Merkle leaf.
+    pub async fn update_ring2_intent_after_match(
+        &self,
+        order: &mut Order,
+        obligation: &SettlementObligation,
+    ) -> Result<(), SettlementError> {
+        // Re-encrypt only for subsequent fills; first fill uses initial shares
+        if order.metadata.has_been_filled {
+            order.intent.reencrypt_amount_in();
+        }
+
+        // Decrement amount in then advance the recovery stream
+        order.decrement_amount_in(obligation.amount_in);
+        order.intent.advance_recovery_stream();
+        order.metadata.mark_filled();
+        Ok(())
+    }
+
+    /// Build the post-settlement input balance for a Ring 2 order
+    ///
+    /// Re-encrypts the post-match shares (the validity proof always
+    /// re-encrypts before the settlement circuit runs), applies the
+    /// settlement obligation to decrement the input amount, and advances the
+    /// recovery stream.
+    pub async fn build_updated_input_balance(
+        &self,
+        account_id: AccountId,
+        obligation: &SettlementObligation,
+    ) -> Result<Balance, SettlementError> {
+        let mut balance =
+            self.get_balance(account_id, obligation.input_token, BalanceLocation::Darkpool).await?;
+
+        // Re-encrypt the post-match shares to match the validity proof state
+        balance.state_wrapper.reencrypt_post_match_share();
+
+        // Subtract the obligation amount from both inner value and public share
+        balance.state_wrapper.apply_obligation_in_balance(obligation);
+
+        // Advance the recovery stream for the next validity proof cycle
+        balance.state_wrapper.advance_recovery_stream();
+
+        Ok(balance)
+    }
+
+    /// Build the post-settlement output balance for a Ring 2 order
+    ///
+    /// Handles both newly created output balances and existing ones:
+    /// - **Existing**: fetched from state, post-match shares re-encrypted
+    /// - **New**: fetched from the `NEW OUTPUT BALANCE VALIDITY` witness
+    ///
+    /// In both cases the settlement obligation is applied (receive amount
+    /// net of fees credited, fees accrued) and the recovery stream is
+    /// advanced.
+    pub async fn build_updated_output_balance(
+        &self,
+        account_id: AccountId,
+        order: &Order,
+        obligation: &SettlementObligation,
+        apply_fees: bool,
+    ) -> Result<Balance, SettlementError> {
+        let output_mint = order.intent.inner.out_token;
+        let has_balance = self.ctx.state.has_darkpool_balance(&account_id, &output_mint).await?;
+        let mut balance = if has_balance {
+            self.build_existing_output_balance(account_id, output_mint).await?
+        } else {
+            self.build_new_output_balance(account_id, output_mint).await?
+        };
+
+        // Compute fees and apply only the net receive amount to the output
+        // balance. For this settlement path, fee transfers are handled as
+        // external transfers by the contract and are not accrued on-balance.
+        let pair = Pair::from_obligation(obligation);
+        let fee_rates = self.fee_rates(&pair)?;
+        let fee_take = fee_rates.compute_fee_take(obligation.amount_out);
+
+        if apply_fees {
+            balance.state_wrapper.apply_obligation_out_balance(obligation, &fee_take);
+        } else {
+            balance.state_wrapper.apply_obligation_out_balance_no_fees(obligation, &fee_take);
+        }
+
+        // Advance the recovery stream for the next validity proof cycle
+        balance.state_wrapper.advance_recovery_stream();
+
+        Ok(balance)
+    }
+
+    /// Build the updated state for an existing output balance
+    ///
+    /// Re-encrypts the post-match shares to match the validity proof
+    /// re-encryption that preceded the settlement circuit.
+    ///
+    /// This re-encryption is only necessary for existing output balances. New
+    /// output balances sign their initial shares and don't need to be
+    /// re-encrypted.
+    async fn build_existing_output_balance(
+        &self,
+        account_id: AccountId,
+        mint: alloy::primitives::Address,
+    ) -> Result<Balance, SettlementError> {
+        let mut balance = self.get_balance(account_id, mint, BalanceLocation::Darkpool).await?;
+
+        // Re-encrypt post-match shares to match the validity proof state
+        balance.state_wrapper.reencrypt_post_match_share();
+        Ok(balance)
+    }
+
+    /// Build the updated state for a newly created output balance
+    ///
+    /// Fetches the initial balance from the stored `NEW OUTPUT BALANCE
+    /// VALIDITY` proof witness. No re-encryption is needed because the
+    /// shares are fresh from creation.
+    async fn build_new_output_balance(
+        &self,
+        account_id: AccountId,
+        mint: alloy::primitives::Address,
+    ) -> Result<Balance, SettlementError> {
+        let (_, witness) = self
+            .ctx
+            .state
+            .get_new_output_balance_validity_proof_and_witness(account_id, mint)
+            .await?
+            .ok_or_else(|| {
+                SettlementError::state(format!(
+                    "new output balance validity proof not found for account {account_id} \
+                     and mint {mint}"
+                ))
+            })?;
+
+        Ok(Balance::new_darkpool(witness.new_balance))
+    }
+
+    /// Extract and store Merkle authentication paths for both the input and
+    /// output balances of a Ring 2 order from a settlement transaction
+    /// receipt
+    ///
+    /// Computes the post-settlement balance commitments and looks them up in
+    /// the receipt's `MerkleInsertion` events.
+    pub async fn update_ring2_balance_merkle_proofs_after_match(
+        &self,
+        account_id: AccountId,
+        updated_input_balance: &Balance,
+        updated_output_balance: &Balance,
+        receipt: &TransactionReceipt,
+    ) -> Result<(), SettlementError> {
+        let in_fut = self.store_balance_merkle_proof(account_id, updated_input_balance, receipt);
+        let out_fut = self.store_balance_merkle_proof(account_id, updated_output_balance, receipt);
+
+        tokio::try_join!(in_fut, out_fut)?;
+        Ok(())
+    }
+
+    /// Compute a balance's commitment, find the corresponding Merkle path
+    /// in the receipt, and persist it in state
+    async fn store_balance_merkle_proof(
+        &self,
+        account_id: AccountId,
+        balance: &Balance,
+        receipt: &TransactionReceipt,
+    ) -> Result<(), SettlementError> {
+        let commitment = balance.state_wrapper.compute_commitment();
+        let mint = balance.mint();
+
+        let merkle_proof = self
+            .ctx
+            .darkpool_client
+            .find_merkle_authentication_path_with_tx(commitment, receipt)
+            .map_err(SettlementError::darkpool)?;
+
+        let waiter =
+            self.ctx.state.add_balance_merkle_proof(account_id, mint, merkle_proof).await?;
+        waiter.await.map_err(SettlementError::from)?;
+
+        Ok(())
     }
 }

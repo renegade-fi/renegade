@@ -28,6 +28,7 @@ use crate::{
         settlement::{
             settle_external_match::SettleExternalMatchTask,
             settle_internal_match::SettleInternalMatchTask,
+            settle_private_match::SettlePrivateMatchTask,
         },
         withdraw::WithdrawTask,
     },
@@ -256,6 +257,9 @@ impl TaskExecutor {
             },
             TaskDescriptor::SettleExternalMatch(desc) => {
                 self.start_task_helper::<SettleExternalMatchTask>(id, desc, affected_accounts).await
+            },
+            TaskDescriptor::SettlePrivateMatch(desc) => {
+                self.start_task_helper::<SettlePrivateMatchTask>(id, desc, affected_accounts).await
             },
             TaskDescriptor::Withdraw(desc) => {
                 self.start_task_helper::<WithdrawTask>(id, desc, affected_accounts).await

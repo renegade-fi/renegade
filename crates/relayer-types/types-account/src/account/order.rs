@@ -255,6 +255,13 @@ impl PrivacyRing {
             && self.rank() >= counterparty.min_counterparty_ring().rank()
     }
 
+    /// Whether or not two orders support private settlement
+    pub fn supports_private_settlement(order0_ring: PrivacyRing, order1_ring: PrivacyRing) -> bool {
+        let order0_supports = matches!(order0_ring, PrivacyRing::Ring2 | PrivacyRing::Ring3);
+        let order1_supports = matches!(order1_ring, PrivacyRing::Ring2 | PrivacyRing::Ring3);
+        order0_supports && order1_supports
+    }
+
     /// Get the balance location from which an order in the privacy ring is
     /// capitalized
     pub fn balance_location(&self) -> BalanceLocation {

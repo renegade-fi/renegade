@@ -3,9 +3,12 @@
 use circuit_types::Amount;
 use matching_engine_core::SuccessfulMatch;
 use tracing::{error, info, instrument, warn};
+use types_account::order::PrivacyRing;
 use types_account::{MatchingPoolName, OrderId, order::Order};
 use types_core::AccountId;
-use types_tasks::{SettleInternalMatchTaskDescriptor, TaskDescriptor};
+use types_tasks::{
+    SettleInternalMatchTaskDescriptor, SettlePrivateMatchTaskDescriptor, TaskDescriptor,
+};
 
 use crate::{error::MatchingEngineError, executor::MatchingEngineExecutor};
 
@@ -78,23 +81,36 @@ impl MatchingEngineExecutor {
         user_order: OrderId,
         match_result: SuccessfulMatch,
     ) -> Result<(), MatchingEngineError> {
-        // Lookup account IDs for both orders
+        // Lookup account IDs and order rings for both orders
         let account_id = self.get_account_id_for_order(&user_order).await?;
         let other_account_id = self.get_account_id_for_order(&match_result.other_order_id).await?;
 
-        // Create the settlement task descriptor
-        let descriptor = SettleInternalMatchTaskDescriptor {
-            account_id,
-            other_account_id,
-            order_id: user_order,
-            other_order_id: match_result.other_order_id,
-            execution_price: match_result.price,
-            match_result: match_result.match_result,
+        let order0_ring = self.get_order_ring(&user_order).await?;
+        let order1_ring = self.get_order_ring(&match_result.other_order_id).await?;
+        let use_private = PrivacyRing::supports_private_settlement(order0_ring, order1_ring);
+
+        let descriptor = if use_private {
+            TaskDescriptor::from(SettlePrivateMatchTaskDescriptor {
+                account_id,
+                other_account_id,
+                order_id: user_order,
+                other_order_id: match_result.other_order_id,
+                execution_price: match_result.price,
+                match_result: match_result.match_result,
+            })
+        } else {
+            TaskDescriptor::from(SettleInternalMatchTaskDescriptor {
+                account_id,
+                other_account_id,
+                order_id: user_order,
+                other_order_id: match_result.other_order_id,
+                execution_price: match_result.price,
+                match_result: match_result.match_result,
+            })
         };
 
         // Enqueue the task as a preemptive task through raft
-        self.forward_queued_task(TaskDescriptor::from(descriptor)).await?;
-
+        self.forward_queued_task(descriptor).await?;
         Ok(())
     }
 
@@ -147,6 +163,14 @@ impl MatchingEngineExecutor {
     ///
     /// This check may be executed after a match settlement fails
     async fn order_still_valid(&self, order_id: &OrderId) -> Result<bool, MatchingEngineError> {
-        todo!("Re-implement order still valid check")
+        warn!("Re-implement order still valid check");
+        Ok(true)
+    }
+
+    /// Fetch the privacy ring for an order
+    async fn get_order_ring(&self, order_id: &OrderId) -> Result<PrivacyRing, MatchingEngineError> {
+        self.state.get_order_ring(order_id).await?.ok_or_else(|| {
+            MatchingEngineError::state(format!("no order found for order {order_id:?}"))
+        })
     }
 }

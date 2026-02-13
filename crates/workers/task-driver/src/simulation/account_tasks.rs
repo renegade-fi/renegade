@@ -5,8 +5,8 @@ use tracing::warn;
 use types_account::{Account, balance::BalanceLocation};
 use types_tasks::{
     CreateBalanceTaskDescriptor, CreateOrderTaskDescriptor, DepositTaskDescriptor,
-    NewAccountTaskDescriptor, QueuedTask, SettleInternalMatchTaskDescriptor, TaskDescriptor,
-    WithdrawTaskDescriptor,
+    NewAccountTaskDescriptor, QueuedTask, SettleInternalMatchTaskDescriptor,
+    SettlePrivateMatchTaskDescriptor, TaskDescriptor, WithdrawTaskDescriptor,
 };
 
 use super::error::TaskSimulationError;
@@ -48,6 +48,7 @@ fn should_simulate(task: &QueuedTask) -> bool {
         TaskDescriptor::Deposit(_) => true,
         TaskDescriptor::CreateBalance(_) => true,
         TaskDescriptor::SettleInternalMatch(_) => true,
+        TaskDescriptor::SettlePrivateMatch(_) => true,
         TaskDescriptor::Withdraw(_) => true,
         // Cancel order removes from local state after on-chain tx succeeds
         TaskDescriptor::CancelOrder(_) => false,
@@ -70,6 +71,7 @@ fn simulate_single_account_task(
         TaskDescriptor::Deposit(t) => simulate_deposit(account, &t),
         TaskDescriptor::CreateBalance(t) => simulate_create_balance(account, &t, state),
         TaskDescriptor::SettleInternalMatch(t) => simulate_settle_internal_match(account, &t),
+        TaskDescriptor::SettlePrivateMatch(t) => simulate_settle_private_match(account, &t),
         TaskDescriptor::Withdraw(t) => simulate_withdraw(account, &t),
         // Ignore all non-wallet tasks
         TaskDescriptor::CancelOrder(_) => Ok(()),
@@ -136,6 +138,15 @@ fn simulate_settle_internal_match(
     _desc: &SettleInternalMatchTaskDescriptor,
 ) -> Result<(), TaskSimulationError> {
     todo!("Implement settle internal match simulation");
+}
+
+/// Simulate a `SettlePrivateMatch` task applied to a wallet
+#[allow(clippy::needless_pass_by_ref_mut)]
+fn simulate_settle_private_match(
+    _account: &mut Account,
+    _desc: &SettlePrivateMatchTaskDescriptor,
+) -> Result<(), TaskSimulationError> {
+    todo!("Implement settle private match simulation");
 }
 
 /// Simulate a `Withdraw` task applied to a wallet
