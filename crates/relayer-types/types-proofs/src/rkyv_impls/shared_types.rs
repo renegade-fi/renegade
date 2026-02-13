@@ -3,8 +3,7 @@
 #![allow(clippy::missing_docs_in_private_items)]
 
 use circuit_types::{
-    fixed_point::FixedPointShare,
-    merkle::SizedMerkleOpening,
+    fixed_point::FixedPointShare, merkle::SizedMerkleOpening,
     primitives::schnorr::SchnorrPublicKeyShare,
 };
 use constants::{MERKLE_HEIGHT, Scalar};
