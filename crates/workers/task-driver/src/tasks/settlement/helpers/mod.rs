@@ -3,7 +3,7 @@
 use alloy::{
     primitives::Address, rpc::types::TransactionReceipt, signers::local::PrivateKeySigner,
 };
-use circuit_types::fixed_point::FixedPoint;
+use circuit_types::{fixed_point::FixedPoint, schnorr::SchnorrSignature};
 use darkpool_types::{fee::FeeRates, settlement_obligation::SettlementObligation};
 use renegade_solidity_abi::v2::IDarkpoolV2::{FeeRate, PublicIntentPermit, SignatureWithNonce};
 use types_account::{
@@ -89,6 +89,20 @@ impl SettlementProcessor {
         Ok(auth.into_natively_settled_private_order())
     }
 
+    /// Get the Schnorr signatures for a Renegade-settled order (Ring 2+)
+    ///
+    /// Returns `(intent_signature, new_output_balance_signature)`.
+    pub async fn get_renegade_settled_auth(
+        &self,
+        order_id: OrderId,
+    ) -> Result<(SchnorrSignature, SchnorrSignature), SettlementError> {
+        let auth =
+            self.ctx.state.get_order_auth(&order_id).await?.ok_or_else(|| {
+                SettlementError::state(format!("order auth not found: {order_id}"))
+            })?;
+        Ok(auth.into_renegade_settled_order())
+    }
+
     // --- State Retrieval --- //
 
     /// Get the account ID that owns a given order.
@@ -164,6 +178,9 @@ impl SettlementProcessor {
             PrivacyRing::Ring1 => {
                 self.update_ring1_intent_after_match(&mut order, obligation).await?
             },
+            PrivacyRing::Ring2 => {
+                self.update_ring2_intent_after_match(&mut order, obligation).await?
+            },
             _ => unimplemented!("implementing updated intent for ring {:?}", order.ring),
         };
         Ok(order)
@@ -208,20 +225,57 @@ impl SettlementProcessor {
         Ok(())
     }
 
-    /// Update the input balance for a given party
-    pub async fn update_input_balance(
+    /// Update balances after a match settlement for any ring level
+    ///
+    /// For Ring 0/1, decrements the EOA input balance by the obligation
+    /// amount. For Ring 2, writes pre-computed darkpool input and output
+    /// balances to state.
+    pub async fn update_balances_after_match(
         &self,
         account_id: AccountId,
-        location: BalanceLocation,
+        order: &Order,
+        obligation: &SettlementObligation,
+        darkpool_balances: Option<(Balance, Balance)>, // (input, output)
+    ) -> Result<(), SettlementError> {
+        match order.ring.balance_location() {
+            BalanceLocation::EOA => self.update_eoa_balance(account_id, obligation).await,
+            BalanceLocation::Darkpool => {
+                let (in_bal, out_bal) = darkpool_balances.expect("pre-computed balances required");
+                self.update_renegade_settled_balances(account_id, in_bal, out_bal).await
+            },
+        }
+    }
+
+    /// Update the input balance for a given party
+    async fn update_eoa_balance(
+        &self,
+        account_id: AccountId,
         obligation: &SettlementObligation,
     ) -> Result<(), SettlementError> {
         let state = &self.ctx.state;
+        let location = BalanceLocation::EOA;
         let mut balance = self.get_balance(account_id, obligation.input_token, location).await?;
         *balance.amount_mut() -= obligation.amount_in;
 
         // Write the balance back to the state
         let waiter = state.update_account_balance(account_id, balance).await?;
         waiter.await.map_err(SettlementError::from)?;
+        Ok(())
+    }
+
+    /// Update the input and output darkpool balances for a Renegade settled
+    /// order
+    async fn update_renegade_settled_balances(
+        &self,
+        account_id: AccountId,
+        input_balance: Balance,
+        output_balance: Balance,
+    ) -> Result<(), SettlementError> {
+        let state = &self.ctx.state;
+        let in_waiter = state.update_account_balance(account_id, input_balance).await?;
+        let out_waiter = state.update_account_balance(account_id, output_balance).await?;
+        in_waiter.await.map_err(SettlementError::from)?;
+        out_waiter.await.map_err(SettlementError::from)?;
         Ok(())
     }
 }

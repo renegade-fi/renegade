@@ -11,6 +11,7 @@ mod node_startup;
 mod refresh_account;
 mod settle_external_match;
 mod settle_internal_match;
+mod settle_private_match;
 mod withdraw;
 
 pub use cancel_order::*;
@@ -22,6 +23,7 @@ pub use node_startup::*;
 pub use refresh_account::*;
 pub use settle_external_match::*;
 pub use settle_internal_match::*;
+pub use settle_private_match::*;
 pub use withdraw::*;
 
 #[cfg(feature = "rkyv")]
@@ -159,6 +161,8 @@ pub enum TaskDescriptor {
     SettleInternalMatch(SettleInternalMatchTaskDescriptor),
     /// The task descriptor for the `SettleExternalMatch` task
     SettleExternalMatch(SettleExternalMatchTaskDescriptor),
+    /// The task descriptor for the `SettlePrivateMatch` task
+    SettlePrivateMatch(SettlePrivateMatchTaskDescriptor),
     /// The task descriptor for the `Withdraw` task
     Withdraw(WithdrawTaskDescriptor),
 }
@@ -176,6 +180,7 @@ impl TaskDescriptor {
             TaskDescriptor::RefreshAccount(task) => task.account_id,
             TaskDescriptor::SettleInternalMatch(task) => task.account_id,
             TaskDescriptor::SettleExternalMatch(task) => task.account_id,
+            TaskDescriptor::SettlePrivateMatch(task) => task.account_id,
             TaskDescriptor::Withdraw(task) => task.account_id,
         }
     }
@@ -194,6 +199,9 @@ impl TaskDescriptor {
                 vec![task.account_id, task.other_account_id]
             },
             TaskDescriptor::SettleExternalMatch(task) => vec![task.account_id],
+            TaskDescriptor::SettlePrivateMatch(task) => {
+                vec![task.account_id, task.other_account_id]
+            },
             TaskDescriptor::Withdraw(task) => vec![task.account_id],
         }
     }
@@ -210,6 +218,7 @@ impl TaskDescriptor {
             TaskDescriptor::RefreshAccount(_) => true,
             TaskDescriptor::SettleInternalMatch(_) => true,
             TaskDescriptor::SettleExternalMatch(_) => true,
+            TaskDescriptor::SettlePrivateMatch(_) => true,
             TaskDescriptor::Withdraw(_) => true,
         }
     }
@@ -226,6 +235,7 @@ impl TaskDescriptor {
             TaskDescriptor::RefreshAccount(_) => "Refresh Account".to_string(),
             TaskDescriptor::SettleInternalMatch(_) => "Settle Internal Match".to_string(),
             TaskDescriptor::SettleExternalMatch(_) => "Settle External Match".to_string(),
+            TaskDescriptor::SettlePrivateMatch(_) => "Settle Private Match".to_string(),
             TaskDescriptor::Withdraw(_) => "Withdraw".to_string(),
         }
     }

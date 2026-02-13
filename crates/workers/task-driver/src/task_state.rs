@@ -13,7 +13,7 @@ use crate::{
         refresh_account::RefreshAccountTaskState,
         settlement::settle_external_match::SettleExternalMatchTaskState,
         settlement::settle_internal_match::SettleInternalMatchTaskState,
-        withdraw::WithdrawTaskState,
+        settlement::settle_private_match::SettlePrivateMatchTaskState, withdraw::WithdrawTaskState,
     },
     traits::TaskState,
 };
@@ -45,6 +45,8 @@ pub enum TaskStateWrapper {
     SettleInternalMatch(SettleInternalMatchTaskState),
     /// The state of a settle external match task
     SettleExternalMatch(SettleExternalMatchTaskState),
+    /// The state of a settle private match task
+    SettlePrivateMatch(SettlePrivateMatchTaskState),
     /// The state of a withdraw task
     Withdraw(WithdrawTaskState),
 }
@@ -78,6 +80,9 @@ impl TaskStateWrapper {
             TaskStateWrapper::SettleExternalMatch(state) => {
                 <SettleExternalMatchTaskState as TaskState>::committed(state)
             },
+            TaskStateWrapper::SettlePrivateMatch(state) => {
+                <SettlePrivateMatchTaskState as TaskState>::committed(state)
+            },
             TaskStateWrapper::Withdraw(state) => <WithdrawTaskState as TaskState>::committed(state),
         }
     }
@@ -104,6 +109,9 @@ impl TaskStateWrapper {
             },
             TaskStateWrapper::SettleExternalMatch(state) => {
                 *state == SettleExternalMatchTaskState::commit_point()
+            },
+            TaskStateWrapper::SettlePrivateMatch(state) => {
+                *state == SettlePrivateMatchTaskState::commit_point()
             },
             TaskStateWrapper::Withdraw(state) => *state == WithdrawTaskState::commit_point(),
         }
@@ -137,6 +145,9 @@ impl TaskStateWrapper {
             TaskStateWrapper::SettleExternalMatch(state) => {
                 <SettleExternalMatchTaskState as TaskState>::completed(state)
             },
+            TaskStateWrapper::SettlePrivateMatch(state) => {
+                <SettlePrivateMatchTaskState as TaskState>::completed(state)
+            },
             TaskStateWrapper::Withdraw(state) => <WithdrawTaskState as TaskState>::completed(state),
         }
     }
@@ -154,6 +165,7 @@ impl Display for TaskStateWrapper {
             TaskStateWrapper::RefreshAccount(state) => write!(f, "{state}"),
             TaskStateWrapper::SettleInternalMatch(state) => write!(f, "{state}"),
             TaskStateWrapper::SettleExternalMatch(state) => write!(f, "{state}"),
+            TaskStateWrapper::SettlePrivateMatch(state) => write!(f, "{state}"),
             TaskStateWrapper::Withdraw(state) => write!(f, "{state}"),
         }
     }

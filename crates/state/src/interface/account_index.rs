@@ -10,7 +10,7 @@ use types_account::{
     account::{Account, OrderId},
     balance::{Balance, BalanceLocation},
     keychain::KeyChain,
-    order::Order,
+    order::{Order, PrivacyRing},
     order_auth::OrderAuth,
 };
 use types_core::{AccountId, HmacKey};
@@ -120,6 +120,20 @@ impl StateInner {
         self.with_read_tx(move |tx| {
             let amount = tx.get_order_matchable_amount(&id)?.unwrap_or_default();
             Ok(amount)
+        })
+        .await
+    }
+
+    /// Get the privacy ring for a given order
+    ///
+    /// This avoids deserializing the full order when only ring metadata is
+    /// needed.
+    pub async fn get_order_ring(&self, id: &OrderId) -> Result<Option<PrivacyRing>, StateError> {
+        let id = *id;
+        self.with_read_tx(move |tx| {
+            let order = res_some!(tx.get_order(&id)?);
+            let ring = PrivacyRing::from_archived(&order.ring)?;
+            Ok(Some(ring))
         })
         .await
     }
