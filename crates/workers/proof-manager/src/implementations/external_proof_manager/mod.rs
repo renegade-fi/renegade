@@ -132,12 +132,14 @@ impl ExternalProofManager {
                 witness,
                 statement,
                 validity_link_hint,
+                output_balance_link_hint,
             } => {
                 client
                     .prove_intent_and_balance_bounded_settlement(
                         witness,
                         statement,
                         validity_link_hint,
+                        output_balance_link_hint,
                     )
                     .await
             },
@@ -163,7 +165,6 @@ impl ExternalProofManager {
             ProofJob::IntentAndBalancePublicSettlement {
                 witness,
                 statement,
-                party_id,
                 validity_link_hint,
                 output_balance_link_hint,
             } => {
@@ -171,7 +172,6 @@ impl ExternalProofManager {
                     .prove_intent_and_balance_public_settlement(
                         witness,
                         statement,
-                        party_id,
                         validity_link_hint,
                         output_balance_link_hint,
                     )

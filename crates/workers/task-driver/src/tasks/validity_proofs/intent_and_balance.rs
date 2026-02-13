@@ -71,6 +71,7 @@ async fn update_first_fill_validity_proof(
 ) -> Result<(), ValidityProofsError> {
     let (witness, statement) =
         generate_first_fill_witness_statement(order, balance, balance_merkle_proof, order_auth)?;
+    let witness_clone = witness.clone();
 
     let job = ProofJob::IntentAndBalanceFirstFillValidity { witness, statement };
     let proof_recv = enqueue_proof_job(job, ctx).map_err(ValidityProofsError::proof_generation)?;
@@ -78,8 +79,11 @@ async fn update_first_fill_validity_proof(
     let bundle: IntentAndBalanceFirstFillValidityBundle =
         proof_recv.await.map_err(ValidityProofsError::proof_generation)?.into();
 
-    let bundle = ValidityProofBundle::IntentAndBalanceFirstFill(bundle);
-    let waiter = ctx.state.add_intent_validity_proof(order.id, bundle).await?;
+    let validity_bundle = ValidityProofBundle::IntentAndBalanceFirstFill {
+        bundle,
+        witness: witness_clone,
+    };
+    let waiter = ctx.state.add_intent_validity_proof(order.id, validity_bundle).await?;
     waiter.await?;
     Ok(())
 }
@@ -171,6 +175,7 @@ async fn update_subsequent_fill_validity_proof(
         intent_merkle_proof,
         balance_merkle_proof,
     )?;
+    let witness_clone = witness.clone();
 
     let job = ProofJob::IntentAndBalanceValidity { witness, statement };
     let proof_recv = enqueue_proof_job(job, ctx).map_err(ValidityProofsError::proof_generation)?;
@@ -178,8 +183,9 @@ async fn update_subsequent_fill_validity_proof(
     let bundle: IntentAndBalanceValidityBundle =
         proof_recv.await.map_err(ValidityProofsError::proof_generation)?.into();
 
-    let bundle = ValidityProofBundle::IntentAndBalance(bundle);
-    let waiter = ctx.state.add_intent_validity_proof(order.id, bundle).await?;
+    let validity_bundle =
+        ValidityProofBundle::IntentAndBalance { bundle, witness: witness_clone };
+    let waiter = ctx.state.add_intent_validity_proof(order.id, validity_bundle).await?;
     waiter.await?;
     Ok(())
 }

@@ -1,6 +1,5 @@
 //! Implements the client for the prover service
 
-use ark_mpc::network::PartyId;
 use circuit_types::ProofLinkingHint;
 use circuits_core::zk_circuits::{
     fees::{
@@ -354,19 +353,26 @@ impl ProofServiceClient {
         witness: IntentAndBalanceBoundedSettlementWitness,
         statement: IntentAndBalanceBoundedSettlementStatement,
         validity_link_hint: ProofLinkingHint,
+        output_balance_link_hint: ProofLinkingHint,
     ) -> Result<ProofManagerResponse, ProofManagerError> {
         let req = IntentAndBalanceBoundedSettlementRequest {
             statement: statement.clone(),
             witness,
             validity_link_hint,
+            output_balance_link_hint,
         };
         let res = self
-            .send_request::<_, SettlementProofResponse>(
+            .send_request::<_, PublicSettlementProofResponse>(
                 INTENT_AND_BALANCE_BOUNDED_SETTLEMENT_PATH,
                 req,
             )
             .await?;
-        let bundle = IntentOnlySettlementProofBundle::new(res.proof, statement, res.link_proof);
+        let bundle = PublicSettlementProofBundle::new(
+            res.proof,
+            statement,
+            res.validity_link_proof,
+            res.output_balance_link_proof,
+        );
         Ok(ProofManagerResponse::IntentAndBalanceBoundedSettlement(bundle))
     }
 
@@ -412,14 +418,12 @@ impl ProofServiceClient {
         &self,
         witness: IntentAndBalancePublicSettlementWitness,
         statement: IntentAndBalancePublicSettlementStatement,
-        party_id: PartyId,
         validity_link_hint: ProofLinkingHint,
         output_balance_link_hint: ProofLinkingHint,
     ) -> Result<ProofManagerResponse, ProofManagerError> {
         let req = IntentAndBalancePublicSettlementRequest {
             statement: statement.clone(),
             witness,
-            party_id: party_id as u8,
             validity_link_hint,
             output_balance_link_hint,
         };

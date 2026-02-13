@@ -21,12 +21,23 @@ pub mod mocks;
 pub use bundles::*;
 pub use validity_storage::*;
 
+// Re-export witness types from circuits-core for downstream consumers
+pub use circuits_core::zk_circuits::validity_proofs::{
+    intent_and_balance::SizedIntentAndBalanceValidityWitness,
+    intent_and_balance_first_fill::SizedIntentAndBalanceFirstFillValidityWitness,
+    intent_only::SizedIntentOnlyValidityWitness,
+    intent_only_first_fill::IntentOnlyFirstFillValidityWitness,
+    new_output_balance::SizedNewOutputBalanceValidityWitness,
+    output_balance::SizedOutputBalanceValidityWitness,
+};
+
 #[cfg(feature = "rkyv")]
 mod stored_validity_proof;
 
 #[cfg(feature = "rkyv")]
 pub use stored_validity_proof::{
-    ALL_VALIDITY_PROOF_KEYS, OUTPUT_BALANCE_VALIDITY_PROOF_KEYS, StoredValidityProof,
+    ALL_VALIDITY_PROOF_KEYS, ALL_VALIDITY_WITNESS_KEYS, OUTPUT_BALANCE_VALIDITY_PROOF_KEYS,
+    StoredValidityProof, StoredValidityWitness,
 };
 
 // TODO: Redefine this as we add more order types

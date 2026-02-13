@@ -1,9 +1,9 @@
-//! Transaction helpers for storing and retrieving proofs
+//! Transaction helpers for storing and retrieving proofs and witnesses
 
 use libmdbx::{RW, TransactionKind};
 use types_proofs::{
-    ALL_VALIDITY_PROOF_KEYS, OUTPUT_BALANCE_VALIDITY_PROOF_KEYS, StoredValidityProof,
-    ValidityProofBundle, ValidityProofLocator,
+    ALL_VALIDITY_PROOF_KEYS, ALL_VALIDITY_WITNESS_KEYS, OUTPUT_BALANCE_VALIDITY_PROOF_KEYS,
+    StoredValidityProof, StoredValidityWitness, ValidityProofBundle, ValidityProofLocator,
 };
 
 use crate::{
@@ -17,9 +17,9 @@ use super::StateTxn;
 // | Helpers |
 // -----------
 
-/// Build a storage key for a validity proof
-fn proof_key(proof_type_key: &str, locator: &ValidityProofLocator) -> String {
-    locator.storage_key(proof_type_key)
+/// Build a storage key for a validity proof or witness
+fn storage_key(type_key: &str, locator: &ValidityProofLocator) -> String {
+    locator.storage_key(type_key)
 }
 
 // -----------
@@ -36,8 +36,25 @@ impl<T: TransactionKind> StateTxn<'_, T> {
         P: StoredValidityProof,
         RkyvWith<P, P::RkyvRemote>: Value,
     {
-        let key = proof_key(P::PROOF_TYPE_KEY, locator);
+        let key = storage_key(P::PROOF_TYPE_KEY, locator);
         let wrapped = self.inner().read::<_, RkyvWith<P, P::RkyvRemote>>(PROOFS_TABLE, &key)?;
+        match wrapped {
+            Some(archived) => Ok(Some(archived.deserialize_with()?)),
+            None => Ok(None),
+        }
+    }
+
+    /// Read a validity witness from state
+    pub fn get_validity_witness<W>(
+        &self,
+        locator: &ValidityProofLocator,
+    ) -> Result<Option<W>, StorageError>
+    where
+        W: StoredValidityWitness,
+        RkyvWith<W, W::RkyvRemote>: Value,
+    {
+        let key = storage_key(W::WITNESS_TYPE_KEY, locator);
+        let wrapped = self.inner().read::<_, RkyvWith<W, W::RkyvRemote>>(PROOFS_TABLE, &key)?;
         match wrapped {
             Some(archived) => Ok(Some(archived.deserialize_with()?)),
             None => Ok(None),
@@ -50,7 +67,7 @@ impl<T: TransactionKind> StateTxn<'_, T> {
         locator: &ValidityProofLocator,
     ) -> Result<bool, StorageError> {
         for key_prefix in OUTPUT_BALANCE_VALIDITY_PROOF_KEYS {
-            let key = proof_key(key_prefix, locator);
+            let key = storage_key(key_prefix, locator);
             if self.inner().read_bytes(PROOFS_TABLE, &key)?.is_some() {
                 return Ok(true);
             }
@@ -74,32 +91,60 @@ impl StateTxn<'_, RW> {
         P: StoredValidityProof,
         RkyvWith<P, P::RkyvRemote>: Value,
     {
-        let key = proof_key(P::PROOF_TYPE_KEY, locator);
+        let key = storage_key(P::PROOF_TYPE_KEY, locator);
         let wrapped = RkyvWith::<P, P::RkyvRemote>::cast(bundle);
         self.inner().write(PROOFS_TABLE, &key, wrapped)
     }
 
-    /// Write a concrete validity proof bundle to state
+    /// Write a validity witness to state
+    pub fn write_validity_witness<W>(
+        &self,
+        locator: &ValidityProofLocator,
+        witness: &W,
+    ) -> Result<(), StorageError>
+    where
+        W: StoredValidityWitness,
+        RkyvWith<W, W::RkyvRemote>: Value,
+    {
+        let key = storage_key(W::WITNESS_TYPE_KEY, locator);
+        let wrapped = RkyvWith::<W, W::RkyvRemote>::cast(witness);
+        self.inner().write(PROOFS_TABLE, &key, wrapped)
+    }
+
+    /// Write a concrete validity proof bundle (proof + witness) to state.
+    ///
+    /// Writes the proof and witness to separate keys within the same
+    /// transaction so that clients can deserialize each independently.
     pub fn write_validity_proof_bundle(
         &self,
         locator: &ValidityProofLocator,
         bundle: &ValidityProofBundle,
     ) -> Result<(), StorageError> {
         match bundle {
-            ValidityProofBundle::IntentOnlyFirstFill(inner) => {
-                self.write_validity_proof(locator, inner)
+            ValidityProofBundle::IntentOnlyFirstFill { bundle, witness } => {
+                self.write_validity_proof(locator, bundle)?;
+                self.write_validity_witness(locator, witness)
             },
-            ValidityProofBundle::IntentOnly(inner) => self.write_validity_proof(locator, inner),
-            ValidityProofBundle::IntentAndBalanceFirstFill(inner) => {
-                self.write_validity_proof(locator, inner)
+            ValidityProofBundle::IntentOnly { bundle, witness } => {
+                self.write_validity_proof(locator, bundle)?;
+                self.write_validity_witness(locator, witness)
             },
-            ValidityProofBundle::IntentAndBalance(inner) => {
-                self.write_validity_proof(locator, inner)
+            ValidityProofBundle::IntentAndBalanceFirstFill { bundle, witness } => {
+                self.write_validity_proof(locator, bundle)?;
+                self.write_validity_witness(locator, witness)
             },
-            ValidityProofBundle::NewOutputBalance(inner) => {
-                self.write_validity_proof(locator, inner)
+            ValidityProofBundle::IntentAndBalance { bundle, witness } => {
+                self.write_validity_proof(locator, bundle)?;
+                self.write_validity_witness(locator, witness)
             },
-            ValidityProofBundle::OutputBalance(inner) => self.write_validity_proof(locator, inner),
+            ValidityProofBundle::NewOutputBalance { bundle, witness } => {
+                self.write_validity_proof(locator, bundle)?;
+                self.write_validity_witness(locator, witness)
+            },
+            ValidityProofBundle::OutputBalance { bundle, witness } => {
+                self.write_validity_proof(locator, bundle)?;
+                self.write_validity_witness(locator, witness)
+            },
         }
     }
 
@@ -108,18 +153,22 @@ impl StateTxn<'_, RW> {
         &self,
         locator: &ValidityProofLocator,
     ) -> Result<(), StorageError> {
-        let key = proof_key(P::PROOF_TYPE_KEY, locator);
+        let key = storage_key(P::PROOF_TYPE_KEY, locator);
         self.inner().delete(PROOFS_TABLE, &key)?;
         Ok(())
     }
 
-    /// Delete all validity proofs for a locator
+    /// Delete all validity proofs and witnesses for a locator
     pub fn delete_all_validity_proofs(
         &self,
         locator: &ValidityProofLocator,
     ) -> Result<(), StorageError> {
         for prefix in ALL_VALIDITY_PROOF_KEYS {
-            let key = proof_key(prefix, locator);
+            let key = storage_key(prefix, locator);
+            self.inner().delete(PROOFS_TABLE, &key)?;
+        }
+        for prefix in ALL_VALIDITY_WITNESS_KEYS {
+            let key = storage_key(prefix, locator);
             self.inner().delete(PROOFS_TABLE, &key)?;
         }
         Ok(())

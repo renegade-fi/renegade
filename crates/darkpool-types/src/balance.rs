@@ -253,6 +253,11 @@ impl StateWrapper<DarkpoolBalance> {
 
     // --- Match Share Helpers --- //
 
+    /// Get a post-match balance public share from the balance
+    pub fn post_match_share(&self) -> PostMatchBalanceShare {
+        PostMatchBalanceShare::from(self.public_share.clone())
+    }
+
     /// Update the post-match fields on the public share from a
     /// `PostMatchBalanceShare`
     pub fn update_from_post_match(&mut self, post: &PostMatchBalanceShare) {

@@ -162,6 +162,16 @@ impl<T: TransactionKind> StateTxn<'_, T> {
         self.inner().read(ACCOUNTS_TABLE, &key)
     }
 
+    /// Check whether an account has a darkpool balance for the given mint
+    pub fn has_darkpool_balance(
+        &self,
+        account_id: &AccountId,
+        mint: &Address,
+    ) -> Result<bool, StorageError> {
+        let balance = self.get_balance(account_id, mint, BalanceLocation::Darkpool)?;
+        Ok(balance.is_some())
+    }
+
     /// Get the order for a given order ID and the matchable amount
     ///
     /// The matchable amount is the minimum of the order's input amount and the

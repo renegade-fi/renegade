@@ -186,12 +186,11 @@ async fn create_renegade_settled_order_task_descriptor(
     let authority = keychain.schnorr_public_key;
 
     // Compute a commitment to the new intent.
-    // Must compute recovery_id first - this advances the recovery stream index,
-    // which is included in the private commitment.
+    // The circuit expects the signature over the *original* intent commitment
+    // (before compute_recovery_id is called)
     let share_seed = keychain.sample_share_stream().seed;
     let recovery_seed = keychain.sample_recovery_id_stream().seed;
-    let mut original_intent = DarkpoolStateIntent::new(intent.clone(), share_seed, recovery_seed);
-    original_intent.compute_recovery_id();
+    let original_intent = DarkpoolStateIntent::new(intent.clone(), share_seed, recovery_seed);
     let intent_commitment = original_intent.compute_commitment();
 
     // Compute a balance commitment if necessary

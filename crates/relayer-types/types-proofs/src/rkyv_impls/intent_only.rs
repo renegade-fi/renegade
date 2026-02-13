@@ -1,11 +1,17 @@
-//! Rkyv remotes for `INTENT ONLY VALIDITY` bundles.
+//! Rkyv remotes for `INTENT ONLY VALIDITY` bundles and witnesses.
 #![allow(missing_docs)]
 #![allow(clippy::missing_docs_in_private_items)]
 
-use circuit_types::{Nullifier, PlonkProof, ProofLinkingHint, merkle::MerkleRoot};
-use circuits_core::zk_circuits::validity_proofs::intent_only::IntentOnlyValidityStatement;
+use circuit_types::{
+    Nullifier, PlonkProof, ProofLinkingHint,
+    merkle::{MerkleRoot, SizedMerkleOpening},
+};
+use circuits_core::zk_circuits::validity_proofs::intent_only::{
+    IntentOnlyValidityStatement, SizedIntentOnlyValidityWitness,
+};
 use constants::Scalar;
 use darkpool_types::{
+    intent::{DarkpoolStateIntent, Intent},
     rkyv_remotes::{AddressDef, ScalarDef},
     state_wrapper::PartialCommitment,
 };
@@ -14,7 +20,7 @@ use rkyv::{Archive, Deserialize, Serialize};
 use crate::bundles::{IntentOnlyValidityBundle, ProofAndHintBundleInner};
 use crate::rkyv_impls::{
     plonk_proof_def::{PlonkProofDef, ProofLinkingHintDef},
-    shared_types::PartialCommitmentDef,
+    shared_types::{MerkleOpeningDef, PartialCommitmentDef},
 };
 
 #[derive(Archive, Deserialize, Serialize, Debug, Clone)]
@@ -88,5 +94,31 @@ pub struct IntentOnlyValidityBundleDef {
 impl From<IntentOnlyValidityBundleDef> for IntentOnlyValidityBundle {
     fn from(value: IntentOnlyValidityBundleDef) -> Self {
         Self::from_inner(value.inner)
+    }
+}
+
+// -----------------------
+// | Witness Remote Type |
+// -----------------------
+
+/// Rkyv remote for `SizedIntentOnlyValidityWitness`
+#[derive(Archive, Deserialize, Serialize, Debug, Clone)]
+#[rkyv(derive(Debug))]
+#[rkyv(remote = SizedIntentOnlyValidityWitness)]
+#[rkyv(archived = ArchivedIntentOnlyValidityWitnessDef)]
+pub struct IntentOnlyValidityWitnessDef {
+    pub old_intent: DarkpoolStateIntent,
+    #[rkyv(with = MerkleOpeningDef)]
+    pub old_intent_opening: SizedMerkleOpening,
+    pub intent: Intent,
+}
+
+impl From<IntentOnlyValidityWitnessDef> for SizedIntentOnlyValidityWitness {
+    fn from(value: IntentOnlyValidityWitnessDef) -> Self {
+        Self {
+            old_intent: value.old_intent,
+            old_intent_opening: value.old_intent_opening,
+            intent: value.intent,
+        }
     }
 }

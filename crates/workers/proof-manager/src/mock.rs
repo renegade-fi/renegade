@@ -377,8 +377,12 @@ impl MockProofManager {
             )?;
         }
         let proof = dummy_proof();
-        let link_proof = dummy_link_proof();
-        let bundle = IntentOnlySettlementProofBundle::new(proof, statement, link_proof);
+        let bundle = PublicSettlementProofBundle::new(
+            proof,
+            statement,
+            dummy_link_proof(),
+            dummy_link_proof(),
+        );
         Ok(ProofManagerResponse::IntentAndBalanceBoundedSettlement(bundle))
     }
 
