@@ -270,13 +270,15 @@ impl SettlePrivateMatchTask {
     /// `IntentAndBalancePrivateSettlement` proof covering both parties, then
     /// splits the result into two `SettlementBundle` values.
     async fn submit_tx(&mut self) -> Result<()> {
+        let obligation0 = self.get_obligation(PARTY0)?.clone();
+        let obligation1 = self.get_obligation(PARTY1)?.clone();
         let (settlement_bundle0, settlement_bundle1, obligation_bundle) = self
             .processor
             .build_private_fill_calldata_bundle(
                 self.order_id,
                 self.other_order_id,
-                self.match_result.party0_obligation().clone(),
-                self.match_result.party1_obligation().clone(),
+                obligation0.clone(),
+                obligation1.clone(),
             )
             .await?;
 
@@ -286,6 +288,19 @@ impl SettlePrivateMatchTask {
             .darkpool_client
             .settle_match(obligation_bundle, settlement_bundle0, settlement_bundle1)
             .await?;
+
+        // Get updated post-settlement intents for both parties
+        let order0 = self.processor.build_updated_intent(self.order_id, &obligation0).await?;
+        let order1 = self.processor.build_updated_intent(self.other_order_id, &obligation1).await?;
+        self.updated_order0 = Some(order0);
+        self.updated_order1 = Some(order1);
+
+        // Build updated post-settlement darkpool balances for both parties
+        self.build_updated_balances_for_party(PARTY0, &obligation0).await?;
+        self.build_updated_balances_for_party(PARTY1, &obligation1).await?;
+
+        // Extract and store post-settlement Merkle proofs
+        self.update_merkle_proofs(&receipt).await?;
 
         Ok(())
     }
@@ -449,11 +464,11 @@ impl SettlePrivateMatchTask {
             .await?;
 
         match party_id {
-            0 => {
+            PARTY0 => {
                 self.updated_input_balance0 = Some(input_balance);
                 self.updated_output_balance0 = Some(output_balance);
             },
-            1 => {
+            PARTY1 => {
                 self.updated_input_balance1 = Some(input_balance);
                 self.updated_output_balance1 = Some(output_balance);
             },
