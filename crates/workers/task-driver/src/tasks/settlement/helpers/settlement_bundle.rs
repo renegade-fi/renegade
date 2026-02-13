@@ -48,7 +48,9 @@ impl SettlementProcessor {
             PrivacyRing::Ring2 => {
                 self.build_ring2_external_settlement_bundle(order, obligation, match_res).await
             },
-            _ => unimplemented!("implementing settlement bundle for ring {:?}", order.ring),
+            _ => {
+                Err(SettlementError::unsupported(format!("ring 3 does not allow external matches")))
+            },
         }
     }
 }

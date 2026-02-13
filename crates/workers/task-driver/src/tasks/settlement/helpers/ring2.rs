@@ -1,8 +1,13 @@
 //! Ring 2 settlement helpers
 
 use alloy::{primitives::U256, rpc::types::TransactionReceipt};
-use circuits_core::zk_circuits::settlement::intent_and_balance_public_settlement::{
-    IntentAndBalancePublicSettlementStatement, IntentAndBalancePublicSettlementWitness,
+use circuits_core::zk_circuits::settlement::{
+    intent_and_balance_bounded_settlement::{
+        IntentAndBalanceBoundedSettlementStatement, IntentAndBalanceBoundedSettlementWitness,
+    },
+    intent_and_balance_public_settlement::{
+        IntentAndBalancePublicSettlementStatement, IntentAndBalancePublicSettlementWitness,
+    },
 };
 use constants::{MERKLE_HEIGHT, Scalar};
 use darkpool_types::{
@@ -19,9 +24,9 @@ use types_account::balance::{Balance, BalanceLocation};
 use types_account::{OrderId, order::Order, pair::Pair};
 use types_core::AccountId;
 use types_proofs::{
-    IntentAndBalanceFirstFillValidityBundle, IntentAndBalancePublicSettlementBundle,
-    IntentAndBalanceValidityBundle, SizedIntentAndBalanceFirstFillValidityWitness,
-    SizedIntentAndBalanceValidityWitness,
+    IntentAndBalanceBoundedSettlementBundle, IntentAndBalanceFirstFillValidityBundle,
+    IntentAndBalancePublicSettlementBundle, IntentAndBalanceValidityBundle,
+    SizedIntentAndBalanceFirstFillValidityWitness, SizedIntentAndBalanceValidityWitness,
 };
 
 use crate::{
@@ -73,7 +78,7 @@ impl SettlementProcessor {
         obligation: SettlementObligation,
     ) -> Result<SettlementBundle, SettlementError> {
         let (validity_bundle, validity_witness) =
-            self.get_ring2_first_fill_validity_bundle(order.id).await?;
+            self.get_private_first_fill_validity_bundle(order.id).await?;
         let output_bundle = self.get_output_balance_bundle(account_id, &order).await?;
 
         let settlement_data = self
@@ -120,7 +125,7 @@ impl SettlementProcessor {
         obligation: SettlementObligation,
     ) -> Result<SettlementBundle, SettlementError> {
         let (validity_bundle, validity_witness) =
-            self.get_ring2_subsequent_fill_validity_bundle(order.id).await?;
+            self.get_private_subsequent_fill_validity_bundle(order.id).await?;
         let output_bundle = self.get_output_balance_bundle(account_id, &order).await?;
 
         let settlement_data = self
@@ -164,21 +169,93 @@ impl SettlementProcessor {
     /// Build a first-fill external settlement bundle for Ring 2
     async fn build_ring2_external_first_fill(
         &self,
-        _order: Order,
-        _obligation: SettlementObligation,
-        _match_res: BoundedMatchResult,
+        order: Order,
+        obligation: SettlementObligation,
+        match_res: BoundedMatchResult,
     ) -> Result<SettlementBundle, SettlementError> {
-        todo!()
+        let account_id = self.get_account_id_for_order(order.id).await?;
+        let (validity_bundle, validity_witness) =
+            self.get_private_first_fill_validity_bundle(order.id).await?;
+        let output_bundle = self.get_output_balance_bundle(account_id, &order).await?;
+
+        let settlement_data = self
+            .prove_intent_and_balance_bounded_settlement(
+                validity_witness.intent.clone(),
+                validity_witness.balance.clone(),
+                output_bundle.balance(),
+                validity_witness.new_amount_public_share,
+                validity_witness.post_match_balance_shares.clone(),
+                output_bundle.post_match_balance_shares(),
+                obligation.clone(),
+                match_res,
+                validity_bundle.linking_hint.clone(),
+                output_bundle.linking_hint(),
+            )
+            .await?
+            .into_inner();
+
+        let auth = RenegadeSettledIntentAuthBundleFirstFill {
+            merkleDepth: U256::from(MERKLE_HEIGHT),
+            statement: validity_bundle.statement.clone().into(),
+            validityProof: validity_bundle.proof.clone().into(),
+        };
+
+        let link_proof = settlement_data.output_balance_link_proof.clone();
+        let output_bundle = output_bundle.build_abi_bundle(link_proof);
+
+        Ok(SettlementBundle::renegade_settled_private_intent_bounded_first_fill(
+            auth,
+            output_bundle,
+            settlement_data.statement.into(),
+            settlement_data.proof.into(),
+            settlement_data.validity_link_proof.into(),
+        ))
     }
 
     /// Build a subsequent-fill external settlement bundle for Ring 2
     async fn build_ring2_external_subsequent_fill(
         &self,
-        _order: Order,
-        _obligation: SettlementObligation,
-        _match_res: BoundedMatchResult,
+        order: Order,
+        obligation: SettlementObligation,
+        match_res: BoundedMatchResult,
     ) -> Result<SettlementBundle, SettlementError> {
-        todo!()
+        let account_id = self.get_account_id_for_order(order.id).await?;
+        let (validity_bundle, validity_witness) =
+            self.get_private_subsequent_fill_validity_bundle(order.id).await?;
+        let output_bundle = self.get_output_balance_bundle(account_id, &order).await?;
+
+        let settlement_data = self
+            .prove_intent_and_balance_bounded_settlement(
+                validity_witness.intent.clone(),
+                validity_witness.balance.clone(),
+                output_bundle.balance(),
+                validity_witness.new_amount_public_share,
+                validity_witness.post_match_balance_shares.clone(),
+                output_bundle.post_match_balance_shares(),
+                obligation.clone(),
+                match_res,
+                validity_bundle.linking_hint.clone(),
+                output_bundle.linking_hint(),
+            )
+            .await?
+            .into_inner();
+
+        let auth = RenegadeSettledIntentAuthBundle {
+            merkleDepth: U256::from(MERKLE_HEIGHT),
+            statement: validity_bundle.statement.clone().into(),
+            validityProof: validity_bundle.proof.clone().into(),
+        };
+
+        let link_proof = settlement_data.output_balance_link_proof.clone();
+        let output_bundle = output_bundle.build_abi_bundle(link_proof);
+
+        Ok(SettlementBundle::renegade_settled_private_intent_bounded(
+            auth,
+            output_bundle,
+            settlement_data.statement.into(),
+            settlement_data.proof.into(),
+            settlement_data.validity_link_proof.into(),
+        ))
     }
 
     // --- Prover Helpers --- //
@@ -237,10 +314,64 @@ impl SettlementProcessor {
         Ok(bundle)
     }
 
+    /// Generate a proof of `INTENT AND BALANCE BOUNDED SETTLEMENT`
+    #[allow(clippy::too_many_arguments)]
+    async fn prove_intent_and_balance_bounded_settlement(
+        &self,
+        intent: Intent,
+        in_balance: DarkpoolBalance,
+        out_balance: DarkpoolBalance,
+        amount_share: Scalar,
+        in_balance_share: PostMatchBalanceShare,
+        out_balance_share: PostMatchBalanceShare,
+        obligation: SettlementObligation,
+        match_res: BoundedMatchResult,
+        validity_link_hint: ProofLinkingHint,
+        output_balance_link_hint: ProofLinkingHint,
+    ) -> Result<IntentAndBalanceBoundedSettlementBundle, SettlementError> {
+        // The public shares on the input values are pre-update
+        // The bounded fill circuit does not update the public shares directly, so no
+        // updates need to be made in constructing the witness & statement
+        let witness = IntentAndBalanceBoundedSettlementWitness {
+            intent,
+            in_balance: in_balance.clone(),
+            out_balance: out_balance.clone(),
+            pre_settlement_amount_public_share: amount_share,
+            pre_settlement_in_balance_shares: in_balance_share.clone(),
+            pre_settlement_out_balance_shares: out_balance_share.clone(),
+        };
+
+        let pair = Pair::from_obligation(&obligation);
+        let (internal_relayer_fee, relayer_fee_recipient) = self.relayer_fee(&pair.base_token())?;
+        let statement = IntentAndBalanceBoundedSettlementStatement {
+            bounded_match_result: match_res,
+            amount_public_share: amount_share,
+            in_balance_public_shares: in_balance_share,
+            out_balance_public_shares: out_balance_share,
+            internal_relayer_fee,
+            external_relayer_fee: Default::default(),
+            relayer_fee_recipient,
+        };
+
+        let job = ProofJob::IntentAndBalanceBoundedSettlement {
+            witness,
+            statement,
+            validity_link_hint: validity_link_hint.clone(),
+            output_balance_link_hint: output_balance_link_hint.clone(),
+        };
+
+        let proof_recv =
+            enqueue_proof_job(job, &self.ctx).map_err(SettlementError::proof_generation)?;
+        let bundle: IntentAndBalanceBoundedSettlementBundle =
+            proof_recv.await.map_err(SettlementError::proof_generation)?.into();
+
+        Ok(bundle)
+    }
+
     // --- Proof Retrieval --- //
 
     /// Get the first fill validity proof bundle for a Ring 2 order
-    async fn get_ring2_first_fill_validity_bundle(
+    pub(crate) async fn get_private_first_fill_validity_bundle(
         &self,
         order_id: OrderId,
     ) -> Result<
@@ -259,7 +390,7 @@ impl SettlementProcessor {
     }
 
     /// Get the subsequent-fill validity proof bundle for a Ring 2 order
-    async fn get_ring2_subsequent_fill_validity_bundle(
+    pub(crate) async fn get_private_subsequent_fill_validity_bundle(
         &self,
         order_id: OrderId,
     ) -> Result<
