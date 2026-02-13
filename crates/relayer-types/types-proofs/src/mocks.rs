@@ -61,12 +61,19 @@ fn dummy_poly_evals() -> ProofEvaluations<ScalarField> {
 mod bundle_mocks {
     //! Mock utilities for creating validity proof bundles for testing
     use alloy_primitives::Address;
+    use circuit_types::fixed_point::FixedPoint;
+    use circuits_core::zk_circuits::validity_proofs::intent_only::{
+        IntentOnlyValidityStatement, SizedIntentOnlyValidityWitness,
+    };
     use constants::Scalar;
-    use darkpool_types::state_wrapper::PartialCommitment;
+    use darkpool_types::{
+        intent::{DarkpoolStateIntent, Intent},
+        state_wrapper::{PartialCommitment, StateWrapper},
+    };
 
     use super::*;
     use crate::bundles::IntentOnlyValidityBundle;
-    use circuits_core::zk_circuits::validity_proofs::intent_only::IntentOnlyValidityStatement;
+    use crate::validity_storage::ValidityProofBundle;
 
     /// Create a dummy `IntentOnlyValidityBundle` for storage tests.
     ///
@@ -85,7 +92,37 @@ mod bundle_mocks {
         };
         IntentOnlyValidityBundle::new(dummy_proof(), statement, dummy_link_hint())
     }
+
+    /// Create a dummy `SizedIntentOnlyValidityWitness` for storage tests.
+    pub fn mock_intent_only_validity_witness() -> SizedIntentOnlyValidityWitness {
+        let intent = Intent {
+            in_token: Address::ZERO,
+            out_token: Address::ZERO,
+            owner: Address::ZERO,
+            min_price: FixedPoint::from_f64_round_down(0.0),
+            amount_in: 0,
+        };
+        let old_intent: DarkpoolStateIntent =
+            StateWrapper::new(intent.clone(), Scalar::zero(), Scalar::zero());
+        SizedIntentOnlyValidityWitness {
+            old_intent,
+            old_intent_opening: Default::default(),
+            intent,
+        }
+    }
+
+    /// Create a dummy `ValidityProofBundle` for storage tests.
+    ///
+    /// Combines mock proof bundle and witness.
+    pub fn mock_validity_proof_bundle() -> ValidityProofBundle {
+        ValidityProofBundle::IntentOnly {
+            bundle: mock_intent_only_validity_bundle(),
+            witness: mock_intent_only_validity_witness(),
+        }
+    }
 }
 
 #[cfg(all(feature = "mocks", feature = "rkyv"))]
-pub use bundle_mocks::mock_intent_only_validity_bundle;
+pub use bundle_mocks::{
+    mock_intent_only_validity_bundle, mock_intent_only_validity_witness, mock_validity_proof_bundle,
+};

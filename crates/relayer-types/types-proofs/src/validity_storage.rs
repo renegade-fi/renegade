@@ -2,6 +2,14 @@
 #![cfg_attr(feature = "rkyv", allow(missing_docs))]
 
 use alloy_primitives::Address;
+use circuits_core::zk_circuits::validity_proofs::{
+    intent_and_balance::SizedIntentAndBalanceValidityWitness,
+    intent_and_balance_first_fill::SizedIntentAndBalanceFirstFillValidityWitness,
+    intent_only::SizedIntentOnlyValidityWitness,
+    intent_only_first_fill::IntentOnlyFirstFillValidityWitness,
+    new_output_balance::SizedNewOutputBalanceValidityWitness,
+    output_balance::SizedOutputBalanceValidityWitness,
+};
 #[cfg(feature = "rkyv")]
 use darkpool_types::rkyv_remotes::AddressDef;
 use serde::{Deserialize, Serialize};
@@ -45,49 +53,105 @@ impl ValidityProofLocator {
 }
 
 /// A concrete payload for all currently supported validity proof bundles.
+///
+/// Each variant carries both the proof bundle and its corresponding witness,
+/// ensuring that the proof and witness types always match at the type system
+/// level. The storage layer writes them to separate keys so clients can
+/// deserialize each independently.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "rkyv", derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize))]
 #[cfg_attr(feature = "rkyv", rkyv(derive(Debug)))]
 pub enum ValidityProofBundle {
     /// `INTENT ONLY FIRST FILL VALIDITY`
-    IntentOnlyFirstFill(
+    IntentOnlyFirstFill {
+        /// The proof bundle
         #[cfg_attr(
             feature = "rkyv",
             rkyv(with = crate::rkyv_impls::IntentOnlyFirstFillValidityBundleDef)
         )]
-        IntentOnlyFirstFillValidityBundle,
-    ),
+        bundle: IntentOnlyFirstFillValidityBundle,
+        /// The witness used to generate the proof
+        #[cfg_attr(
+            feature = "rkyv",
+            rkyv(with = crate::rkyv_impls::IntentOnlyFirstFillValidityWitnessDef)
+        )]
+        witness: IntentOnlyFirstFillValidityWitness,
+    },
     /// `INTENT ONLY VALIDITY`
-    IntentOnly(
-        #[cfg_attr(feature = "rkyv", rkyv(with = crate::rkyv_impls::IntentOnlyValidityBundleDef))]
-        IntentOnlyValidityBundle,
-    ),
+    IntentOnly {
+        /// The proof bundle
+        #[cfg_attr(
+            feature = "rkyv",
+            rkyv(with = crate::rkyv_impls::IntentOnlyValidityBundleDef)
+        )]
+        bundle: IntentOnlyValidityBundle,
+        /// The witness used to generate the proof
+        #[cfg_attr(
+            feature = "rkyv",
+            rkyv(with = crate::rkyv_impls::IntentOnlyValidityWitnessDef)
+        )]
+        witness: SizedIntentOnlyValidityWitness,
+    },
     /// `INTENT AND BALANCE FIRST FILL VALIDITY`
-    IntentAndBalanceFirstFill(
+    IntentAndBalanceFirstFill {
+        /// The proof bundle
         #[cfg_attr(
             feature = "rkyv",
             rkyv(with = crate::rkyv_impls::IntentAndBalanceFirstFillValidityBundleDef)
         )]
-        IntentAndBalanceFirstFillValidityBundle,
-    ),
+        bundle: IntentAndBalanceFirstFillValidityBundle,
+        /// The witness used to generate the proof
+        #[cfg_attr(
+            feature = "rkyv",
+            rkyv(with = crate::rkyv_impls::IntentAndBalanceFirstFillValidityWitnessDef)
+        )]
+        witness: SizedIntentAndBalanceFirstFillValidityWitness,
+    },
     /// `INTENT AND BALANCE VALIDITY`
-    IntentAndBalance(
-        #[cfg_attr(feature = "rkyv", rkyv(with = crate::rkyv_impls::IntentAndBalanceValidityBundleDef))]
-         IntentAndBalanceValidityBundle,
-    ),
+    IntentAndBalance {
+        /// The proof bundle
+        #[cfg_attr(
+            feature = "rkyv",
+            rkyv(with = crate::rkyv_impls::IntentAndBalanceValidityBundleDef)
+        )]
+        bundle: IntentAndBalanceValidityBundle,
+        /// The witness used to generate the proof
+        #[cfg_attr(
+            feature = "rkyv",
+            rkyv(with = crate::rkyv_impls::IntentAndBalanceValidityWitnessDef)
+        )]
+        witness: SizedIntentAndBalanceValidityWitness,
+    },
     /// `NEW OUTPUT BALANCE VALIDITY`
-    NewOutputBalance(
+    NewOutputBalance {
+        /// The proof bundle
         #[cfg_attr(
             feature = "rkyv",
             rkyv(with = crate::rkyv_impls::NewOutputBalanceValidityBundleDef)
         )]
-        NewOutputBalanceValidityBundle,
-    ),
+        bundle: NewOutputBalanceValidityBundle,
+        /// The witness used to generate the proof
+        #[cfg_attr(
+            feature = "rkyv",
+            rkyv(with = crate::rkyv_impls::NewOutputBalanceValidityWitnessDef)
+        )]
+        witness: SizedNewOutputBalanceValidityWitness,
+    },
     /// `OUTPUT BALANCE VALIDITY`
-    OutputBalance(
-        #[cfg_attr(feature = "rkyv", rkyv(with = crate::rkyv_impls::OutputBalanceValidityBundleDef))]
-         OutputBalanceValidityBundle,
-    ),
+    OutputBalance {
+        /// The proof bundle
+        #[cfg_attr(
+            feature = "rkyv",
+            rkyv(with = crate::rkyv_impls::OutputBalanceValidityBundleDef)
+        )]
+        bundle: OutputBalanceValidityBundle,
+        /// The witness used to generate the proof
+        #[cfg_attr(
+            feature = "rkyv",
+            rkyv(with = crate::rkyv_impls::OutputBalanceValidityWitnessDef)
+        )]
+        witness: SizedOutputBalanceValidityWitness,
+    },
 }
 
 impl ValidityProofBundle {
@@ -95,7 +159,7 @@ impl ValidityProofBundle {
     /// mismatch.
     pub fn into_intent_only_first_fill(self) -> IntentOnlyFirstFillValidityBundle {
         match self {
-            Self::IntentOnlyFirstFill(bundle) => bundle,
+            Self::IntentOnlyFirstFill { bundle, .. } => bundle,
             _ => panic!("expected ValidityProofBundle::IntentOnlyFirstFill"),
         }
     }
@@ -103,7 +167,7 @@ impl ValidityProofBundle {
     /// Consume and cast to `IntentOnlyValidityBundle`, panicking on mismatch.
     pub fn into_intent_only(self) -> IntentOnlyValidityBundle {
         match self {
-            Self::IntentOnly(bundle) => bundle,
+            Self::IntentOnly { bundle, .. } => bundle,
             _ => panic!("expected ValidityProofBundle::IntentOnly"),
         }
     }
@@ -112,7 +176,7 @@ impl ValidityProofBundle {
     /// on mismatch.
     pub fn into_intent_and_balance_first_fill(self) -> IntentAndBalanceFirstFillValidityBundle {
         match self {
-            Self::IntentAndBalanceFirstFill(bundle) => bundle,
+            Self::IntentAndBalanceFirstFill { bundle, .. } => bundle,
             _ => panic!("expected ValidityProofBundle::IntentAndBalanceFirstFill"),
         }
     }
@@ -121,7 +185,7 @@ impl ValidityProofBundle {
     /// mismatch.
     pub fn into_intent_and_balance(self) -> IntentAndBalanceValidityBundle {
         match self {
-            Self::IntentAndBalance(bundle) => bundle,
+            Self::IntentAndBalance { bundle, .. } => bundle,
             _ => panic!("expected ValidityProofBundle::IntentAndBalance"),
         }
     }
@@ -130,7 +194,7 @@ impl ValidityProofBundle {
     /// mismatch.
     pub fn into_new_output_balance(self) -> NewOutputBalanceValidityBundle {
         match self {
-            Self::NewOutputBalance(bundle) => bundle,
+            Self::NewOutputBalance { bundle, .. } => bundle,
             _ => panic!("expected ValidityProofBundle::NewOutputBalance"),
         }
     }
@@ -139,7 +203,7 @@ impl ValidityProofBundle {
     /// mismatch.
     pub fn into_output_balance(self) -> OutputBalanceValidityBundle {
         match self {
-            Self::OutputBalance(bundle) => bundle,
+            Self::OutputBalance { bundle, .. } => bundle,
             _ => panic!("expected ValidityProofBundle::OutputBalance"),
         }
     }

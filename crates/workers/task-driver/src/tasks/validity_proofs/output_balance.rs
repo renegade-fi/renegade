@@ -70,7 +70,6 @@ pub async fn update_output_balance_validity_proof(
 
     let existing_output_balance =
         ctx.state.get_account_darkpool_balance(&account_id, &output_mint).await?;
-
     if let Some(output_balance) = existing_output_balance {
         update_existing_output_balance_proof(
             account_id,
@@ -109,6 +108,7 @@ async fn update_existing_output_balance_proof(
         .ok_or(ValidityProofsError::state("output balance merkle proof not found"))?;
 
     let (witness, statement) = generate_existing_witness_statement(&output_balance, merkle_proof)?;
+    let witness_clone = witness.clone();
 
     let job = ProofJob::OutputBalanceValidity { witness, statement };
     let proof_recv = enqueue_proof_job(job, ctx).map_err(ValidityProofsError::proof_generation)?;
@@ -116,8 +116,8 @@ async fn update_existing_output_balance_proof(
     let bundle: OutputBalanceValidityBundle =
         proof_recv.await.map_err(ValidityProofsError::proof_generation)?.into();
 
-    let bundle = ValidityProofBundle::OutputBalance(bundle);
-    let waiter = ctx.state.add_balance_validity_proof(account_id, mint, bundle).await?;
+    let validity_bundle = ValidityProofBundle::OutputBalance { bundle, witness: witness_clone };
+    let waiter = ctx.state.add_balance_validity_proof(account_id, mint, validity_bundle).await?;
     waiter.await?;
     Ok(())
 }
@@ -196,14 +196,15 @@ async fn update_new_output_balance_proof(
         new_output_balance_auth,
     )?;
 
+    let witness_clone = witness.clone();
     let job = ProofJob::NewOutputBalanceValidity { witness, statement };
     let proof_recv = enqueue_proof_job(job, ctx).map_err(ValidityProofsError::proof_generation)?;
 
     let bundle: NewOutputBalanceValidityBundle =
         proof_recv.await.map_err(ValidityProofsError::proof_generation)?.into();
 
-    let bundle = ValidityProofBundle::NewOutputBalance(bundle);
-    let waiter = ctx.state.add_balance_validity_proof(account_id, mint, bundle).await?;
+    let validity_bundle = ValidityProofBundle::NewOutputBalance { bundle, witness: witness_clone };
+    let waiter = ctx.state.add_balance_validity_proof(account_id, mint, validity_bundle).await?;
     waiter.await?;
     Ok(())
 }

@@ -2,7 +2,6 @@
 
 use std::sync::Arc;
 
-use ark_mpc::network::PartyId;
 use circuit_types::{
     PlonkLinkProof, ProofLinkingHint,
     traits::{SingleProverCircuit, setup_preprocessed_keys},
@@ -239,10 +238,12 @@ impl NativeProofManager {
                 witness,
                 statement,
                 validity_link_hint,
+                output_balance_link_hint,
             } => self.prove_intent_and_balance_bounded_settlement(
                 witness,
                 statement,
                 validity_link_hint,
+                output_balance_link_hint,
             ),
             ProofJob::IntentAndBalancePrivateSettlement {
                 witness,
@@ -262,13 +263,11 @@ impl NativeProofManager {
             ProofJob::IntentAndBalancePublicSettlement {
                 witness,
                 statement,
-                party_id,
                 validity_link_hint,
                 output_balance_link_hint,
             } => self.prove_intent_and_balance_public_settlement(
                 witness,
                 statement,
-                party_id,
                 validity_link_hint,
                 output_balance_link_hint,
             ),
@@ -517,19 +516,30 @@ impl NativeProofManager {
         witness: IntentAndBalanceBoundedSettlementWitness,
         statement: IntentAndBalanceBoundedSettlementStatement,
         validity_link_hint: ProofLinkingHint,
+        output_balance_link_hint: ProofLinkingHint,
     ) -> Result<ProofManagerResponse, ProofManagerError> {
         let (proof, settlement_link_hint) = singleprover_prove_with_hint::<
             IntentAndBalanceBoundedSettlementCircuit,
         >(&witness, &statement)?;
 
         // Bounded settlement always links into party 0 slot
-        let link_proof = link_sized_intent_and_balance_settlement_with_party(
+        let validity_link_proof = link_sized_intent_and_balance_settlement_with_party(
             0,
             &validity_link_hint,
             &settlement_link_hint,
         )?;
+        let output_balance_link_proof = link_sized_output_balance_settlement_with_party(
+            0,
+            &output_balance_link_hint,
+            &settlement_link_hint,
+        )?;
 
-        let bundle = IntentOnlySettlementProofBundle::new(proof, statement, link_proof);
+        let bundle = PublicSettlementProofBundle::new(
+            proof,
+            statement,
+            validity_link_proof,
+            output_balance_link_proof,
+        );
         Ok(ProofManagerResponse::IntentAndBalanceBoundedSettlement(bundle))
     }
 
@@ -579,7 +589,6 @@ impl NativeProofManager {
         &self,
         witness: IntentAndBalancePublicSettlementWitness,
         statement: IntentAndBalancePublicSettlementStatement,
-        party_id: PartyId,
         validity_link_hint: ProofLinkingHint,
         output_balance_link_hint: ProofLinkingHint,
     ) -> Result<ProofManagerResponse, ProofManagerError> {
@@ -587,13 +596,14 @@ impl NativeProofManager {
             IntentAndBalancePublicSettlementCircuit,
         >(&witness, &statement)?;
 
+        // Public settlement always links into party 0 slot.
         let validity_link_proof = link_sized_intent_and_balance_settlement_with_party(
-            party_id as u8,
+            0,
             &validity_link_hint,
             &settlement_link_hint,
         )?;
         let output_balance_link_proof = link_sized_output_balance_settlement_with_party(
-            party_id as u8,
+            0,
             &output_balance_link_hint,
             &settlement_link_hint,
         )?;

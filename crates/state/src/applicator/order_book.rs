@@ -84,9 +84,7 @@ mod test {
         account::mocks::mock_empty_account, order::mocks::mock_order,
         order_auth::mocks::mock_order_auth,
     };
-    use types_proofs::{
-        ValidityProofBundle, ValidityProofLocator, mocks::mock_intent_only_validity_bundle,
-    };
+    use types_proofs::{ValidityProofLocator, mocks::mock_validity_proof_bundle};
 
     use crate::applicator::test_helpers::mock_applicator;
 
@@ -111,10 +109,10 @@ mod test {
             .unwrap();
 
         let locator = ValidityProofLocator::Intent { order_id };
-        let bundle = ValidityProofBundle::IntentOnly(mock_intent_only_validity_bundle());
+        let bundle = mock_validity_proof_bundle();
         applicator.add_validity_proof(&locator, &bundle).unwrap();
 
-        // Verify that the bundle is stored
+        // Verify that the proof bundle is stored
         let db = applicator.db();
         let tx = db.new_read_tx().unwrap();
         let stored =

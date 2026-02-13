@@ -1,17 +1,27 @@
-//! Rkyv remotes for `INTENT AND BALANCE VALIDITY` bundles.
+//! Rkyv remotes for `INTENT AND BALANCE VALIDITY` bundles and witnesses.
 #![allow(missing_docs)]
 #![allow(clippy::missing_docs_in_private_items)]
 
-use circuit_types::{Nullifier, PlonkProof, ProofLinkingHint, merkle::MerkleRoot};
-use circuits_core::zk_circuits::validity_proofs::intent_and_balance::IntentAndBalanceValidityStatement;
+use circuit_types::{
+    Nullifier, PlonkProof, ProofLinkingHint,
+    merkle::{MerkleRoot, SizedMerkleOpening},
+};
+use circuits_core::zk_circuits::validity_proofs::intent_and_balance::{
+    IntentAndBalanceValidityStatement, SizedIntentAndBalanceValidityWitness,
+};
 use constants::Scalar;
-use darkpool_types::{rkyv_remotes::ScalarDef, state_wrapper::PartialCommitment};
+use darkpool_types::{
+    balance::{DarkpoolBalance, DarkpoolStateBalance, PostMatchBalanceShare},
+    intent::{DarkpoolStateIntent, Intent},
+    rkyv_remotes::ScalarDef,
+    state_wrapper::PartialCommitment,
+};
 use rkyv::{Archive, Deserialize, Serialize};
 
 use crate::bundles::{IntentAndBalanceValidityBundle, ProofAndHintBundleInner};
 use crate::rkyv_impls::{
     plonk_proof_def::{PlonkProofDef, ProofLinkingHintDef},
-    shared_types::PartialCommitmentDef,
+    shared_types::{MerkleOpeningDef, PartialCommitmentDef, PostMatchBalanceShareDef},
 };
 
 #[derive(Archive, Deserialize, Serialize, Debug, Clone)]
@@ -91,5 +101,47 @@ pub struct IntentAndBalanceValidityBundleDef {
 impl From<IntentAndBalanceValidityBundleDef> for IntentAndBalanceValidityBundle {
     fn from(value: IntentAndBalanceValidityBundleDef) -> Self {
         Self::from_inner(value.inner)
+    }
+}
+
+// -----------------------
+// | Witness Remote Type |
+// -----------------------
+
+/// Rkyv remote for `SizedIntentAndBalanceValidityWitness`
+#[derive(Archive, Deserialize, Serialize, Debug, Clone)]
+#[rkyv(derive(Debug))]
+#[rkyv(remote = SizedIntentAndBalanceValidityWitness)]
+#[rkyv(archived = ArchivedIntentAndBalanceValidityWitnessDef)]
+pub struct IntentAndBalanceValidityWitnessDef {
+    // --- Intent --- //
+    pub old_intent: DarkpoolStateIntent,
+    #[rkyv(with = MerkleOpeningDef)]
+    pub old_intent_opening: SizedMerkleOpening,
+    pub intent: Intent,
+    #[rkyv(with = ScalarDef)]
+    pub new_amount_public_share: Scalar,
+
+    // --- Balance --- //
+    pub old_balance: DarkpoolStateBalance,
+    #[rkyv(with = MerkleOpeningDef)]
+    pub old_balance_opening: SizedMerkleOpening,
+    pub balance: DarkpoolBalance,
+    #[rkyv(with = PostMatchBalanceShareDef)]
+    pub post_match_balance_shares: PostMatchBalanceShare,
+}
+
+impl From<IntentAndBalanceValidityWitnessDef> for SizedIntentAndBalanceValidityWitness {
+    fn from(value: IntentAndBalanceValidityWitnessDef) -> Self {
+        Self {
+            old_intent: value.old_intent,
+            old_intent_opening: value.old_intent_opening,
+            intent: value.intent,
+            new_amount_public_share: value.new_amount_public_share,
+            old_balance: value.old_balance,
+            old_balance_opening: value.old_balance_opening,
+            balance: value.balance,
+            post_match_balance_shares: value.post_match_balance_shares,
+        }
     }
 }

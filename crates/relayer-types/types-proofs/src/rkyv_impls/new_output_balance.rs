@@ -1,19 +1,29 @@
-//! Rkyv remotes for `NEW OUTPUT BALANCE VALIDITY` bundles.
+//! Rkyv remotes for `NEW OUTPUT BALANCE VALIDITY` bundles and witnesses.
 #![allow(missing_docs)]
 #![allow(clippy::missing_docs_in_private_items)]
 
-use circuit_types::{Nullifier, PlonkProof, ProofLinkingHint, merkle::MerkleRoot};
-use circuits_core::zk_circuits::validity_proofs::new_output_balance::NewOutputBalanceValidityStatement;
+use circuit_types::{
+    Nullifier, PlonkProof, ProofLinkingHint,
+    merkle::{MerkleRoot, SizedMerkleOpening},
+    primitives::schnorr::SchnorrSignature,
+};
+use circuits_core::zk_circuits::validity_proofs::new_output_balance::{
+    NewOutputBalanceValidityStatement, SizedNewOutputBalanceValidityWitness,
+};
 use constants::Scalar;
 use darkpool_types::{
-    balance::PreMatchBalanceShare, rkyv_remotes::ScalarDef, state_wrapper::PartialCommitment,
+    balance::{DarkpoolBalance, DarkpoolStateBalance, PostMatchBalanceShare, PreMatchBalanceShare},
+    rkyv_remotes::{ScalarDef, SchnorrSignatureDef},
+    state_wrapper::PartialCommitment,
 };
 use rkyv::{Archive, Deserialize, Serialize};
 
 use crate::bundles::{NewOutputBalanceValidityBundle, ProofAndHintBundleInner};
 use crate::rkyv_impls::{
     plonk_proof_def::{PlonkProofDef, ProofLinkingHintDef},
-    shared_types::{PartialCommitmentDef, PreMatchBalanceShareDef},
+    shared_types::{
+        MerkleOpeningDef, PartialCommitmentDef, PostMatchBalanceShareDef, PreMatchBalanceShareDef,
+    },
 };
 
 #[derive(Archive, Deserialize, Serialize, Debug, Clone)]
@@ -84,5 +94,42 @@ pub struct NewOutputBalanceValidityBundleDef {
 impl From<NewOutputBalanceValidityBundleDef> for NewOutputBalanceValidityBundle {
     fn from(value: NewOutputBalanceValidityBundleDef) -> Self {
         Self::from_inner(value.inner)
+    }
+}
+
+// -----------------------
+// | Witness Remote Type |
+// -----------------------
+
+/// Rkyv remote for `SizedNewOutputBalanceValidityWitness`
+#[derive(Archive, Deserialize, Serialize, Debug, Clone)]
+#[rkyv(derive(Debug))]
+#[rkyv(remote = SizedNewOutputBalanceValidityWitness)]
+#[rkyv(archived = ArchivedNewOutputBalanceValidityWitnessDef)]
+pub struct NewOutputBalanceValidityWitnessDef {
+    // --- New Balance --- //
+    pub new_balance: DarkpoolStateBalance,
+    pub balance: DarkpoolBalance,
+    #[rkyv(with = PostMatchBalanceShareDef)]
+    pub post_match_balance_shares: PostMatchBalanceShare,
+
+    // --- Bootstrapping Balance --- //
+    pub existing_balance: DarkpoolStateBalance,
+    #[rkyv(with = MerkleOpeningDef)]
+    pub existing_balance_opening: SizedMerkleOpening,
+    #[rkyv(with = SchnorrSignatureDef)]
+    pub new_balance_authorization_signature: SchnorrSignature,
+}
+
+impl From<NewOutputBalanceValidityWitnessDef> for SizedNewOutputBalanceValidityWitness {
+    fn from(value: NewOutputBalanceValidityWitnessDef) -> Self {
+        Self {
+            new_balance: value.new_balance,
+            balance: value.balance,
+            post_match_balance_shares: value.post_match_balance_shares,
+            existing_balance: value.existing_balance,
+            existing_balance_opening: value.existing_balance_opening,
+            new_balance_authorization_signature: value.new_balance_authorization_signature,
+        }
     }
 }

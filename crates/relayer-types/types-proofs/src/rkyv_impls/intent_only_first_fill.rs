@@ -1,12 +1,15 @@
-//! Rkyv remotes for `INTENT ONLY FIRST FILL VALIDITY` bundles.
+//! Rkyv remotes for `INTENT ONLY FIRST FILL VALIDITY` bundles and witnesses.
 #![allow(missing_docs)]
 #![allow(clippy::missing_docs_in_private_items)]
 
 use circuit_types::{Commitment as PrimitiveCommitment, PlonkProof, ProofLinkingHint};
-use circuits_core::zk_circuits::validity_proofs::intent_only_first_fill::IntentOnlyFirstFillValidityStatement;
+use circuits_core::zk_circuits::validity_proofs::intent_only_first_fill::{
+    IntentOnlyFirstFillValidityStatement, IntentOnlyFirstFillValidityWitness,
+};
 use constants::Scalar;
 use darkpool_types::{
-    intent::IntentShare,
+    csprng::PoseidonCSPRNG,
+    intent::{Intent, IntentShare},
     rkyv_remotes::{AddressDef, ScalarDef},
 };
 use rkyv::{Archive, Deserialize, Serialize};
@@ -82,5 +85,33 @@ pub struct IntentOnlyFirstFillValidityBundleDef {
 impl From<IntentOnlyFirstFillValidityBundleDef> for IntentOnlyFirstFillValidityBundle {
     fn from(value: IntentOnlyFirstFillValidityBundleDef) -> Self {
         Self::from_inner(value.inner)
+    }
+}
+
+// -----------------------
+// | Witness Remote Type |
+// -----------------------
+
+/// Rkyv remote for `IntentOnlyFirstFillValidityWitness`
+#[derive(Archive, Deserialize, Serialize, Debug, Clone)]
+#[rkyv(derive(Debug))]
+#[rkyv(remote = IntentOnlyFirstFillValidityWitness)]
+#[rkyv(archived = ArchivedIntentOnlyFirstFillValidityWitnessDef)]
+pub struct IntentOnlyFirstFillValidityWitnessDef {
+    pub intent: Intent,
+    pub initial_intent_share_stream: PoseidonCSPRNG,
+    pub initial_intent_recovery_stream: PoseidonCSPRNG,
+    #[rkyv(with = IntentShareDef)]
+    pub private_shares: IntentShare,
+}
+
+impl From<IntentOnlyFirstFillValidityWitnessDef> for IntentOnlyFirstFillValidityWitness {
+    fn from(value: IntentOnlyFirstFillValidityWitnessDef) -> Self {
+        Self {
+            intent: value.intent,
+            initial_intent_share_stream: value.initial_intent_share_stream,
+            initial_intent_recovery_stream: value.initial_intent_recovery_stream,
+            private_shares: value.private_shares,
+        }
     }
 }

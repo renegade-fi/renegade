@@ -368,7 +368,7 @@ pub type OutputBalanceValidityBundle = ProofAndHintBundle<OutputBalanceValidityS
 
 /// A proof bundle for `INTENT AND BALANCE BOUNDED SETTLEMENT`
 pub type IntentAndBalanceBoundedSettlementBundle =
-    IntentOnlySettlementProofBundle<IntentAndBalanceBoundedSettlementStatement>;
+    PublicSettlementProofBundle<IntentAndBalanceBoundedSettlementStatement>;
 
 /// A proof bundle for `INTENT AND BALANCE PRIVATE SETTLEMENT`
 pub type IntentAndBalancePrivateSettlementBundle =

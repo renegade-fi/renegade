@@ -4,7 +4,6 @@
 //! See the whitepaper https://renegade.fi/whitepaper.pdf for a formal specification
 //! of the types defined here
 
-use ark_mpc::network::PartyId;
 use circuit_types::ProofLinkingHint;
 use circuits_core::zk_circuits::{
     fees::{
@@ -393,6 +392,8 @@ pub enum ProofJob {
         statement: IntentAndBalanceBoundedSettlementStatement,
         /// The link hint for the validity proof
         validity_link_hint: ProofLinkingHint,
+        /// The link hint for the output balance validity proof
+        output_balance_link_hint: ProofLinkingHint,
     },
     /// Prove `INTENT AND BALANCE PRIVATE SETTLEMENT`
     IntentAndBalancePrivateSettlement {
@@ -411,8 +412,6 @@ pub enum ProofJob {
     IntentAndBalancePublicSettlement {
         witness: IntentAndBalancePublicSettlementWitness,
         statement: IntentAndBalancePublicSettlementStatement,
-        /// The party ID (0 or 1) for two-party settlements
-        party_id: PartyId,
         /// The link hint for the validity proof
         validity_link_hint: ProofLinkingHint,
         /// The link hint for the output balance validity proof

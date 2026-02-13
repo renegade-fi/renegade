@@ -57,6 +57,7 @@ async fn update_intent_only_validity_proof_first_fill(
     ctx: &TaskContext,
 ) -> Result<(), ValidityProofsError> {
     let (witness, statement) = generate_intent_only_first_fill_witness_statement(order)?;
+    let witness_clone = witness.clone();
 
     let job = ProofJob::IntentOnlyFirstFillValidity { witness, statement };
     let proof_recv = enqueue_proof_job(job, ctx).map_err(ValidityProofsError::ProofGeneration)?;
@@ -64,8 +65,9 @@ async fn update_intent_only_validity_proof_first_fill(
     let bundle: IntentOnlyFirstFillValidityBundle =
         proof_recv.await.map_err(|e| ValidityProofsError::ProofGeneration(e.to_string()))?.into();
 
-    let bundle = ValidityProofBundle::IntentOnlyFirstFill(bundle);
-    let waiter = ctx.state.add_intent_validity_proof(order.id, bundle).await?;
+    let validity_bundle =
+        ValidityProofBundle::IntentOnlyFirstFill { bundle, witness: witness_clone };
+    let waiter = ctx.state.add_intent_validity_proof(order.id, validity_bundle).await?;
     waiter.await?;
     Ok(())
 }
@@ -120,6 +122,7 @@ async fn update_intent_only_validity_proof_subsequent_fill(
 
     let (witness, statement) =
         generate_intent_only_subsequent_fill_witness_statement(order, merkle_proof)?;
+    let witness_clone = witness.clone();
 
     let job = ProofJob::IntentOnlyValidity { witness, statement };
     let proof_recv = enqueue_proof_job(job, ctx).map_err(ValidityProofsError::ProofGeneration)?;
@@ -127,8 +130,8 @@ async fn update_intent_only_validity_proof_subsequent_fill(
     let bundle: IntentOnlyValidityBundle =
         proof_recv.await.map_err(ValidityProofsError::proof_generation)?.into();
 
-    let bundle = ValidityProofBundle::IntentOnly(bundle);
-    let waiter = ctx.state.add_intent_validity_proof(order.id, bundle).await?;
+    let validity_bundle = ValidityProofBundle::IntentOnly { bundle, witness: witness_clone };
+    let waiter = ctx.state.add_intent_validity_proof(order.id, validity_bundle).await?;
     waiter.await?;
     Ok(())
 }

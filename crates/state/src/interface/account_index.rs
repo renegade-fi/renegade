@@ -311,6 +311,21 @@ impl StateInner {
         self.get_account_balance(account_id, token, BalanceLocation::Darkpool).await
     }
 
+    /// Check whether an account has a darkpool balance for the given mint
+    pub async fn has_darkpool_balance(
+        &self,
+        account_id: &AccountId,
+        mint: &Address,
+    ) -> Result<bool, StateError> {
+        let account_id = *account_id;
+        let mint = *mint;
+        self.with_read_tx(move |tx| {
+            let exists = tx.has_darkpool_balance(&account_id, &mint)?;
+            Ok(exists)
+        })
+        .await
+    }
+
     /// Get the full state balance type for an account on a given token
     pub async fn get_account_balance(
         &self,

@@ -4,19 +4,22 @@ use alloy::{
     primitives::Address, rpc::types::TransactionReceipt, signers::local::PrivateKeySigner,
 };
 use circuit_types::fixed_point::FixedPoint;
-use darkpool_types::settlement_obligation::SettlementObligation;
+use darkpool_types::{fee::FeeRates, settlement_obligation::SettlementObligation};
 use renegade_solidity_abi::v2::IDarkpoolV2::{FeeRate, PublicIntentPermit, SignatureWithNonce};
 use types_account::{
     OrderId,
     balance::{Balance, BalanceLocation},
     order::{Order, PrivacyRing},
+    pair::Pair,
 };
 use types_core::{AccountId, Token};
+use util::on_chain::get_protocol_fee;
 
 use crate::{tasks::settlement::helpers::error::SettlementError, traits::TaskContext};
 
 pub mod error;
 pub mod obligation_bundle;
+pub mod output_balance;
 pub mod ring0;
 pub mod ring1;
 pub mod ring2;
@@ -86,8 +89,20 @@ impl SettlementProcessor {
         Ok(auth.into_natively_settled_private_order())
     }
 
-    /// Get the input balance for a given party
-    async fn get_input_balance(
+    // --- State Retrieval --- //
+
+    /// Get the account ID that owns a given order.
+    async fn get_account_id_for_order(
+        &self,
+        order_id: OrderId,
+    ) -> Result<AccountId, SettlementError> {
+        self.ctx.state.get_account_id_for_order(&order_id).await?.ok_or_else(|| {
+            SettlementError::state(format!("account not found for order: {order_id}"))
+        })
+    }
+
+    /// Get a balance for a given party, token, and location.
+    async fn get_balance(
         &self,
         account_id: AccountId,
         token: Address,
@@ -123,6 +138,14 @@ impl SettlementProcessor {
         let recipient = self.ctx.state.get_relayer_fee_addr()?;
 
         Ok((rate, recipient))
+    }
+
+    /// Get fee rates for a settlement statement.
+    fn fee_rates(&self, pair: &Pair) -> Result<FeeRates, SettlementError> {
+        let base_token = pair.base_token();
+        let (relayer_fee_rate, _) = self.relayer_fee(&base_token)?;
+        let protocol_fee_rate = get_protocol_fee(&pair.in_token, &pair.out_token);
+        Ok(FeeRates { relayer_fee_rate, protocol_fee_rate })
     }
 
     // --- State Updates --- //
@@ -193,8 +216,7 @@ impl SettlementProcessor {
         obligation: &SettlementObligation,
     ) -> Result<(), SettlementError> {
         let state = &self.ctx.state;
-        let mut balance =
-            self.get_input_balance(account_id, obligation.input_token, location).await?;
+        let mut balance = self.get_balance(account_id, obligation.input_token, location).await?;
         *balance.amount_mut() -= obligation.amount_in;
 
         // Write the balance back to the state

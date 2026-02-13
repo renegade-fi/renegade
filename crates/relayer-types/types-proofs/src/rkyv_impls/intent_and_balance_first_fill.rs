@@ -1,21 +1,33 @@
-//! Rkyv remotes for `INTENT AND BALANCE FIRST FILL VALIDITY` bundles.
+//! Rkyv remotes for `INTENT AND BALANCE FIRST FILL VALIDITY` bundles and
+//! witnesses.
 #![allow(missing_docs)]
 #![allow(clippy::missing_docs_in_private_items)]
 
 use circuit_types::{
-    Commitment as PrimitiveCommitment, Nullifier, PlonkProof, ProofLinkingHint, merkle::MerkleRoot,
+    Commitment as PrimitiveCommitment, Nullifier, PlonkProof, ProofLinkingHint,
+    merkle::{MerkleRoot, SizedMerkleOpening},
+    primitives::schnorr::SchnorrSignature,
 };
-use circuits_core::zk_circuits::validity_proofs::intent_and_balance_first_fill::IntentAndBalanceFirstFillValidityStatement;
+use circuits_core::zk_circuits::validity_proofs::intent_and_balance_first_fill::{
+    IntentAndBalanceFirstFillValidityStatement, SizedIntentAndBalanceFirstFillValidityWitness,
+};
 use constants::Scalar;
 use darkpool_types::{
-    intent::PreMatchIntentShare, rkyv_remotes::ScalarDef, state_wrapper::PartialCommitment,
+    balance::{DarkpoolBalance, DarkpoolStateBalance, PostMatchBalanceShare},
+    csprng::PoseidonCSPRNG,
+    intent::{Intent, IntentShare, PreMatchIntentShare},
+    rkyv_remotes::{ScalarDef, SchnorrSignatureDef},
+    state_wrapper::PartialCommitment,
 };
 use rkyv::{Archive, Deserialize, Serialize};
 
 use crate::bundles::{IntentAndBalanceFirstFillValidityBundle, ProofAndHintBundleInner};
 use crate::rkyv_impls::{
     plonk_proof_def::{PlonkProofDef, ProofLinkingHintDef},
-    shared_types::{PartialCommitmentDef, PreMatchIntentShareDef},
+    shared_types::{
+        IntentShareDef, MerkleOpeningDef, PartialCommitmentDef, PostMatchBalanceShareDef,
+        PreMatchIntentShareDef,
+    },
 };
 
 #[derive(Archive, Deserialize, Serialize, Debug, Clone)]
@@ -94,5 +106,54 @@ pub struct IntentAndBalanceFirstFillValidityBundleDef {
 impl From<IntentAndBalanceFirstFillValidityBundleDef> for IntentAndBalanceFirstFillValidityBundle {
     fn from(value: IntentAndBalanceFirstFillValidityBundleDef) -> Self {
         Self::from_inner(value.inner)
+    }
+}
+
+// -----------------------
+// | Witness Remote Type |
+// -----------------------
+
+/// Rkyv remote for `SizedIntentAndBalanceFirstFillValidityWitness`
+#[derive(Archive, Deserialize, Serialize, Debug, Clone)]
+#[rkyv(derive(Debug))]
+#[rkyv(remote = SizedIntentAndBalanceFirstFillValidityWitness)]
+#[rkyv(archived = ArchivedIntentAndBalanceFirstFillValidityWitnessDef)]
+pub struct IntentAndBalanceFirstFillValidityWitnessDef {
+    // --- Intent --- //
+    pub intent: Intent,
+    pub initial_intent_share_stream: PoseidonCSPRNG,
+    pub initial_intent_recovery_stream: PoseidonCSPRNG,
+    #[rkyv(with = IntentShareDef)]
+    pub private_intent_shares: IntentShare,
+    #[rkyv(with = ScalarDef)]
+    pub new_amount_public_share: Scalar,
+    #[rkyv(with = SchnorrSignatureDef)]
+    pub intent_authorization_signature: SchnorrSignature,
+
+    // --- Balance --- //
+    pub old_balance: DarkpoolStateBalance,
+    pub balance: DarkpoolBalance,
+    #[rkyv(with = PostMatchBalanceShareDef)]
+    pub post_match_balance_shares: PostMatchBalanceShare,
+    #[rkyv(with = MerkleOpeningDef)]
+    pub balance_opening: SizedMerkleOpening,
+}
+
+impl From<IntentAndBalanceFirstFillValidityWitnessDef>
+    for SizedIntentAndBalanceFirstFillValidityWitness
+{
+    fn from(value: IntentAndBalanceFirstFillValidityWitnessDef) -> Self {
+        Self {
+            intent: value.intent,
+            initial_intent_share_stream: value.initial_intent_share_stream,
+            initial_intent_recovery_stream: value.initial_intent_recovery_stream,
+            private_intent_shares: value.private_intent_shares,
+            new_amount_public_share: value.new_amount_public_share,
+            intent_authorization_signature: value.intent_authorization_signature,
+            old_balance: value.old_balance,
+            balance: value.balance,
+            post_match_balance_shares: value.post_match_balance_shares,
+            balance_opening: value.balance_opening,
+        }
     }
 }

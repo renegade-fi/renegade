@@ -2,10 +2,13 @@
 #![allow(missing_docs)]
 #![allow(clippy::missing_docs_in_private_items)]
 
-use circuit_types::{fixed_point::FixedPointShare, primitives::schnorr::SchnorrPublicKeyShare};
-use constants::Scalar;
+use circuit_types::{
+    fixed_point::FixedPointShare, merkle::SizedMerkleOpening,
+    primitives::schnorr::SchnorrPublicKeyShare,
+};
+use constants::{MERKLE_HEIGHT, Scalar};
 use darkpool_types::{
-    balance::PreMatchBalanceShare,
+    balance::{PostMatchBalanceShare, PreMatchBalanceShare},
     intent::{IntentShare, PreMatchIntentShare},
     rkyv_remotes::{FixedPointShareDef, ScalarDef, SchnorrPublicKeyShareDef},
     state_wrapper::PartialCommitment,
@@ -109,6 +112,47 @@ impl From<PartialCommitmentDef> for PartialCommitment {
         Self {
             private_commitment: value.private_commitment,
             partial_public_commitment: value.partial_public_commitment,
+        }
+    }
+}
+
+/// Remote type shim for `MerkleOpening<MERKLE_HEIGHT>` (= `SizedMerkleOpening`)
+#[derive(Archive, Deserialize, Serialize, Debug, Clone)]
+#[rkyv(derive(Debug))]
+#[rkyv(remote = SizedMerkleOpening)]
+#[rkyv(archived = ArchivedMerkleOpeningDef)]
+pub struct MerkleOpeningDef {
+    #[rkyv(with = rkyv::with::Map<ScalarDef>)]
+    pub elems: [Scalar; MERKLE_HEIGHT],
+    pub indices: [bool; MERKLE_HEIGHT],
+}
+
+impl From<MerkleOpeningDef> for SizedMerkleOpening {
+    fn from(value: MerkleOpeningDef) -> Self {
+        Self { elems: value.elems, indices: value.indices }
+    }
+}
+
+/// Remote type shim for `PostMatchBalanceShare`
+#[derive(Archive, Deserialize, Serialize, Debug, Clone)]
+#[rkyv(derive(Debug))]
+#[rkyv(remote = PostMatchBalanceShare)]
+#[rkyv(archived = ArchivedPostMatchBalanceShareDef)]
+pub struct PostMatchBalanceShareDef {
+    #[rkyv(with = ScalarDef)]
+    pub relayer_fee_balance: Scalar,
+    #[rkyv(with = ScalarDef)]
+    pub protocol_fee_balance: Scalar,
+    #[rkyv(with = ScalarDef)]
+    pub amount: Scalar,
+}
+
+impl From<PostMatchBalanceShareDef> for PostMatchBalanceShare {
+    fn from(value: PostMatchBalanceShareDef) -> Self {
+        Self {
+            relayer_fee_balance: value.relayer_fee_balance,
+            protocol_fee_balance: value.protocol_fee_balance,
+            amount: value.amount,
         }
     }
 }
