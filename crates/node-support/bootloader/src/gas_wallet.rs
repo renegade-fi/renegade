@@ -98,7 +98,9 @@ pub(crate) async fn setup_gas_wallet(
         .await
         .map_err(|e| format!("Failed to send request: {e}"))?;
     if !response.status().is_success() {
-        return Err(format!("Request failed with status: {}", response.status()));
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!("Request failed with status: {status}, body: {body}"));
     }
 
     let resp = response
