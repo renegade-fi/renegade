@@ -250,6 +250,7 @@ impl HttpServer {
             darkpool_client.clone(),
             bus.clone(),
             matching_engine_worker_queue.clone(),
+            config.price_streams.clone(),
             state.clone(),
         );
 
