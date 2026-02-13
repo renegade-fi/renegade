@@ -502,7 +502,6 @@ impl SettlementProcessor {
 
         // Advance the recovery stream for the next validity proof cycle
         balance.state_wrapper.advance_recovery_stream();
-
         Ok(balance)
     }
 

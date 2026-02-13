@@ -180,10 +180,9 @@ impl SettlementProcessor {
             PrivacyRing::Ring1 => {
                 self.update_ring1_intent_after_match(&mut order, obligation).await?
             },
-            PrivacyRing::Ring2 => {
+            PrivacyRing::Ring2 | PrivacyRing::Ring3 => {
                 self.update_ring2_intent_after_match(&mut order, obligation).await?
             },
-            _ => unimplemented!("implementing updated intent for ring {:?}", order.ring),
         };
         Ok(order)
     }
