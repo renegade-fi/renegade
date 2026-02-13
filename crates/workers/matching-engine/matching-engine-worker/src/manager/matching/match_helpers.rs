@@ -4,7 +4,7 @@ use alloy::primitives::Address;
 use circuit_types::Amount;
 use matching_engine_core::SuccessfulMatch;
 use types_account::{MatchingPoolName, account::order::Order, pair::Pair};
-use types_core::{AccountId, TimestampedPrice, TimestampedPriceFp};
+use types_core::{AccountId, TimestampedPriceFp};
 
 use crate::{error::MatchingEngineError, executor::MatchingEngineExecutor};
 
@@ -83,28 +83,10 @@ impl MatchingEngineExecutor {
         &self,
         pair: &Pair,
     ) -> Result<TimestampedPriceFp, MatchingEngineError> {
-        // Convert the pair to a canonically quoted pair
-        let usdc_quoted_pair = pair.to_usdc_quoted().map_err(MatchingEngineError::no_price)?;
-        let (base, quote) = (usdc_quoted_pair.in_token(), usdc_quoted_pair.out_token());
-
-        // Fetch the price state for the pair
-        let state = self.price_streams.get_state(&base, &quote);
-        let state = &state.into_nominal().ok_or_else(|| {
-            MatchingEngineError::price_reporter(format!("No price data for {base} / {quote}"))
-        })?;
-        let price: TimestampedPrice = state.into();
-
-        // Correct the price for decimals
-        let mut corrected_price = price
-            .get_decimal_corrected_price(&base, &quote)
-            .map_err(MatchingEngineError::no_price)?;
-
-        // The decimal corrected price is in units of quote / base. If the input token
-        // is the quote token, we need to invert the price.
-        if pair.is_input_quote() {
-            corrected_price = corrected_price.invert();
-        }
-        Ok(corrected_price.into())
+        self.price_streams
+            .get_output_quoted_price(pair)
+            .map(TimestampedPriceFp::from)
+            .map_err(MatchingEngineError::no_price)
     }
 
     /// Validate that the minimum fill size is not violated by an order

@@ -60,6 +60,26 @@ impl ExternalOrder {
         }
     }
 
+    /// Convert an external order to an `Order`, using a price to convert
+    /// `output_amount` to `input_amount` if needed
+    ///
+    /// The price should be in units of output token / input token.
+    /// When `input_amount` is zero and `output_amount` is non-zero,
+    /// computes `input_amount = output_amount / price` and similarly
+    /// converts `min_fill_size`.
+    pub fn into_order_with_price(mut self, price: f64) -> Order {
+        if self.input_amount == 0 && self.output_amount > 0 {
+            // price is output/input, so input = output / price
+            let fp_price = FixedPoint::from_f64_round_down(price);
+            self.input_amount = scalar_to_u128(&fp_price.floor_div_int(self.output_amount));
+
+            if self.min_fill_size > 0 {
+                self.min_fill_size = scalar_to_u128(&fp_price.floor_div_int(self.min_fill_size));
+            }
+        }
+        Order::from(self)
+    }
+
     /// Parse the metadata for the order
     pub fn order_metadata(&self) -> OrderMetadata {
         OrderMetadata {
