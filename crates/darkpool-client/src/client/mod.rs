@@ -198,14 +198,16 @@ impl DarkpoolClient {
                     let data = err_payload.data.unwrap_or_default();
                     format!("unknown error: {msg} (data = {data})")
                 });
-                return Err(DarkpoolClientError::contract_interaction(
-                    format!("{err_str} (gas_wallet = {:#x})", self.gas_wallet_addr),
-                ));
+                return Err(DarkpoolClientError::contract_interaction(format!(
+                    "{err_str} (gas_wallet = {:#x})",
+                    self.gas_wallet_addr
+                )));
             },
             Err(e) => {
-                return Err(DarkpoolClientError::contract_interaction(
-                    format!("{e} (gas_wallet = {:#x})", self.gas_wallet_addr),
-                ));
+                return Err(DarkpoolClientError::contract_interaction(format!(
+                    "{e} (gas_wallet = {:#x})",
+                    self.gas_wallet_addr
+                )));
             },
         };
 
