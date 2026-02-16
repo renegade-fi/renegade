@@ -52,8 +52,6 @@ pub type DarkpoolCallBuilder<'a, C> = CallBuilder<&'a DynProvider, C>;
 /// contract addresses, and endpoint for setting up an RPC client, and a private
 /// key for signing transactions.
 pub struct DarkpoolClientConfig {
-    /// The address of the darkpool proxy contract.
-    ///
     /// This is the main entrypoint to interaction with the darkpool.
     pub darkpool_addr: Address,
     /// The address of the permit2 contract.
@@ -113,16 +111,19 @@ pub struct DarkpoolClient {
     deploy_block: BlockNumber,
     /// The address of the permit2 contract
     permit2_addr: Address,
+    /// The address of the gas wallet used for signing transactions
+    gas_wallet_addr: Address,
 }
 
 impl DarkpoolClient {
     /// Constructs a new darkpool client from the given configuration
     #[allow(clippy::needless_pass_by_value)]
     pub fn new(config: DarkpoolClientConfig) -> Result<Self, DarkpoolClientError> {
+        let gas_wallet_addr = config.private_key.address();
         let provider = config.get_provider()?;
         let darkpool = IDarkpoolV2Instance::new(config.darkpool_addr, provider);
         let deploy_block = config.get_deploy_block();
-        Ok(Self { darkpool, deploy_block, permit2_addr: config.permit2_addr })
+        Ok(Self { darkpool, deploy_block, permit2_addr: config.permit2_addr, gas_wallet_addr })
     }
 
     /// Get a reference to the darkpool contract instance
@@ -138,6 +139,11 @@ impl DarkpoolClient {
     /// Get the permit2 contract address
     pub fn permit2_addr(&self) -> Address {
         self.permit2_addr
+    }
+
+    /// Get the gas wallet address
+    pub fn gas_wallet_addr(&self) -> Address {
+        self.gas_wallet_addr
     }
 
     /// Get a reference to some underlying RPC client
@@ -192,9 +198,15 @@ impl DarkpoolClient {
                     let data = err_payload.data.unwrap_or_default();
                     format!("unknown error: {msg} (data = {data})")
                 });
-                return Err(DarkpoolClientError::contract_interaction(err_str));
+                return Err(DarkpoolClientError::contract_interaction(
+                    format!("{err_str} (gas_wallet = {:#x})", self.gas_wallet_addr),
+                ));
             },
-            Err(e) => return Err(DarkpoolClientError::contract_interaction(e)),
+            Err(e) => {
+                return Err(DarkpoolClientError::contract_interaction(
+                    format!("{e} (gas_wallet = {:#x})", self.gas_wallet_addr),
+                ));
+            },
         };
 
         info!("Pending tx hash: {:#x}", pending_tx.tx_hash());
@@ -206,7 +218,10 @@ impl DarkpoolClient {
 
         // Check for failure
         if !receipt.status() {
-            let error_msg = format!("tx ({:#x}) failed with status 0", receipt.transaction_hash);
+            let error_msg = format!(
+                "tx ({:#x}) failed with status 0 (gas_wallet = {:#x})",
+                receipt.transaction_hash, self.gas_wallet_addr,
+            );
             return Err(DarkpoolClientError::contract_interaction(error_msg));
         }
 
