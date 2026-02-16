@@ -71,10 +71,10 @@ impl ExternalOrder {
         if self.input_amount == 0 && self.output_amount > 0 {
             // price is output/input, so input = output / price
             let fp_price = FixedPoint::from_f64_round_down(price);
-            self.input_amount = scalar_to_u128(&fp_price.floor_div_int(self.output_amount));
+            self.input_amount = scalar_to_u128(&fp_price.ceil_div_int(self.output_amount));
 
             if self.min_fill_size > 0 {
-                self.min_fill_size = scalar_to_u128(&fp_price.floor_div_int(self.min_fill_size));
+                self.min_fill_size = scalar_to_u128(&fp_price.ceil_div_int(self.min_fill_size));
             }
         }
         Order::from(self)

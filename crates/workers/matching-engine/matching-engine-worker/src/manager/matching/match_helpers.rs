@@ -44,14 +44,18 @@ impl MatchingEngineExecutor {
         &self,
         order: &Order,
         matching_pool: Option<MatchingPoolName>,
+        price: Option<TimestampedPriceFp>,
     ) -> Result<Option<SuccessfulMatch>, MatchingEngineError> {
         // For an external match, no balance capitalizes the order, so the matchable
         // amount is the same as the intent amount
         let matchable_amount = order.intent().amount_in;
 
-        // Sample a price to execute the match at
+        // Use the provided price or sample a new one
         let pair = order.pair();
-        let price = self.get_execution_price(&pair)?;
+        let price = match price {
+            Some(p) => p,
+            None => self.get_execution_price(&pair)?,
+        };
 
         // Sanity check the input range
         let input_range = order.min_fill_size()..=matchable_amount;
