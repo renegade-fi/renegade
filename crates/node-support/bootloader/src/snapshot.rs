@@ -26,8 +26,8 @@ pub(crate) async fn download_snapshot(
     let bucket = read_env_var::<String>(ENV_SNAP_BUCKET)?;
 
     // Parse the relayer's config
-    let relayer_config =
-        parse_config_from_file(CONFIG_PATH).expect("could not parse relayer config");
+    let relayer_config = parse_config_from_file(CONFIG_PATH)
+        .unwrap_or_else(|e| panic!("could not parse relayer config at {CONFIG_PATH}: {e}"));
     let snap_path = format!("cluster-{}", relayer_config.cluster_id);
 
     // Get the latest snapshot
