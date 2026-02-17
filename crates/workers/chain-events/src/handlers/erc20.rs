@@ -75,8 +75,7 @@ impl OnChainEventListenerExecutor {
         let event = log.log_decode::<IERC20::Transfer>()?;
         let from = event.inner.from;
         let to = event.inner.to;
-        let chain = self.darkpool_client().chain;
-        let token_label = Token::from_alloy_address_on_chain(&token, chain)
+        let token_label = Token::from_alloy_address(&token)
             .get_ticker()
             .map(|t| format!("{t} ({token:#x})"))
             .unwrap_or_else(|| format!("{token:#x}"));
