@@ -10,6 +10,7 @@ use std::{
 
 use atomic_float::AtomicF64;
 use itertools::Itertools;
+use types_account::pair::Pair;
 use types_core::{
     Exchange, Price, PriceReporterState, TimestampedPrice, Token, default_exchange_stable,
     is_pair_named,
@@ -141,6 +142,36 @@ impl PriceStreamStates {
 
         let (price, timestamp) = atomic_price.read_price();
         Ok(TimestampedPrice { price, timestamp })
+    }
+
+    /// Get the decimal-corrected execution price for a pair, in units of
+    /// output token / input token
+    pub fn get_output_quoted_price(
+        &self,
+        pair: &Pair,
+    ) -> Result<TimestampedPrice, PriceStateError> {
+        // Convert the pair to a canonically quoted pair
+        let usdc_quoted_pair = pair.to_usdc_quoted().map_err(PriceStateError::no_price_data)?;
+        let (base, quote) = (usdc_quoted_pair.in_token(), usdc_quoted_pair.out_token());
+
+        // Fetch the price state for the pair
+        let state = self.get_state(&base, &quote);
+        let state = &state.into_nominal().ok_or_else(|| {
+            PriceStateError::no_price_data(format!("No price data for {base} / {quote}"))
+        })?;
+        let price: TimestampedPrice = state.into();
+
+        // Correct the price for decimals
+        let mut corrected_price = price
+            .get_decimal_corrected_price(&base, &quote)
+            .map_err(PriceStateError::no_price_data)?;
+
+        // The decimal corrected price is in units of quote / base. If the input
+        // token is the quote token, we need to invert the price.
+        if pair.is_input_quote() {
+            corrected_price = corrected_price.invert();
+        }
+        Ok(corrected_price)
     }
 
     /// Get the state of the price reporter for the given token pair

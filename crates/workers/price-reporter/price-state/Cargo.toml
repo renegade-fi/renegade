@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 # === Renegade Dependencies === #
+types-account = { workspace = true }
 types-core = { workspace = true }
 util = { workspace = true }
 

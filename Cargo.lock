@@ -7173,6 +7173,7 @@ dependencies = [
  "itertools 0.10.5",
  "statrs",
  "thiserror 2.0.18",
+ "types-account",
  "types-core",
  "util",
 ]
