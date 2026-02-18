@@ -3,7 +3,7 @@
 use circuit_types::{Amount, fixed_point::FixedPoint};
 use system_bus::gen_atomic_match_response_topic;
 use types_account::{MatchingPoolName, OrderId, order::Order};
-use types_core::{AccountId, TimestampedPrice};
+use types_core::{AccountId, TimestampedPriceFp};
 use util::channels::{TracedTokioReceiver, TracedTokioSender, new_traced_tokio_channel};
 
 /// The job queue for the matching engine worker
@@ -65,7 +65,7 @@ impl MatchingEngineWorkerJob {
     /// Get an external match bundle with a previously committed-to price
     pub fn get_external_match_bundle_with_price(
         order: Order,
-        price: TimestampedPrice,
+        price: TimestampedPriceFp,
     ) -> (Self, String) {
         let opt = ExternalMatchingEngineOptions::new().with_price(price);
         Self::new_external_match_job(order, opt)
@@ -102,7 +102,7 @@ pub struct ExternalMatchingEngineOptions {
     ///
     /// This is used to fulfill a previously committed-to quote at the
     /// api-layer
-    pub price: Option<TimestampedPrice>,
+    pub price: Option<TimestampedPriceFp>,
     /// The minimum input amount to use for a full fill
     pub min_input_amount: Option<Amount>,
     /// The matching pool to request a quote from
@@ -137,7 +137,7 @@ impl ExternalMatchingEngineOptions {
     }
 
     /// Set the price
-    pub fn with_price(mut self, price: TimestampedPrice) -> Self {
+    pub fn with_price(mut self, price: TimestampedPriceFp) -> Self {
         self.price = Some(price);
         self
     }

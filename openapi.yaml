@@ -1346,6 +1346,7 @@ components:
         - output_mint
         - input_amount
         - output_amount
+        - price_fp
       properties:
         input_mint:
           type: string
@@ -1355,6 +1356,20 @@ components:
           type: string
         output_amount:
           type: string
+        price_fp:
+          $ref: '#/components/schemas/ApiTimestampedPriceFp'
+
+    ApiTimestampedPriceFp:
+      type: object
+      required:
+        - price
+        - timestamp
+      properties:
+        price:
+          $ref: '#/components/schemas/FixedPoint'
+        timestamp:
+          type: integer
+          format: uint64
 
     ApiTimestampedPrice:
       type: object

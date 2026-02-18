@@ -15,7 +15,7 @@ use external_api::{
         AssembleExternalMatchRequest, ExternalMatchAssemblyType, ExternalQuoteRequest,
     },
     types::{
-        ApiExternalAssetTransfer, ApiExternalQuote, ApiSignedQuote, ApiTimestampedPrice,
+        ApiExternalAssetTransfer, ApiExternalMatchResult, ApiExternalQuote, ApiSignedQuote,
         BoundedExternalMatchApiBundle, ExternalOrder,
     },
 };
@@ -27,7 +27,7 @@ use renegade_solidity_abi::v2::IDarkpoolV2::{self, SettlementBundle};
 use state::State;
 use system_bus::{SystemBus, SystemBusMessage};
 use types_account::{order::Order, pair::Pair};
-use types_core::{HmacKey, TimestampedPrice};
+use types_core::{HmacKey, TimestampedPrice, TimestampedPriceFp};
 use util::{get_current_time_millis, on_chain::get_protocol_fee};
 
 use crate::error::{ApiServerError, internal_error, no_content, unauthorized};
@@ -102,22 +102,17 @@ impl ExternalMatchProcessor {
         // Fetch the price for the pair; this effectively adds to the delay
         // between price sampling and settlement, but is acceptable for simplicity
         let pair = Pair::new(req.external_order.input_mint, req.external_order.output_mint);
-        let price = self.get_price(&pair)?;
+        let price_fp = self.get_price(&pair)?;
 
         // Build the matching engine job
-        let order = req.external_order.clone().into_order_with_price(price.price);
+        let order = req.external_order.clone().into_order_with_price(price_fp.price);
         let options =
-            ExternalMatchingEngineOptions::default().with_only_quote(true).with_price(price);
+            ExternalMatchingEngineOptions::default().with_only_quote(true).with_price(price_fp);
 
         let (job, topic) = MatchingEngineWorkerJob::new_external_match_job(order.clone(), options);
 
         // Send the job to the matching engine
         let match_res = self.forward_quote_request(job, topic).await?;
-
-        // The bounded match result returned by the matching engine is constructed from
-        // the internal party's perspective. Thus we must invert the price to
-        // have it in terms of the external party's output/input price.
-        let price = match_res.price.inverse().expect("match price is zero");
 
         // Build an API response
         let fee_override = req.options.relayer_fee_rate.map(FixedPoint::from_f64_round_down);
@@ -135,13 +130,20 @@ impl ExternalMatchProcessor {
         let send = ApiExternalAssetTransfer::new(obligation.input_token, obligation.amount_in);
         let receive = ApiExternalAssetTransfer::new(obligation.output_token, net_out);
 
+        let price = TimestampedPrice::from(price_fp);
         Ok(ApiExternalQuote {
             order: req.external_order,
-            match_result: obligation.into(),
+            match_result: ApiExternalMatchResult {
+                input_mint: obligation.input_token,
+                output_mint: obligation.output_token,
+                input_amount: obligation.amount_in,
+                output_amount: obligation.amount_out,
+                price_fp: price_fp.into(),
+            },
             fees: fee_take.into(),
             send,
             receive,
-            price: ApiTimestampedPrice::new(price),
+            price: price.into(),
             timestamp: get_current_time_millis(),
         })
     }
@@ -175,11 +177,11 @@ impl ExternalMatchProcessor {
         // between price sampling and settlement, but is acceptable for simplicity
         let external_order = req.order.get_external_order();
         let pair = Pair::new(external_order.input_mint, external_order.output_mint);
-        let price = self.get_price(&pair)?;
+        let price_fp = self.get_price(&pair)?;
 
         // Build the matching engine job
-        let order = external_order.clone().into_order_with_price(price.price);
-        let options = self.assembly_engine_options(&external_order, &req, price);
+        let order = external_order.clone().into_order_with_price(price_fp.price);
+        let options = self.assembly_engine_options(&external_order, &req, price_fp);
         let (job, topic) = MatchingEngineWorkerJob::new_external_match_job(order.clone(), options);
 
         // Send the job to the matching engine
@@ -250,7 +252,7 @@ impl ExternalMatchProcessor {
         &self,
         order: &ExternalOrder,
         req: &AssembleExternalMatchRequest,
-        price: TimestampedPrice,
+        price: TimestampedPriceFp,
     ) -> ExternalMatchingEngineOptions {
         let mut options = ExternalMatchingEngineOptions::default()
             .with_matching_pool(req.options.matching_pool.clone())
@@ -262,11 +264,14 @@ impl ExternalMatchProcessor {
             options = options.with_relayer_fee_rate(fee_rate);
         }
 
-        // If this order comes from a previously generated quote, use the quoted
-        // price; otherwise use the price fetched at the processor level
+        // If this order comes from a previously generated quote, use the
+        // exact fixed-point price from the quote to avoid lossy f64 round-trips;
+        // otherwise use the price fetched at the processor level
         if let ExternalMatchAssemblyType::QuotedOrder { signed_quote, .. } = &req.order {
-            let ts_price = signed_quote.quote.price.clone().into();
-            options = options.with_price(ts_price);
+            let ts_price_fp: TimestampedPriceFp =
+                signed_quote.quote.match_result.price_fp.clone().into();
+
+            options = options.with_price(ts_price_fp);
         } else {
             options = options.with_price(price);
         }
@@ -294,9 +299,10 @@ impl ExternalMatchProcessor {
     // --- Helpers --- //
 
     /// Get the output-quoted execution price for a pair
-    fn get_price(&self, pair: &Pair) -> Result<TimestampedPrice, ApiServerError> {
+    fn get_price(&self, pair: &Pair) -> Result<TimestampedPriceFp, ApiServerError> {
         self.price_streams
             .get_output_quoted_price(pair)
+            .map(TimestampedPriceFp::from)
             .map_err(|e| internal_error(format!("failed to fetch price: {e}")))
     }
 
