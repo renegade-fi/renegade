@@ -12,9 +12,8 @@ use crate::serde_helpers;
 use {
     crypto::fields::scalar_to_u128, darkpool_types::bounded_match_result::BoundedMatchResult,
     darkpool_types::fee::FeeRates, darkpool_types::fee::FeeTake, darkpool_types::intent::Intent,
-    darkpool_types::settlement_obligation::SettlementObligation, types_account::order::Order,
-    types_account::order::OrderMetadata, types_core::TimestampedPrice,
-    util::get_current_time_millis,
+    types_account::order::Order, types_account::order::OrderMetadata, types_core::TimestampedPrice,
+    types_core::TimestampedPriceFp, util::get_current_time_millis,
 };
 
 // ------------------
@@ -67,14 +66,13 @@ impl ExternalOrder {
     /// When `input_amount` is zero and `output_amount` is non-zero,
     /// computes `input_amount = output_amount / price` and similarly
     /// converts `min_fill_size`.
-    pub fn into_order_with_price(mut self, price: f64) -> Order {
+    pub fn into_order_with_price(mut self, price_fp: FixedPoint) -> Order {
         if self.input_amount == 0 && self.output_amount > 0 {
             // price is output/input, so input = output / price
-            let fp_price = FixedPoint::from_f64_round_down(price);
-            self.input_amount = scalar_to_u128(&fp_price.ceil_div_int(self.output_amount));
+            self.input_amount = scalar_to_u128(&price_fp.ceil_div_int(self.output_amount));
 
             if self.min_fill_size > 0 {
-                self.min_fill_size = scalar_to_u128(&fp_price.ceil_div_int(self.min_fill_size));
+                self.min_fill_size = scalar_to_u128(&price_fp.ceil_div_int(self.min_fill_size));
             }
         }
         Order::from(self)
@@ -170,6 +168,37 @@ impl From<ApiTimestampedPrice> for TimestampedPrice {
     }
 }
 
+#[cfg(feature = "full-api")]
+impl From<TimestampedPrice> for ApiTimestampedPrice {
+    fn from(price: TimestampedPrice) -> Self {
+        Self { price: price.price, timestamp: price.timestamp }
+    }
+}
+
+/// A timestamped price with full fixed-point precision
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ApiTimestampedPriceFp {
+    /// The price as a fixed-point value
+    #[serde(with = "serde_helpers::fixed_point_as_string")]
+    pub price: FixedPoint,
+    /// The timestamp in milliseconds
+    pub timestamp: u64,
+}
+
+#[cfg(feature = "full-api")]
+impl From<ApiTimestampedPriceFp> for TimestampedPriceFp {
+    fn from(api: ApiTimestampedPriceFp) -> Self {
+        Self { price: api.price, timestamp: api.timestamp }
+    }
+}
+
+#[cfg(feature = "full-api")]
+impl From<TimestampedPriceFp> for ApiTimestampedPriceFp {
+    fn from(ts: TimestampedPriceFp) -> Self {
+        Self { price: ts.price, timestamp: ts.timestamp }
+    }
+}
+
 /// Fees taken from a match
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct ApiFeeTake {
@@ -226,18 +255,8 @@ pub struct ApiExternalMatchResult {
     /// The amount of the output token exchanged by the match
     #[serde(with = "serde_helpers::amount_as_string")]
     pub output_amount: Amount,
-}
-
-#[cfg(feature = "full-api")]
-impl From<SettlementObligation> for ApiExternalMatchResult {
-    fn from(obligation: SettlementObligation) -> Self {
-        Self {
-            input_mint: obligation.input_token,
-            output_mint: obligation.output_token,
-            input_amount: obligation.amount_in,
-            output_amount: obligation.amount_out,
-        }
-    }
+    /// The execution price with full fixed-point precision
+    pub price_fp: ApiTimestampedPriceFp,
 }
 
 /// A bounded match result for malleable matches

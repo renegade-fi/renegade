@@ -15,7 +15,7 @@ use job_types::matching_engine::ExternalMatchingEngineOptions;
 use system_bus::SystemBusMessage;
 use tracing::{info, instrument, warn};
 use types_account::{account::OrderId, order::Order};
-use types_core::TimestampedPriceFp;
+
 use types_tasks::SettleExternalMatchTaskDescriptor;
 
 use crate::{error::MatchingEngineError, executor::MatchingEngineExecutor};
@@ -52,7 +52,7 @@ impl MatchingEngineExecutor {
         }
 
         let matching_pool = options.matching_pool.clone();
-        let price = options.price.map(TimestampedPriceFp::from);
+        let price = options.price;
         let res = self.find_external_match(&order, matching_pool, price)?;
         let successful_match = match res {
             Some(match_res) => match_res,
