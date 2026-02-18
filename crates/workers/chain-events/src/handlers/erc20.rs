@@ -18,7 +18,7 @@ use job_types::matching_engine::MatchingEngineWorkerJob;
 use renegade_solidity_abi::v2::relayer_types::u256_to_u128;
 use tracing::{info, warn};
 use types_account::balance::{Balance, BalanceLocation};
-use types_core::{AccountId, get_all_tokens};
+use types_core::{AccountId, Token, get_all_tokens};
 
 use crate::{error::OnChainEventListenerError, executor::OnChainEventListenerExecutor};
 
@@ -75,8 +75,12 @@ impl OnChainEventListenerExecutor {
         let event = log.log_decode::<IERC20::Transfer>()?;
         let from = event.inner.from;
         let to = event.inner.to;
+        let token_label = Token::from_alloy_address(&token)
+            .get_ticker()
+            .map(|t| format!("{t} ({token:#x})"))
+            .unwrap_or_else(|| format!("{token:#x}"));
         info!(
-            "Handling ERC20 transfer: token={token:#x}, from={from:#x}, to={to:#x}, tx={tx_hash:#x}"
+            "Handling ERC20 transfer: label={token_label}, token={token}, from={from:#x}, to={to:#x}, tx={tx_hash:#x}"
         );
 
         // Look up accounts for both parties

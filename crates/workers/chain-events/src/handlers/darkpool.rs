@@ -79,7 +79,40 @@ impl OnChainEventListenerExecutor {
 
         let is_external_match_tx = self.darkpool_client().is_external_match_tx(tx_hash).await?;
         if !is_external_match_tx {
-            info!("Skipping darkpool event from non-external-match tx: tx={tx_hash:#x}");
+            let topic0 = log.topics().first().copied();
+
+            // Decode the event data and log the fields nicely
+            match topic0 {
+                Some(t) if t == PublicIntentUpdated::SIGNATURE_HASH => {
+                    if let Ok(event) = log.log_decode::<PublicIntentUpdated>() {
+                        let e = &event.inner;
+                        info!(
+                            "Skipping PublicIntentUpdated from non-external-match tx: fill_amount={}, amount_remaining={}, intent_hash={:#x}, owner={:#x},  tx={tx_hash:#x}",
+                            e.fillAmount, e.amountRemaining, e.intentHash, e.owner,
+                        );
+                    } else {
+                        info!(
+                            "Skipping PublicIntentUpdated from non-external-match tx (failed to decode): tx={tx_hash:#x}"
+                        );
+                    }
+                },
+                Some(t) if t == PublicIntentCancelled::SIGNATURE_HASH => {
+                    if let Ok(event) = log.log_decode::<PublicIntentCancelled>() {
+                        let e = &event.inner;
+                        info!(
+                            "Skipping PublicIntentCancelled from non-external-match tx: amount_remaining={}, intent_hash={:#x}, owner={:#x}, tx={tx_hash:#x}",
+                            e.amountRemaining, e.intentHash, e.owner,
+                        );
+                    } else {
+                        info!(
+                            "Skipping PublicIntentCancelled from non-external-match tx (failed to decode): tx={tx_hash:#x}"
+                        );
+                    }
+                },
+                _ => {
+                    info!("Skipping darkpool event from non-external-match tx: tx={tx_hash:#x}");
+                },
+            }
             return Ok(true);
         }
 
