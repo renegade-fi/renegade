@@ -80,7 +80,7 @@ impl OnChainEventListenerExecutor {
             .map(|t| format!("{t} ({token:#x})"))
             .unwrap_or_else(|| format!("{token:#x}"));
         info!(
-            "Handling ERC20 transfer: token={token_label}, from={from:#x}, to={to:#x}, tx={tx_hash:#x}"
+            "Handling ERC20 transfer: label={token_label}, token={token}, from={from:#x}, to={to:#x}, tx={tx_hash:#x}"
         );
 
         // Look up accounts for both parties
