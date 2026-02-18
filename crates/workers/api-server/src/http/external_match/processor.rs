@@ -113,7 +113,11 @@ impl ExternalMatchProcessor {
 
         // Send the job to the matching engine
         let match_res = self.forward_quote_request(job, topic).await?;
-        let price = match_res.price;
+
+        // The bounded match result returned by the matching engine is constructed from
+        // the internal party's perspective. Thus we must invert the price to
+        // have it in terms of the external party's output/input price.
+        let price = match_res.price.inverse().expect("match price is zero");
 
         // Build an API response
         let fee_override = req.options.relayer_fee_rate.map(FixedPoint::from_f64_round_down);
