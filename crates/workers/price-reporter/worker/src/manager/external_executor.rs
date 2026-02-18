@@ -37,6 +37,8 @@ use crate::{
 
 /// The number of milliseconds to wait in between retrying connections
 const CONN_RETRY_DELAY_MS: u64 = 2_000; // 2 seconds
+/// The error message emitted when the price reporter sends a close frame
+const PRICE_REPORTER_CONN_CLOSED_ERR: &str = "received close frame";
 
 /// A type alias for the write end of the websocket connection
 type WsWriteStream = SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>;
@@ -257,13 +259,11 @@ fn handle_incoming_ws_message(
     msg_in_tx: &UnboundedSender<PriceMessage>,
 ) -> Result<(), ExchangeConnectionError> {
     match maybe_msg {
-        Ok(msg) => {
-            if let Message::Text(text) = msg {
-                try_handle_price_message(&text, msg_in_tx)?;
-            }
-            Ok(())
-        },
-
+        Ok(Message::Text(text)) => try_handle_price_message(&text, msg_in_tx),
+        Ok(Message::Close(_)) => Err(ExchangeConnectionError::ConnectionHangup(
+            PRICE_REPORTER_CONN_CLOSED_ERR.to_string(),
+        )),
+        Ok(_) => Ok(()),
         Err(e) => Err(ExchangeConnectionError::ConnectionHangup(e.to_string())),
     }
 }
