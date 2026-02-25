@@ -16,7 +16,7 @@ use system_bus::SystemBusMessage;
 use tracing::{info, instrument, warn};
 use types_account::{account::OrderId, order::Order};
 
-use types_tasks::SettleExternalMatchTaskDescriptor;
+use types_tasks::{ExternalRelayerFeeRate, SettleExternalMatchTaskDescriptor};
 
 use crate::{error::MatchingEngineError, executor::MatchingEngineExecutor};
 use matching_engine_core::SuccessfulMatch;
@@ -76,7 +76,7 @@ impl MatchingEngineExecutor {
         &self,
         match_result: SuccessfulMatch,
         response_topic: String,
-        _options: &ExternalMatchingEngineOptions,
+        options: &ExternalMatchingEngineOptions,
     ) -> Result<(), MatchingEngineError> {
         // Look up the account ID for the internal order
         let internal_order_id = match_result.other_order_id;
@@ -93,11 +93,13 @@ impl MatchingEngineExecutor {
 
         // Compute the bounded match result and build a task descriptor
         let bounded_match_result = self.compute_bounded_match_result(&match_result).await?;
+        let external_relayer_fee_rate = ExternalRelayerFeeRate::from(options.relayer_fee_rate);
         let descriptor = SettleExternalMatchTaskDescriptor {
             account_id,
             order_id: internal_order_id,
             // This is the amount in for the internal party at the requested trade size
             amount_in,
+            external_relayer_fee_rate,
             match_result: bounded_match_result,
             response_topic,
             validity_window_blocks: self.external_match_validity_window,
