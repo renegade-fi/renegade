@@ -1,0 +1,48 @@
+name: Claude Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review, reopened]
+
+jobs:
+  claude-review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 50
+
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v1
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2025-11-25
+          components: clippy, rustfmt
+
+      - name: Cache Rust artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run Claude Code Review
+        id: claude-review
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          allowed_tools: "Bash(cargo clippy:*),Bash(cargo test:*),Bash(cargo check:*),Bash(cargo fmt:*),Bash(git diff*),Bash(git log*),Bash(git show*),Bash(git blame*)"
+          direct_prompt: |
+            Review this pull request for:
+            1. Code correctness and safety
+            2. Clippy compliance (run `cargo clippy --workspace --tests --benches -- -D warnings -D unsafe_code -D missing_docs -D clippy::missing_docs_in_private_items -D clippy::needless_pass_by_value -D clippy::needless_pass_by_ref_mut -D clippy::unused_async`)
+            3. Formatting compliance (run `cargo fmt --all -- --check`)
+            4. Idiomatic Rust patterns
+            5. Security concerns (unsafe blocks, input validation)
