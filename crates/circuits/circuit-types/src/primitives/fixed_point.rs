@@ -233,6 +233,15 @@ impl FixedPoint {
         product.floor()
     }
 
+    /// Multiplies the fixed point by the given integer, takes the ceiling
+    pub fn ceil_mul_int(&self, val: u128) -> Scalar {
+        let product_repr = scalar_to_biguint(&self.repr) * BigUint::from(val);
+        let (q, r) = product_repr.div_rem(&TWO_TO_M);
+        let q_scalar = biguint_to_scalar(&q);
+
+        if r == BigUint::from(0u8) { q_scalar } else { q_scalar + Scalar::one() }
+    }
+
     /// Divides the given integer by the fixed point value returning the
     /// quotient without remainder
     ///
@@ -756,6 +765,22 @@ mod fixed_point_tests {
 
         check_within_fractional_tolerance(res1.to_f64(), expected1 as f64, F64_MUL_TOLERANCE);
         check_within_fractional_tolerance(res2.to_f64(), expected2 as f64, F64_MUL_TOLERANCE);
+    }
+
+    /// Tests ceil multiplication by integer where result has a remainder
+    #[test]
+    fn test_ceil_mul_int_with_remainder() {
+        let fp = FixedPoint::from_f64_round_down(1.5);
+        let res = fp.ceil_mul_int(3);
+        assert_eq!(res, Scalar::from(5u64));
+    }
+
+    /// Tests ceil multiplication by integer where result is integral
+    #[test]
+    fn test_ceil_mul_int_no_remainder() {
+        let fp = FixedPoint::from_f64_round_down(0.5);
+        let res = fp.ceil_mul_int(4);
+        assert_eq!(res, Scalar::from(2u64));
     }
 
     /// Tests floor division between two fixed points

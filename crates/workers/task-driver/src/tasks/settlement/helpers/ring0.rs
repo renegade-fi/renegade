@@ -6,7 +6,8 @@ use darkpool_types::{
 use renegade_solidity_abi::v2::IDarkpoolV2::{
     self, FeeRate, PublicIntentAuthBundle, SettlementBundle, SignatureWithNonce, SignedPermitSingle,
 };
-use types_account::{OrderId, order::Order, pair::Pair};
+use types_account::{order::Order, pair::Pair};
+use types_tasks::ExternalRelayerFeeRate;
 use util::on_chain::get_chain_id;
 
 use crate::tasks::settlement::helpers::{SettlementProcessor, error::SettlementError};
@@ -34,12 +35,14 @@ impl SettlementProcessor {
     pub async fn build_ring0_external_settlement_bundle(
         &self,
         order: Order,
-        obligation: SettlementObligation,
         match_res: BoundedMatchResult,
+        external_relayer_fee_rate: ExternalRelayerFeeRate,
     ) -> Result<SettlementBundle, SettlementError> {
-        let pair = Pair::from_obligation(&obligation);
-        let base = pair.base_token();
-        let relayer_fee = self.abi_relayer_fee(&base)?;
+        let relayer_fee_recipient = self.ctx.state.get_relayer_fee_addr()?;
+        let relayer_fee = FeeRate {
+            rate: external_relayer_fee_rate.rate().into(),
+            recipient: relayer_fee_recipient,
+        };
 
         let executor_sig =
             self.build_bounded_match_executor_signature(match_res, &relayer_fee).await?;

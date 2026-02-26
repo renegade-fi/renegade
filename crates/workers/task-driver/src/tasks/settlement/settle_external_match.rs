@@ -16,7 +16,7 @@ use system_bus::SystemBusMessage;
 use tracing::{info, instrument};
 use types_account::OrderId;
 use types_core::AccountId;
-use types_tasks::SettleExternalMatchTaskDescriptor;
+use types_tasks::{ExternalRelayerFeeRate, SettleExternalMatchTaskDescriptor};
 
 use crate::{
     task_state::TaskStateWrapper,
@@ -154,6 +154,8 @@ pub struct SettleExternalMatchTask {
     pub response_topic: String,
     /// The number of blocks the match remains valid from the current block
     pub validity_window_blocks: u64,
+    /// The relayer fee rate fixed at external-match request time
+    pub external_relayer_fee_rate: ExternalRelayerFeeRate,
     /// The internal party's settlement bundle
     pub settlement_bundle: Option<SettlementBundle>,
     /// The state of the task's execution
@@ -179,6 +181,7 @@ impl Task for SettleExternalMatchTask {
             match_result: descriptor.match_result,
             response_topic: descriptor.response_topic,
             validity_window_blocks: descriptor.validity_window_blocks,
+            external_relayer_fee_rate: descriptor.external_relayer_fee_rate,
             settlement_bundle: None,
             task_state: SettleExternalMatchTaskState::Pending,
             processor,
@@ -249,7 +252,12 @@ impl SettleExternalMatchTask {
         let obligation = self.match_result.to_internal_obligation(self.amount_in);
         let settlement_bundle = self
             .processor
-            .build_external_settlement_bundle(self.order_id, obligation, self.match_result.clone())
+            .build_external_settlement_bundle(
+                self.order_id,
+                obligation,
+                self.match_result.clone(),
+                self.external_relayer_fee_rate,
+            )
             .await?;
         self.settlement_bundle = Some(settlement_bundle);
 

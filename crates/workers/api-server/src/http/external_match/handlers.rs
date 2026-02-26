@@ -8,7 +8,7 @@ use external_api::http::external_match::{
 use hyper::HeaderMap;
 
 use crate::{
-    error::{ApiServerError, bad_request},
+    error::ApiServerError,
     http::external_match::processor::ExternalMatchProcessor,
     router::{QueryParams, TypedHandler, UrlParams},
 };
@@ -42,11 +42,6 @@ impl TypedHandler for GetExternalMatchQuoteHandler {
         _params: UrlParams,
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
-        // TODO: Support exact output amounts
-        if req.external_order.use_exact_output_amount {
-            return Err(bad_request("`use_exact_output_amount` is not supported"));
-        }
-
         // Forward to the external match processor
         let signed_quote = self.processor.fetch_signed_quote(req).await?;
         Ok(ExternalQuoteResponse { signed_quote })
@@ -78,11 +73,6 @@ impl TypedHandler for AssembleMatchBundleHandler {
         _params: UrlParams,
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
-        // TODO: Support exact output amounts
-        if req.order.get_external_order_ref().use_exact_output_amount {
-            return Err(bad_request("`use_exact_output_amount` is not supported"));
-        }
-
         // Forward the request to the processor
         let match_bundle = self.processor.assemble_match_bundle(req).await?;
         Ok(ExternalMatchResponse { match_bundle })
