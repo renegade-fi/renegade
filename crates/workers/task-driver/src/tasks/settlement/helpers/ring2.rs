@@ -28,6 +28,7 @@ use types_proofs::{
     IntentAndBalancePublicSettlementBundle, IntentAndBalanceValidityBundle,
     SizedIntentAndBalanceFirstFillValidityWitness, SizedIntentAndBalanceValidityWitness,
 };
+use types_tasks::ExternalRelayerFeeRate;
 
 use crate::{
     tasks::settlement::helpers::{SettlementProcessor, error::SettlementError},
@@ -48,11 +49,24 @@ impl SettlementProcessor {
         order: Order,
         obligation: SettlementObligation,
         match_res: BoundedMatchResult,
+        external_relayer_fee_rate: ExternalRelayerFeeRate,
     ) -> Result<SettlementBundle, SettlementError> {
         if order.metadata.has_been_filled {
-            self.build_ring2_external_subsequent_fill(order, obligation, match_res).await
+            self.build_ring2_external_subsequent_fill(
+                order,
+                obligation,
+                match_res,
+                external_relayer_fee_rate,
+            )
+            .await
         } else {
-            self.build_ring2_external_first_fill(order, obligation, match_res).await
+            self.build_ring2_external_first_fill(
+                order,
+                obligation,
+                match_res,
+                external_relayer_fee_rate,
+            )
+            .await
         }
     }
 
@@ -172,6 +186,7 @@ impl SettlementProcessor {
         order: Order,
         obligation: SettlementObligation,
         match_res: BoundedMatchResult,
+        external_relayer_fee_rate: ExternalRelayerFeeRate,
     ) -> Result<SettlementBundle, SettlementError> {
         let account_id = self.get_account_id_for_order(order.id).await?;
         let (validity_bundle, validity_witness) =
@@ -188,6 +203,7 @@ impl SettlementProcessor {
                 output_bundle.post_match_balance_shares(),
                 obligation.clone(),
                 match_res,
+                external_relayer_fee_rate,
                 validity_bundle.linking_hint.clone(),
                 output_bundle.linking_hint(),
             )
@@ -218,6 +234,7 @@ impl SettlementProcessor {
         order: Order,
         obligation: SettlementObligation,
         match_res: BoundedMatchResult,
+        external_relayer_fee_rate: ExternalRelayerFeeRate,
     ) -> Result<SettlementBundle, SettlementError> {
         let account_id = self.get_account_id_for_order(order.id).await?;
         let (validity_bundle, validity_witness) =
@@ -234,6 +251,7 @@ impl SettlementProcessor {
                 output_bundle.post_match_balance_shares(),
                 obligation.clone(),
                 match_res,
+                external_relayer_fee_rate,
                 validity_bundle.linking_hint.clone(),
                 output_bundle.linking_hint(),
             )
@@ -326,6 +344,7 @@ impl SettlementProcessor {
         out_balance_share: PostMatchBalanceShare,
         obligation: SettlementObligation,
         match_res: BoundedMatchResult,
+        external_relayer_fee_rate: ExternalRelayerFeeRate,
         validity_link_hint: ProofLinkingHint,
         output_balance_link_hint: ProofLinkingHint,
     ) -> Result<IntentAndBalanceBoundedSettlementBundle, SettlementError> {
@@ -349,7 +368,7 @@ impl SettlementProcessor {
             in_balance_public_shares: in_balance_share,
             out_balance_public_shares: out_balance_share,
             internal_relayer_fee,
-            external_relayer_fee: Default::default(),
+            external_relayer_fee: external_relayer_fee_rate.rate(),
             relayer_fee_recipient,
         };
 

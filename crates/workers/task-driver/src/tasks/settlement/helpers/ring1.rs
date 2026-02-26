@@ -29,6 +29,7 @@ use types_proofs::{
     IntentOnlyBoundedSettlementBundle, IntentOnlyFirstFillValidityBundle,
     IntentOnlyPublicSettlementBundle, IntentOnlyValidityBundle,
 };
+use types_tasks::ExternalRelayerFeeRate;
 
 use crate::{
     tasks::settlement::helpers::{SettlementProcessor, error::SettlementError},
@@ -59,11 +60,24 @@ impl SettlementProcessor {
         order: Order,
         obligation: SettlementObligation,
         match_res: BoundedMatchResult,
+        external_relayer_fee_rate: ExternalRelayerFeeRate,
     ) -> Result<SettlementBundle, SettlementError> {
         if order.metadata.has_been_filled {
-            self.build_ring1_external_subsequent_fill(order, obligation, match_res).await
+            self.build_ring1_external_subsequent_fill(
+                order,
+                obligation,
+                match_res,
+                external_relayer_fee_rate,
+            )
+            .await
         } else {
-            self.build_ring1_external_first_fill(order, obligation, match_res).await
+            self.build_ring1_external_first_fill(
+                order,
+                obligation,
+                match_res,
+                external_relayer_fee_rate,
+            )
+            .await
         }
     }
 
@@ -122,6 +136,7 @@ impl SettlementProcessor {
         order: Order,
         obligation: SettlementObligation,
         match_res: BoundedMatchResult,
+        external_relayer_fee_rate: ExternalRelayerFeeRate,
     ) -> Result<SettlementBundle, SettlementError> {
         let validity_bundle = self.get_first_fill_validity_bundle(order.id).await?;
         let settlement = self
@@ -130,6 +145,7 @@ impl SettlementProcessor {
                 &obligation,
                 &match_res,
                 &validity_bundle.linking_hint,
+                external_relayer_fee_rate,
             )
             .await?
             .into_inner();
@@ -151,6 +167,7 @@ impl SettlementProcessor {
         order: Order,
         obligation: SettlementObligation,
         match_res: BoundedMatchResult,
+        external_relayer_fee_rate: ExternalRelayerFeeRate,
     ) -> Result<SettlementBundle, SettlementError> {
         let validity_bundle = self.get_subsequent_fill_validity_bundle(order.id).await?;
         let settlement = self
@@ -159,6 +176,7 @@ impl SettlementProcessor {
                 &obligation,
                 &match_res,
                 &validity_bundle.linking_hint,
+                external_relayer_fee_rate,
             )
             .await?
             .into_inner();
@@ -214,13 +232,13 @@ impl SettlementProcessor {
         obligation: &SettlementObligation,
         match_res: &BoundedMatchResult,
         validity_link_hint: &ProofLinkingHint,
+        external_relayer_fee_rate: ExternalRelayerFeeRate,
     ) -> Result<IntentOnlyBoundedSettlementBundle, SettlementError> {
         let pair = Pair::from_obligation(obligation);
         let base = pair.base_token();
         let (internal_relayer_fee, relayer_fee_recipient) = self.relayer_fee(&base)?;
 
-        // External party has no relayer fee
-        let external_relayer_fee = Default::default();
+        let external_relayer_fee = external_relayer_fee_rate.rate();
 
         let witness = IntentOnlyBoundedSettlementWitness { intent: order.intent.inner.clone() };
         let statement = IntentOnlyBoundedSettlementStatement {

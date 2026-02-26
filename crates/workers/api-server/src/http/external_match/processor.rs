@@ -356,10 +356,10 @@ impl ExternalMatchProcessor {
         }
 
         let total_fee = fee_rates.relayer_fee_rate + fee_rates.protocol_fee_rate;
-        let one_minus_fee = FixedPoint::one() - total_fee;
-        if one_minus_fee <= FixedPoint::zero() {
+        if total_fee >= FixedPoint::one() {
             return Err(internal_error("invalid external match fee configuration"));
         }
+        let one_minus_fee = FixedPoint::one() - total_fee;
 
         // floor(N / (1-f)) gives a value G such that G*(1-f) > N-1, which
         // guarantees net >= N after integer fee deduction.  The ceiling in
@@ -392,8 +392,9 @@ impl ExternalMatchProcessor {
                 // party.  We need:
                 //   floor(amount_in / on_chain_price) >= grossed
                 // i.e. amount_in >= grossed * on_chain_price
-                // Use floor_mul + 1 as a ceiling to guarantee the inequality.
-                scalar_to_u128(&on_chain_price.floor_mul_int(grossed)) + 1
+                // Use ceil_mul_int so amount_in is the minimal value that
+                // satisfies floor(amount_in / on_chain_price) >= grossed.
+                scalar_to_u128(&on_chain_price.ceil_mul_int(grossed))
             },
             None => default_amount_in,
         }
