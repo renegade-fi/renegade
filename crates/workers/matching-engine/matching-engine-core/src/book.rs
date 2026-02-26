@@ -107,6 +107,18 @@ impl Book {
         self.order_map.get(&order_id).map(|order| order.matchable_amount)
     }
 
+    /// Get the total matchable amount across all orders in the book
+    ///
+    /// Only includes orders where `matchable_amount >= min_fill_size`,
+    /// since orders below their minimum fill size cannot be matched.
+    pub fn total_matchable_amount(&self) -> Amount {
+        self.order_map
+            .values()
+            .filter(|order| order.matchable_amount >= order.min_fill_size)
+            .map(|order| order.matchable_amount)
+            .sum()
+    }
+
     // --- Setters --- //
 
     /// Add an order to the book
@@ -433,6 +445,49 @@ mod tests {
 
         let order_ids: Vec<OrderId> = book.iter().map(|(id, _)| *id).collect();
         assert_eq!(order_ids, vec![order.id]);
+    }
+
+    // ---------------------------
+    // | Total Matchable Amount  |
+    // ---------------------------
+
+    #[test]
+    fn test_total_matchable_amount() {
+        let mut book = Book::new();
+        let account_id = AccountId::new_v4();
+
+        assert_eq!(book.total_matchable_amount(), 0);
+
+        let order1 = create_test_order(100);
+        let order2 = create_test_order(200);
+        let order3 = create_test_order(300);
+
+        book.add_order(account_id, &order1, 100);
+        book.add_order(account_id, &order2, 200);
+        book.add_order(account_id, &order3, 300);
+
+        assert_eq!(book.total_matchable_amount(), 600);
+
+        book.remove_order(order2.id);
+        assert_eq!(book.total_matchable_amount(), 400);
+    }
+
+    #[test]
+    fn test_total_matchable_amount_excludes_unfillable() {
+        let mut book = Book::new();
+        let account_id = AccountId::new_v4();
+
+        // Order with matchable_amount (100) >= min_fill_size (1) — should be counted
+        let order1 = create_test_order(100);
+        book.add_order(account_id, &order1, 100);
+
+        // Order with matchable_amount (5) < min_fill_size (50) — should be excluded
+        let mut order2 = create_test_order(200);
+        order2.metadata.min_fill_size = 50;
+        book.add_order(account_id, &order2, 5);
+
+        // Only order1's amount should be counted
+        assert_eq!(book.total_matchable_amount(), 100);
     }
 
     // -------------------------------

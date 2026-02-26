@@ -66,6 +66,7 @@ use hyper::{
 use hyper_util::rt::{TokioIo, TokioTimer};
 use market::{
     GetMarketDepthByMintHandler, GetMarketDepthsHandler, GetMarketPriceHandler, GetMarketsHandler,
+    MarketDataCalculator,
 };
 use metadata::GetExchangeMetadataHandler;
 use network::GetNetworkTopologyHandler;
@@ -270,32 +271,35 @@ impl HttpServer {
 
         // --- Market Routes (v2) --- //
 
+        let market_calculator =
+            MarketDataCalculator::new(state.clone(), config.price_streams.clone());
+
         // GET /v2/markets
-        router.add_unauthenticated_route(
+        router.add_admin_authenticated_route(
             &Method::GET,
             GET_MARKETS_ROUTE.to_string(),
-            GetMarketsHandler::new(),
+            GetMarketsHandler::new(market_calculator.clone()),
         );
 
         // GET /v2/markets/depth
         router.add_admin_authenticated_route(
             &Method::GET,
             GET_MARKETS_DEPTH_ROUTE.to_string(),
-            GetMarketDepthsHandler::new(),
+            GetMarketDepthsHandler::new(market_calculator.clone()),
         );
 
         // GET /v2/markets/:mint/depth
         router.add_admin_authenticated_route(
             &Method::GET,
             GET_MARKET_DEPTH_BY_MINT_ROUTE.to_string(),
-            GetMarketDepthByMintHandler::new(),
+            GetMarketDepthByMintHandler::new(market_calculator.clone()),
         );
 
         // GET /v2/markets/:mint/price
         router.add_unauthenticated_route(
             &Method::GET,
             GET_MARKET_PRICE_ROUTE.to_string(),
-            GetMarketPriceHandler::new(),
+            GetMarketPriceHandler::new(config.price_streams.clone()),
         );
 
         // --- Metadata Routes (v2) --- //

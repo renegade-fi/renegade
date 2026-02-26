@@ -1,10 +1,13 @@
 //! API types for markets
 
 use alloy::primitives::Address;
+use circuit_types::Amount;
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "full-api")]
+use types_core::Token;
 
 use super::external_match::{ApiTimestampedPrice, FeeTakeRate};
-use crate::serde_helpers::address_as_string;
+use crate::serde_helpers::{self, address_as_string};
 
 // ---------------
 // | Token Types |
@@ -24,6 +27,15 @@ impl ApiToken {
     /// Constructor
     pub fn new(addr: Address, sym: String) -> Self {
         Self { address: addr, symbol: sym }
+    }
+}
+
+#[cfg(feature = "full-api")]
+impl From<Token> for ApiToken {
+    fn from(token: Token) -> Self {
+        let symbol = token.get_ticker().unwrap_or_default();
+        let address = token.get_alloy_address();
+        Self::new(address, symbol)
     }
 }
 
@@ -60,8 +72,10 @@ pub struct MarketDepth {
 /// One side of the depth book
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DepthSide {
-    /// The total quantity
-    pub total_quantity: String,
+    /// The total quantity in base token units
+    #[serde(with = "serde_helpers::amount_as_string")]
+    pub total_quantity: Amount,
     /// The total quantity in USD
-    pub total_quantity_usd: String,
+    #[serde(with = "serde_helpers::f64_as_string")]
+    pub total_quantity_usd: f64,
 }

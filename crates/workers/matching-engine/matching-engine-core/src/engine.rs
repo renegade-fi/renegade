@@ -132,8 +132,18 @@ impl MatchingEngine {
     ///
     /// Returns (buy_amount, sell_amount) where buy amount is denominated in the
     /// quote token, sell amount is denominated in the base token
-    pub fn get_liquidity_for_pair(&self, _pair: &Pair) -> (Amount, Amount) {
-        todo!("Implement get_liquidity_for_pair")
+    pub fn get_liquidity_for_pair(&self, pair: &Pair) -> (Amount, Amount) {
+        let sell_amount =
+            self.all_pools_book.get(pair).map(|book| book.total_matchable_amount()).unwrap_or(0);
+
+        let buy_pair = pair.reverse();
+        let buy_amount = self
+            .all_pools_book
+            .get(&buy_pair)
+            .map(|book| book.total_matchable_amount())
+            .unwrap_or(0);
+
+        (buy_amount, sell_amount)
     }
 
     // --- Matching Operations --- //
@@ -1408,5 +1418,69 @@ mod tests {
             TimestampedPriceFp::from(price),
         );
         assert!(result.is_none(), "Should not match when no orders are externally matchable");
+    }
+
+    // --------------------------
+    // | Liquidity Query Tests  |
+    // --------------------------
+
+    #[test]
+    fn test_get_liquidity_for_pair_empty() {
+        let engine = MatchingEngine::new();
+        let pair = test_pair();
+
+        let (buy, sell) = engine.get_liquidity_for_pair(&pair);
+        assert_eq!(buy, 0);
+        assert_eq!(sell, 0);
+    }
+
+    #[test]
+    fn test_get_liquidity_for_pair() {
+        let engine = MatchingEngine::new();
+        let pair = test_pair();
+        let pool = test_matching_pool();
+        let account_id = AccountId::new_v4();
+
+        // Add sell-side orders (same direction as pair)
+        let sell_order1 = create_test_order(100, FixedPoint::from_integer(1));
+        let sell_order2 = create_test_order(200, FixedPoint::from_integer(1));
+        engine.upsert_order(account_id, &sell_order1, 100, pool.clone());
+        engine.upsert_order(account_id, &sell_order2, 200, pool.clone());
+
+        // Add buy-side orders (reversed pair)
+        let buy_order1 = create_counterparty_order(300, FixedPoint::from_integer(1));
+        let buy_order2 = create_counterparty_order(400, FixedPoint::from_integer(1));
+        engine.upsert_order(account_id, &buy_order1, 300, pool.clone());
+        engine.upsert_order(account_id, &buy_order2, 400, pool.clone());
+
+        let (buy_amount, sell_amount) = engine.get_liquidity_for_pair(&pair);
+        assert_eq!(sell_amount, 300); // 100 + 200
+        assert_eq!(buy_amount, 700); // 300 + 400
+    }
+
+    #[test]
+    fn test_get_liquidity_for_pair_multi_pool() {
+        let engine = MatchingEngine::new();
+        let pair = test_pair();
+        let pool1 = "pool1".to_string();
+        let pool2 = "pool2".to_string();
+        let account_id = AccountId::new_v4();
+
+        // Add sell-side orders across two pools
+        let sell_order1 = create_test_order(100, FixedPoint::from_integer(1));
+        let sell_order2 = create_test_order(200, FixedPoint::from_integer(1));
+        engine.upsert_order(account_id, &sell_order1, 100, pool1.clone());
+        engine.upsert_order(account_id, &sell_order2, 200, pool2.clone());
+
+        // Add buy-side orders across two pools
+        let buy_order1 = create_counterparty_order(300, FixedPoint::from_integer(1));
+        let buy_order2 = create_counterparty_order(400, FixedPoint::from_integer(1));
+        engine.upsert_order(account_id, &buy_order1, 300, pool1.clone());
+        engine.upsert_order(account_id, &buy_order2, 400, pool2.clone());
+
+        // Liquidity should aggregate across both pools
+        let (buy_amount, sell_amount) = engine.get_liquidity_for_pair(&pair);
+        assert_eq!(sell_amount, 300); // 100 + 200 across pools
+        assert_eq!(buy_amount, 700); // 300 + 400 across pools
     }
 }
