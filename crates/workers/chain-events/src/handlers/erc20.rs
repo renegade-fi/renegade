@@ -16,7 +16,7 @@ use futures_util::{
 };
 use job_types::matching_engine::MatchingEngineWorkerJob;
 use renegade_solidity_abi::v2::relayer_types::u256_to_u128;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 use types_account::balance::{Balance, BalanceLocation};
 use types_core::{AccountId, get_all_tokens};
 
@@ -75,7 +75,7 @@ impl OnChainEventListenerExecutor {
         let event = log.log_decode::<IERC20::Transfer>()?;
         let from = event.inner.from;
         let to = event.inner.to;
-        info!(
+        debug!(
             "Handling ERC20 transfer: token={token:#x}, from={from:#x}, to={to:#x}, tx={tx_hash:#x}"
         );
 

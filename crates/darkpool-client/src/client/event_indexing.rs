@@ -12,8 +12,8 @@ use alloy::rpc::types::trace::geth::{
     CallFrame, GethDebugBuiltInTracerType, GethDebugTracerType, GethDebugTracingOptions, GethTrace,
 };
 use alloy_contract::Event;
-use alloy_primitives::{Log, TxHash};
-use alloy_sol_types::{SolCall, SolEvent};
+use alloy_primitives::{B256, Log, TxHash, keccak256};
+use alloy_sol_types::{SolCall, SolEvent, SolValue};
 use circuit_types::Amount;
 use constants::{MERKLE_HEIGHT, Scalar};
 use crypto::fields::{scalar_to_u256, u256_to_scalar};
@@ -21,7 +21,9 @@ use darkpool_types::bounded_match_result::BoundedMatchResult;
 use itertools::Itertools;
 use renegade_solidity_abi::v2::IDarkpoolV2::{
     self, MerkleInsertion as AbiMerkleInsertion, MerkleOpeningNode as AbiMerkleOpeningNode,
+    PublicIntentPublicBalanceBundle, SettlementBundle,
 };
+use renegade_solidity_abi::v2::calldata_bundles::NATIVE_SETTLED_PUBLIC_INTENT_BUNDLE_TYPE;
 use renegade_solidity_abi::v2::relayer_types::u256_to_u128;
 use tracing::instrument;
 use types_account::MerkleAuthenticationPath;
@@ -39,6 +41,9 @@ const BLOCK_RANGE_INCREASE_RATE: u64 = 10;
 const ERR_MERKLE_PATH_SIBLINGS: &str = "not enough Merkle path siblings found";
 /// The error message emitted when a TX hash is not found in a log
 const ERR_NO_TX_HASH: &str = "no tx hash for log";
+
+/// Parsed external match calldata from a single `settleExternalMatch` call.
+pub type ExternalMatchCalldata = (B256, BoundedMatchResult, Amount);
 
 impl DarkpoolClient {
     /// Searches on-chain state for the insertion of the given commitment, then
@@ -141,12 +146,12 @@ impl DarkpoolClient {
 
     /// Fetch all external matches in a given transaction
     ///
-    /// Returns a vector of bounded match results and the actual amount in that
-    /// was traded by the external party.
+    /// Returns a vector of `(intent_hash, bounded_match_result,
+    /// external_party_amount_in)` tuples.
     pub async fn find_external_matches_in_tx(
         &self,
         tx_hash: TxHash,
-    ) -> Result<Vec<(BoundedMatchResult, Amount)>, DarkpoolClientError> {
+    ) -> Result<Vec<ExternalMatchCalldata>, DarkpoolClientError> {
         // Get all darkpool subcalls in the tx
         let mut matches = Vec::new();
         let darkpool_calls = self.fetch_tx_darkpool_calls(tx_hash).await?;
@@ -158,19 +163,6 @@ impl DarkpoolClient {
         }
 
         Ok(matches)
-    }
-
-    /// Check whether a transaction contains a darkpool `settleExternalMatch`
-    /// call.
-    pub async fn is_external_match_tx(&self, tx_hash: TxHash) -> Result<bool, DarkpoolClientError> {
-        let darkpool_calls = self.fetch_tx_darkpool_calls(tx_hash).await?;
-        for frame in darkpool_calls {
-            if Self::is_external_match_call(&frame.input) {
-                return Ok(true);
-            }
-        }
-
-        Ok(false)
     }
 
     // -----------
@@ -231,15 +223,6 @@ impl DarkpoolClient {
 
     // --- Calldata Parsing --- //
 
-    /// Whether calldata corresponds to a `settleExternalMatch` call.
-    fn is_external_match_call(calldata: &[u8]) -> bool {
-        if calldata.len() < SELECTOR_LEN {
-            return false;
-        }
-
-        calldata[..SELECTOR_LEN] == IDarkpoolV2::settleExternalMatchCall::SELECTOR
-    }
-
     /// Parse an external match from calldata
     ///
     /// The calldata input to this method is assumed to be darkpool calldata.
@@ -248,7 +231,11 @@ impl DarkpoolClient {
     fn parse_external_match(
         &self,
         calldata: &[u8],
-    ) -> Result<Option<(BoundedMatchResult, Amount)>, DarkpoolClientError> {
+    ) -> Result<Option<ExternalMatchCalldata>, DarkpoolClientError> {
+        if calldata.len() < SELECTOR_LEN {
+            return Ok(None);
+        }
+
         // Parse calldata
         let selector: [u8; SELECTOR_LEN] = calldata[..SELECTOR_LEN].try_into().unwrap();
         let call = match selector {
@@ -258,11 +245,26 @@ impl DarkpoolClient {
             _ => return Ok(None),
         };
 
+        let Some(intent_hash) = Self::extract_intent_hash(&call.internalPartySettlementBundle)?
+        else {
+            return Ok(None);
+        };
+
         // Build an external party's settlement obligation from the match result and the
         // traded volume
         let match_res = BoundedMatchResult::from(call.matchResult);
         let amount_in = u256_to_u128(call.externalPartyAmountIn);
-        Ok(Some((match_res, amount_in)))
+        Ok(Some((intent_hash, match_res, amount_in)))
+    }
+
+    /// Extract the public intent hash from a settlement bundle, if present.
+    fn extract_intent_hash(bundle: &SettlementBundle) -> Result<Option<B256>, DarkpoolClientError> {
+        if bundle.bundleType != NATIVE_SETTLED_PUBLIC_INTENT_BUNDLE_TYPE {
+            return Ok(None);
+        }
+
+        let bundle = PublicIntentPublicBalanceBundle::abi_decode(bundle.data.as_ref())?;
+        Ok(Some(keccak256(bundle.auth.intentPermit.abi_encode())))
     }
 
     // --- Query Helpers --- //

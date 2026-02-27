@@ -24,6 +24,7 @@ types-account = { workspace = true }
 constants = { workspace = true }
 gossip-api = { workspace = true }
 util = { workspace = true, features = ["channels"] }
+renegade-metrics = { workspace = true }
 
 # === Misc === #
 crossbeam = { workspace = true }

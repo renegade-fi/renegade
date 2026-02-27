@@ -9,6 +9,7 @@ pub mod order_book;
 pub mod peer_index;
 pub mod proofs;
 pub mod raft;
+mod raft_metrics;
 pub mod task_queue;
 
 use std::{sync::Arc, time::Duration};
@@ -240,6 +241,7 @@ impl StateInner {
         this.setup_node_metadata(relayer_config).await?;
         this.setup_core_panic_timer(system_clock, failure_send).await?;
         this.setup_membership_sync_timer(system_clock).await?;
+        this.setup_raft_metrics_timer(system_clock).await?;
 
         Ok(this)
     }
