@@ -3,7 +3,9 @@
 
 use std::time::SystemTime;
 
+use renegade_metrics::labels::NUM_EVENT_SEND_FAILURES_METRIC;
 use serde::{Deserialize, Serialize};
+use tokio::sync::mpsc::error::SendError;
 use types_core::{AccountId, Chain};
 use util::channels::{TracedTokioReceiver, TracedTokioSender, new_traced_tokio_channel};
 use uuid::Uuid;
@@ -27,6 +29,21 @@ pub type EventManagerReceiver = TracedTokioReceiver<RelayerEventType>;
 /// Create a new event manager queue and receiver
 pub fn new_event_manager_queue() -> (EventManagerQueue, EventManagerReceiver) {
     new_traced_tokio_channel()
+}
+
+/// Send an event to the event manager queue, recording a failure metric if the
+/// send fails
+#[allow(clippy::result_large_err)]
+pub fn try_send_event(
+    event: RelayerEventType,
+    queue: &EventManagerQueue,
+) -> Result<(), SendError<RelayerEventType>> {
+    let res = queue.send(event);
+    if res.is_err() {
+        metrics::counter!(NUM_EVENT_SEND_FAILURES_METRIC).increment(1);
+    }
+
+    res
 }
 
 // ------------------------

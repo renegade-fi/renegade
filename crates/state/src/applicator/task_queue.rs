@@ -1,7 +1,7 @@
 //! Task queue state transition applicator methods
 
 use job_types::{
-    event_manager::{RelayerEventType, TaskCompletionEvent},
+    event_manager::{RelayerEventType, TaskCompletionEvent, try_send_event},
     task_driver::TaskDriverJob,
 };
 use libmdbx::{RW, TransactionKind};
@@ -321,7 +321,7 @@ impl StateApplicator {
                 let my_peer_id = tx.get_peer_id()?;
                 if my_peer_id == executor {
                     let event = RelayerEventType::TaskCompletion(TaskCompletionEvent::new(*key, t));
-                    if let Err(e) = self.config.event_queue.send(event) {
+                    if let Err(e) = try_send_event(event, &self.config.event_queue) {
                         error!("error sending task completion event: {e}");
                     }
                 }

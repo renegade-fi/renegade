@@ -5095,6 +5095,7 @@ dependencies = [
  "libp2p",
  "libp2p-core",
  "metrics",
+ "renegade-metrics",
  "serde",
  "system-bus",
  "tokio",
@@ -7879,6 +7880,7 @@ version = "0.1.0"
 dependencies = [
  "alloy-primitives",
  "atomic_float 1.1.0",
+ "darkpool-types",
  "lazy_static",
  "metrics",
  "tracing",

@@ -7,6 +7,7 @@ use std::{
 
 use alloy::primitives::Address;
 use async_trait::async_trait;
+use renegade_metrics::labels::NUM_NEW_WALLETS_METRIC;
 use serde::Serialize;
 use state::error::StateError;
 use tracing::{instrument, warn};
@@ -173,6 +174,7 @@ impl CreateNewAccountTask {
         let acct = Account::new_empty_account(self.account_id, self.keychain.clone());
         let waiter = self.ctx.state.new_account(acct).await?;
         waiter.await?;
+        metrics::counter!(NUM_NEW_WALLETS_METRIC).increment(1);
 
         self.send_indexer_message().await;
         Ok(())

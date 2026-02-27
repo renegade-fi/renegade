@@ -13,6 +13,7 @@ alloy-primitives = { workspace = true }
 atomic_float = "1"
 
 # === Workspace Dependencies === #
+darkpool-types = { workspace = true }
 types-core = { workspace = true }
 util = { workspace = true }
 

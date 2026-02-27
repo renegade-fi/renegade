@@ -7,6 +7,7 @@ use ark_mpc::{PARTY0, PARTY1, network::PartyId};
 use async_trait::async_trait;
 use darkpool_client::errors::DarkpoolClientError;
 use darkpool_types::settlement_obligation::SettlementObligation;
+use renegade_metrics::record_match_volume;
 use serde::Serialize;
 use state::error::StateError;
 use tracing::instrument;
@@ -221,6 +222,11 @@ impl Task for SettleInternalMatchTask {
             },
             SettleInternalMatchTaskState::UpdatingValidityProofs => {
                 self.update_validity_proofs().await?;
+                record_match_volume(
+                    &self.match_result,
+                    false, // is_external_match
+                    &[self.account_id, self.other_account_id],
+                );
                 self.task_state = SettleInternalMatchTaskState::Completed;
             },
             SettleInternalMatchTaskState::Completed => {
