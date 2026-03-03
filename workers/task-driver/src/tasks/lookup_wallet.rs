@@ -234,6 +234,7 @@ impl LookupWalletTask {
             blinded_public_shares,
             private_shares,
         );
+        wallet.remove_default_elements();
 
         // Find the authentication path for the wallet
         let authentication_path = find_merkle_path(&wallet, &self.ctx).await?;
