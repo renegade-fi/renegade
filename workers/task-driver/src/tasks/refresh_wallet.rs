@@ -237,6 +237,7 @@ impl RefreshWalletTask {
             public_share,
             private_share,
         );
+        wallet.remove_default_elements();
 
         // Update the merkle proof for the wallet, then write to state
         let merkle_proof = find_merkle_path(&wallet, &self.ctx).await?;
