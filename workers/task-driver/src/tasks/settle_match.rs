@@ -309,17 +309,6 @@ impl SettleMatchTask {
         // Find the local wallet that was matched
         let mut wallet = self.get_wallet().await?;
 
-        // Transition the order state to filled if the new volume is zero
-        let id = self.handshake_state.local_order_id;
-        record_order_fill(
-            id,
-            &self.match_res,
-            self.handshake_state.execution_price,
-            &self.ctx.state,
-        )
-        .await
-        .map_err(SettleMatchTaskError::State)?;
-
         // Update the shares of the wallet
         let (private_shares, blinded_public_shares) = self.get_new_shares().await?;
         wallet.update_from_shares(&private_shares, &blinded_public_shares);
@@ -338,9 +327,23 @@ impl SettleMatchTask {
         };
         wallet.merkle_proof = Some(opening);
 
-        // Index the updated wallet in global state
+        // Index the updated wallet in global state before recording fills,
+        // so that metadata deletion (when order_history is disabled) cannot
+        // leave the wallet referencing nonexistent metadata
         let waiter = self.ctx.state.update_wallet(wallet).await?;
         waiter.await?;
+
+        // Transition the order state to filled if the new volume is zero
+        let id = self.handshake_state.local_order_id;
+        record_order_fill(
+            id,
+            &self.match_res,
+            self.handshake_state.execution_price,
+            &self.ctx.state,
+        )
+        .await
+        .map_err(SettleMatchTaskError::State)?;
+
         Ok(())
     }
 

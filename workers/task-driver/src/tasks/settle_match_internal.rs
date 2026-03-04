@@ -371,15 +371,6 @@ impl SettleMatchInternalTask {
         state.nullify_orders(nullifier1).await?;
         state.nullify_orders(nullifier2).await?;
 
-        // Transition the orders to the `Filled` state if necessary
-        let price: TimestampedPrice = self.execution_price.into();
-        record_order_fill(self.order_id1, &self.match_result, price, state)
-            .await
-            .map_err(SettleMatchInternalTaskError::State)?;
-        record_order_fill(self.order_id2, &self.match_result, price, state)
-            .await
-            .map_err(SettleMatchInternalTaskError::State)?;
-
         // Lookup the wallets that manage each order
         let mut wallet1 = self.find_wallet(&self.wallet_id1).await?;
         let mut wallet2 = self.find_wallet(&self.wallet_id2).await?;
@@ -398,11 +389,22 @@ impl SettleMatchInternalTask {
         self.find_opening(&mut wallet1)?;
         self.find_opening(&mut wallet2)?;
 
-        // Re-index the updated wallets in the global state
+        // Re-index the updated wallets in the global state before recording
+        // fills, so that metadata deletion (when order_history is disabled)
+        // cannot leave the wallet referencing nonexistent metadata
         let waiter1 = state.update_wallet(wallet1).await?;
         let waiter2 = state.update_wallet(wallet2).await?;
         waiter1.await?;
         waiter2.await?;
+
+        // Transition the orders to the `Filled` state if necessary
+        let price: TimestampedPrice = self.execution_price.into();
+        record_order_fill(self.order_id1, &self.match_result, price, state)
+            .await
+            .map_err(SettleMatchInternalTaskError::State)?;
+        record_order_fill(self.order_id2, &self.match_result, price, state)
+            .await
+            .map_err(SettleMatchInternalTaskError::State)?;
 
         Ok(())
     }

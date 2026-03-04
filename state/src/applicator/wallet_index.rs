@@ -13,12 +13,7 @@ use libmdbx::RW;
 
 use crate::storage::tx::StateTxn;
 
-use super::{
-    Result, StateApplicator, error::StateApplicatorError, return_type::ApplicatorReturnType,
-};
-
-/// Error message emitted when metadata for an order is not found
-const ERR_NO_METADATA: &str = "metadata not found for order";
+use super::{Result, StateApplicator, return_type::ApplicatorReturnType};
 
 impl StateApplicator {
     // -------------
@@ -99,11 +94,18 @@ impl StateApplicator {
         // Change the state of each active order in the wallet to `Created`
         // to reflect that validity proofs have not been created yet
         let wallet_id = wallet.wallet_id;
-        for id in wallet.get_nonzero_orders().into_keys() {
-            let mut md = tx
-                .get_order_metadata(wallet_id, id)?
-                .ok_or(StateApplicatorError::reject(ERR_NO_METADATA))?;
-            md.state = OrderState::Created;
+        for (id, order) in wallet.get_nonzero_orders() {
+            let md = match tx.get_order_metadata(wallet_id, id)? {
+                Some(mut existing) => {
+                    existing.state = OrderState::Created;
+                    existing
+                },
+                None => {
+                    // Metadata was removed (e.g., ID was reassigned during a
+                    // corrupted refresh). Create fresh metadata for the order.
+                    OrderMetadata::new(id, order)
+                },
+            };
             self.update_order_metadata_with_tx(md, tx)?;
         }
 
@@ -148,13 +150,18 @@ impl StateApplicator {
         // Cancelled orders
         for id in old_orders {
             if !wallet.contains_order(&id) {
-                let old_meta = tx
-                    .get_order_metadata(wallet_id, id)?
-                    .ok_or(StateApplicatorError::reject(ERR_NO_METADATA))?;
-
-                // Only update the state if it has not already entered a terminal state
-                if !old_meta.state.is_terminal() {
-                    self.handle_cancelled_order(old_meta, tx)?;
+                let old_meta = tx.get_order_metadata(wallet_id, id)?;
+                match old_meta {
+                    Some(meta) if !meta.state.is_terminal() => {
+                        self.handle_cancelled_order(meta, tx)?;
+                    },
+                    None => {
+                        // Metadata was already removed (e.g., ID reassignment
+                        // during a corrupted refresh). Run cleanup that doesn't
+                        // depend on metadata.
+                        self.cleanup_cancelled_order(id, tx)?;
+                    },
+                    _ => {}, // terminal state, already handled
                 }
             }
         }
@@ -173,13 +180,21 @@ impl StateApplicator {
 
     /// Handle a cancelled order
     fn handle_cancelled_order(&self, mut meta: OrderMetadata, tx: &StateTxn<RW>) -> Result<()> {
-        // Remove the order from the order book cache
         let id = meta.id;
-        self.order_cache().remove_order_blocking(id);
 
         // Update the order metadata to reflect the order's cancellation
         meta.state = OrderState::Cancelled;
         self.update_order_metadata_with_tx(meta, tx)?;
+
+        // Run metadata-independent cleanup
+        self.cleanup_cancelled_order(id, tx)
+    }
+
+    /// Clean up a cancelled order's presence in the order book, matching pool,
+    /// and proof cache. Does not require metadata.
+    fn cleanup_cancelled_order(&self, id: OrderIdentifier, tx: &StateTxn<RW>) -> Result<()> {
+        // Remove the order from the order book cache
+        self.order_cache().remove_order_blocking(id);
 
         // Remove the order from its matching pool
         tx.remove_order_from_matching_pool(&id)?;
