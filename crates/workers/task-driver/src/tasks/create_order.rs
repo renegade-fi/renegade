@@ -376,7 +376,10 @@ impl CreateOrderTask {
         let waiter = self.state().update_account_keychain(self.account_id, keychain).await?;
         waiter.await.map_err(CreateOrderTaskError::state)?;
 
-        Ok(DarkpoolStateIntent::new(self.intent.clone(), share_stream.seed, recovery_stream.seed))
+        let mut state_intent =
+            DarkpoolStateIntent::new(self.intent.clone(), share_stream.seed, recovery_stream.seed);
+        state_intent.compute_recovery_id();
+        Ok(state_intent)
     }
 
     /// Check for a balance on-chain approved to the darkpool
