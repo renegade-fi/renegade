@@ -3,6 +3,7 @@
 
 use alloy::rpc::types::TransactionRequest;
 use alloy::{primitives::Address, rpc::types::TransactionReceipt};
+
 use circuit_types::{
     elgamal::EncryptionKey, fixed_point::FixedPoint, merkle::MerkleRoot, wallet::Nullifier,
 };
@@ -22,7 +23,7 @@ use tracing::{info, instrument};
 use util::telemetry::helpers::backfill_trace_field;
 
 use crate::errors::DarkpoolClientError;
-use crate::traits::DarkpoolImpl;
+use crate::traits::{DarkpoolImpl, DarkpoolImplExt};
 
 use super::DarkpoolClientInner;
 
@@ -136,6 +137,20 @@ impl<D: DarkpoolImpl> DarkpoolClientInner<D> {
         backfill_trace_field("tx_hash", &tx_hash);
         info!("`update_wallet` tx hash: {}", tx_hash);
         Ok(receipt)
+    }
+
+    /// Await a confirmed receipt for the given transaction hash.
+    ///
+    /// Re-fetches the receipt after waiting for confirmations, ensuring the
+    /// block's state is finalized and visible to all RPC backends.
+    pub async fn get_confirmed_receipt(
+        &self,
+        tx_hash: alloy_primitives::TxHash,
+    ) -> Result<TransactionReceipt, DarkpoolClientError>
+    where
+        D: Send + Sync,
+    {
+        self.darkpool.get_confirmed_receipt(tx_hash).await
     }
 
     /// Call the `process_match_settle` contract method with the given

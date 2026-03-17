@@ -376,8 +376,8 @@ impl UpdateWalletTask {
     async fn find_opening(&mut self) -> Result<(), UpdateWalletTaskError> {
         // Attach the opening to the new wallet, and index the wallet in the global
         // state
-        let tx = self.tx.as_ref().unwrap();
-        let merkle_opening = find_merkle_path_with_tx(&self.new_wallet, tx, &self.ctx)?;
+        let tx_hash = self.tx.as_ref().unwrap().transaction_hash;
+        let merkle_opening = find_merkle_path_with_tx(&self.new_wallet, tx_hash, &self.ctx).await?;
         self.new_wallet.merkle_proof = Some(merkle_opening);
 
         // After the state is finalized on-chain, re-index the wallet in the global

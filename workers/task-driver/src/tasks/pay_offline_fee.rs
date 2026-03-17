@@ -296,8 +296,8 @@ impl PayOfflineFeeTask {
     /// Find the Merkle opening for the new wallet
     async fn find_merkle_opening(&mut self) -> Result<(), PayOfflineFeeTaskError> {
         let state = &self.ctx.state;
-        let tx = self.tx.as_ref().unwrap();
-        let merkle_opening = find_merkle_path_with_tx(&self.new_wallet, tx, &self.ctx)?;
+        let tx_hash = self.tx.as_ref().unwrap().transaction_hash;
+        let merkle_opening = find_merkle_path_with_tx(&self.new_wallet, tx_hash, &self.ctx).await?;
         self.new_wallet.merkle_proof = Some(merkle_opening);
 
         // Update the global state to include the new wallet

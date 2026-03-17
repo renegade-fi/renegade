@@ -321,7 +321,7 @@ impl SettleMatchTask {
 
         // Find the wallet's new Merkle opening
         let opening = if let Some(tx) = self.tx.as_ref() {
-            find_merkle_path_with_tx(&wallet, tx, &self.ctx)?
+            find_merkle_path_with_tx(&wallet, tx.transaction_hash, &self.ctx).await?
         } else {
             find_merkle_path(&wallet, &self.ctx).await?
         };
