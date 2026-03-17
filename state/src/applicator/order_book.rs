@@ -30,8 +30,6 @@ pub const ORDER_DEFAULT_PRIORITY: u32 = 1;
 const ERR_ORDER_MISSING: &str = "Order missing from message";
 /// The error message emitted when a wallet cannot be found for an order
 const ERR_WALLET_MISSING: &str = "Cannot find wallet for order";
-/// The error message emitted when the order metadata cannot be found
-const ERR_ORDER_META_MISSING: &str = "Cannot find order metadata";
 
 // ----------------------------
 // | Orderbook Implementation |
@@ -146,9 +144,16 @@ impl StateApplicator {
             .get_wallet_id_for_order(&order_id)?
             .ok_or(StateApplicatorError::MissingEntry(ERR_WALLET_MISSING))?;
 
-        let mut meta = tx
-            .get_order_metadata(wallet, order_id)?
-            .ok_or(StateApplicatorError::MissingEntry(ERR_ORDER_META_MISSING))?;
+        let mut meta = match tx.get_order_metadata(wallet, order_id)? {
+            Some(meta) => meta,
+            None => {
+                // Metadata was removed (e.g., ID reassignment during a
+                // corrupted refresh). Skip the transition — without metadata
+                // the order cannot participate in matching anyway.
+                warn!("order metadata missing for {order_id}, skipping matching transition");
+                return Ok(());
+            },
+        };
 
         if !meta.state.is_terminal() {
             meta.state = OrderState::Matching;
