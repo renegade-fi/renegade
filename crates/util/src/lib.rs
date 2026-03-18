@@ -27,6 +27,10 @@ pub mod serde;
 #[cfg(feature = "telemetry")]
 pub mod telemetry;
 
+// Re-export the metrics crate so downstream consumers use the same version
+// as the StatsD recorder configured in `telemetry::metrics`.
+pub use metrics;
+
 /// Returns the current unix timestamp in seconds, represented as u64
 pub fn get_current_time_seconds() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).expect("negative timestamp").as_secs()
