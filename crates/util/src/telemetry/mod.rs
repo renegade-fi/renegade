@@ -139,6 +139,11 @@ pub fn configure_telemetry_with_metrics_config(
     statsd_port: u16,
     metrics_config: Option<metrics::MetricsConfig>,
 ) -> Result<(), TelemetrySetupError> {
+    // Extract the metrics prefix before metrics_config is consumed by with_metrics()
+    let metrics_prefix = metrics_config
+        .as_ref()
+        .map_or(metrics::DEFAULT_RELAYER_METRICS_PREFIX.to_string(), |c| c.metrics_prefix.clone());
+
     let mut telemetry = TelemetryBuilder::default().with_logging(datadog_enabled);
 
     if otlp_enabled {
@@ -151,6 +156,18 @@ pub fn configure_telemetry_with_metrics_config(
     }
 
     telemetry.build();
+
+    // Emit a startup counter to verify the metrics pipeline is wired correctly
+    if metrics_enabled {
+        let tags: Vec<(String, String)> = vec![
+            ("metrics_prefix".to_string(), metrics_prefix),
+            ("statsd_host".to_string(), statsd_host.to_string()),
+            ("statsd_port".to_string(), statsd_port.to_string()),
+            ("otlp_enabled".to_string(), otlp_enabled.to_string()),
+            ("datadog_enabled".to_string(), datadog_enabled.to_string()),
+        ];
+        ::metrics::counter!("service_startup", tags.as_slice()).increment(1);
+    }
 
     Ok(())
 }
