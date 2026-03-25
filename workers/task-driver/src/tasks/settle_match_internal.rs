@@ -386,8 +386,8 @@ impl SettleMatchInternalTask {
         wallet1.update_from_shares(party0_private_shares, party0_public_shares);
         wallet2.update_from_shares(party1_private_shares, party1_public_shares);
 
-        self.find_opening(&mut wallet1)?;
-        self.find_opening(&mut wallet2)?;
+        self.find_opening(&mut wallet1).await?;
+        self.find_opening(&mut wallet2).await?;
 
         // Re-index the updated wallets in the global state before recording
         // fills, so that metadata deletion (when order_history is disabled)
@@ -528,9 +528,9 @@ impl SettleMatchInternalTask {
     }
 
     /// Find and update the merkle opening for the wallet
-    fn find_opening(&self, wallet: &mut Wallet) -> Result<(), SettleMatchInternalTaskError> {
-        let tx = self.tx.as_ref().unwrap();
-        let opening = find_merkle_path_with_tx(wallet, tx, &self.ctx)?;
+    async fn find_opening(&self, wallet: &mut Wallet) -> Result<(), SettleMatchInternalTaskError> {
+        let tx_hash = self.tx.as_ref().unwrap().transaction_hash;
+        let opening = find_merkle_path_with_tx(wallet, tx_hash, &self.ctx).await?;
         wallet.merkle_proof = Some(opening);
         Ok(())
     }

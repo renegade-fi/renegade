@@ -2,11 +2,12 @@
 
 use std::time::Duration;
 
-use alloy::providers::Provider;
+use alloy::providers::{PendingTransactionBuilder, Provider};
 use alloy::rpc::types::TransactionRequest;
 use alloy::{primitives::Address, rpc::types::TransactionReceipt};
 use alloy_contract::CallDecoder;
 use alloy_primitives::Selector;
+use alloy_primitives::TxHash;
 use alloy_sol_types::SolEvent;
 use async_trait::async_trait;
 use circuit_types::r#match::ExternalMatchResult;
@@ -37,6 +38,12 @@ use crate::errors::DarkpoolClientError;
 
 /// The timeout for awaiting the receipt of a pending transaction
 const TX_RECEIPT_TIMEOUT: Duration = Duration::from_secs(15);
+
+/// The number of confirmations to require when fetching a receipt for use
+/// in Merkle proof construction. This ensures the block's state is
+/// finalized and visible to all RPC backends before we extract Merkle
+/// opening events.
+const MERKLE_PROOF_REQUIRED_CONFIRMATIONS: u64 = 1;
 
 /// The multiple of the gas price estimate we use for submitting a transaction
 const GAS_PRICE_MULTIPLIER: u128 = 2;
@@ -244,6 +251,25 @@ pub trait DarkpoolImplExt: DarkpoolImpl {
         let gas_price = self.provider().get_gas_price().await.map_err(DarkpoolClientError::rpc)?;
         let adjusted_gas_price = gas_price * GAS_PRICE_MULTIPLIER;
         Ok(adjusted_gas_price)
+    }
+
+    /// Await a confirmed receipt for the given transaction hash.
+    ///
+    /// This fetches the receipt after waiting for the required number of
+    /// block confirmations, ensuring the block's state is finalized and
+    /// visible to all RPC backends. Used in `FindingOpening` to ensure
+    /// Merkle opening events are read from finalized state rather than
+    /// flashblock preconfirmations.
+    async fn get_confirmed_receipt(
+        &self,
+        tx_hash: TxHash,
+    ) -> Result<TransactionReceipt, DarkpoolClientError> {
+        PendingTransactionBuilder::new(self.provider().root().clone(), tx_hash)
+            .with_required_confirmations(MERKLE_PROOF_REQUIRED_CONFIRMATIONS)
+            .with_timeout(Some(TX_RECEIPT_TIMEOUT))
+            .get_receipt()
+            .await
+            .map_err(|e| DarkpoolClientError::TxQuerying(e.to_string()))
     }
 }
 impl<T: DarkpoolImpl> DarkpoolImplExt for T {}

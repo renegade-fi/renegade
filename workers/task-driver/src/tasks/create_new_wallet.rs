@@ -296,8 +296,8 @@ impl NewWalletTask {
     /// authentication path
     async fn find_merkle_path(&self) -> Result<(), NewWalletTaskError> {
         // Find the authentication path of the wallet's private shares
-        let tx = self.tx.as_ref().unwrap();
-        let wallet_auth_path = find_merkle_path_with_tx(&self.wallet, tx, &self.ctx)?;
+        let tx_hash = self.tx.as_ref().unwrap().transaction_hash;
+        let wallet_auth_path = find_merkle_path_with_tx(&self.wallet, tx_hash, &self.ctx).await?;
 
         // Index the wallet in the global state
         let mut wallet = self.wallet.clone();

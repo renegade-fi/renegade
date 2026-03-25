@@ -1,6 +1,6 @@
 //! Helpers for finding Merkle authentication paths
 
-use alloy::rpc::types::TransactionReceipt;
+use alloy::primitives::TxHash;
 use common::types::wallet::{Wallet, WalletAuthenticationPath};
 use darkpool_client::errors::DarkpoolClientError;
 
@@ -17,12 +17,17 @@ pub(crate) async fn find_merkle_path(
 }
 
 /// Find the merkle authentication path of a wallet given an updating
-/// transaction
-pub(crate) fn find_merkle_path_with_tx(
+/// transaction hash.
+///
+/// This awaits a confirmed receipt for the transaction before extracting
+/// the Merkle opening, ensuring the block's state is finalized and visible
+/// to all RPC backends.
+pub(crate) async fn find_merkle_path_with_tx(
     wallet: &Wallet,
-    tx: &TransactionReceipt,
+    tx_hash: TxHash,
     ctx: &TaskContext,
 ) -> Result<WalletAuthenticationPath, DarkpoolClientError> {
+    let confirmed_receipt = ctx.darkpool_client.get_confirmed_receipt(tx_hash).await?;
     let commitment = wallet.get_wallet_share_commitment();
-    ctx.darkpool_client.find_merkle_authentication_path_with_tx(commitment, tx)
+    ctx.darkpool_client.find_merkle_authentication_path_with_tx(commitment, &confirmed_receipt)
 }

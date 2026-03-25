@@ -274,6 +274,8 @@ impl StateInner {
                 // Check if the task queue for the order is free
                 if Self::is_serial_queue_free(&id, tx)? {
                     res.push(id);
+                } else {
+                    Self::log_queue_occupancy(&id, tx);
                 }
             }
             Ok(res)
@@ -404,6 +406,40 @@ impl StateInner {
 // -----------
 
 impl StateInner {
+    /// Log the tasks occupying a wallet's serial queue when matching is blocked
+    fn log_queue_occupancy<T: TransactionKind>(order_id: &OrderIdentifier, tx: &StateTxn<T>) {
+        let wallet_id = match tx.get_wallet_id_for_order(order_id) {
+            Ok(Some(w)) => w,
+            _ => return,
+        };
+
+        let queue = match tx.get_task_queue(&wallet_id) {
+            Ok(q) => q,
+            _ => return,
+        };
+
+        let task_descriptions: Vec<String> = queue
+            .serial_tasks
+            .iter()
+            .filter_map(|tid| {
+                tx.get_task(tid)
+                    .ok()
+                    .flatten()
+                    .map(|t| format!("{}({})", t.descriptor.display_description(), tid))
+            })
+            .collect();
+
+        let pool = tx.get_matching_pool_for_order(order_id).unwrap_or_default();
+
+        tracing::info!(
+            order_id = %order_id,
+            wallet_id = %wallet_id,
+            matching_pool = %pool,
+            "order filtered from matching: serial queue occupied by [{}]",
+            task_descriptions.join(", "),
+        );
+    }
+
     /// Checks whether a given serial task queue is free, for a given order
     fn is_serial_queue_free<T: TransactionKind>(
         order_id: &OrderIdentifier,

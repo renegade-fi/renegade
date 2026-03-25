@@ -295,15 +295,15 @@ impl PayRelayerFeeTask {
 
     /// Find the new Merkle opening for the user and relayer's wallets
     async fn find_opening(&mut self) -> Result<(), PayRelayerFeeTaskError> {
-        // Find the opening for the sender's wallet
+        // Find the opening for the sender's and recipient's wallets
         let state = &self.ctx.state;
-        let tx = self.tx.as_ref().unwrap();
-        let sender_opening = find_merkle_path_with_tx(&self.new_sender_wallet, tx, &self.ctx)?;
+        let tx_hash = self.tx.as_ref().unwrap().transaction_hash;
+        let sender_opening =
+            find_merkle_path_with_tx(&self.new_sender_wallet, tx_hash, &self.ctx).await?;
         self.new_sender_wallet.merkle_proof = Some(sender_opening);
 
-        // Find the opening for the recipient's wallet
         let recipient_opening =
-            find_merkle_path_with_tx(&self.new_recipient_wallet, tx, &self.ctx)?;
+            find_merkle_path_with_tx(&self.new_recipient_wallet, tx_hash, &self.ctx).await?;
         self.new_recipient_wallet.merkle_proof = Some(recipient_opening);
 
         let waiter1 = state.update_wallet(self.new_sender_wallet.clone()).await?;
