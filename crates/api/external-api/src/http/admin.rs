@@ -14,6 +14,8 @@ pub const ADMIN_TRIGGER_SNAPSHOT_ROUTE: &str = "/v2/admin/trigger-snapshot";
 pub const ADMIN_REFRESH_TOKEN_MAPPING_ROUTE: &str = "/v2/admin/refresh-token-mapping";
 /// Route to refresh the match fee constants from the contract
 pub const ADMIN_REFRESH_MATCH_FEES_ROUTE: &str = "/v2/admin/refresh-match-fees";
+/// Route to get disabled assets
+pub const ADMIN_GET_DISABLED_ASSETS_ROUTE: &str = "/v2/admin/disabled-assets";
 /// Route to get all orders as an admin
 pub const ADMIN_GET_ORDERS_ROUTE: &str = "/v2/relayer-admin/orders";
 /// Route to get an order by ID as an admin
@@ -42,4 +44,11 @@ pub const ADMIN_CREATE_ORDER_IN_POOL_ROUTE: &str =
 pub struct IsLeaderResponse {
     /// Whether the target node is a raft leader
     pub leader: bool,
+}
+
+/// The response to a "get disabled assets" request
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GetDisabledAssetsResponse {
+    /// The list of disabled assets
+    pub disabled_assets: Vec<String>,
 }

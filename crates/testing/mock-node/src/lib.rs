@@ -537,6 +537,7 @@ impl MockNodeController {
             chain: config.chain_id,
             compliance_service_url: config.compliance_service_url.clone(),
             wallet_task_rate_limit: config.wallet_task_rate_limit,
+            disabled_assets: config.disabled_assets.clone(),
             darkpool_client,
             network_sender,
             state,

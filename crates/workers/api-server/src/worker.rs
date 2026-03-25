@@ -61,6 +61,8 @@ pub struct ApiServerConfig {
     ///
     /// Compliance screening is disabled if this is not set
     pub compliance_service_url: Option<Url>,
+    /// The list of disabled assets
+    pub disabled_assets: Vec<String>,
     /// A handle on the darkpool RPC client
     pub darkpool_client: DarkpoolClient,
     /// A sender to the network manager's work queue

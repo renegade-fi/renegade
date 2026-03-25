@@ -8,7 +8,7 @@ use darkpool_client::DarkpoolClient;
 use external_api::{
     EmptyRequestResponse,
     http::{
-        admin::IsLeaderResponse,
+        admin::{GetDisabledAssetsResponse, IsLeaderResponse},
         order::{CreateOrderInPoolRequest, CreateOrderResponse},
     },
     types::{
@@ -66,6 +66,35 @@ impl TypedHandler for IsLeaderHandler {
     ) -> Result<Self::Response, ApiServerError> {
         let leader = self.state.is_leader();
         Ok(IsLeaderResponse { leader })
+    }
+}
+
+/// Handler for the GET /v2/admin/disabled-assets route
+pub struct AdminGetDisabledAssetsHandler {
+    /// The list of disabled assets
+    disabled_assets: Vec<String>,
+}
+
+impl AdminGetDisabledAssetsHandler {
+    /// Constructor
+    pub fn new(disabled_assets: Vec<String>) -> Self {
+        Self { disabled_assets }
+    }
+}
+
+#[async_trait]
+impl TypedHandler for AdminGetDisabledAssetsHandler {
+    type Request = EmptyRequestResponse;
+    type Response = GetDisabledAssetsResponse;
+
+    async fn handle_typed(
+        &self,
+        _headers: HeaderMap,
+        _req: Self::Request,
+        _params: UrlParams,
+        _query_params: QueryParams,
+    ) -> Result<Self::Response, ApiServerError> {
+        Ok(GetDisabledAssetsResponse { disabled_assets: self.disabled_assets.clone() })
     }
 }
 
