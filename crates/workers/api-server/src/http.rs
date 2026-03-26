@@ -16,10 +16,11 @@ use account::{
     CreateAccountHandler, GetAccountByIdHandler, GetAccountSeedsHandler, SyncAccountHandler,
 };
 use admin::{
-    AdminCreateMatchingPoolHandler, AdminCreateOrderInPoolHandler, AdminDestroyMatchingPoolHandler,
-    AdminGetAccountOrdersHandler, AdminGetDisabledAssetsHandler, AdminGetOrderByIdHandler,
-    AdminGetOrdersHandler, AdminGetTaskQueuePausedHandler, AdminRefreshMatchFeesHandler,
-    AdminRefreshTokenMappingHandler, AdminTriggerSnapshotHandler, IsLeaderHandler,
+    AdminAssignOrderToPoolHandler, AdminCreateMatchingPoolHandler, AdminCreateOrderInPoolHandler,
+    AdminDestroyMatchingPoolHandler, AdminGetAccountOrdersHandler, AdminGetDisabledAssetsHandler,
+    AdminGetOrderByIdHandler, AdminGetOrdersHandler, AdminGetTaskQueuePausedHandler,
+    AdminRefreshMatchFeesHandler, AdminRefreshTokenMappingHandler, AdminTriggerSnapshotHandler,
+    IsLeaderHandler,
 };
 use async_trait::async_trait;
 use balance::{
@@ -34,8 +35,9 @@ use external_api::{
             SYNC_ACCOUNT_ROUTE,
         },
         admin::{
-            ADMIN_CREATE_ORDER_IN_POOL_ROUTE, ADMIN_GET_ACCOUNT_ORDERS_ROUTE,
-            ADMIN_GET_DISABLED_ASSETS_ROUTE, ADMIN_GET_ORDER_BY_ID_ROUTE, ADMIN_GET_ORDERS_ROUTE,
+            ADMIN_ASSIGN_ORDER_TO_POOL_ROUTE, ADMIN_CREATE_ORDER_IN_POOL_ROUTE,
+            ADMIN_GET_ACCOUNT_ORDERS_ROUTE, ADMIN_GET_DISABLED_ASSETS_ROUTE,
+            ADMIN_GET_ORDER_BY_ID_ROUTE, ADMIN_GET_ORDERS_ROUTE,
             ADMIN_GET_TASK_QUEUE_PAUSED_ROUTE, ADMIN_MATCHING_POOL_CREATE_ROUTE,
             ADMIN_MATCHING_POOL_DESTROY_ROUTE, ADMIN_REFRESH_MATCH_FEES_ROUTE,
             ADMIN_REFRESH_TOKEN_MAPPING_ROUTE, ADMIN_TRIGGER_SNAPSHOT_ROUTE, IS_LEADER_ROUTE,
@@ -406,6 +408,13 @@ impl HttpServer {
             &Method::POST,
             ADMIN_CREATE_ORDER_IN_POOL_ROUTE.to_string(),
             AdminCreateOrderInPoolHandler::new(executor, state.clone(), task_queue.clone()),
+        );
+
+        // POST /v2/relayer-admin/orders/:order_id/assign-pool
+        router.add_admin_authenticated_route(
+            &Method::POST,
+            ADMIN_ASSIGN_ORDER_TO_POOL_ROUTE.to_string(),
+            AdminAssignOrderToPoolHandler::new(state.clone()),
         );
 
         Ok(router)

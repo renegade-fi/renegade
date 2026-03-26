@@ -4,6 +4,7 @@ use std::collections::HashSet;
 
 use alloy::sol_types::SolValue;
 use alloy_primitives::{Address, keccak256};
+use circuit_types::Amount;
 use matching_engine_core::MatchingEngine;
 use renegade_solidity_abi::v2::IDarkpoolV2::PublicIntentPermit;
 use system_bus::{
@@ -128,7 +129,13 @@ impl StateApplicator {
         }
 
         // Publish admin order update event
-        self.publish_admin_order_update(account_id, order, pool, AdminOrderUpdateType::Created);
+        self.publish_admin_order_update(
+            account_id,
+            order,
+            pool,
+            AdminOrderUpdateType::Created,
+            matchable_amount,
+        );
         Ok(ApplicatorReturnType::None)
     }
 
@@ -183,8 +190,14 @@ impl StateApplicator {
         // Remove from the matching engine
         self.matching_engine().cancel_order(&order, pool.clone());
 
-        // Publish admin order update event
-        self.publish_admin_order_update(account_id, &order, pool, AdminOrderUpdateType::Cancelled);
+        // Publish admin order update event (cancelled orders have zero matchable amount)
+        self.publish_admin_order_update(
+            account_id,
+            &order,
+            pool,
+            AdminOrderUpdateType::Cancelled,
+            0, // matchable_amount
+        );
         Ok(ApplicatorReturnType::None)
     }
 
@@ -219,7 +232,13 @@ impl StateApplicator {
         }
 
         // Publish admin order update event
-        self.publish_admin_order_update(account_id, order, pool, AdminOrderUpdateType::Updated);
+        self.publish_admin_order_update(
+            account_id,
+            order,
+            pool,
+            AdminOrderUpdateType::Updated,
+            matchable_amount,
+        );
         Ok(ApplicatorReturnType::None)
     }
 
@@ -302,30 +321,34 @@ impl StateApplicator {
             // Check if the order exists
             let order_exists = tx.get_order(&order.id)?.is_some();
 
+            // Write the order auth and assign to the matching pool first so
+            // matchable_amount is accurate
+            tx.write_order_auth(&order.id, auth)?;
+
             let pool = matching_pool.clone();
             if order_exists {
                 tx.update_order(&account_id, order)?;
-                self.publish_admin_order_update(
-                    account_id,
-                    order,
-                    pool,
-                    AdminOrderUpdateType::Updated,
-                );
             } else {
                 tx.add_order(&account_id, order)?;
-                self.publish_admin_order_update(
-                    account_id,
-                    order,
-                    pool,
-                    AdminOrderUpdateType::Created,
-                );
             }
-
-            // Write the order auth
-            tx.write_order_auth(&order.id, auth)?;
 
             // Assign to the matching pool
             tx.assign_order_to_matching_pool(&order.id, matching_pool)?;
+
+            let matchable_amount =
+                tx.get_order_matchable_amount(&order.id)?.unwrap_or_default();
+            let update_type = if order_exists {
+                AdminOrderUpdateType::Updated
+            } else {
+                AdminOrderUpdateType::Created
+            };
+            self.publish_admin_order_update(
+                account_id,
+                order,
+                pool,
+                update_type,
+                matchable_amount,
+            );
         }
 
         tx.commit()?;
@@ -342,6 +365,7 @@ impl StateApplicator {
                 &order,
                 matching_pool,
                 AdminOrderUpdateType::Cancelled,
+                0, // matchable_amount
             );
         }
 
@@ -371,12 +395,14 @@ impl StateApplicator {
         order: &Order,
         matching_pool: String,
         update_type: AdminOrderUpdateType,
+        matchable_amount: Amount,
     ) {
         let msg = SystemBusMessage::AdminOrderUpdate {
             account_id,
             order: Box::new(order.clone()),
             matching_pool,
             update_type,
+            matchable_amount,
         };
         self.system_bus().publish(ADMIN_ORDER_UPDATES_TOPIC.to_string(), msg);
     }

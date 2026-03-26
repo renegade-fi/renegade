@@ -211,18 +211,21 @@ impl StateInner {
         .await
     }
 
-    /// Get all orders for an account with their matching pool
+    /// Get all orders for an account with their matching pool and matchable
+    /// amount
     pub async fn get_account_orders_with_matching_pool(
         &self,
         account_id: &AccountId,
-    ) -> Result<Vec<(Order, MatchingPoolName)>, StateError> {
+    ) -> Result<Vec<(Order, MatchingPoolName, Amount)>, StateError> {
         let account_id = *account_id;
         self.with_read_tx(move |tx| {
             let orders = tx.get_account_orders(&account_id)?;
             let mut result = Vec::with_capacity(orders.len());
             for order in orders {
                 let matching_pool = tx.get_matching_pool_for_order(&order.id)?;
-                result.push((order, matching_pool));
+                let matchable_amount =
+                    tx.get_order_matchable_amount(&order.id)?.unwrap_or_default();
+                result.push((order, matching_pool, matchable_amount));
             }
             Ok(result)
         })
@@ -244,15 +247,16 @@ impl StateInner {
         .await
     }
 
-    /// Get all orders across all accounts with their matching pool
+    /// Get all orders across all accounts with their matching pool and
+    /// matchable amount
     ///
-    /// Returns a vector of tuples containing (AccountId, Order,
-    /// MatchingPoolName) for each order in the state.
+    /// Returns a vector of tuples containing (Order, AccountId,
+    /// MatchingPoolName, Amount) for each order in the state.
     ///
     /// Warning: this can be slow when the state has many orders
     pub async fn get_all_orders_with_matching_pool(
         &self,
-    ) -> Result<Vec<(Order, AccountId, MatchingPoolName)>, StateError> {
+    ) -> Result<Vec<(Order, AccountId, MatchingPoolName, Amount)>, StateError> {
         self.with_read_tx(move |tx| {
             let mut result = Vec::new();
 
@@ -264,7 +268,9 @@ impl StateInner {
                 let orders = tx.get_account_orders(&account_id)?;
                 for order in orders {
                     let matching_pool = tx.get_matching_pool_for_order(&order.id)?;
-                    result.push((order, account_id, matching_pool));
+                    let matchable_amount =
+                        tx.get_order_matchable_amount(&order.id)?.unwrap_or_default();
+                    result.push((order, account_id, matching_pool, matchable_amount));
                 }
             }
 
