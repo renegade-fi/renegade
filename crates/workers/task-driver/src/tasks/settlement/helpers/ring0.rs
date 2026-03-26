@@ -4,8 +4,7 @@ use darkpool_types::{
     bounded_match_result::BoundedMatchResult, settlement_obligation::SettlementObligation,
 };
 use renegade_solidity_abi::v2::IDarkpoolV2::{
-    self, FeeRate, PublicIntentAuthBundle, SettlementBundle, SignatureWithNonce,
-    SignedPermitSingle,
+    self, FeeRate, PublicIntentAuthBundle, SettlementBundle, SignatureWithNonce, SignedPermitSingle,
 };
 use types_account::{order::Order, pair::Pair};
 use types_tasks::ExternalRelayerFeeRate;
@@ -54,10 +53,8 @@ impl SettlementProcessor {
         external_relayer_fee_rate: ExternalRelayerFeeRate,
     ) -> Result<SettlementBundle, SettlementError> {
         // Internal relayer fee is derived from the order's base token
-        let pair = Pair::new(
-            match_res.internal_party_input_token,
-            match_res.internal_party_output_token,
-        );
+        let pair =
+            Pair::new(match_res.internal_party_input_token, match_res.internal_party_output_token);
         let base = pair.base_token();
         let internal_relayer_fee = self.abi_relayer_fee(&base)?;
 
