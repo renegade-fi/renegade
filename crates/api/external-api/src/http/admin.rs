@@ -49,6 +49,6 @@ pub struct IsLeaderResponse {
 /// The response to a "get disabled assets" request
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GetDisabledAssetsResponse {
-    /// The list of disabled assets
+    /// The list of disabled asset tickers
     pub disabled_assets: Vec<String>,
 }
