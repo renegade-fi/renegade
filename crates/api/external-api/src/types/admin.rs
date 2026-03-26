@@ -1,7 +1,10 @@
 //! API types for admin requests
 
+use circuit_types::Amount;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+
+use crate::serde_helpers;
 
 use super::order::{ApiOrder, OrderAuth};
 
@@ -18,6 +21,11 @@ pub struct ApiAdminOrder {
     pub account_id: Uuid,
     /// The matching pool the order is in
     pub matching_pool: String,
+    /// The matchable amount for this order: min(amount_in, backing_balance).
+    /// This represents how much of the order can actually be filled given
+    /// the account's current balance state.
+    #[serde(with = "serde_helpers::amount_as_string")]
+    pub matchable_amount: Amount,
 }
 
 /// Response for admin get orders request

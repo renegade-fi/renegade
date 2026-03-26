@@ -34,6 +34,9 @@ pub const ADMIN_MATCHING_POOL_DESTROY_ROUTE: &str =
 /// Route to create an order in a specific matching pool
 pub const ADMIN_CREATE_ORDER_IN_POOL_ROUTE: &str =
     "/v2/relayer-admin/account/:account_id/orders/create-order-in-pool";
+/// Route to assign an order to a matching pool
+pub const ADMIN_ASSIGN_ORDER_TO_POOL_ROUTE: &str =
+    "/v2/relayer-admin/orders/:order_id/assign-pool";
 
 // -------------------
 // | Request/Response |
@@ -51,4 +54,11 @@ pub struct IsLeaderResponse {
 pub struct GetDisabledAssetsResponse {
     /// The list of disabled asset tickers
     pub disabled_assets: Vec<String>,
+}
+
+/// The request to assign an order to a matching pool
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AssignOrderToPoolRequest {
+    /// The matching pool to assign the order to
+    pub matching_pool: String,
 }
