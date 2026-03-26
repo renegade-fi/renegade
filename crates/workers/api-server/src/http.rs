@@ -17,9 +17,9 @@ use account::{
 };
 use admin::{
     AdminCreateMatchingPoolHandler, AdminCreateOrderInPoolHandler, AdminDestroyMatchingPoolHandler,
-    AdminGetAccountOrdersHandler, AdminGetOrderByIdHandler, AdminGetOrdersHandler,
-    AdminGetTaskQueuePausedHandler, AdminRefreshMatchFeesHandler, AdminRefreshTokenMappingHandler,
-    AdminTriggerSnapshotHandler, IsLeaderHandler,
+    AdminGetAccountOrdersHandler, AdminGetDisabledAssetsHandler, AdminGetOrderByIdHandler,
+    AdminGetOrdersHandler, AdminGetTaskQueuePausedHandler, AdminRefreshMatchFeesHandler,
+    AdminRefreshTokenMappingHandler, AdminTriggerSnapshotHandler, IsLeaderHandler,
 };
 use async_trait::async_trait;
 use balance::{
@@ -35,10 +35,10 @@ use external_api::{
         },
         admin::{
             ADMIN_CREATE_ORDER_IN_POOL_ROUTE, ADMIN_GET_ACCOUNT_ORDERS_ROUTE,
-            ADMIN_GET_ORDER_BY_ID_ROUTE, ADMIN_GET_ORDERS_ROUTE, ADMIN_GET_TASK_QUEUE_PAUSED_ROUTE,
-            ADMIN_MATCHING_POOL_CREATE_ROUTE, ADMIN_MATCHING_POOL_DESTROY_ROUTE,
-            ADMIN_REFRESH_MATCH_FEES_ROUTE, ADMIN_REFRESH_TOKEN_MAPPING_ROUTE,
-            ADMIN_TRIGGER_SNAPSHOT_ROUTE, IS_LEADER_ROUTE,
+            ADMIN_GET_DISABLED_ASSETS_ROUTE, ADMIN_GET_ORDER_BY_ID_ROUTE, ADMIN_GET_ORDERS_ROUTE,
+            ADMIN_GET_TASK_QUEUE_PAUSED_ROUTE, ADMIN_MATCHING_POOL_CREATE_ROUTE,
+            ADMIN_MATCHING_POOL_DESTROY_ROUTE, ADMIN_REFRESH_MATCH_FEES_ROUTE,
+            ADMIN_REFRESH_TOKEN_MAPPING_ROUTE, ADMIN_TRIGGER_SNAPSHOT_ROUTE, IS_LEADER_ROUTE,
         },
         balance::{
             DEPOSIT_BALANCE_ROUTE, GET_BALANCE_BY_MINT_ROUTE, GET_BALANCES_ROUTE,
@@ -348,6 +348,13 @@ impl HttpServer {
             &Method::POST,
             ADMIN_REFRESH_MATCH_FEES_ROUTE.to_string(),
             AdminRefreshMatchFeesHandler::new(config.darkpool_client.clone()),
+        );
+
+        // GET /v2/admin/disabled-assets
+        router.add_admin_authenticated_route(
+            &Method::GET,
+            ADMIN_GET_DISABLED_ASSETS_ROUTE.to_string(),
+            AdminGetDisabledAssetsHandler::new(config.disabled_assets.clone()),
         );
 
         // GET /v2/relayer-admin/orders (v2)

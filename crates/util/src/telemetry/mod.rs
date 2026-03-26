@@ -139,7 +139,8 @@ pub fn configure_telemetry_with_metrics_config(
     statsd_port: u16,
     metrics_config: Option<metrics::MetricsConfig>,
 ) -> Result<(), TelemetrySetupError> {
-    // Extract the metrics prefix before metrics_config is consumed by with_metrics()
+    // Extract the metrics prefix before metrics_config is consumed by
+    // with_metrics()
     let metrics_prefix = metrics_config
         .as_ref()
         .map_or(metrics::DEFAULT_RELAYER_METRICS_PREFIX.to_string(), |c| c.metrics_prefix.clone());

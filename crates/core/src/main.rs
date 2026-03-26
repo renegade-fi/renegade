@@ -326,6 +326,7 @@ async fn main() -> Result<(), CoordinatorError> {
         chain: args.chain_id,
         compliance_service_url: args.compliance_service_url.clone(),
         wallet_task_rate_limit: args.wallet_task_rate_limit,
+        disabled_assets: args.disabled_assets.clone(),
         darkpool_client: darkpool_client.clone(),
         network_sender: network_sender.clone(),
         state: global_state.clone(),
