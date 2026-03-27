@@ -892,11 +892,7 @@ pub struct WithdrawBalanceHandler {
 
 impl WithdrawBalanceHandler {
     /// Constructor
-    pub fn new(
-        min_withdrawal_amount: f64,
-        state: State,
-        price_streams: PriceStreamStates,
-    ) -> Self {
+    pub fn new(min_withdrawal_amount: f64, state: State, price_streams: PriceStreamStates) -> Self {
         Self { min_withdrawal_amount, state, price_streams }
     }
 }
