@@ -276,7 +276,6 @@ impl HttpServer {
             WithdrawBalanceHandler::new(
                 config.min_transfer_amount,
                 state.clone(),
-                wallet_rate_limiter.clone(),
                 config.price_streams.clone(),
             ),
         );

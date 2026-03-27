@@ -878,26 +878,22 @@ impl TypedHandler for DepositBalanceHandler {
 }
 
 /// Handler for the POST /wallet/:id/balances/:mint/withdraw route
+///
+/// Note that we do not rate limit this endpoint; withdrawals must always be
+/// allowed regardless of the wallet's task rate limit
 pub struct WithdrawBalanceHandler {
     /// The minimum withdrawal amount allowed by the relayer
     min_withdrawal_amount: f64,
     /// A copy of the relayer-global state
     state: State,
-    /// The per-wallet task rate limiter
-    rate_limiter: WalletTaskRateLimiter,
     /// The price streams from the price reporter
     price_streams: PriceStreamStates,
 }
 
 impl WithdrawBalanceHandler {
     /// Constructor
-    pub fn new(
-        min_withdrawal_amount: f64,
-        state: State,
-        rate_limiter: WalletTaskRateLimiter,
-        price_streams: PriceStreamStates,
-    ) -> Self {
-        Self { min_withdrawal_amount, state, rate_limiter, price_streams }
+    pub fn new(min_withdrawal_amount: f64, state: State, price_streams: PriceStreamStates) -> Self {
+        Self { min_withdrawal_amount, state, price_streams }
     }
 }
 
@@ -960,8 +956,6 @@ impl TypedHandler for WithdrawBalanceHandler {
         )
         .map_err(bad_request)?;
 
-        // Check rate limits and enqueue the task
-        self.rate_limiter.check_rate_limit(wallet_id).await?;
         let task_id = append_task_and_await(task.into(), &self.state).await?;
 
         Ok(WithdrawBalanceResponse { task_id })
