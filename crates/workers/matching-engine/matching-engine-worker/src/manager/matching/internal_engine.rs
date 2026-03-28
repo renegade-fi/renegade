@@ -156,8 +156,9 @@ impl MatchingEngineExecutor {
     /// Check whether the order state that produced an attempted match is still
     /// current after settlement fails.
     ///
-    /// This preserves the v1 behavior of re-reading authoritative local state
-    /// before deciding whether matching may continue on the same order:
+    /// This preserves the v1 behavior of re-reading the database-backed
+    /// account index and serial task queue before deciding whether matching
+    /// may continue on the same order:
     ///     1. The order must still resolve to an account with an empty serial
     ///        queue
     ///     2. The order must still exist in the account index
