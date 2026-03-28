@@ -153,17 +153,16 @@ impl MatchingEngineExecutor {
         })
     }
 
-    /// Check whether the order state that produced an attempted match is still
-    /// current after settlement fails.
+    /// Check whether the database rows used to choose an attempted match still
+    /// describe the same order after settlement fails.
     ///
-    /// This preserves the v1 behavior of re-reading the database-backed
-    /// account index and serial task queue before deciding whether matching
-    /// may continue on the same order:
-    ///     1. The order must still resolve to an account with an empty serial
-    ///        queue
-    ///     2. The order must still exist in the account index
-    ///     3. The order snapshot and matchable amount must still match the
-    ///        state used to choose the attempted match
+    /// This preserves the v1 behavior of re-reading the database before
+    /// deciding whether matching may continue on the same order:
+    ///     1. `order_id -> account_id` must still exist
+    ///     2. the account's serial queue length must still be zero
+    ///     3. the account index must still contain the order row
+    ///     4. the stored `Order` and matchable amount must still equal the
+    ///        values used to choose the attempted match
     async fn order_still_valid(
         &self,
         order_id: &OrderId,
@@ -175,8 +174,8 @@ impl MatchingEngineExecutor {
             return Ok(false);
         };
 
-        // Preserve the v1 guarantee that we stop if the order owner's serial queue is
-        // already busy with another state transition.
+        // Preserve the v1 guarantee that we stop if the order owner's serial
+        // queue is already busy.
         let queue_len = self.state.serial_tasks_queue_len(&account_id).await?;
         if queue_len > 0 {
             info!(
