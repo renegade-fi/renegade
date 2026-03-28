@@ -322,8 +322,12 @@ impl TypedHandler for AdminGetOrderByIdHandler {
         // Convert to API type
         let matching_pool = self.state.get_matching_pool_for_order(&order_id).await?;
         let matchable_amount = self.state.get_order_matchable_amount(&order_id).await?;
-        let order: ApiAdminOrder =
-            ApiAdminOrder { order: ApiOrder::from(order), account_id, matching_pool, matchable_amount };
+        let order: ApiAdminOrder = ApiAdminOrder {
+            order: ApiOrder::from(order),
+            account_id,
+            matching_pool,
+            matchable_amount,
+        };
 
         Ok(GetOrderAdminResponse { order, auth })
     }
@@ -637,8 +641,7 @@ impl TypedHandler for AdminAssignOrderToPoolHandler {
         }
 
         // Assign the order to the matching pool
-        let waiter =
-            self.state.assign_order_to_matching_pool(order_id, matching_pool).await?;
+        let waiter = self.state.assign_order_to_matching_pool(order_id, matching_pool).await?;
         waiter.await?;
 
         Ok(EmptyRequestResponse {})

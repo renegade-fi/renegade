@@ -335,20 +335,13 @@ impl StateApplicator {
             // Assign to the matching pool
             tx.assign_order_to_matching_pool(&order.id, matching_pool)?;
 
-            let matchable_amount =
-                tx.get_order_matchable_amount(&order.id)?.unwrap_or_default();
+            let matchable_amount = tx.get_order_matchable_amount(&order.id)?.unwrap_or_default();
             let update_type = if order_exists {
                 AdminOrderUpdateType::Updated
             } else {
                 AdminOrderUpdateType::Created
             };
-            self.publish_admin_order_update(
-                account_id,
-                order,
-                pool,
-                update_type,
-                matchable_amount,
-            );
+            self.publish_admin_order_update(account_id, order, pool, update_type, matchable_amount);
         }
 
         tx.commit()?;
