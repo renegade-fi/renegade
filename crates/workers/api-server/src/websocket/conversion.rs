@@ -12,9 +12,19 @@ use system_bus::{AdminOrderUpdateType, SystemBusMessage};
 /// Panics if the message type is not intended for websocket consumption
 pub fn system_bus_message_to_websocket_body(msg: SystemBusMessage) -> ServerWebsocketMessageBody {
     match msg {
-        SystemBusMessage::AdminOrderUpdate { account_id, order, matching_pool, update_type } => {
-            convert_admin_order_update(account_id, *order, matching_pool, update_type)
-        },
+        SystemBusMessage::AdminOrderUpdate {
+            account_id,
+            order,
+            matching_pool,
+            update_type,
+            matchable_amount,
+        } => convert_admin_order_update(
+            account_id,
+            *order,
+            matching_pool,
+            update_type,
+            matchable_amount,
+        ),
         SystemBusMessage::AdminBalanceUpdate { account_id, balance } => {
             convert_admin_balance_update(account_id, *balance)
         },
@@ -40,10 +50,12 @@ fn convert_admin_order_update(
     order: types_account::order::Order,
     matching_pool: String,
     update_type: AdminOrderUpdateType,
+    matchable_amount: circuit_types::Amount,
 ) -> ServerWebsocketMessageBody {
     // Convert the order to an ApiAdminOrder
     let api_order: ApiOrder = order.into();
-    let admin_order = ApiAdminOrder { order: api_order, account_id, matching_pool };
+    let admin_order =
+        ApiAdminOrder { order: api_order, account_id, matching_pool, matchable_amount };
 
     // Convert the update type
     let api_update_type = convert_admin_order_update_type(update_type);

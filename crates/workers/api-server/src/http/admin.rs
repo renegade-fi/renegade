@@ -8,7 +8,7 @@ use darkpool_client::DarkpoolClient;
 use external_api::{
     EmptyRequestResponse,
     http::{
-        admin::{GetDisabledAssetsResponse, IsLeaderResponse},
+        admin::{AssignOrderToPoolRequest, GetDisabledAssetsResponse, IsLeaderResponse},
         order::{CreateOrderInPoolRequest, CreateOrderResponse},
     },
     types::{
@@ -29,8 +29,8 @@ use crate::{
     error::{ApiServerError, bad_request, conflict, internal_error, not_found},
     http::helpers::append_create_order_task,
     param_parsing::{
-        parse_account_id_from_params, parse_matching_pool_from_url_params,
-        parse_order_id_from_params, should_block_on_task,
+        parse_account_id_from_params, parse_matching_pool_from_query_params,
+        parse_matching_pool_from_url_params, parse_order_id_from_params, should_block_on_task,
     },
     router::{QueryParams, TypedHandler, UrlParams},
 };
@@ -243,19 +243,25 @@ impl TypedHandler for AdminGetOrdersHandler {
         _headers: HeaderMap,
         _req: Self::Request,
         _params: UrlParams,
-        _query_params: QueryParams,
+        query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
+        let pool_filter = parse_matching_pool_from_query_params(&query_params);
+
         // Get all orders with their admin metadata
         let orders_data =
             self.state.get_all_orders_with_matching_pool().await.map_err(internal_error)?;
 
-        // Convert to API types
+        // Convert to API types, filtering by matching pool if specified
         let orders: Vec<ApiAdminOrder> = orders_data
             .into_iter()
-            .map(|(order, account_id, matching_pool)| ApiAdminOrder {
+            .filter(|(_, _, matching_pool, _)| {
+                pool_filter.as_ref().map_or(true, |filter| matching_pool == filter)
+            })
+            .map(|(order, account_id, matching_pool, matchable_amount)| ApiAdminOrder {
                 order: ApiOrder::from(order),
                 account_id,
                 matching_pool: matching_pool.to_string(),
+                matchable_amount,
             })
             .collect();
 
@@ -315,8 +321,13 @@ impl TypedHandler for AdminGetOrderByIdHandler {
 
         // Convert to API type
         let matching_pool = self.state.get_matching_pool_for_order(&order_id).await?;
-        let order: ApiAdminOrder =
-            ApiAdminOrder { order: ApiOrder::from(order), account_id, matching_pool };
+        let matchable_amount = self.state.get_order_matchable_amount(&order_id).await?;
+        let order: ApiAdminOrder = ApiAdminOrder {
+            order: ApiOrder::from(order),
+            account_id,
+            matching_pool,
+            matchable_amount,
+        };
 
         Ok(GetOrderAdminResponse { order, auth })
     }
@@ -359,10 +370,11 @@ impl TypedHandler for AdminGetAccountOrdersHandler {
         // Convert to API types
         let orders = orders_data
             .into_iter()
-            .map(|(order, matching_pool)| ApiAdminOrder {
+            .map(|(order, matching_pool, matchable_amount)| ApiAdminOrder {
                 order: ApiOrder::from(order),
                 account_id,
                 matching_pool: matching_pool.to_string(),
+                matchable_amount,
             })
             .collect();
 
@@ -583,5 +595,55 @@ impl TypedHandler for AdminCreateOrderInPoolHandler {
         .await?;
 
         Ok(CreateOrderResponse { task_id, completed: true })
+    }
+}
+
+// ------------------------------------
+// | Assign Order To Pool Handler     |
+// ------------------------------------
+
+/// Handler for POST /v2/relayer-admin/orders/:order_id/assign-pool
+pub struct AdminAssignOrderToPoolHandler {
+    /// A handle to the relayer state
+    state: State,
+}
+
+impl AdminAssignOrderToPoolHandler {
+    /// Constructor
+    pub fn new(state: State) -> Self {
+        Self { state }
+    }
+}
+
+#[async_trait]
+impl TypedHandler for AdminAssignOrderToPoolHandler {
+    type Request = AssignOrderToPoolRequest;
+    type Response = EmptyRequestResponse;
+
+    async fn handle_typed(
+        &self,
+        _headers: HeaderMap,
+        req: Self::Request,
+        params: UrlParams,
+        _query_params: QueryParams,
+    ) -> Result<Self::Response, ApiServerError> {
+        let order_id = parse_order_id_from_params(&params)?;
+        let matching_pool = req.matching_pool;
+
+        // Verify the order exists
+        if self.state.get_account_order(&order_id).await?.is_none() {
+            return Err(ApiServerError::order_not_found(order_id));
+        }
+
+        // Verify the matching pool exists
+        if !self.state.matching_pool_exists(matching_pool.clone()).await? {
+            return Err(not_found(ERR_MATCHING_POOL_NOT_FOUND));
+        }
+
+        // Assign the order to the matching pool
+        let waiter = self.state.assign_order_to_matching_pool(order_id, matching_pool).await?;
+        waiter.await?;
+
+        Ok(EmptyRequestResponse {})
     }
 }

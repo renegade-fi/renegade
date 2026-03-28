@@ -1,6 +1,7 @@
 //! Defines types broadcast onto the system bus and thereby websockets
 
 use alloy::primitives::Address;
+use circuit_types::Amount;
 use darkpool_types::bounded_match_result::BoundedMatchResult;
 use renegade_solidity_abi::v2::IDarkpoolV2::SettlementBundle;
 use types_account::{
@@ -144,6 +145,8 @@ pub enum SystemBusMessage {
         matching_pool: String,
         /// The type of update
         update_type: AdminOrderUpdateType,
+        /// The matchable amount: min(order.amount_in, backing_balance)
+        matchable_amount: Amount,
     },
     /// A message indicating that a balance has been updated, for admin
     /// consumption
