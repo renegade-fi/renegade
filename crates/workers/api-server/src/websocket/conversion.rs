@@ -18,7 +18,13 @@ pub fn system_bus_message_to_websocket_body(msg: SystemBusMessage) -> ServerWebs
             matching_pool,
             update_type,
             matchable_amount,
-        } => convert_admin_order_update(account_id, *order, matching_pool, update_type, matchable_amount),
+        } => convert_admin_order_update(
+            account_id,
+            *order,
+            matching_pool,
+            update_type,
+            matchable_amount,
+        ),
         SystemBusMessage::AdminBalanceUpdate { account_id, balance } => {
             convert_admin_balance_update(account_id, *balance)
         },
