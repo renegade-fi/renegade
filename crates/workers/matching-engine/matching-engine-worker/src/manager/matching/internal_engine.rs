@@ -160,7 +160,7 @@ impl MatchingEngineExecutor {
     /// before deciding whether matching may continue on the same order:
     ///     1. The order must still resolve to an account with an empty serial
     ///        queue
-    ///     2. The order must still exist and be ready for match
+    ///     2. The order must still exist in the account index
     ///     3. The order snapshot and matchable amount must still match the
     ///        state used to choose the attempted match
     async fn order_still_valid(
@@ -192,18 +192,6 @@ impl MatchingEngineExecutor {
             );
             return Ok(false);
         };
-
-        // If an order-book entry exists, it must still be match-ready. We tolerate the
-        // absence of a network-order entry because the account index is authoritative for
-        // local Ring 0 order state.
-        if let Some(network_order) = self.state.get_network_order(order_id).await? {
-            if !network_order.ready_for_match() {
-                info!(
-                    "order {order_id} is no longer ready for match, stopping internal match retry"
-                );
-                return Ok(false);
-            }
-        }
 
         if current_matchable_amount == 0 {
             info!(
@@ -245,7 +233,7 @@ mod tests {
     use std::collections::HashSet;
 
     use circuit_types::Amount;
-    use constants::{GLOBAL_MATCHING_POOL, Scalar};
+    use constants::GLOBAL_MATCHING_POOL;
     use job_types::{
         matching_engine::new_matching_engine_worker_queue, task_driver::new_task_driver_queue,
     };
@@ -260,7 +248,6 @@ mod tests {
         order::{Order, mocks::mock_order},
         order_auth::mocks::mock_order_auth,
     };
-    use types_gossip::network_order::NetworkOrder;
     use types_tasks::{RefreshAccountTaskDescriptor, TaskDescriptor};
 
     use crate::executor::MatchingEngineExecutor;
@@ -282,16 +269,6 @@ mod tests {
             mock_cancel(),
         )
         .unwrap()
-    }
-
-    async fn write_verified_network_order(state: &State, order: &Order) {
-        let tx = state.db.new_write_tx().unwrap();
-        let cluster = tx.get_cluster_id().unwrap();
-        let nullifier = Scalar::from(1u8);
-        let mut network_order = NetworkOrder::new(order.id, nullifier, cluster, true);
-        network_order.transition_verified(nullifier);
-        tx.write_order(&network_order).unwrap();
-        tx.commit().unwrap();
     }
 
     async fn setup_executor_with_order()
@@ -317,8 +294,6 @@ mod tests {
             .unwrap();
         waiter.await.unwrap();
 
-        write_verified_network_order(&state, &order).await;
-
         let matchable_amount = state.get_order_matchable_amount(&order.id).await.unwrap();
         let executor = mock_executor(state.clone()).await;
         (executor, state, account.id, order, matchable_amount)
@@ -331,25 +306,6 @@ mod tests {
 
         let waiter = state.remove_order_from_account(account_id, order.id).await.unwrap();
         waiter.await.unwrap();
-
-        let valid = executor
-            .order_still_valid(&order.id, &order, attempted_matchable_amount)
-            .await
-            .unwrap();
-        assert!(!valid);
-    }
-
-    #[tokio::test]
-    async fn test_order_still_valid_false_when_order_not_ready() {
-        let (executor, state, _account_id, order, attempted_matchable_amount) =
-            setup_executor_with_order().await;
-
-        let tx = state.db.new_write_tx().unwrap();
-        let mut network_order =
-            tx.get_order_info(&order.id).unwrap().unwrap().deserialize().unwrap();
-        network_order.transition_received();
-        tx.write_order(&network_order).unwrap();
-        tx.commit().unwrap();
 
         let valid = executor
             .order_still_valid(&order.id, &order, attempted_matchable_amount)

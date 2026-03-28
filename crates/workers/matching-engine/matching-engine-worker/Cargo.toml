@@ -65,4 +65,3 @@ util = { workspace = true }
 proof-manager = { workspace = true, features = ["mocks"] }
 state = { workspace = true, features = ["mocks"] }
 types-account = { workspace = true, features = ["mocks", "rkyv"] }
-types-gossip = { workspace = true, features = ["mocks", "rkyv"] }
