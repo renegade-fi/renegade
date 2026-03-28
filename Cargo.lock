@@ -5818,6 +5818,7 @@ dependencies = [
  "tracing",
  "types-account",
  "types-core",
+ "types-gossip",
  "types-runtime",
  "types-tasks",
  "util",
