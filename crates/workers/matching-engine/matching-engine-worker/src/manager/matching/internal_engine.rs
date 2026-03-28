@@ -187,7 +187,9 @@ impl MatchingEngineExecutor {
         let Some((current_order, current_matchable_amount)) =
             self.state.get_account_order_and_matchable_amount(order_id).await?
         else {
-            info!("order {order_id} no longer exists in the account index, stopping internal match retry");
+            info!(
+                "order {order_id} no longer exists in the account index, stopping internal match retry"
+            );
             return Ok(false);
         };
 
@@ -196,13 +198,17 @@ impl MatchingEngineExecutor {
         // local Ring 0 order state.
         if let Some(network_order) = self.state.get_network_order(order_id).await? {
             if !network_order.ready_for_match() {
-                info!("order {order_id} is no longer ready for match, stopping internal match retry");
+                info!(
+                    "order {order_id} is no longer ready for match, stopping internal match retry"
+                );
                 return Ok(false);
             }
         }
 
         if current_matchable_amount == 0 {
-            info!("order {order_id} no longer has positive matchable amount, stopping internal match retry");
+            info!(
+                "order {order_id} no longer has positive matchable amount, stopping internal match retry"
+            );
             return Ok(false);
         }
 
@@ -218,8 +224,7 @@ impl MatchingEngineExecutor {
         if current_matchable_amount != attempted_matchable_amount {
             info!(
                 "order {order_id} matchable amount changed since settlement was attempted ({} -> {}), stopping internal match retry",
-                attempted_matchable_amount,
-                current_matchable_amount,
+                attempted_matchable_amount, current_matchable_amount,
             );
             return Ok(false);
         }
@@ -242,8 +247,7 @@ mod tests {
     use circuit_types::Amount;
     use constants::{GLOBAL_MATCHING_POOL, Scalar};
     use job_types::{
-        matching_engine::new_matching_engine_worker_queue,
-        task_driver::new_task_driver_queue,
+        matching_engine::new_matching_engine_worker_queue, task_driver::new_task_driver_queue,
     };
     use matching_engine_core::MatchingEngine;
     use price_state::PriceStreamStates;
@@ -266,9 +270,9 @@ mod tests {
         let (task_queue, _task_receiver) = new_task_driver_queue();
 
         MatchingEngineExecutor::new(
-            0,                             // min_fill_size
-            0,                             // external_match_validity_window
-            HashSet::new(),                // disabled_assets
+            0,              // min_fill_size
+            0,              // external_match_validity_window
+            HashSet::new(), // disabled_assets
             job_receiver,
             PriceStreamStates::new(vec![], vec![]),
             state,
@@ -290,7 +294,8 @@ mod tests {
         tx.commit().unwrap();
     }
 
-    async fn setup_executor_with_order() -> (MatchingEngineExecutor, State, types_core::AccountId, Order, Amount) {
+    async fn setup_executor_with_order()
+    -> (MatchingEngineExecutor, State, types_core::AccountId, Order, Amount) {
         let state = mock_state().await;
 
         let account = mock_empty_account();
@@ -327,8 +332,10 @@ mod tests {
         let waiter = state.remove_order_from_account(account_id, order.id).await.unwrap();
         waiter.await.unwrap();
 
-        let valid =
-            executor.order_still_valid(&order.id, &order, attempted_matchable_amount).await.unwrap();
+        let valid = executor
+            .order_still_valid(&order.id, &order, attempted_matchable_amount)
+            .await
+            .unwrap();
         assert!(!valid);
     }
 
@@ -338,13 +345,16 @@ mod tests {
             setup_executor_with_order().await;
 
         let tx = state.db.new_write_tx().unwrap();
-        let mut network_order = tx.get_order_info(&order.id).unwrap().unwrap().deserialize().unwrap();
+        let mut network_order =
+            tx.get_order_info(&order.id).unwrap().unwrap().deserialize().unwrap();
         network_order.transition_received();
         tx.write_order(&network_order).unwrap();
         tx.commit().unwrap();
 
-        let valid =
-            executor.order_still_valid(&order.id, &order, attempted_matchable_amount).await.unwrap();
+        let valid = executor
+            .order_still_valid(&order.id, &order, attempted_matchable_amount)
+            .await
+            .unwrap();
         assert!(!valid);
     }
 
@@ -358,8 +368,10 @@ mod tests {
         let waiter = state.update_order(updated_order).await.unwrap();
         waiter.await.unwrap();
 
-        let valid =
-            executor.order_still_valid(&order.id, &order, attempted_matchable_amount).await.unwrap();
+        let valid = executor
+            .order_still_valid(&order.id, &order, attempted_matchable_amount)
+            .await
+            .unwrap();
         assert!(!valid);
     }
 
@@ -377,8 +389,10 @@ mod tests {
         let waiter = state.update_account_balance(account_id, balance).await.unwrap();
         waiter.await.unwrap();
 
-        let valid =
-            executor.order_still_valid(&order.id, &order, attempted_matchable_amount).await.unwrap();
+        let valid = executor
+            .order_still_valid(&order.id, &order, attempted_matchable_amount)
+            .await
+            .unwrap();
         assert!(!valid);
     }
 
@@ -388,12 +402,16 @@ mod tests {
             setup_executor_with_order().await;
 
         let keychain = state.get_account_keychain(&account_id).await.unwrap().unwrap();
-        let descriptor = TaskDescriptor::from(RefreshAccountTaskDescriptor::new(account_id, keychain));
-        let (_task_id, waiter) = state.enqueue_preemptive_task(vec![account_id], descriptor, true).await.unwrap();
+        let descriptor =
+            TaskDescriptor::from(RefreshAccountTaskDescriptor::new(account_id, keychain));
+        let (_task_id, waiter) =
+            state.enqueue_preemptive_task(vec![account_id], descriptor, true).await.unwrap();
         waiter.await.unwrap();
 
-        let valid =
-            executor.order_still_valid(&order.id, &order, attempted_matchable_amount).await.unwrap();
+        let valid = executor
+            .order_still_valid(&order.id, &order, attempted_matchable_amount)
+            .await
+            .unwrap();
         assert!(!valid);
     }
 
@@ -402,8 +420,10 @@ mod tests {
         let (executor, _state, _account_id, order, attempted_matchable_amount) =
             setup_executor_with_order().await;
 
-        let valid =
-            executor.order_still_valid(&order.id, &order, attempted_matchable_amount).await.unwrap();
+        let valid = executor
+            .order_still_valid(&order.id, &order, attempted_matchable_amount)
+            .await
+            .unwrap();
         assert!(valid);
     }
 }
