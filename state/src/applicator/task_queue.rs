@@ -28,8 +28,6 @@ use super::{
 /// The pending state description
 const PENDING_STATE: &str = "Pending";
 
-/// Error emitted when a task's assignment cannot be found
-const ERR_UNASSIGNED_TASK: &str = "task not assigned";
 /// Error emitted when a key cannot be found for a task
 const ERR_NO_KEY: &str = "key not found for task";
 
@@ -260,9 +258,13 @@ impl StateApplicator {
         tx: &StateTxn<'_, T>,
     ) -> Result<()> {
         let my_peer_id = tx.get_peer_id()?;
-        let executor = tx
-            .get_task_assignment(&task.id)?
-            .ok_or_else(|| StateApplicatorError::MissingEntry(ERR_UNASSIGNED_TASK))?;
+        let executor = match tx.get_task_assignment(&task.id)? {
+            Some(e) => e,
+            None => {
+                warn!("No task assignment found for task {}, skipping execution", task.id);
+                return Ok(());
+            },
+        };
 
         if executor == my_peer_id {
             self.config
@@ -397,9 +399,14 @@ impl StateApplicator {
         // Mark all tasks as failed, append to history, and publish updates
         for mut task in cleared_tasks {
             task.state = QueuedTaskState::Failed;
-            let executor = tx
-                .get_task_assignment(&task.id)?
-                .ok_or_else(|| StateApplicatorError::MissingEntry(ERR_UNASSIGNED_TASK))?;
+            let executor = match tx.get_task_assignment(&task.id)? {
+                Some(e) => e,
+                None => {
+                    warn!("No task assignment found for task {} during queue clear, skipping", task.id);
+                    self.publish_task_updates(key, &task);
+                    continue;
+                },
+            };
 
             self.maybe_append_historical_task(&[key], &task, executor, tx)?;
             self.publish_task_updates(key, &task);
