@@ -140,9 +140,15 @@ impl StateApplicator {
         order_id: OrderIdentifier,
         tx: &StateTxn<RW>,
     ) -> Result<()> {
-        let wallet = tx
-            .get_wallet_id_for_order(&order_id)?
-            .ok_or(StateApplicatorError::MissingEntry(ERR_WALLET_MISSING))?;
+        let wallet = match tx.get_wallet_id_for_order(&order_id)? {
+            Some(w) => w,
+            None => {
+                warn!(
+                    "Wallet not found for order {order_id}, skipping `transition_order_matching`"
+                );
+                return Ok(());
+            },
+        };
 
         let mut meta = match tx.get_order_metadata(wallet, order_id)? {
             Some(meta) => meta,
