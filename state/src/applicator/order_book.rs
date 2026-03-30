@@ -143,7 +143,9 @@ impl StateApplicator {
         let wallet = match tx.get_wallet_id_for_order(&order_id)? {
             Some(w) => w,
             None => {
-                warn!("Wallet not found for order {order_id}, skipping `transition_order_matching`");
+                warn!(
+                    "Wallet not found for order {order_id}, skipping `transition_order_matching`"
+                );
                 return Ok(());
             },
         };

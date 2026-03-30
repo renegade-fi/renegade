@@ -402,7 +402,10 @@ impl StateApplicator {
             let executor = match tx.get_task_assignment(&task.id)? {
                 Some(e) => e,
                 None => {
-                    warn!("No task assignment found for task {} during queue clear, skipping", task.id);
+                    warn!(
+                        "No task assignment found for task {} during queue clear, skipping",
+                        task.id
+                    );
                     self.publish_task_updates(key, &task);
                     continue;
                 },
