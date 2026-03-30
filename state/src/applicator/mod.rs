@@ -89,6 +89,9 @@ impl StateApplicator {
                 self.add_order_cancellation_proofs(&proofs)
             },
             StateTransition::UpdateOrderMetadata { meta } => self.update_order_metadata(meta),
+            StateTransition::PruneTerminalOrderMetadata { wallet_id, order_id } => {
+                self.prune_terminal_order_metadata(wallet_id, order_id)
+            },
             StateTransition::CreateMatchingPool { pool_name } => {
                 self.create_matching_pool(&pool_name)
             },

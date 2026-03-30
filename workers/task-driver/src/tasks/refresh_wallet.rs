@@ -20,7 +20,7 @@ use constants::Scalar;
 use darkpool_client::errors::DarkpoolClientError;
 use serde::Serialize;
 use state::error::StateError;
-use tracing::{info, instrument};
+use tracing::{info, instrument, warn};
 
 use crate::{
     task_state::StateWrapper,
@@ -249,6 +249,13 @@ impl RefreshWalletTask {
 
         let waiter = self.ctx.state.update_wallet(wallet.clone()).await?;
         waiter.await?;
+
+        // Now that the wallet is updated, prune terminal order metadata that
+        // is no longer needed. This is safe because the wallet state is
+        // consistent — orders removed by the fill are no longer in the wallet,
+        // so no concurrent task will generate proofs for them.
+        self.prune_terminal_metadata(&wallet).await?;
+
         Ok(false)
     }
 
@@ -332,6 +339,41 @@ impl RefreshWalletTask {
         }
 
         Ok(false)
+    }
+
+    /// Prune terminal order metadata for orders no longer in the wallet.
+    ///
+    /// When `record-historical-state` is disabled, terminal metadata is kept
+    /// alive until the wallet refresh completes (to avoid a race where
+    /// metadata is deleted while the wallet still references the order).
+    /// This method cleans up that deferred metadata after `update_wallet`
+    /// has made the wallet consistent.
+    async fn prune_terminal_metadata(
+        &self,
+        refreshed_wallet: &Wallet,
+    ) -> Result<(), RefreshWalletTaskError> {
+        if self.ctx.state.historical_state_enabled()? {
+            return Ok(());
+        }
+
+        let active_order_ids: HashSet<_> =
+            refreshed_wallet.get_nonzero_orders().into_keys().collect();
+
+        // Fetch all metadata for this wallet and remove terminal entries
+        // whose orders are no longer active in the wallet
+        let history = self.ctx.state.get_order_history(usize::MAX, &self.wallet_id).await?;
+
+        for meta in history {
+            if meta.state.is_terminal() && !active_order_ids.contains(&meta.id) {
+                let waiter =
+                    self.ctx.state.prune_terminal_order_metadata(self.wallet_id, meta.id).await?;
+                if let Err(e) = waiter.await {
+                    warn!("failed to prune terminal metadata for order {}: {e}", meta.id);
+                }
+            }
+        }
+
+        Ok(())
     }
 }
 

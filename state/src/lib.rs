@@ -21,7 +21,7 @@ use common::types::{
         OrderValidityProofBundle, OrderValidityWitnessBundle, ValidWalletUpdateBundle,
     },
     tasks::{QueuedTask, QueuedTaskState, TaskIdentifier, TaskQueueKey},
-    wallet::{OrderIdentifier, Wallet, order_metadata::OrderMetadata},
+    wallet::{OrderIdentifier, Wallet, WalletIdentifier, order_metadata::OrderMetadata},
 };
 use notifications::ProposalId;
 use replication::{NodeId, RaftNode};
@@ -153,6 +153,8 @@ pub enum StateTransition {
     // --- Order History --- //
     /// Update the metadata for a given order
     UpdateOrderMetadata { meta: OrderMetadata },
+    /// Remove terminal order metadata for a given wallet (deferred prune)
+    PruneTerminalOrderMetadata { wallet_id: WalletIdentifier, order_id: OrderIdentifier },
 
     // --- Matching Pools --- //
     /// Create a matching pool

@@ -4,8 +4,10 @@ use crate::storage::tx::StateTxn;
 
 use super::{StateApplicator, error::StateApplicatorError, return_type::ApplicatorReturnType};
 use common::types::wallet::order_metadata::OrderMetadata;
+use common::types::wallet::{OrderIdentifier, WalletIdentifier};
 use external_api::bus_message::{SystemBusMessage, wallet_order_history_topic};
 use libmdbx::RW;
+use tracing::warn;
 
 /// Error emitted when a wallet cannot be found for an order
 const ERR_MISSING_WALLET: &str = "wallet not found";
@@ -41,23 +43,17 @@ impl StateApplicator {
             Some(old_meta) => {
                 let became_terminal = !old_meta.state.is_terminal() && meta.state.is_terminal();
 
-                let order_history_enabled = tx.get_historical_state_enabled()?;
-
-                // Always update order metadata if order history is enabled, otherwise
-                // only update it for non-terminal orders
-                if order_history_enabled || !became_terminal {
-                    tx.update_order_metadata(&wallet, meta.clone())?;
-                }
+                // Always write the metadata update — even for terminal orders
+                // when history is disabled. This keeps the Filled/Cancelled
+                // state visible so that concurrent tasks see `is_terminal()`
+                // and skip the order cleanly. Pruning is deferred to
+                // `PruneTerminalOrderMetadata` after the wallet refresh.
+                tx.update_order_metadata(&wallet, meta.clone())?;
 
                 if became_terminal {
                     // Remove the order from the set of local open
                     // orders as it is no longer matchable
                     tx.remove_local_order(&meta.id)?;
-
-                    // Remove the order from order history if history is disabled
-                    if !order_history_enabled {
-                        tx.remove_order_from_history(&wallet, &meta.id)?;
-                    }
                 }
             },
         }
@@ -67,6 +63,42 @@ impl StateApplicator {
         self.system_bus().publish(topic, SystemBusMessage::OrderMetadataUpdated { order: meta });
 
         Ok(())
+    }
+
+    /// Remove terminal order metadata (deferred prune).
+    ///
+    /// Called by the wallet refresh task after `update_wallet` has made the
+    /// wallet consistent. Only prunes if the metadata exists and is terminal
+    /// and historical state recording is disabled.
+    pub fn prune_terminal_order_metadata(
+        &self,
+        wallet_id: WalletIdentifier,
+        order_id: OrderIdentifier,
+    ) -> Result<ApplicatorReturnType, StateApplicatorError> {
+        let tx = self.db().new_write_tx()?;
+        let order_history_enabled = tx.get_historical_state_enabled()?;
+
+        if order_history_enabled {
+            return Ok(ApplicatorReturnType::None);
+        }
+
+        let meta = tx.get_order_metadata(wallet_id, order_id)?;
+        match meta {
+            Some(m) if m.state.is_terminal() => {
+                tx.remove_order_from_history(&wallet_id, &order_id)?;
+                tx.commit()?;
+            },
+            Some(_) => {
+                warn!(
+                    "prune_terminal_order_metadata called for non-terminal order {order_id}, skipping"
+                );
+            },
+            None => {
+                // Already pruned or never existed — no-op
+            },
+        }
+
+        Ok(ApplicatorReturnType::None)
     }
 }
 

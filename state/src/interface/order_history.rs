@@ -57,6 +57,20 @@ impl StateInner {
     ) -> Result<ProposalWaiter, StateError> {
         self.send_proposal(StateTransition::UpdateOrderMetadata { meta }).await
     }
+
+    /// Remove terminal order metadata after the wallet has been refreshed.
+    ///
+    /// This is the deferred prune path: metadata is kept alive during the
+    /// external-fill race window so `is_terminal()` works, then pruned here
+    /// once the wallet state is consistent.
+    pub async fn prune_terminal_order_metadata(
+        &self,
+        wallet_id: WalletIdentifier,
+        order_id: OrderIdentifier,
+    ) -> Result<ProposalWaiter, StateError> {
+        self.send_proposal(StateTransition::PruneTerminalOrderMetadata { wallet_id, order_id })
+            .await
+    }
 }
 
 #[cfg(test)]
