@@ -6,7 +6,9 @@ use super::{StateApplicator, error::StateApplicatorError, return_type::Applicato
 use common::types::wallet::order_metadata::OrderMetadata;
 use external_api::bus_message::{SystemBusMessage, wallet_order_history_topic};
 use libmdbx::RW;
-use tracing::warn;
+
+/// Error emitted when a wallet cannot be found for an order
+const ERR_MISSING_WALLET: &str = "wallet not found";
 
 impl StateApplicator {
     /// Handle an update to an order's metadata
@@ -28,13 +30,9 @@ impl StateApplicator {
         meta: OrderMetadata,
         tx: &StateTxn<RW>,
     ) -> Result<(), StateApplicatorError> {
-        let wallet = match tx.get_wallet_id_for_order(&meta.id)? {
-            Some(w) => w,
-            None => {
-                warn!("Wallet not found for order {}, skipping metadata update", meta.id);
-                return Ok(());
-            },
-        };
+        let wallet = tx
+            .get_wallet_id_for_order(&meta.id)?
+            .ok_or(StateApplicatorError::MissingEntry(ERR_MISSING_WALLET))?;
 
         let old_meta = tx.get_order_metadata(wallet, meta.id)?;
         match old_meta {
