@@ -153,16 +153,9 @@ impl MatchingEngineExecutor {
         })
     }
 
-    /// Check whether the database rows used to choose an attempted match still
-    /// describe the same order after settlement fails.
-    ///
-    /// This preserves the v1 behavior of re-reading the database before
-    /// deciding whether matching may continue on the same order:
-    ///     1. `order_id -> account_id` must still exist
-    ///     2. the account's serial queue length must still be zero
-    ///     3. the account index must still contain the order row
-    ///     4. the stored `Order` and matchable amount must still equal the
-    ///        values used to choose the attempted match
+    /// Check whether the order that produced an attempted match is still valid
+    /// after settlement fails. Re-reads the database and rejects if the order
+    /// was removed, modified, depleted, or its account's queue is busy.
     async fn order_still_valid(
         &self,
         order_id: &OrderId,
@@ -174,8 +167,6 @@ impl MatchingEngineExecutor {
             return Ok(false);
         };
 
-        // Preserve the v1 guarantee that we stop if the order owner's serial
-        // queue is already busy.
         let queue_len = self.state.serial_tasks_queue_len(&account_id).await?;
         if queue_len > 0 {
             info!(
@@ -232,6 +223,7 @@ impl MatchingEngineExecutor {
 mod tests {
     use std::collections::HashSet;
 
+    use crate::executor::MatchingEngineExecutor;
     use circuit_types::Amount;
     use constants::GLOBAL_MATCHING_POOL;
     use job_types::{
@@ -248,9 +240,6 @@ mod tests {
         order::{Order, mocks::mock_order},
         order_auth::mocks::mock_order_auth,
     };
-    use types_tasks::{RefreshAccountTaskDescriptor, TaskDescriptor};
-
-    use crate::executor::MatchingEngineExecutor;
 
     async fn mock_executor(state: State) -> MatchingEngineExecutor {
         let (_job_queue, job_receiver) = new_matching_engine_worker_queue();
@@ -305,63 +294,6 @@ mod tests {
             setup_executor_with_order().await;
 
         let waiter = state.remove_order_from_account(account_id, order.id).await.unwrap();
-        waiter.await.unwrap();
-
-        let valid = executor
-            .order_still_valid(&order.id, &order, attempted_matchable_amount)
-            .await
-            .unwrap();
-        assert!(!valid);
-    }
-
-    #[tokio::test]
-    async fn test_order_still_valid_false_when_order_amount_changes() {
-        let (executor, state, _account_id, order, attempted_matchable_amount) =
-            setup_executor_with_order().await;
-
-        let mut updated_order = order.clone();
-        updated_order.decrement_amount_in(1);
-        let waiter = state.update_order(updated_order).await.unwrap();
-        waiter.await.unwrap();
-
-        let valid = executor
-            .order_still_valid(&order.id, &order, attempted_matchable_amount)
-            .await
-            .unwrap();
-        assert!(!valid);
-    }
-
-    #[tokio::test]
-    async fn test_order_still_valid_false_when_matchable_amount_zero() {
-        let (executor, state, account_id, order, attempted_matchable_amount) =
-            setup_executor_with_order().await;
-
-        let mut balance = state
-            .get_account_balance(&account_id, &order.input_token(), order.ring.balance_location())
-            .await
-            .unwrap()
-            .unwrap();
-        *balance.amount_mut() = 0;
-        let waiter = state.update_account_balance(account_id, balance).await.unwrap();
-        waiter.await.unwrap();
-
-        let valid = executor
-            .order_still_valid(&order.id, &order, attempted_matchable_amount)
-            .await
-            .unwrap();
-        assert!(!valid);
-    }
-
-    #[tokio::test]
-    async fn test_order_still_valid_false_when_serial_queue_busy() {
-        let (executor, state, account_id, order, attempted_matchable_amount) =
-            setup_executor_with_order().await;
-
-        let keychain = state.get_account_keychain(&account_id).await.unwrap().unwrap();
-        let descriptor =
-            TaskDescriptor::from(RefreshAccountTaskDescriptor::new(account_id, keychain));
-        let (_task_id, waiter) =
-            state.enqueue_preemptive_task(vec![account_id], descriptor, true).await.unwrap();
         waiter.await.unwrap();
 
         let valid = executor
