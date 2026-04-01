@@ -128,9 +128,13 @@ pub(crate) fn get_usdc_denominated_value(
 
     // Peek at the price report from the price reporter and compute the USDC
     // denominated value
-    let price = price_streams.peek_price(&base_token)?;
-    let value = amount_with_decimals * price;
-    Ok(Some(value))
+    match price_streams.peek_price(&base_token) {
+        Ok(price) => {
+            let value = amount_with_decimals * price;
+            Ok(Some(value))
+        },
+        Err(_) => Ok(None),
+    }
 }
 
 /// Enqueue fee payment tasks for all unpaid fees in a wallet, returning the
