@@ -1,7 +1,5 @@
 //! Route handlers for balance operations
 
-use std::collections::HashSet;
-
 use alloy::{
     primitives::{Address, U256},
     sol_types::SolValue,
@@ -33,7 +31,7 @@ use crate::{
         ApiServerError, ERR_ACCOUNT_NOT_FOUND, ERR_BALANCE_NOT_FOUND, bad_request, internal_error,
         not_found,
     },
-    http::helpers::append_task,
+    http::{asset_filter::AssetFilter, helpers::append_task},
     param_parsing::{parse_account_id_from_params, parse_mint_from_params, should_block_on_task},
     router::{QueryParams, TypedHandler, UrlParams},
 };
@@ -116,8 +114,8 @@ impl TypedHandler for GetBalanceByMintHandler {
 
 /// Handler for POST /v2/account/:account_id/balances/:mint/deposit
 pub struct DepositBalanceHandler {
-    /// Assets disabled for deposits
-    disabled_assets: HashSet<Address>,
+    /// Asset filter for checking disabled tokens
+    asset_filter: AssetFilter,
     /// The global state
     state: State,
     /// The task driver queue
@@ -126,12 +124,8 @@ pub struct DepositBalanceHandler {
 
 impl DepositBalanceHandler {
     /// Constructor
-    pub fn new(
-        disabled_assets: HashSet<Address>,
-        state: State,
-        task_queue: TaskDriverQueue,
-    ) -> Self {
-        Self { disabled_assets, state, task_queue }
+    pub fn new(asset_filter: AssetFilter, state: State, task_queue: TaskDriverQueue) -> Self {
+        Self { asset_filter, state, task_queue }
     }
 }
 
@@ -152,9 +146,7 @@ impl TypedHandler for DepositBalanceHandler {
         // Parse parameters
         let account_id = parse_account_id_from_params(&params)?;
         let token = parse_mint_from_params(&params)?;
-        if self.disabled_assets.contains(&token) {
-            return Err(bad_request("token is not supported for deposits"));
-        }
+        self.asset_filter.check_token(&token)?;
         let from_address = req.from_address;
         let amount = req.amount;
         let auth = DepositAuth::from(req.permit);

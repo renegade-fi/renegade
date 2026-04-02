@@ -2,6 +2,7 @@
 
 mod account;
 mod admin;
+pub(super) mod asset_filter;
 mod balance;
 mod external_match;
 mod helpers;
@@ -74,12 +75,13 @@ use order::{
     CancelOrderHandler, CreateOrderHandler, GetOrderByIdHandler, GetOrdersHandler,
     UpdateOrderHandler,
 };
-use std::{collections::HashSet, net::SocketAddr, sync::Arc};
+use std::{net::SocketAddr, sync::Arc};
 use task::{GetTaskByIdHandler, GetTasksHandler};
 use tokio::net::{TcpListener, TcpStream};
-use alloy::primitives::Address;
-use types_core::{HmacKey, Token};
+use types_core::HmacKey;
 use util::get_current_time_millis;
+
+use self::asset_filter::AssetFilter;
 
 use crate::{
     auth::AuthType, http::external_match::processor::ExternalMatchProcessor, router::QueryParams,
@@ -124,11 +126,7 @@ impl HttpServer {
         let task_queue = &config.task_queue;
 
         // Resolve disabled asset tickers to addresses once
-        let disabled_assets: HashSet<Address> = config
-            .disabled_assets
-            .iter()
-            .map(|ticker| Token::from_ticker(ticker).get_alloy_address())
-            .collect();
+        let asset_filter = AssetFilter::new(&config.disabled_assets);
 
         // --- Misc Routes --- //
 
@@ -182,7 +180,7 @@ impl HttpServer {
             CREATE_ORDER_ROUTE.to_string(),
             CreateOrderHandler::new(
                 executor,
-                disabled_assets.clone(),
+                asset_filter.clone(),
                 state.clone(),
                 task_queue.clone(),
             ),
@@ -229,7 +227,7 @@ impl HttpServer {
         router.add_account_authenticated_route(
             &Method::POST,
             DEPOSIT_BALANCE_ROUTE.to_string(),
-            DepositBalanceHandler::new(disabled_assets.clone(), state.clone(), task_queue.clone()),
+            DepositBalanceHandler::new(asset_filter.clone(), state.clone(), task_queue.clone()),
         );
 
         // POST /v2/account/:account_id/balances/:mint/withdraw
@@ -261,7 +259,7 @@ impl HttpServer {
         let admin_key = config.admin_api_key.unwrap_or_else(HmacKey::random);
         let processor = ExternalMatchProcessor::new(
             admin_key,
-            disabled_assets.clone(),
+            asset_filter.clone(),
             darkpool_client.clone(),
             bus.clone(),
             matching_engine_worker_queue.clone(),
@@ -288,7 +286,7 @@ impl HttpServer {
         let market_calculator = MarketDataCalculator::new(
             state.clone(),
             config.price_streams.clone(),
-            disabled_assets.clone(),
+            asset_filter.clone(),
         );
 
         // GET /v2/markets
@@ -316,7 +314,7 @@ impl HttpServer {
         router.add_unauthenticated_route(
             &Method::GET,
             GET_MARKET_PRICE_ROUTE.to_string(),
-            GetMarketPriceHandler::new(disabled_assets.clone(), config.price_streams.clone()),
+            GetMarketPriceHandler::new(asset_filter.clone(), config.price_streams.clone()),
         );
 
         // --- Metadata Routes (v2) --- //
@@ -326,7 +324,7 @@ impl HttpServer {
             &Method::GET,
             GET_EXCHANGE_METADATA_ROUTE.to_string(),
             GetExchangeMetadataHandler::new(
-                disabled_assets.clone(),
+                asset_filter.clone(),
                 state.clone(),
                 darkpool_client.clone(),
             ),
