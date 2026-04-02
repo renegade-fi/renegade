@@ -1,9 +1,10 @@
 //! Groups price reporting API handlers and types
 
-use std::iter;
+use std::{collections::HashSet, iter};
 
 use async_trait::async_trait;
 use common::types::token::{Token, get_all_base_tokens};
+use num_bigint::BigUint;
 use external_api::{
     EmptyRequestResponse,
     http::price_report::{
@@ -61,7 +62,17 @@ impl TypedHandler for PriceReportHandler {
 
 /// Handler for the GET /supported-tokens route
 #[derive(Clone)]
-pub struct GetSupportedTokensHandler;
+pub struct GetSupportedTokensHandler {
+    /// Assets disabled for matching
+    disabled_assets: HashSet<BigUint>,
+}
+
+impl GetSupportedTokensHandler {
+    /// Constructor
+    pub fn new(disabled_assets: HashSet<BigUint>) -> Self {
+        Self { disabled_assets }
+    }
+}
 
 #[async_trait]
 impl TypedHandler for GetSupportedTokensHandler {
@@ -78,6 +89,7 @@ impl TypedHandler for GetSupportedTokensHandler {
         let tokens = get_all_base_tokens()
             .into_iter()
             .chain(iter::once(Token::usdc()))
+            .filter(|t| !self.disabled_assets.contains(&t.get_addr_biguint()))
             .map(|token| ApiToken::new(token.get_addr(), token.get_ticker().unwrap()))
             .collect_vec();
 

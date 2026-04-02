@@ -1,5 +1,7 @@
 //! Groups wallet API handlers and definitions
 
+use std::collections::HashSet;
+
 use async_trait::async_trait;
 use circuit_types::{
     Amount, SizedWallet as SizedCircuitWallet, balance::Balance,
@@ -515,6 +517,8 @@ impl TypedHandler for GetOrderByIdHandler {
 
 /// Handler for the POST /wallet/:id/orders route
 pub struct CreateOrderHandler {
+    /// Assets disabled for order placement
+    disabled_assets: HashSet<BigUint>,
     /// A copy of the relayer-global state
     state: State,
     /// The per-wallet task rate limiter
@@ -523,8 +527,12 @@ pub struct CreateOrderHandler {
 
 impl CreateOrderHandler {
     /// Constructor
-    pub fn new(state: State, rate_limiter: WalletTaskRateLimiter) -> Self {
-        Self { state, rate_limiter }
+    pub fn new(
+        disabled_assets: HashSet<BigUint>,
+        state: State,
+        rate_limiter: WalletTaskRateLimiter,
+    ) -> Self {
+        Self { disabled_assets, state, rate_limiter }
     }
 }
 
@@ -541,6 +549,13 @@ impl TypedHandler for CreateOrderHandler {
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
         let wallet_id = parse_wallet_id_from_params(&params)?;
+
+        // Check if either token in the order is disabled
+        if self.disabled_assets.contains(&req.order.base_mint)
+            || self.disabled_assets.contains(&req.order.quote_mint)
+        {
+            return Err(bad_request("order contains a disabled token"));
+        }
 
         // Check that the order does not already exist
         let oid = req.order.id;
@@ -782,6 +797,8 @@ impl TypedHandler for GetBalanceByMintHandler {
 pub struct DepositBalanceHandler {
     /// The minimum deposit amount allowed by the relayer
     min_deposit_amount: f64,
+    /// Assets disabled for deposits
+    disabled_assets: HashSet<BigUint>,
     /// The URL of the compliance service to use for wallet screening
     compliance_client: ComplianceServerClient,
     /// A copy of the relayer-global state
@@ -796,13 +813,21 @@ impl DepositBalanceHandler {
     /// Constructor
     pub fn new(
         min_deposit_amount: f64,
+        disabled_assets: HashSet<BigUint>,
         compliance_url: Option<Url>,
         state: State,
         rate_limiter: WalletTaskRateLimiter,
         price_streams: PriceStreamStates,
     ) -> Self {
         let compliance_client = ComplianceServerClient::new(compliance_url);
-        Self { min_deposit_amount, compliance_client, state, rate_limiter, price_streams }
+        Self {
+            min_deposit_amount,
+            disabled_assets,
+            compliance_client,
+            state,
+            rate_limiter,
+            price_streams,
+        }
     }
 }
 
@@ -818,6 +843,11 @@ impl TypedHandler for DepositBalanceHandler {
         params: UrlParams,
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
+        // Check if the token is disabled for deposits
+        if self.disabled_assets.contains(&req.mint) {
+            return Err(bad_request("token is not supported for deposits"));
+        }
+
         // Screen the wallet for compliance
         let addr = biguint_to_hex_addr(&req.from_addr);
         if !self.compliance_client.check_address(&addr).await? {

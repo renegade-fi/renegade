@@ -53,11 +53,13 @@ impl HandshakeExecutor {
             .cloned()
             .ok_or_else(|| HandshakeManagerError::State(ERR_NO_ORDER.to_string()))?;
 
-        // Check if the asset is disabled for matching
-        if self.is_asset_disabled(&my_order.base_mint) {
+        // Check if either asset in the pair is disabled for matching
+        if self.is_asset_disabled(&my_order.base_mint)
+            || self.is_asset_disabled(&my_order.quote_mint)
+        {
             let base = Token::from_addr_biguint(&my_order.base_mint);
             let ticker = base.get_ticker().unwrap_or(base.get_addr());
-            warn!("{ticker} is disabled for matching, skipping internal matching engine...");
+            warn!("{ticker} pair is disabled for matching, skipping internal matching engine...");
             return Ok(());
         }
 

@@ -1,6 +1,6 @@
 //! The external match processor
 
-use std::{sync::Arc, time::Duration};
+use std::{collections::HashSet, sync::Arc, time::Duration};
 
 use alloy::{
     primitives::{Address, U256},
@@ -111,6 +111,8 @@ pub struct ExternalMatchProcessor {
     min_order_size: f64,
     /// The admin key, used to sign and validate quotes
     admin_key: HmacKey,
+    /// Assets disabled for matching
+    disabled_assets: HashSet<BigUint>,
     /// The handshake manager's queue
     handshake_queue: HandshakeManagerQueue,
     /// A handle on the darkpool RPC client
@@ -126,12 +128,34 @@ impl ExternalMatchProcessor {
     pub fn new(
         min_order_size: f64,
         admin_key: HmacKey,
+        disabled_assets: HashSet<BigUint>,
         handshake_queue: HandshakeManagerQueue,
         darkpool_client: DarkpoolClient,
         bus: SystemBus<SystemBusMessage>,
         price_streams: PriceStreamStates,
     ) -> Self {
-        Self { min_order_size, admin_key, handshake_queue, darkpool_client, bus, price_streams }
+        Self {
+            min_order_size,
+            admin_key,
+            disabled_assets,
+            handshake_queue,
+            darkpool_client,
+            bus,
+            price_streams,
+        }
+    }
+
+    /// Validate that neither token in the order is disabled
+    fn validate_order_not_disabled(
+        &self,
+        order: &ExternalOrder,
+    ) -> Result<(), ApiServerError> {
+        if self.disabled_assets.contains(&order.base_mint)
+            || self.disabled_assets.contains(&order.quote_mint)
+        {
+            return Err(bad_request("token is not supported"));
+        }
+        Ok(())
     }
 
     /// Await the next bus message on a topic
@@ -153,6 +177,7 @@ impl ExternalMatchProcessor {
         relayer_fee_rate: FixedPoint,
         matching_pool: Option<MatchingPoolName>,
     ) -> Result<ExternalMatchResult, ApiServerError> {
+        self.validate_order_not_disabled(&external_order)?;
         let opt = ExternalMatchingEngineOptions::only_quote()
             .with_matching_pool(matching_pool)
             .with_relayer_fee_rate(relayer_fee_rate);
@@ -176,6 +201,7 @@ impl ExternalMatchProcessor {
         matching_pool: Option<MatchingPoolName>,
         order: ExternalOrder,
     ) -> Result<AtomicMatchApiBundle, ApiServerError> {
+        self.validate_order_not_disabled(&order)?;
         let opt = ExternalMatchingEngineOptions::new()
             .with_bundle_duration(ASSEMBLE_BUNDLE_TIMEOUT)
             .with_price(price)
@@ -210,6 +236,7 @@ impl ExternalMatchProcessor {
         matching_pool: Option<MatchingPoolName>,
         order: ExternalOrder,
     ) -> Result<MalleableAtomicMatchApiBundle, ApiServerError> {
+        self.validate_order_not_disabled(&order)?;
         let opt = ExternalMatchingEngineOptions::new()
             .with_bundle_duration(ASSEMBLE_BUNDLE_TIMEOUT)
             .with_bounded_match(true)
@@ -274,6 +301,7 @@ impl ExternalMatchProcessor {
         matching_pool: Option<MatchingPoolName>,
         external_order: ExternalOrder,
     ) -> Result<MalleableAtomicMatchApiBundle, ApiServerError> {
+        self.validate_order_not_disabled(&external_order)?;
         let opt = ExternalMatchingEngineOptions::new()
             .with_bundle_duration(DIRECT_MATCH_BUNDLE_TIMEOUT)
             .with_bounded_match(true)
