@@ -414,10 +414,7 @@ impl HttpServer {
         router.add_admin_authenticated_route(
             &Method::POST,
             ADMIN_ASSIGN_ORDER_TO_POOL_ROUTE.to_string(),
-            AdminAssignOrderToPoolHandler::new(
-                state.clone(),
-                matching_engine_worker_queue.clone(),
-            ),
+            AdminAssignOrderToPoolHandler::new(state.clone(), matching_engine_worker_queue.clone()),
         );
 
         Ok(router)
