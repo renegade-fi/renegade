@@ -17,7 +17,10 @@ use external_api::{
     },
 };
 use hyper::HeaderMap;
-use job_types::task_driver::TaskDriverQueue;
+use job_types::{
+    matching_engine::{MatchingEngineWorkerJob, MatchingEngineWorkerQueue},
+    task_driver::TaskDriverQueue,
+};
 use state::State;
 use tracing::info;
 use types_core::{Chain, Token, get_all_tokens};
@@ -606,12 +609,14 @@ impl TypedHandler for AdminCreateOrderInPoolHandler {
 pub struct AdminAssignOrderToPoolHandler {
     /// A handle to the relayer state
     state: State,
+    /// The queue used to trigger re-matching after a pool change
+    matching_engine_queue: MatchingEngineWorkerQueue,
 }
 
 impl AdminAssignOrderToPoolHandler {
     /// Constructor
-    pub fn new(state: State) -> Self {
-        Self { state }
+    pub fn new(state: State, matching_engine_queue: MatchingEngineWorkerQueue) -> Self {
+        Self { state, matching_engine_queue }
     }
 }
 
@@ -640,9 +645,18 @@ impl TypedHandler for AdminAssignOrderToPoolHandler {
             return Err(not_found(ERR_MATCHING_POOL_NOT_FOUND));
         }
 
+        let account_id = self
+            .state
+            .get_account_id_for_order(&order_id)
+            .await?
+            .ok_or_else(|| internal_error("order not associated with account"))?;
+
         // Assign the order to the matching pool
         let waiter = self.state.assign_order_to_matching_pool(order_id, matching_pool).await?;
         waiter.await?;
+
+        let job = MatchingEngineWorkerJob::run_internal_engine(account_id, order_id);
+        self.matching_engine_queue.send(job).map_err(|e| internal_error(e.to_string()))?;
 
         Ok(EmptyRequestResponse {})
     }
