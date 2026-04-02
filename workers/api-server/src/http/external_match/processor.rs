@@ -145,8 +145,8 @@ impl ExternalMatchProcessor {
         }
     }
 
-    /// Validate that neither token in the order is disabled
-    fn validate_order_not_disabled(&self, order: &ExternalOrder) -> Result<(), ApiServerError> {
+    /// Validate that neither token in the pair is disabled
+    fn validate_pair_not_disabled(&self, order: &ExternalOrder) -> Result<(), ApiServerError> {
         self.asset_filter.check_pair(&order.base_mint, &order.quote_mint)
     }
 
@@ -169,7 +169,7 @@ impl ExternalMatchProcessor {
         relayer_fee_rate: FixedPoint,
         matching_pool: Option<MatchingPoolName>,
     ) -> Result<ExternalMatchResult, ApiServerError> {
-        self.validate_order_not_disabled(&external_order)?;
+        self.validate_pair_not_disabled(&external_order)?;
         let opt = ExternalMatchingEngineOptions::only_quote()
             .with_matching_pool(matching_pool)
             .with_relayer_fee_rate(relayer_fee_rate);
@@ -193,7 +193,7 @@ impl ExternalMatchProcessor {
         matching_pool: Option<MatchingPoolName>,
         order: ExternalOrder,
     ) -> Result<AtomicMatchApiBundle, ApiServerError> {
-        self.validate_order_not_disabled(&order)?;
+        self.validate_pair_not_disabled(&order)?;
         let opt = ExternalMatchingEngineOptions::new()
             .with_bundle_duration(ASSEMBLE_BUNDLE_TIMEOUT)
             .with_price(price)
@@ -228,7 +228,7 @@ impl ExternalMatchProcessor {
         matching_pool: Option<MatchingPoolName>,
         order: ExternalOrder,
     ) -> Result<MalleableAtomicMatchApiBundle, ApiServerError> {
-        self.validate_order_not_disabled(&order)?;
+        self.validate_pair_not_disabled(&order)?;
         let opt = ExternalMatchingEngineOptions::new()
             .with_bundle_duration(ASSEMBLE_BUNDLE_TIMEOUT)
             .with_bounded_match(true)
@@ -293,7 +293,7 @@ impl ExternalMatchProcessor {
         matching_pool: Option<MatchingPoolName>,
         external_order: ExternalOrder,
     ) -> Result<MalleableAtomicMatchApiBundle, ApiServerError> {
-        self.validate_order_not_disabled(&external_order)?;
+        self.validate_pair_not_disabled(&external_order)?;
         let opt = ExternalMatchingEngineOptions::new()
             .with_bundle_duration(DIRECT_MATCH_BUNDLE_TIMEOUT)
             .with_bounded_match(true)
