@@ -1,5 +1,7 @@
 //! Route handlers for order operations
 
+use std::collections::HashSet;
+
 use alloy::primitives::Address;
 use async_trait::async_trait;
 use constants::GLOBAL_MATCHING_POOL;
@@ -131,6 +133,8 @@ impl TypedHandler for GetOrderByIdHandler {
 pub struct CreateOrderHandler {
     /// The local relayer's executor address
     executor: Address,
+    /// Assets disabled for order placement
+    disabled_assets: HashSet<Address>,
     /// A handle to the relayer's state
     state: State,
     /// The task driver queue
@@ -139,8 +143,13 @@ pub struct CreateOrderHandler {
 
 impl CreateOrderHandler {
     /// Constructor
-    pub fn new(executor: Address, state: State, task_queue: TaskDriverQueue) -> Self {
-        Self { executor, state, task_queue }
+    pub fn new(
+        executor: Address,
+        disabled_assets: HashSet<Address>,
+        state: State,
+        task_queue: TaskDriverQueue,
+    ) -> Self {
+        Self { executor, disabled_assets, state, task_queue }
     }
 }
 
@@ -159,6 +168,14 @@ impl TypedHandler for CreateOrderHandler {
         // Parse query and URL params
         let blocking = should_block_on_task(&query_params);
         let account_id = parse_account_id_from_params(&params)?;
+
+        // Check if either token in the order is disabled
+        let intent = &req.order.intent;
+        if self.disabled_assets.contains(&intent.in_token)
+            || self.disabled_assets.contains(&intent.out_token)
+        {
+            return Err(bad_request("order contains a disabled token"));
+        }
 
         // Check if order already exists
         let order_id = OrderId::from(req.order.id);

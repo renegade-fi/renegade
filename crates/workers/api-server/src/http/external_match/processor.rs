@@ -1,9 +1,11 @@
 //! The external match processor
 
-use std::time::Duration;
+use std::{collections::HashSet, time::Duration};
 
 use alloy::{
-    network::TransactionBuilder, primitives::U256, rpc::types::TransactionRequest,
+    network::TransactionBuilder,
+    primitives::{Address, U256},
+    rpc::types::TransactionRequest,
     sol_types::SolCall,
 };
 use circuit_types::fixed_point::FixedPoint;
@@ -30,7 +32,7 @@ use types_account::{order::Order, pair::Pair};
 use types_core::{HmacKey, TimestampedPrice, TimestampedPriceFp};
 use util::{get_current_time_millis, on_chain::get_protocol_fee};
 
-use crate::error::{ApiServerError, internal_error, no_content, unauthorized};
+use crate::error::{ApiServerError, bad_request, internal_error, no_content, unauthorized};
 
 // -------------
 // | Constants |
@@ -53,6 +55,8 @@ const ERR_NO_EXTERNAL_MATCH_FOUND: &str = "no external match found";
 pub struct ExternalMatchProcessor {
     /// The admin API key, used to sign quotes
     admin_key: HmacKey,
+    /// Assets disabled for matching
+    disabled_assets: HashSet<Address>,
     /// The darkpool client
     darkpool_client: DarkpoolClient,
     /// The system bus
@@ -69,13 +73,32 @@ impl ExternalMatchProcessor {
     /// Constructor
     pub fn new(
         admin_key: HmacKey,
+        disabled_assets: HashSet<Address>,
         darkpool_client: DarkpoolClient,
         bus: SystemBus,
         matching_engine_worker_queue: MatchingEngineWorkerQueue,
         price_streams: PriceStreamStates,
         state: State,
     ) -> Self {
-        Self { admin_key, darkpool_client, bus, matching_engine_worker_queue, price_streams, state }
+        Self {
+            admin_key,
+            disabled_assets,
+            darkpool_client,
+            bus,
+            matching_engine_worker_queue,
+            price_streams,
+            state,
+        }
+    }
+
+    /// Validate that neither token in the pair is disabled
+    fn validate_pair_not_disabled(&self, pair: &Pair) -> Result<(), ApiServerError> {
+        if self.disabled_assets.contains(&pair.in_token)
+            || self.disabled_assets.contains(&pair.out_token)
+        {
+            return Err(bad_request("token is not supported"));
+        }
+        Ok(())
     }
 
     // --- Quote --- //
@@ -102,6 +125,7 @@ impl ExternalMatchProcessor {
         // Fetch the price for the pair; this effectively adds to the delay
         // between price sampling and settlement, but is acceptable for simplicity
         let pair = Pair::new(req.external_order.input_mint, req.external_order.output_mint);
+        self.validate_pair_not_disabled(&pair)?;
         let price_fp = self.get_price(&pair)?;
 
         // Determine fee rates before normalizing output-denominated exact orders
@@ -183,6 +207,7 @@ impl ExternalMatchProcessor {
         // normalization and matching-engine options.
         let external_order = req.order.get_external_order();
         let pair = Pair::new(external_order.input_mint, external_order.output_mint);
+        self.validate_pair_not_disabled(&pair)?;
         let price = self.assembly_price(&req, &pair)?;
         let fee_override = req.options.relayer_fee_rate.map(FixedPoint::from_f64_round_down);
         let fee_rates = self.get_fee_rates_for_pair(&pair, fee_override)?;

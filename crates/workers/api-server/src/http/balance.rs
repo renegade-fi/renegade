@@ -1,5 +1,7 @@
 //! Route handlers for balance operations
 
+use std::collections::HashSet;
+
 use alloy::{
     primitives::{Address, U256},
     sol_types::SolValue,
@@ -114,6 +116,8 @@ impl TypedHandler for GetBalanceByMintHandler {
 
 /// Handler for POST /v2/account/:account_id/balances/:mint/deposit
 pub struct DepositBalanceHandler {
+    /// Assets disabled for deposits
+    disabled_assets: HashSet<Address>,
     /// The global state
     state: State,
     /// The task driver queue
@@ -122,8 +126,12 @@ pub struct DepositBalanceHandler {
 
 impl DepositBalanceHandler {
     /// Constructor
-    pub fn new(state: State, task_queue: TaskDriverQueue) -> Self {
-        Self { state, task_queue }
+    pub fn new(
+        disabled_assets: HashSet<Address>,
+        state: State,
+        task_queue: TaskDriverQueue,
+    ) -> Self {
+        Self { disabled_assets, state, task_queue }
     }
 }
 
@@ -144,6 +152,9 @@ impl TypedHandler for DepositBalanceHandler {
         // Parse parameters
         let account_id = parse_account_id_from_params(&params)?;
         let token = parse_mint_from_params(&params)?;
+        if self.disabled_assets.contains(&token) {
+            return Err(bad_request("token is not supported for deposits"));
+        }
         let from_address = req.from_address;
         let amount = req.amount;
         let auth = DepositAuth::from(req.permit);

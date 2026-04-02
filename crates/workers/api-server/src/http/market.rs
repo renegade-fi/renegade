@@ -1,5 +1,8 @@
 //! Route handlers for market operations
 
+use std::collections::HashSet;
+
+use alloy::primitives::Address;
 use async_trait::async_trait;
 use circuit_types::fixed_point::FixedPoint;
 use external_api::{
@@ -19,7 +22,7 @@ use types_core::{Token, get_all_base_tokens};
 use util::on_chain::get_protocol_fee;
 
 use crate::{
-    error::ApiServerError,
+    error::{ApiServerError, bad_request},
     param_parsing::parse_token_from_params,
     router::{QueryParams, TypedHandler, UrlParams},
 };
@@ -35,12 +38,26 @@ pub(super) struct MarketDataCalculator {
     state: State,
     /// The price stream states
     price_streams: PriceStreamStates,
+    /// Assets disabled for matching
+    disabled_assets: HashSet<Address>,
 }
 
 impl MarketDataCalculator {
     /// Constructor
-    pub fn new(state: State, price_streams: PriceStreamStates) -> Self {
-        Self { state, price_streams }
+    pub fn new(
+        state: State,
+        price_streams: PriceStreamStates,
+        disabled_assets: HashSet<Address>,
+    ) -> Self {
+        Self { state, price_streams, disabled_assets }
+    }
+
+    /// Get the list of enabled base tokens
+    fn get_enabled_base_tokens(&self) -> Vec<Token> {
+        get_all_base_tokens()
+            .into_iter()
+            .filter(|t| !self.disabled_assets.contains(&t.get_alloy_address()))
+            .collect()
     }
 
     /// Get fee rates for a token
@@ -125,7 +142,7 @@ impl TypedHandler for GetMarketsHandler {
         _params: UrlParams,
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
-        let tokens = get_all_base_tokens();
+        let tokens = self.calculator.get_enabled_base_tokens();
         let markets =
             tokens.iter().filter_map(|t| self.calculator.get_market_info(t).ok()).collect();
         Ok(GetMarketsResponse { markets })
@@ -157,7 +174,7 @@ impl TypedHandler for GetMarketDepthsHandler {
         _params: UrlParams,
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
-        let tokens = get_all_base_tokens();
+        let tokens = self.calculator.get_enabled_base_tokens();
         let futs = tokens
             .iter()
             .map(|t| async { self.calculator.get_market_depth(t).await })
@@ -194,6 +211,9 @@ impl TypedHandler for GetMarketDepthByMintHandler {
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
         let token = parse_token_from_params(&params)?;
+        if self.calculator.disabled_assets.contains(&token.get_alloy_address()) {
+            return Err(bad_request("token is not supported"));
+        }
         let market_depth = self.calculator.get_market_depth(&token).await?;
         Ok(GetMarketDepthByMintResponse { market_depth })
     }
@@ -201,14 +221,16 @@ impl TypedHandler for GetMarketDepthByMintHandler {
 
 /// Handler for GET /v2/markets/:mint/price
 pub struct GetMarketPriceHandler {
+    /// Assets disabled for matching
+    disabled_assets: HashSet<Address>,
     /// The price stream states
     price_streams: PriceStreamStates,
 }
 
 impl GetMarketPriceHandler {
     /// Constructor
-    pub fn new(price_streams: PriceStreamStates) -> Self {
-        Self { price_streams }
+    pub fn new(disabled_assets: HashSet<Address>, price_streams: PriceStreamStates) -> Self {
+        Self { disabled_assets, price_streams }
     }
 }
 
@@ -225,6 +247,9 @@ impl TypedHandler for GetMarketPriceHandler {
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
         let token = parse_token_from_params(&params)?;
+        if self.disabled_assets.contains(&token.get_alloy_address()) {
+            return Err(bad_request("token is not supported"));
+        }
         let price: ApiTimestampedPrice = self.price_streams.peek_timestamped_price(&token)?.into();
         Ok(price)
     }

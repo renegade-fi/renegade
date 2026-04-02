@@ -1,5 +1,8 @@
 //! Route handlers for metadata operations
 
+use std::collections::HashSet;
+
+use alloy::primitives::Address;
 use async_trait::async_trait;
 use darkpool_client::DarkpoolClient;
 use external_api::{
@@ -22,6 +25,8 @@ use crate::{
 
 /// Handler for GET /v2/metadata/exchange
 pub struct GetExchangeMetadataHandler {
+    /// Assets disabled for matching
+    disabled_assets: HashSet<Address>,
     /// A handle to the relayer's state
     state: State,
     /// The darkpool client
@@ -30,8 +35,12 @@ pub struct GetExchangeMetadataHandler {
 
 impl GetExchangeMetadataHandler {
     /// Constructor
-    pub fn new(state: State, darkpool_client: DarkpoolClient) -> Self {
-        Self { state, darkpool_client }
+    pub fn new(
+        disabled_assets: HashSet<Address>,
+        state: State,
+        darkpool_client: DarkpoolClient,
+    ) -> Self {
+        Self { disabled_assets, state, darkpool_client }
     }
 }
 
@@ -54,6 +63,7 @@ impl TypedHandler for GetExchangeMetadataHandler {
 
         let supported_tokens = get_all_base_tokens()
             .into_iter()
+            .filter(|t| !self.disabled_assets.contains(&t.get_alloy_address()))
             .filter_map(|t| t.get_ticker().map(|sym| ApiToken::new(t.get_alloy_address(), sym)))
             .collect();
 
