@@ -262,6 +262,7 @@ impl ExternalMatchProcessor {
         matching_pool: Option<MatchingPoolName>,
         external_order: ExternalOrder,
     ) -> Result<AtomicMatchApiBundle, ApiServerError> {
+        self.validate_pair_not_disabled(&external_order)?;
         let opt = ExternalMatchingEngineOptions::new()
             .with_bundle_duration(DIRECT_MATCH_BUNDLE_TIMEOUT)
             .with_matching_pool(matching_pool)
