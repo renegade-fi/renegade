@@ -1,6 +1,7 @@
 //! Groups handlers for the HTTP API
 
 mod admin;
+pub(super) mod asset_filter;
 mod external_match;
 mod network;
 mod order_book;
@@ -60,11 +61,11 @@ use hyper::{
 use hyper_util::rt::{TokioIo, TokioTimer};
 use order_book::{GetDepthByMintHandler, GetExternalMatchFeesHandler};
 use price_report::{GetSupportedTokensHandler, TokenPricesHandler};
-use common::types::token::Token;
-use num_bigint::BigUint;
 use rate_limit::WalletTaskRateLimiter;
 use state::State;
-use std::{collections::HashSet, net::SocketAddr, sync::Arc};
+use std::{net::SocketAddr, sync::Arc};
+
+use self::asset_filter::AssetFilter;
 use task::GetTaskQueuePausedHandler;
 use tokio::net::{TcpListener, TcpStream};
 use util::get_current_time_millis;
@@ -133,11 +134,7 @@ impl HttpServer {
         let handshake_queue = config.handshake_manager_work_queue.clone();
 
         // Resolve disabled asset tickers to addresses once
-        let disabled_assets: HashSet<BigUint> = config
-            .disabled_assets
-            .iter()
-            .map(|ticker| Token::from_ticker(ticker).get_addr_biguint())
-            .collect();
+        let asset_filter = AssetFilter::new(&config.disabled_assets);
 
         // --- Misc Routes --- //
 
@@ -228,7 +225,7 @@ impl HttpServer {
             &Method::POST,
             WALLET_ORDERS_ROUTE.to_string(),
             CreateOrderHandler::new(
-                disabled_assets.clone(),
+                asset_filter.clone(),
                 state.clone(),
                 wallet_rate_limiter.clone(),
             ),
@@ -275,7 +272,7 @@ impl HttpServer {
             DEPOSIT_BALANCE_ROUTE.to_string(),
             DepositBalanceHandler::new(
                 config.min_transfer_amount,
-                disabled_assets.clone(),
+                asset_filter.clone(),
                 config.compliance_service_url.clone(),
                 state.clone(),
                 wallet_rate_limiter.clone(),
@@ -323,7 +320,7 @@ impl HttpServer {
         let processor = ExternalMatchProcessor::new(
             config.min_order_size,
             admin_key,
-            disabled_assets.clone(),
+            asset_filter.clone(),
             handshake_queue,
             config.darkpool_client.clone(),
             config.system_bus.clone(),
@@ -392,7 +389,7 @@ impl HttpServer {
         router.add_unauthenticated_route(
             &Method::GET,
             GET_SUPPORTED_TOKENS_ROUTE.to_string(),
-            GetSupportedTokensHandler::new(disabled_assets.clone()),
+            GetSupportedTokensHandler::new(asset_filter.clone()),
         );
 
         // The "/token-prices" route
@@ -414,7 +411,7 @@ impl HttpServer {
             &Method::GET,
             GET_DEPTH_BY_MINT_ROUTE.to_string(),
             GetDepthByMintHandler::new(
-                disabled_assets.clone(),
+                asset_filter.clone(),
                 state.clone(),
                 config.price_streams.clone(),
             )?,
@@ -425,7 +422,7 @@ impl HttpServer {
             &Method::GET,
             GET_DEPTH_FOR_ALL_PAIRS_ROUTE.to_string(),
             GetDepthForAllPairsHandler::new(
-                disabled_assets.clone(),
+                asset_filter.clone(),
                 state.clone(),
                 config.price_streams.clone(),
             )?,

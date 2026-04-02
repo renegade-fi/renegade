@@ -1,6 +1,6 @@
 //! The external match processor
 
-use std::{collections::HashSet, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 
 use alloy::{
     primitives::{Address, U256},
@@ -40,7 +40,7 @@ use util::{
 
 use crate::{
     error::{ApiServerError, bad_request, internal_error, no_content},
-    http::wallet::get_usdc_denominated_value,
+    http::{asset_filter::AssetFilter, wallet::get_usdc_denominated_value},
 };
 
 // -------------
@@ -111,8 +111,8 @@ pub struct ExternalMatchProcessor {
     min_order_size: f64,
     /// The admin key, used to sign and validate quotes
     admin_key: HmacKey,
-    /// Assets disabled for matching
-    disabled_assets: HashSet<BigUint>,
+    /// Asset filter for checking disabled tokens
+    asset_filter: AssetFilter,
     /// The handshake manager's queue
     handshake_queue: HandshakeManagerQueue,
     /// A handle on the darkpool RPC client
@@ -128,7 +128,7 @@ impl ExternalMatchProcessor {
     pub fn new(
         min_order_size: f64,
         admin_key: HmacKey,
-        disabled_assets: HashSet<BigUint>,
+        asset_filter: AssetFilter,
         handshake_queue: HandshakeManagerQueue,
         darkpool_client: DarkpoolClient,
         bus: SystemBus<SystemBusMessage>,
@@ -137,7 +137,7 @@ impl ExternalMatchProcessor {
         Self {
             min_order_size,
             admin_key,
-            disabled_assets,
+            asset_filter,
             handshake_queue,
             darkpool_client,
             bus,
@@ -146,16 +146,8 @@ impl ExternalMatchProcessor {
     }
 
     /// Validate that neither token in the order is disabled
-    fn validate_order_not_disabled(
-        &self,
-        order: &ExternalOrder,
-    ) -> Result<(), ApiServerError> {
-        if self.disabled_assets.contains(&order.base_mint)
-            || self.disabled_assets.contains(&order.quote_mint)
-        {
-            return Err(bad_request("token is not supported"));
-        }
-        Ok(())
+    fn validate_order_not_disabled(&self, order: &ExternalOrder) -> Result<(), ApiServerError> {
+        self.asset_filter.check_pair(&order.base_mint, &order.quote_mint)
     }
 
     /// Await the next bus message on a topic

@@ -1,6 +1,6 @@
 //! Groups routes and handlers for order book API operations
 
-use std::{collections::{HashMap, HashSet}, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
 use async_trait::async_trait;
 use common::types::{
@@ -8,7 +8,6 @@ use common::types::{
     token::{Token, get_all_base_tokens},
     wallet::pair_from_mints,
 };
-use num_bigint::BigUint;
 use constants::DEFAULT_EXTERNAL_MATCH_RELAYER_FEE;
 use external_api::{
     EmptyRequestResponse,
@@ -28,6 +27,7 @@ use util::on_chain::get_external_match_fee;
 
 use crate::{
     error::{ApiServerError, bad_request, not_found},
+    http::asset_filter::AssetFilter,
     param_parsing::{
         parse_mint_from_params, parse_order_id_from_params, parse_tickers_from_query_params,
     },
@@ -264,8 +264,8 @@ impl DepthCalculator {
 /// Handler for the GET /order_book/depth/:mint route
 #[derive(Clone)]
 pub struct GetDepthByMintHandler {
-    /// Assets disabled for matching
-    disabled_assets: HashSet<BigUint>,
+    /// Asset filter for checking disabled tokens
+    asset_filter: AssetFilter,
     /// The depth calculator for fetching price and depth data
     depth_calculator: DepthCalculator,
 }
@@ -273,12 +273,12 @@ pub struct GetDepthByMintHandler {
 impl GetDepthByMintHandler {
     /// Constructor
     pub fn new(
-        disabled_assets: HashSet<BigUint>,
+        asset_filter: AssetFilter,
         state: State,
         price_streams: PriceStreamStates,
     ) -> Result<Self, ApiServerError> {
         let depth_calculator = DepthCalculator::new(state, price_streams)?;
-        Ok(Self { disabled_assets, depth_calculator })
+        Ok(Self { asset_filter, depth_calculator })
     }
 }
 
@@ -295,9 +295,7 @@ impl TypedHandler for GetDepthByMintHandler {
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
         let mint = parse_mint_from_params(&params)?;
-        if self.disabled_assets.contains(&mint) {
-            return Err(bad_request("token is not supported"));
-        }
+        self.asset_filter.check_token(&mint)?;
         let base_token = Token::from_addr_biguint(&mint);
         let depth = self.depth_calculator.get_price_and_depth(base_token).await?;
         Ok(GetDepthByMintResponse { depth })
@@ -307,8 +305,8 @@ impl TypedHandler for GetDepthByMintHandler {
 /// Handler for the GET /order_book/depth route
 #[derive(Clone)]
 pub struct GetDepthForAllPairsHandler {
-    /// Assets disabled for matching
-    disabled_assets: HashSet<BigUint>,
+    /// Asset filter for checking disabled tokens
+    asset_filter: AssetFilter,
     /// The depth calculator for fetching price and depth data
     depth_calculator: DepthCalculator,
 }
@@ -316,12 +314,12 @@ pub struct GetDepthForAllPairsHandler {
 impl GetDepthForAllPairsHandler {
     /// Constructor
     pub fn new(
-        disabled_assets: HashSet<BigUint>,
+        asset_filter: AssetFilter,
         state: State,
         price_streams: PriceStreamStates,
     ) -> Result<Self, ApiServerError> {
         let depth_calculator = DepthCalculator::new(state, price_streams)?;
-        Ok(Self { disabled_assets, depth_calculator })
+        Ok(Self { asset_filter, depth_calculator })
     }
 }
 
@@ -338,10 +336,7 @@ impl TypedHandler for GetDepthForAllPairsHandler {
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
         // Get all tokens for which we support price data, excluding disabled
-        let supported_tokens: Vec<Token> = get_all_base_tokens()
-            .into_iter()
-            .filter(|t| !self.disabled_assets.contains(&t.get_addr_biguint()))
-            .collect();
+        let supported_tokens = self.asset_filter.enabled_base_tokens();
         let quote_token = Token::usdc();
 
         let mut pairs = Vec::new();

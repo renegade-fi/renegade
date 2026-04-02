@@ -1,10 +1,9 @@
 //! Groups price reporting API handlers and types
 
-use std::{collections::HashSet, iter};
+use std::iter;
 
 use async_trait::async_trait;
 use common::types::token::{Token, get_all_base_tokens};
-use num_bigint::BigUint;
 use external_api::{
     EmptyRequestResponse,
     http::price_report::{
@@ -18,6 +17,7 @@ use price_state::PriceStreamStates;
 
 use crate::{
     error::ApiServerError,
+    http::asset_filter::AssetFilter,
     param_parsing::parse_token_from_params,
     router::{QueryParams, TypedHandler, UrlParams},
 };
@@ -63,14 +63,14 @@ impl TypedHandler for PriceReportHandler {
 /// Handler for the GET /supported-tokens route
 #[derive(Clone)]
 pub struct GetSupportedTokensHandler {
-    /// Assets disabled for matching
-    disabled_assets: HashSet<BigUint>,
+    /// Asset filter for checking disabled tokens
+    asset_filter: AssetFilter,
 }
 
 impl GetSupportedTokensHandler {
     /// Constructor
-    pub fn new(disabled_assets: HashSet<BigUint>) -> Self {
-        Self { disabled_assets }
+    pub fn new(asset_filter: AssetFilter) -> Self {
+        Self { asset_filter }
     }
 }
 
@@ -86,10 +86,11 @@ impl TypedHandler for GetSupportedTokensHandler {
         _params: UrlParams,
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
-        let tokens = get_all_base_tokens()
+        let tokens = self
+            .asset_filter
+            .enabled_base_tokens()
             .into_iter()
             .chain(iter::once(Token::usdc()))
-            .filter(|t| !self.disabled_assets.contains(&t.get_addr_biguint()))
             .map(|token| ApiToken::new(token.get_addr(), token.get_ticker().unwrap()))
             .collect_vec();
 
