@@ -72,10 +72,10 @@ impl HandshakeExecutor {
     ) -> Result<(), HandshakeManagerError> {
         let base = Token::from_addr_biguint(&order.base_mint);
 
-        // Check if the asset is disabled for matching
-        if self.is_asset_disabled(&order.base_mint) {
+        // Check if either asset in the pair is disabled for matching
+        if self.is_asset_disabled(&order.base_mint) || self.is_asset_disabled(&order.quote_mint) {
             let ticker = base.get_ticker().unwrap_or(base.get_addr());
-            warn!("{ticker} is disabled for matching, skipping external matching engine...");
+            warn!("{ticker} pair is disabled for matching, skipping external matching engine...");
             self.handle_no_match(response_topic);
             return Ok(());
         }

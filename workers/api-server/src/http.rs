@@ -1,6 +1,7 @@
 //! Groups handlers for the HTTP API
 
 mod admin;
+pub(super) mod asset_filter;
 mod external_match;
 mod network;
 mod order_book;
@@ -63,6 +64,8 @@ use price_report::{GetSupportedTokensHandler, TokenPricesHandler};
 use rate_limit::WalletTaskRateLimiter;
 use state::State;
 use std::{net::SocketAddr, sync::Arc};
+
+use self::asset_filter::AssetFilter;
 use task::GetTaskQueuePausedHandler;
 use tokio::net::{TcpListener, TcpStream};
 use util::get_current_time_millis;
@@ -129,6 +132,9 @@ impl HttpServer {
         let mut router = Router::new(config.admin_api_key, state.clone());
         let wallet_rate_limiter = WalletTaskRateLimiter::new_hourly(config.wallet_task_rate_limit);
         let handshake_queue = config.handshake_manager_work_queue.clone();
+
+        // Resolve disabled asset tickers to addresses once
+        let asset_filter = AssetFilter::new(&config.disabled_assets);
 
         // --- Misc Routes --- //
 
@@ -218,7 +224,11 @@ impl HttpServer {
         router.add_wallet_authenticated_route(
             &Method::POST,
             WALLET_ORDERS_ROUTE.to_string(),
-            CreateOrderHandler::new(state.clone(), wallet_rate_limiter.clone()),
+            CreateOrderHandler::new(
+                asset_filter.clone(),
+                state.clone(),
+                wallet_rate_limiter.clone(),
+            ),
         );
 
         // The "/wallet/:id/orders/:id" route
@@ -262,6 +272,7 @@ impl HttpServer {
             DEPOSIT_BALANCE_ROUTE.to_string(),
             DepositBalanceHandler::new(
                 config.min_transfer_amount,
+                asset_filter.clone(),
                 config.compliance_service_url.clone(),
                 state.clone(),
                 wallet_rate_limiter.clone(),
@@ -309,6 +320,7 @@ impl HttpServer {
         let processor = ExternalMatchProcessor::new(
             config.min_order_size,
             admin_key,
+            asset_filter.clone(),
             handshake_queue,
             config.darkpool_client.clone(),
             config.system_bus.clone(),
@@ -377,7 +389,7 @@ impl HttpServer {
         router.add_unauthenticated_route(
             &Method::GET,
             GET_SUPPORTED_TOKENS_ROUTE.to_string(),
-            GetSupportedTokensHandler,
+            GetSupportedTokensHandler::new(asset_filter.clone()),
         );
 
         // The "/token-prices" route
@@ -398,14 +410,22 @@ impl HttpServer {
         router.add_admin_authenticated_route(
             &Method::GET,
             GET_DEPTH_BY_MINT_ROUTE.to_string(),
-            GetDepthByMintHandler::new(state.clone(), config.price_streams.clone())?,
+            GetDepthByMintHandler::new(
+                asset_filter.clone(),
+                state.clone(),
+                config.price_streams.clone(),
+            )?,
         );
 
         // The "/order_book/depth" route
         router.add_admin_authenticated_route(
             &Method::GET,
             GET_DEPTH_FOR_ALL_PAIRS_ROUTE.to_string(),
-            GetDepthForAllPairsHandler::new(state.clone(), config.price_streams.clone())?,
+            GetDepthForAllPairsHandler::new(
+                asset_filter.clone(),
+                state.clone(),
+                config.price_streams.clone(),
+            )?,
         );
 
         // --- Network Routes --- //

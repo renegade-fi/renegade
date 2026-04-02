@@ -40,7 +40,7 @@ use util::{
 
 use crate::{
     error::{ApiServerError, bad_request, internal_error, no_content},
-    http::wallet::get_usdc_denominated_value,
+    http::{asset_filter::AssetFilter, wallet::get_usdc_denominated_value},
 };
 
 // -------------
@@ -111,6 +111,8 @@ pub struct ExternalMatchProcessor {
     min_order_size: f64,
     /// The admin key, used to sign and validate quotes
     admin_key: HmacKey,
+    /// Asset filter for checking disabled tokens
+    asset_filter: AssetFilter,
     /// The handshake manager's queue
     handshake_queue: HandshakeManagerQueue,
     /// A handle on the darkpool RPC client
@@ -126,12 +128,26 @@ impl ExternalMatchProcessor {
     pub fn new(
         min_order_size: f64,
         admin_key: HmacKey,
+        asset_filter: AssetFilter,
         handshake_queue: HandshakeManagerQueue,
         darkpool_client: DarkpoolClient,
         bus: SystemBus<SystemBusMessage>,
         price_streams: PriceStreamStates,
     ) -> Self {
-        Self { min_order_size, admin_key, handshake_queue, darkpool_client, bus, price_streams }
+        Self {
+            min_order_size,
+            admin_key,
+            asset_filter,
+            handshake_queue,
+            darkpool_client,
+            bus,
+            price_streams,
+        }
+    }
+
+    /// Validate that neither token in the pair is disabled
+    fn validate_pair_not_disabled(&self, order: &ExternalOrder) -> Result<(), ApiServerError> {
+        self.asset_filter.check_pair(&order.base_mint, &order.quote_mint)
     }
 
     /// Await the next bus message on a topic
@@ -153,6 +169,7 @@ impl ExternalMatchProcessor {
         relayer_fee_rate: FixedPoint,
         matching_pool: Option<MatchingPoolName>,
     ) -> Result<ExternalMatchResult, ApiServerError> {
+        self.validate_pair_not_disabled(&external_order)?;
         let opt = ExternalMatchingEngineOptions::only_quote()
             .with_matching_pool(matching_pool)
             .with_relayer_fee_rate(relayer_fee_rate);
@@ -176,6 +193,7 @@ impl ExternalMatchProcessor {
         matching_pool: Option<MatchingPoolName>,
         order: ExternalOrder,
     ) -> Result<AtomicMatchApiBundle, ApiServerError> {
+        self.validate_pair_not_disabled(&order)?;
         let opt = ExternalMatchingEngineOptions::new()
             .with_bundle_duration(ASSEMBLE_BUNDLE_TIMEOUT)
             .with_price(price)
@@ -210,6 +228,7 @@ impl ExternalMatchProcessor {
         matching_pool: Option<MatchingPoolName>,
         order: ExternalOrder,
     ) -> Result<MalleableAtomicMatchApiBundle, ApiServerError> {
+        self.validate_pair_not_disabled(&order)?;
         let opt = ExternalMatchingEngineOptions::new()
             .with_bundle_duration(ASSEMBLE_BUNDLE_TIMEOUT)
             .with_bounded_match(true)
@@ -274,6 +293,7 @@ impl ExternalMatchProcessor {
         matching_pool: Option<MatchingPoolName>,
         external_order: ExternalOrder,
     ) -> Result<MalleableAtomicMatchApiBundle, ApiServerError> {
+        self.validate_pair_not_disabled(&external_order)?;
         let opt = ExternalMatchingEngineOptions::new()
             .with_bundle_duration(DIRECT_MATCH_BUNDLE_TIMEOUT)
             .with_bounded_match(true)

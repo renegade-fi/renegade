@@ -27,6 +27,7 @@ use util::on_chain::get_external_match_fee;
 
 use crate::{
     error::{ApiServerError, bad_request, not_found},
+    http::asset_filter::AssetFilter,
     param_parsing::{
         parse_mint_from_params, parse_order_id_from_params, parse_tickers_from_query_params,
     },
@@ -263,15 +264,21 @@ impl DepthCalculator {
 /// Handler for the GET /order_book/depth/:mint route
 #[derive(Clone)]
 pub struct GetDepthByMintHandler {
+    /// Asset filter for checking disabled tokens
+    asset_filter: AssetFilter,
     /// The depth calculator for fetching price and depth data
     depth_calculator: DepthCalculator,
 }
 
 impl GetDepthByMintHandler {
     /// Constructor
-    pub fn new(state: State, price_streams: PriceStreamStates) -> Result<Self, ApiServerError> {
+    pub fn new(
+        asset_filter: AssetFilter,
+        state: State,
+        price_streams: PriceStreamStates,
+    ) -> Result<Self, ApiServerError> {
         let depth_calculator = DepthCalculator::new(state, price_streams)?;
-        Ok(Self { depth_calculator })
+        Ok(Self { asset_filter, depth_calculator })
     }
 }
 
@@ -288,6 +295,7 @@ impl TypedHandler for GetDepthByMintHandler {
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
         let mint = parse_mint_from_params(&params)?;
+        self.asset_filter.check_token(&mint)?;
         let base_token = Token::from_addr_biguint(&mint);
         let depth = self.depth_calculator.get_price_and_depth(base_token).await?;
         Ok(GetDepthByMintResponse { depth })
@@ -297,15 +305,21 @@ impl TypedHandler for GetDepthByMintHandler {
 /// Handler for the GET /order_book/depth route
 #[derive(Clone)]
 pub struct GetDepthForAllPairsHandler {
+    /// Asset filter for checking disabled tokens
+    asset_filter: AssetFilter,
     /// The depth calculator for fetching price and depth data
     depth_calculator: DepthCalculator,
 }
 
 impl GetDepthForAllPairsHandler {
     /// Constructor
-    pub fn new(state: State, price_streams: PriceStreamStates) -> Result<Self, ApiServerError> {
+    pub fn new(
+        asset_filter: AssetFilter,
+        state: State,
+        price_streams: PriceStreamStates,
+    ) -> Result<Self, ApiServerError> {
         let depth_calculator = DepthCalculator::new(state, price_streams)?;
-        Ok(Self { depth_calculator })
+        Ok(Self { asset_filter, depth_calculator })
     }
 }
 
@@ -321,9 +335,8 @@ impl TypedHandler for GetDepthForAllPairsHandler {
         _params: UrlParams,
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
-        // Get all tokens for which we support price data
-        // Practically, this is all non-stablecoin tokens
-        let supported_tokens = get_all_base_tokens();
+        // Get all tokens for which we support price data, excluding disabled
+        let supported_tokens = self.asset_filter.enabled_base_tokens();
         let quote_token = Token::usdc();
 
         let mut pairs = Vec::new();

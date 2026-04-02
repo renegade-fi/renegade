@@ -17,6 +17,7 @@ use price_state::PriceStreamStates;
 
 use crate::{
     error::ApiServerError,
+    http::asset_filter::AssetFilter,
     param_parsing::parse_token_from_params,
     router::{QueryParams, TypedHandler, UrlParams},
 };
@@ -61,7 +62,17 @@ impl TypedHandler for PriceReportHandler {
 
 /// Handler for the GET /supported-tokens route
 #[derive(Clone)]
-pub struct GetSupportedTokensHandler;
+pub struct GetSupportedTokensHandler {
+    /// Asset filter for checking disabled tokens
+    asset_filter: AssetFilter,
+}
+
+impl GetSupportedTokensHandler {
+    /// Constructor
+    pub fn new(asset_filter: AssetFilter) -> Self {
+        Self { asset_filter }
+    }
+}
 
 #[async_trait]
 impl TypedHandler for GetSupportedTokensHandler {
@@ -75,7 +86,9 @@ impl TypedHandler for GetSupportedTokensHandler {
         _params: UrlParams,
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
-        let tokens = get_all_base_tokens()
+        let tokens = self
+            .asset_filter
+            .enabled_base_tokens()
             .into_iter()
             .chain(iter::once(Token::usdc()))
             .map(|token| ApiToken::new(token.get_addr(), token.get_ticker().unwrap()))
