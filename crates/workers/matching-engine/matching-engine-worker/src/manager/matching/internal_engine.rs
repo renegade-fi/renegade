@@ -63,12 +63,6 @@ impl MatchingEngineExecutor {
             },
             Err(e) => {
                 error!("internal match settlement failed for {} x {}: {e}", other_id, order_id,);
-
-                // Check whether matching should continue
-                if !self.order_still_valid(&order_id, &order, matchable_amount).await? {
-                    info!("account has changed, stopping internal matching engine...");
-                    return Ok(());
-                }
             },
         }
 
@@ -153,165 +147,10 @@ impl MatchingEngineExecutor {
         })
     }
 
-    /// Check whether the order that produced an attempted match is still valid
-    /// after settlement fails. Re-reads the database and rejects if the order
-    /// was removed, modified, depleted, or its account's queue is busy.
-    async fn order_still_valid(
-        &self,
-        order_id: &OrderId,
-        attempted_order: &Order,
-        attempted_matchable_amount: Amount,
-    ) -> Result<bool, MatchingEngineError> {
-        let Some(account_id) = self.state.get_account_id_for_order(order_id).await? else {
-            info!("order {order_id} no longer maps to an account, stopping internal match retry");
-            return Ok(false);
-        };
-
-        let queue_len = self.state.serial_tasks_queue_len(&account_id).await?;
-        if queue_len > 0 {
-            info!(
-                "order {order_id} account queue is busy (len = {queue_len}), stopping internal match retry"
-            );
-            return Ok(false);
-        }
-
-        let Some((current_order, current_matchable_amount)) =
-            self.state.get_account_order_and_matchable_amount(order_id).await?
-        else {
-            info!(
-                "order {order_id} no longer exists in the account index, stopping internal match retry"
-            );
-            return Ok(false);
-        };
-
-        if current_matchable_amount == 0 {
-            info!(
-                "order {order_id} no longer has positive matchable amount, stopping internal match retry"
-            );
-            return Ok(false);
-        }
-
-        if &current_order != attempted_order {
-            info!(
-                "order {order_id} changed since settlement was attempted (amount_in {} -> {}), stopping internal match retry",
-                attempted_order.amount_in(),
-                current_order.amount_in(),
-            );
-            return Ok(false);
-        }
-
-        if current_matchable_amount != attempted_matchable_amount {
-            info!(
-                "order {order_id} matchable amount changed since settlement was attempted ({} -> {}), stopping internal match retry",
-                attempted_matchable_amount, current_matchable_amount,
-            );
-            return Ok(false);
-        }
-
-        Ok(true)
-    }
-
     /// Fetch the privacy ring for an order
     async fn get_order_ring(&self, order_id: &OrderId) -> Result<PrivacyRing, MatchingEngineError> {
         self.state.get_order_ring(order_id).await?.ok_or_else(|| {
             MatchingEngineError::state(format!("no order found for order {order_id:?}"))
         })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::collections::HashSet;
-
-    use crate::executor::MatchingEngineExecutor;
-    use circuit_types::Amount;
-    use constants::GLOBAL_MATCHING_POOL;
-    use job_types::{
-        matching_engine::new_matching_engine_worker_queue, task_driver::new_task_driver_queue,
-    };
-    use matching_engine_core::MatchingEngine;
-    use price_state::PriceStreamStates;
-    use state::{State, test_helpers::mock_state};
-    use system_bus::SystemBus;
-    use test_helpers::mocks::mock_cancel;
-    use types_account::{
-        account::mocks::mock_empty_account,
-        balance::mocks::mock_balance,
-        order::{Order, mocks::mock_order},
-        order_auth::mocks::mock_order_auth,
-    };
-
-    async fn mock_executor(state: State) -> MatchingEngineExecutor {
-        let (_job_queue, job_receiver) = new_matching_engine_worker_queue();
-        let (task_queue, _task_receiver) = new_task_driver_queue();
-
-        MatchingEngineExecutor::new(
-            0,              // min_fill_size
-            0,              // external_match_validity_window
-            HashSet::new(), // disabled_assets
-            job_receiver,
-            PriceStreamStates::new(vec![], vec![]),
-            state,
-            MatchingEngine::new(),
-            task_queue,
-            SystemBus::new(),
-            mock_cancel(),
-        )
-        .unwrap()
-    }
-
-    async fn setup_executor_with_order()
-    -> (MatchingEngineExecutor, State, types_core::AccountId, Order, Amount) {
-        let state = mock_state().await;
-
-        let account = mock_empty_account();
-        let waiter = state.new_account(account.clone()).await.unwrap();
-        waiter.await.unwrap();
-
-        let order = mock_order();
-        let auth = mock_order_auth();
-        let mut balance = mock_balance();
-        balance.state_wrapper.inner.mint = order.input_token();
-        *balance.amount_mut() = order.amount_in() + 100;
-
-        let waiter = state.update_account_balance(account.id, balance).await.unwrap();
-        waiter.await.unwrap();
-
-        let waiter = state
-            .add_order_to_account(account.id, order.clone(), auth, GLOBAL_MATCHING_POOL.to_string())
-            .await
-            .unwrap();
-        waiter.await.unwrap();
-
-        let matchable_amount = state.get_order_matchable_amount(&order.id).await.unwrap();
-        let executor = mock_executor(state.clone()).await;
-        (executor, state, account.id, order, matchable_amount)
-    }
-
-    #[tokio::test]
-    async fn test_order_still_valid_false_when_order_removed() {
-        let (executor, state, account_id, order, attempted_matchable_amount) =
-            setup_executor_with_order().await;
-
-        let waiter = state.remove_order_from_account(account_id, order.id).await.unwrap();
-        waiter.await.unwrap();
-
-        let valid = executor
-            .order_still_valid(&order.id, &order, attempted_matchable_amount)
-            .await
-            .unwrap();
-        assert!(!valid);
-    }
-
-    #[tokio::test]
-    async fn test_order_still_valid_true_when_state_unchanged() {
-        let (executor, _state, _account_id, order, attempted_matchable_amount) =
-            setup_executor_with_order().await;
-
-        let valid = executor
-            .order_still_valid(&order.id, &order, attempted_matchable_amount)
-            .await
-            .unwrap();
-        assert!(valid);
     }
 }
