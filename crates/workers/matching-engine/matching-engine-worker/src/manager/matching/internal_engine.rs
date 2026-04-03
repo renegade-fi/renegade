@@ -63,12 +63,6 @@ impl MatchingEngineExecutor {
             },
             Err(e) => {
                 error!("internal match settlement failed for {} x {}: {e}", other_id, order_id,);
-
-                // Check whether matching should continue
-                if !self.order_still_valid(&order_id).await? {
-                    info!("account has changed, stopping internal matching engine...");
-                    return Ok(());
-                }
             },
         }
 
@@ -151,20 +145,6 @@ impl MatchingEngineExecutor {
                 "failed to fetch matching pool for {order_id:?}: {e}"
             ))
         })
-    }
-
-    /// TODO: Update this comment when we re-implement
-    /// Check whether a wallet is still valid. This amounts to checking:
-    ///     1. Whether the wallet's known nullifier is still valid. This may be
-    ///        false if the wallet has been updated since a match was attempted
-    ///     2. Whether the wallet's queue is still empty and unpaused.
-    ///        Concurrent matches from elsewhere in the relayer may cause this
-    ///        second condition to be false
-    ///
-    /// This check may be executed after a match settlement fails
-    async fn order_still_valid(&self, order_id: &OrderId) -> Result<bool, MatchingEngineError> {
-        warn!("Re-implement order still valid check");
-        Ok(true)
     }
 
     /// Fetch the privacy ring for an order
