@@ -540,6 +540,7 @@ impl MockNodeController {
             proof_generation_work_queue,
             handshake_manager_work_queue,
             cancel_channel,
+            disabled_assets: Vec::new(),
         };
 
         let mut server = run_fut(ApiServer::new(conf)).expect("Failed to create API server");
