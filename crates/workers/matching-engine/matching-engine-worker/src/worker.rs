@@ -14,7 +14,7 @@ use price_state::PriceStreamStates;
 use state::State;
 use system_bus::SystemBus;
 use tokio::runtime::Builder as RuntimeBuilder;
-use tracing::info;
+use tracing::{info, warn};
 use types_core::Token;
 use types_runtime::{CancelChannel, Worker};
 
@@ -68,11 +68,19 @@ impl Worker for MatchingEngineManager {
     type Error = MatchingEngineError;
 
     async fn new(mut config: Self::WorkerConfig) -> Result<Self, Self::Error> {
-        // Convert disabled asset tickers to addresses
+        // Convert disabled asset tickers to addresses. Tickers missing from the
+        // token remap are skipped: their address can't be reached via ticker
+        // lookup by any inbound request either, so omitting them is safe.
         let disabled_assets = config
             .disabled_assets
             .iter()
-            .map(|ticker| Token::from_ticker(ticker).get_alloy_address())
+            .filter_map(|ticker| match Token::maybe_from_ticker(ticker) {
+                Some(tok) => Some(tok.get_alloy_address()),
+                None => {
+                    warn!("disabled asset ticker {ticker} not in token remap; skipping");
+                    None
+                },
+            })
             .collect();
 
         let executor = MatchingEngineExecutor::new(
