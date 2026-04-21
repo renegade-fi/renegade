@@ -11,7 +11,7 @@ mod task;
 mod wallet;
 
 use admin::{
-    AdminGetOrderMatchingPoolHandler, AdminRefreshMatchFeesHandler,
+    AdminGetDisabledAssetsHandler, AdminGetOrderMatchingPoolHandler, AdminRefreshMatchFeesHandler,
     AdminRefreshTokenMappingHandler, AdminTriggerSnapshotHandler,
     AdminWalletMatchableOrderIdsHandler, IsLeaderHandler,
 };
@@ -23,10 +23,11 @@ use external_api::{
         PingResponse,
         admin::{
             ADMIN_ASSIGN_ORDER_ROUTE, ADMIN_CREATE_ORDER_IN_MATCHING_POOL_ROUTE,
-            ADMIN_GET_ORDER_MATCHING_POOL_ROUTE, ADMIN_MATCHING_POOL_CREATE_ROUTE,
-            ADMIN_MATCHING_POOL_DESTROY_ROUTE, ADMIN_OPEN_ORDERS_ROUTE, ADMIN_ORDER_METADATA_ROUTE,
-            ADMIN_REFRESH_MATCH_FEES_ROUTE, ADMIN_REFRESH_TOKEN_MAPPING_ROUTE,
-            ADMIN_TRIGGER_SNAPSHOT_ROUTE, ADMIN_WALLET_MATCHABLE_ORDER_IDS_ROUTE, IS_LEADER_ROUTE,
+            ADMIN_GET_DISABLED_ASSETS_ROUTE, ADMIN_GET_ORDER_MATCHING_POOL_ROUTE,
+            ADMIN_MATCHING_POOL_CREATE_ROUTE, ADMIN_MATCHING_POOL_DESTROY_ROUTE,
+            ADMIN_OPEN_ORDERS_ROUTE, ADMIN_ORDER_METADATA_ROUTE, ADMIN_REFRESH_MATCH_FEES_ROUTE,
+            ADMIN_REFRESH_TOKEN_MAPPING_ROUTE, ADMIN_TRIGGER_SNAPSHOT_ROUTE,
+            ADMIN_WALLET_MATCHABLE_ORDER_IDS_ROUTE, IS_LEADER_ROUTE,
         },
         external_match::{
             ASSEMBLE_EXTERNAL_MATCH_ROUTE, ASSEMBLE_MALLEABLE_EXTERNAL_MATCH_ROUTE,
@@ -458,6 +459,13 @@ impl HttpServer {
             &Method::GET,
             IS_LEADER_ROUTE.to_string(),
             IsLeaderHandler::new(state.clone()),
+        );
+
+        // The "/admin/disabled-assets" route
+        router.add_admin_authenticated_route(
+            &Method::GET,
+            ADMIN_GET_DISABLED_ASSETS_ROUTE.to_string(),
+            AdminGetDisabledAssetsHandler::new(config.disabled_assets.clone()),
         );
 
         // The "/admin/trigger-snapshot" route

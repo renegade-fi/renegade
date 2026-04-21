@@ -24,7 +24,7 @@ use external_api::{
         admin::{
             AdminGetOrderMatchingPoolResponse, AdminOrderMetadataResponse,
             AdminWalletMatchableOrderIdsResponse, CreateOrderInMatchingPoolRequest,
-            IsLeaderResponse, OpenOrdersResponse,
+            GetDisabledAssetsResponse, IsLeaderResponse, OpenOrdersResponse,
         },
         wallet::CreateOrderResponse,
     },
@@ -84,6 +84,35 @@ impl IsLeaderHandler {
     /// Constructor
     pub fn new(state: State) -> Self {
         Self { state }
+    }
+}
+
+/// Handler for the GET /v0/admin/disabled-assets route
+pub struct AdminGetDisabledAssetsHandler {
+    /// The list of disabled asset tickers
+    disabled_assets: Vec<String>,
+}
+
+impl AdminGetDisabledAssetsHandler {
+    /// Constructor
+    pub fn new(disabled_assets: Vec<String>) -> Self {
+        Self { disabled_assets }
+    }
+}
+
+#[async_trait]
+impl TypedHandler for AdminGetDisabledAssetsHandler {
+    type Request = EmptyRequestResponse;
+    type Response = GetDisabledAssetsResponse;
+
+    async fn handle_typed(
+        &self,
+        _headers: HeaderMap,
+        _req: Self::Request,
+        _params: UrlParams,
+        _query_params: QueryParams,
+    ) -> Result<Self::Response, ApiServerError> {
+        Ok(GetDisabledAssetsResponse { disabled_assets: self.disabled_assets.clone() })
     }
 }
 

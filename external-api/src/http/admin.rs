@@ -27,6 +27,8 @@ pub const ADMIN_GET_ORDER_MATCHING_POOL_ROUTE: &str = "/v0/admin/orders/:order_i
 /// Route to get all the matchable order IDs for a given wallet
 pub const ADMIN_WALLET_MATCHABLE_ORDER_IDS_ROUTE: &str =
     "/v0/admin/wallet/:wallet_id/matchable-order-ids";
+/// Get the list of disabled asset tickers configured on this relayer
+pub const ADMIN_GET_DISABLED_ASSETS_ROUTE: &str = "/v0/admin/disabled-assets";
 
 // Setter routes
 
@@ -96,4 +98,11 @@ pub struct AdminGetOrderMatchingPoolResponse {
 pub struct AdminWalletMatchableOrderIdsResponse {
     /// The order IDs
     pub order_ids: Vec<OrderIdentifier>,
+}
+
+/// The response to a "get disabled assets" request
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GetDisabledAssetsResponse {
+    /// The list of disabled asset tickers
+    pub disabled_assets: Vec<String>,
 }
