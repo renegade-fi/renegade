@@ -12,12 +12,12 @@ required-features = ["test_helpers"]
 [[bench]]
 name = "quote_endpoint"
 harness = false
-required_features = ["test_helpers"]
+required-features = ["test_helpers"]
 
 [[bench]]
 name = "book_depth"
 harness = false
-required_features = ["test_helpers"]
+required-features = ["test_helpers"]
 
 [features]
 test_helpers = ["darkpool-client/arbitrum"]

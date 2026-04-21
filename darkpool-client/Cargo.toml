@@ -44,7 +44,7 @@ circuit-types = { workspace = true }
 circuits = { workspace = true }
 common = { workspace = true, features = ["internal-types"] }
 renegade-crypto = { workspace = true }
-renegade-solidity-abi = { package = "abi", git = "https://github.com/renegade-fi/renegade-contracts", optional = true, features = [
+renegade-solidity-abi = { package = "abi", git = "https://github.com/renegade-fi/renegade-contracts", optional = true, default-features = false, features = [
     "v1",
     "v1-relayer-types",
 ] }
