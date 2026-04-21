@@ -31,10 +31,11 @@ pub fn new_task_notification(task_id: TaskIdentifier) -> (TaskNotificationReceiv
 /// The job type for the task driver
 #[derive(Debug)]
 pub enum TaskDriverJob {
-    /// Run a task
+    /// Run a task. The task is boxed to keep the enum's size reasonable;
+    /// `QueuedTask` is large and dwarfs the other variants.
     Run {
         /// The task to run
-        task: QueuedTask,
+        task: Box<QueuedTask>,
         /// The channel on which to notify the worker
         channel: Option<TaskNotificationSender>,
     },
@@ -50,13 +51,13 @@ pub enum TaskDriverJob {
 impl TaskDriverJob {
     /// Create a new run job
     pub fn run(task: QueuedTask) -> Self {
-        Self::Run { task, channel: None }
+        Self::Run { task: Box::new(task), channel: None }
     }
 
     /// Create a new run job with a notification channel
     pub fn run_with_notification(task: QueuedTask) -> (Self, TaskNotificationReceiver) {
         let (sender, receiver) = oneshot_channel();
-        (Self::Run { task, channel: Some(sender) }, receiver)
+        (Self::Run { task: Box::new(task), channel: Some(sender) }, receiver)
     }
 
     /// Create a new notification job

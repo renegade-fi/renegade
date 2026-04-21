@@ -86,7 +86,7 @@ pub fn pow(a: &AuthenticatedScalar, n: u64, fabric: &Fabric) -> AuthenticatedSca
         fabric.one_authenticated()
     } else if n == 1 {
         a.clone()
-    } else if n % 2 == 0 {
+    } else if n.is_multiple_of(2) {
         let recursive_res = pow(a, n / 2, fabric);
         &recursive_res * &recursive_res
     } else {

@@ -170,8 +170,8 @@ mod tests {
 
     #[test]
     fn test_jubjub_generator_point_hex() {
-        // Illustrates that the hex representation of a point encodes the X and Y values in
-        // little-endian.
+        // Illustrates that the hex representation of a point encodes the X and Y values
+        // in little-endian.
 
         // Generator point coordinates (in numeric form)
         let x_str = "19698561148652590122159747500897617769866003486955115824547446575314762165298";

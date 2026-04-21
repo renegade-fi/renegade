@@ -857,10 +857,10 @@ impl TypedHandler for DepositBalanceHandler {
             get_usdc_denominated_value(&req.mint, deposit_amount, &self.price_streams)?;
 
         // If we are unable to fetch a price, do not block the deposit
-        if let Some(deposit_value) = maybe_deposit_value {
-            if deposit_value < self.min_deposit_amount {
-                return Err(bad_request(ERR_MIN_DEPOSIT_AMOUNT.to_string()));
-            }
+        if let Some(deposit_value) = maybe_deposit_value
+            && deposit_value < self.min_deposit_amount
+        {
+            return Err(bad_request(ERR_MIN_DEPOSIT_AMOUNT.to_string()));
         }
 
         // Parse the wallet ID from the params
@@ -961,10 +961,11 @@ impl TypedHandler for WithdrawBalanceHandler {
 
         // If we are unable to fetch a price, do not block the withdrawal
         let new_balance = new_wallet.get_balance(&mint).unwrap();
-        if let Some(withdrawal_value) = maybe_withdrawal_value {
-            if withdrawal_value < self.min_withdrawal_amount && new_balance.amount > 0 {
-                return Err(bad_request(ERR_MIN_WITHDRAWAL_AMOUNT.to_string()));
-            }
+        if let Some(withdrawal_value) = maybe_withdrawal_value
+            && withdrawal_value < self.min_withdrawal_amount
+            && new_balance.amount > 0
+        {
+            return Err(bad_request(ERR_MIN_WITHDRAWAL_AMOUNT.to_string()));
         }
 
         // Create the withdrawal task

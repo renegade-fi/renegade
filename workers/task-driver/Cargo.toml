@@ -62,7 +62,7 @@ alloy-primitives = { workspace = true }
 clap = { version = "4.0", features = ["derive"] }
 colored = "2"
 config = { workspace = true }
-darkpool-client = { workspace = true, features = ["arbitrum"] }
+darkpool-client = { workspace = true }
 eyre = { workspace = true }
 flate2 = "1.0"
 inventory = "0.3"

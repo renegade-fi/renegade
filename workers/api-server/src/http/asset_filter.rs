@@ -14,6 +14,7 @@ const ERR_TOKEN_DISABLED: &str = "token is not supported";
 /// a small API for checking and filtering tokens.
 #[derive(Clone, Debug)]
 pub(crate) struct AssetFilter {
+    /// Addresses of assets that the relayer is configured to disable
     disabled: HashSet<BigUint>,
 }
 

@@ -151,28 +151,28 @@ impl DB {
 
     /// Create a new read-only transaction
     #[instrument(skip(self))]
-    pub fn new_read_tx(&self) -> Result<StateTxn<RO>, StorageError> {
+    pub fn new_read_tx(&self) -> Result<StateTxn<'_, RO>, StorageError> {
         let txn = self.new_raw_read_tx()?;
         Ok(StateTxn::new(txn))
     }
 
     /// Create a new raw read-only transaction
     #[instrument(skip(self))]
-    pub fn new_raw_read_tx(&self) -> Result<DbTxn<RO>, StorageError> {
+    pub fn new_raw_read_tx(&self) -> Result<DbTxn<'_, RO>, StorageError> {
         let txn = self.db.begin_ro_txn().map_err(StorageError::BeginTx)?;
         Ok(DbTxn::new(txn))
     }
 
     /// Create a new read-write transaction
     #[instrument(skip(self))]
-    pub fn new_write_tx(&self) -> Result<StateTxn<RW>, StorageError> {
+    pub fn new_write_tx(&self) -> Result<StateTxn<'_, RW>, StorageError> {
         let txn = self.new_raw_write_tx()?;
         Ok(StateTxn::new(txn))
     }
 
     /// Create a new read-write transaction
     #[instrument(skip(self))]
-    pub fn new_raw_write_tx(&self) -> Result<DbTxn<RW>, StorageError> {
+    pub fn new_raw_write_tx(&self) -> Result<DbTxn<'_, RW>, StorageError> {
         self.db.begin_rw_txn().map_err(StorageError::BeginTx).map(DbTxn::new)
     }
 

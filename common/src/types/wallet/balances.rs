@@ -78,9 +78,7 @@ impl Wallet {
     /// sell asset
     pub fn get_matchable_amount_for_order(&self, order: &Order) -> Amount {
         let order_mint = order.send_mint();
-        let amount = self.get_balance(order_mint).map(|b| b.amount).unwrap_or_default();
-
-        amount
+        self.get_balance(order_mint).map(|b| b.amount).unwrap_or_default()
     }
 
     /// Return whether the wallet has any fees to pay

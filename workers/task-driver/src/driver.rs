@@ -166,7 +166,7 @@ impl TaskExecutor {
         match job.consume() {
             TaskDriverJob::Run { task, channel } => {
                 let affected_wallets = task.descriptor.affected_wallets();
-                self.start_task(task.id, task, affected_wallets, channel).await
+                self.start_task(task.id, *task, affected_wallets, channel).await
             },
             TaskDriverJob::Notify { task_id, channel } => {
                 self.handle_notification_request(task_id, channel).await

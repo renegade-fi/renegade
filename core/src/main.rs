@@ -2,7 +2,6 @@
 //! all other worker threads
 #![feature(iter_advance_by)]
 #![feature(ip)]
-#![feature(let_chains)]
 #![allow(incomplete_features)]
 #![allow(clippy::redundant_async_block)]
 #![deny(unsafe_code)]

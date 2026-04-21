@@ -145,36 +145,32 @@ impl StateTuiApp {
             term.draw(|frame| self.ui(frame)).unwrap();
 
             // Stop the TUI when 'q' is pressed
-            if crossterm::event::poll(timeout).unwrap() {
-                if let Event::Key(key) = event::read().unwrap() {
-                    match key.code {
-                        KeyCode::Char('q') => break,
-                        KeyCode::Tab => {
-                            self.selected_tab = match self.selected_tab {
-                                AppTab::Main => AppTab::Logs,
-                                AppTab::Logs => AppTab::Main,
+            if crossterm::event::poll(timeout).unwrap()
+                && let Event::Key(key) = event::read().unwrap()
+            {
+                match key.code {
+                    KeyCode::Char('q') => break,
+                    KeyCode::Tab => {
+                        self.selected_tab = match self.selected_tab {
+                            AppTab::Main => AppTab::Logs,
+                            AppTab::Logs => AppTab::Main,
+                        }
+                    },
+                    // Dispatch the state transition to the smart logger if
+                    // the logs tab is selected
+                    _ => {
+                        if let AppTab::Logs = self.selected_tab {
+                            let state = &mut self.smart_logger_state;
+                            match key.code {
+                                KeyCode::Esc => state.transition(&LoggerEvent::EscapeKey),
+                                KeyCode::Char('h') => state.transition(&LoggerEvent::HideKey),
+                                // Vim style scrolling
+                                KeyCode::Char('j') => state.transition(&LoggerEvent::NextPageKey),
+                                KeyCode::Char('k') => state.transition(&LoggerEvent::PrevPageKey),
+                                _ => {},
                             }
-                        },
-                        // Dispatch the state transition to the smart logger if
-                        // the logs tab is selected
-                        _ => {
-                            if let AppTab::Logs = self.selected_tab {
-                                let state = &mut self.smart_logger_state;
-                                match key.code {
-                                    KeyCode::Esc => state.transition(&LoggerEvent::EscapeKey),
-                                    KeyCode::Char('h') => state.transition(&LoggerEvent::HideKey),
-                                    // Vim style scrolling
-                                    KeyCode::Char('j') => {
-                                        state.transition(&LoggerEvent::NextPageKey)
-                                    },
-                                    KeyCode::Char('k') => {
-                                        state.transition(&LoggerEvent::PrevPageKey)
-                                    },
-                                    _ => {},
-                                }
-                            }
-                        },
-                    }
+                        }
+                    },
                 }
             }
         }
@@ -292,7 +288,7 @@ impl StateTuiApp {
     }
 
     /// Create a new, default block with the given title
-    fn create_block_with_title(title: &str) -> Block {
+    fn create_block_with_title(title: &str) -> Block<'_> {
         let styled_title = Span::styled(title, *TITLE_STYLE);
         Block::default()
             .title(styled_title)
@@ -303,7 +299,7 @@ impl StateTuiApp {
     }
 
     /// Create a tab selection pane
-    fn create_tab_selection(&self) -> Tabs {
+    fn create_tab_selection(&self) -> Tabs<'_> {
         let tab_names = AppTab::tab_names().into_iter().map(Spans::from).collect_vec();
 
         Tabs::new(tab_names)
@@ -314,7 +310,7 @@ impl StateTuiApp {
     }
 
     /// Create a metadata pane
-    fn create_metadata_pane(&self) -> List {
+    fn create_metadata_pane(&self) -> List<'_> {
         // Fetch the relevant state
         let peer_id = self.global_state.get_peer_id().unwrap();
         let cluster_id = self.global_state.get_cluster_id().unwrap();
@@ -378,7 +374,7 @@ impl StateTuiApp {
     }
 
     /// Create a cluster metadata pane    
-    fn create_cluster_metadata_pane(&self) -> List {
+    fn create_cluster_metadata_pane(&self) -> List<'_> {
         // Read the relevant state
         let cluster_id = self.global_state.get_cluster_id().unwrap();
         let cluster_peers =
@@ -402,7 +398,7 @@ impl StateTuiApp {
     }
 
     /// Create a peer index pane    
-    fn create_peer_index_pane(&self) -> Table {
+    fn create_peer_index_pane(&self) -> Table<'_> {
         // Read the necessary state
         let local_peer_id = self.global_state.get_peer_id().unwrap();
         let peer_info = block_current(self.global_state.get_peer_info_map()).unwrap();
@@ -435,7 +431,7 @@ impl StateTuiApp {
     }
 
     /// Create an order book pane
-    fn create_order_book_pane(&self) -> Table {
+    fn create_order_book_pane(&self) -> Table<'_> {
         // Read the order book and sort to stabilize the output
         let mut order_book = block_current(self.global_state.get_all_orders()).unwrap();
         order_book.sort_by_key(|o| o.id);

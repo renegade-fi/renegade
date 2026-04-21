@@ -2,8 +2,6 @@
 #![deny(unsafe_code)]
 #![deny(missing_docs)]
 #![deny(clippy::missing_docs_in_private_items)]
-#![allow(incomplete_features)]
-#![feature(let_chains)]
 
 pub mod error;
 mod state;

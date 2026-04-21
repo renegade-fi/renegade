@@ -11,7 +11,6 @@
 #![deny(clippy::needless_pass_by_ref_mut)]
 #![deny(unsafe_code)]
 #![allow(incomplete_features)]
-#![feature(let_chains)]
 #![feature(io_error_more)]
 
 use common::types::{

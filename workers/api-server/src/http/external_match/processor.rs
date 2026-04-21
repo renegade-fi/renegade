@@ -616,11 +616,11 @@ impl ExternalMatchProcessor {
 
         // If we cannot fetch a price, do not block the order
         let min_size = self.min_order_size;
-        if let Some(usdc_value) = usdc_value {
-            if usdc_value < min_size {
-                let msg = format!("order value too small, ${usdc_value} < ${min_size}");
-                return Err(bad_request(msg));
-            }
+        if let Some(usdc_value) = usdc_value
+            && usdc_value < min_size
+        {
+            let msg = format!("order value too small, ${usdc_value} < ${min_size}");
+            return Err(bad_request(msg));
         }
 
         Ok(())

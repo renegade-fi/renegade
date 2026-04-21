@@ -34,9 +34,10 @@ pub struct ExternalTransfer {
 }
 
 /// Represents the direction (deposit/withdraw) of a transfer
-#[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Copy, Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 pub enum ExternalTransferDirection {
     /// Deposit an ERC20 into the darkpool from an external address
+    #[default]
     Deposit = 0,
     /// Withdraw an ERC20 from the darkpool to an external address
     Withdrawal,
@@ -62,12 +63,6 @@ impl BaseType for ExternalTransferDirection {
 #[cfg(feature = "proof-system-types")]
 impl CircuitBaseType for ExternalTransferDirection {
     type VarType = BoolVar;
-}
-
-impl Default for ExternalTransferDirection {
-    fn default() -> Self {
-        Self::Deposit
-    }
 }
 
 impl From<ExternalTransferDirection> for Scalar {

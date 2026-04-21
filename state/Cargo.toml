@@ -3,6 +3,11 @@ name = "state"
 version = "0.1.0"
 edition = "2024"
 
+[lints.rust]
+# `openraft::declare_raft_types!` expands a `cfg(feature = "serde")` check into
+# this crate, where no such feature exists. Declare it as expected.
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(feature, values("serde"))'] }
+
 [features]
 # Used to enable mocks from other crates in tests
 mocks = ["dep:tempfile", "dep:test-helpers"]

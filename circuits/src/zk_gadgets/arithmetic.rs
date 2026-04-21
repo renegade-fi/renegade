@@ -110,7 +110,7 @@ impl ExpGadget {
             Ok(cs.one())
         } else if alpha == 1 {
             Ok(x)
-        } else if alpha % 2 == 0 {
+        } else if alpha.is_multiple_of(2) {
             let recursive_result = ExpGadget::exp(x, alpha / 2, cs)?;
             cs.mul(recursive_result, recursive_result)
         } else {

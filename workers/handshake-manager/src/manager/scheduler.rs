@@ -54,14 +54,13 @@ impl HandshakeScheduler {
                 // Enqueue handshakes periodically according to a timer
                 _ = tokio::time::sleep(refresh_interval) => {
                     // Enqueue a job to handshake with the randomly selected peer
-                    if let Some(order) = self.state.choose_handshake_order().await.ok().flatten() {
-                        if let Err(e) = self
+                    if let Some(order) = self.state.choose_handshake_order().await.ok().flatten()
+                        && let Err(e) = self
                             .job_sender
                             .send(HandshakeManagerJob::PerformHandshake { order })
                             .map_err(err_str!(HandshakeManagerError::SendMessage))
-                        {
-                            return e;
-                        }
+                    {
+                        return e;
                     }
                 },
 
