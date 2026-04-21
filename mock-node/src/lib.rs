@@ -531,6 +531,7 @@ impl MockNodeController {
             min_order_size: config.min_fill_size_decimal_adjusted(),
             chain: config.chain_id,
             compliance_service_url: config.compliance_service_url.clone(),
+            disabled_assets: Vec::new(),
             wallet_task_rate_limit: config.wallet_task_rate_limit,
             darkpool_client,
             network_sender,
