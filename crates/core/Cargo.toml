@@ -45,3 +45,4 @@ tracing = { workspace = true }
 opentelemetry = { version = "0.21", default-features = false, features = [
     "trace",
 ] }
+mimalloc = "0.1.50"

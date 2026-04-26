@@ -46,6 +46,9 @@ use circuits_core::zk_circuits::{
             IntentOnlyPublicSettlementCircuit, IntentOnlyPublicSettlementStatement,
             IntentOnlyPublicSettlementWitness,
         },
+        batched_settlement::{
+            BatchedSettlementCircuit, BatchedSettlementStatement, BatchedSettlementWitness,
+        },
     },
     valid_balance_create::{
         ValidBalanceCreate, ValidBalanceCreateStatement, ValidBalanceCreateWitness,
@@ -94,7 +97,7 @@ use tracing::{error, instrument};
 use types_proofs::mocks::{dummy_link_hint, dummy_link_proof, dummy_proof};
 use types_proofs::{
     IntentOnlySettlementProofBundle, PrivateSettlementProofBundle, ProofAndHintBundle, ProofBundle,
-    PublicSettlementProofBundle,
+    PublicSettlementProofBundle, BatchedSettlementBundle,
 };
 use util::channels::TracedMessage;
 
@@ -191,6 +194,9 @@ impl MockProofManager {
             },
             ProofJob::IntentOnlyPublicSettlement { witness, statement, .. } => {
                 Self::intent_only_public_settlement(witness, statement, skip_constraints)
+            },
+            ProofJob::BatchedSettlement { witness, statement } => {
+                Self::batched_settlement(witness, statement, skip_constraints)
             },
             // Fee proofs
             ProofJob::ValidNoteRedemption { witness, statement } => {
@@ -458,6 +464,20 @@ impl MockProofManager {
         let link_proof = dummy_link_proof();
         let bundle = IntentOnlySettlementProofBundle::new(proof, statement, link_proof);
         Ok(ProofManagerResponse::IntentOnlyPublicSettlement(bundle))
+    }
+
+    /// Generate a dummy proof of `BATCHED SETTLEMENT`
+    fn batched_settlement(
+        witness: BatchedSettlementWitness,
+        statement: BatchedSettlementStatement,
+        skip_constraints: bool,
+    ) -> Result<ProofManagerResponse, ProofManagerError> {
+        if !skip_constraints {
+            Self::check_constraints::<BatchedSettlementCircuit>(&witness, &statement)?;
+        }
+        let proof = dummy_proof();
+        let bundle = BatchedSettlementBundle::new(proof, statement);
+        Ok(ProofManagerResponse::BatchedSettlement(bundle))
     }
 
     // Fee proofs

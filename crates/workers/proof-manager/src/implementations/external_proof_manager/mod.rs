@@ -187,6 +187,9 @@ impl ExternalProofManager {
                     .prove_intent_only_public_settlement(witness, statement, validity_link_hint)
                     .await
             },
+            ProofJob::BatchedSettlement { .. } => {
+                unimplemented!("External proving not yet supported for BatchedSettlement")
+            },
             // Fee proofs
             ProofJob::ValidNoteRedemption { witness, statement } => {
                 client.prove_valid_note_redemption(witness, statement).await

@@ -59,6 +59,9 @@ use circuits_core::{
                 IntentOnlyPublicSettlementCircuit, IntentOnlyPublicSettlementStatement,
                 IntentOnlyPublicSettlementWitness,
             },
+            batched_settlement::{
+                BatchedSettlementCircuit, BatchedSettlementStatement, BatchedSettlementWitness,
+            },
         },
         valid_balance_create::{
             ValidBalanceCreate, ValidBalanceCreateStatement, ValidBalanceCreateWitness,
@@ -108,7 +111,7 @@ use rayon::{ThreadPool, ThreadPoolBuilder};
 use tracing::{error, info, info_span, instrument};
 use types_proofs::{
     IntentOnlySettlementProofBundle, PrivateSettlementProofBundle, ProofAndHintBundle, ProofBundle,
-    PublicSettlementProofBundle,
+    PublicSettlementProofBundle, BatchedSettlementBundle,
 };
 use types_runtime::CancelChannel;
 use util::{DefaultOption, default_option};
@@ -139,7 +142,10 @@ impl NativeProofManager {
     /// Create a new native proof manager
     pub fn new(config: ProofManagerConfig) -> Result<Self, ProofManagerError> {
         // Build a thread pool for the worker
+        // Tune the thread pool for maximum MSM/FFT CPU parallelization
+        let num_cpus = std::thread::available_parallelism().unwrap().get();
         let thread_pool = ThreadPoolBuilder::new()
+            .num_threads(num_cpus) // Auto-scale to 100% of available cores
             .thread_name(|i| format!("{}-{}", WORKER_THREAD_PREFIX, i))
             .stack_size(WORKER_STACK_SIZE)
             .build()
@@ -277,6 +283,9 @@ impl NativeProofManager {
             ProofJob::IntentOnlyPublicSettlement { witness, statement, validity_link_hint } => {
                 self.prove_intent_only_public_settlement(witness, statement, validity_link_hint)
             },
+            ProofJob::BatchedSettlement { witness, statement } => {
+                self.prove_batched_settlement(witness, statement).map(ProofManagerResponse::BatchedSettlement)
+            },
             // Fee proofs
             ProofJob::ValidNoteRedemption { witness, statement } => {
                 self.prove_valid_note_redemption(witness, statement)
@@ -322,6 +331,7 @@ impl NativeProofManager {
         setup_preprocessed_keys::<IntentAndBalancePublicSettlementCircuit>();
         setup_preprocessed_keys::<IntentOnlyBoundedSettlementCircuit>();
         setup_preprocessed_keys::<IntentOnlyPublicSettlementCircuit>();
+        setup_preprocessed_keys::<BatchedSettlementCircuit>();
         // Fee proofs
         setup_preprocessed_keys::<SizedValidNoteRedemption>();
         setup_preprocessed_keys::<SizedValidPrivateProtocolFeePayment>();
@@ -359,6 +369,8 @@ impl NativeProofManager {
         IntentOnlyBoundedSettlementCircuit::get_circuit_layout()
             .map_err(err_str!(ProofManagerError::Setup))?;
         IntentOnlyPublicSettlementCircuit::get_circuit_layout()
+            .map_err(err_str!(ProofManagerError::Setup))?;
+        BatchedSettlementCircuit::get_circuit_layout()
             .map_err(err_str!(ProofManagerError::Setup))?;
         // Fee proofs
         SizedValidNoteRedemption::get_circuit_layout()
@@ -653,6 +665,18 @@ impl NativeProofManager {
 
         let bundle = IntentOnlySettlementProofBundle::new(proof, statement, link_proof);
         Ok(ProofManagerResponse::IntentOnlyPublicSettlement(bundle))
+    }
+
+    /// Create a proof of `BATCHED SETTLEMENT`
+    #[instrument(skip_all, err)]
+    fn prove_batched_settlement(
+        &self,
+        witness: BatchedSettlementWitness,
+        statement: BatchedSettlementStatement,
+    ) -> Result<BatchedSettlementBundle, ProofManagerError> {
+        let proof = singleprover_prove::<BatchedSettlementCircuit>(&witness, &statement)?;
+        let bundle = BatchedSettlementBundle::new(proof, statement);
+        Ok(bundle)
     }
 
     // Fee proofs

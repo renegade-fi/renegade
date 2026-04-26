@@ -12,6 +12,7 @@ pub mod intent_and_balance_private_settlement;
 pub mod intent_and_balance_public_settlement;
 pub mod intent_only_public_settlement;
 pub mod settlement_lib;
+pub mod batched_settlement;
 
 /// The group name for the INTENT ONLY VALIDITY <-> INTENT ONLY
 /// SETTLEMENT link for both exact and bounded settlement circuits
