@@ -308,8 +308,11 @@ impl NodeStartupTask {
         // non-bootstrap node restarting with raft state wiped (raft tables are excluded
         // from S3 snapshots) would also take the initialize path and race the bootstrap
         // for leadership.
-        let already_initialized =
-            self.state.is_raft_initialized().await.map_err(err_str!(NodeStartupTaskError::State))?;
+        let already_initialized = self
+            .state
+            .is_raft_initialized()
+            .await
+            .map_err(err_str!(NodeStartupTaskError::State))?;
         self.task_state = if already_initialized || !in_bootstrap_mode() {
             NodeStartupTaskState::JoinRaft
         } else {
