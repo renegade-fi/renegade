@@ -45,7 +45,6 @@ pub type TaskQueueKey = Uuid;
 /// A task in the task queue
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "rkyv", derive(Archive, RkyvSerialize, RkyvDeserialize))]
-#[cfg_attr(feature = "rkyv", rkyv(derive(Debug)))]
 pub struct QueuedTask {
     /// The ID of the task
     pub id: TaskIdentifier,
@@ -140,7 +139,6 @@ impl ArchivedQueuedTaskState {
 /// A wrapper around the task descriptors
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "rkyv", derive(Archive, RkyvSerialize, RkyvDeserialize))]
-#[cfg_attr(feature = "rkyv", rkyv(derive(Debug)))]
 #[allow(clippy::large_enum_variant)]
 pub enum TaskDescriptor {
     /// The task descriptor for the `NewAccount` task

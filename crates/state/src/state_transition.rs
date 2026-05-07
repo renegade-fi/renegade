@@ -41,7 +41,6 @@ pub struct Proposal {
 /// The `StateTransitionType` encapsulates all possible state transitions,
 /// allowing transitions to be handled generically before they are applied
 #[derive(Clone, Debug, Serialize, Deserialize, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
-#[rkyv(derive(Debug))]
 #[rustfmt::skip]
 pub enum StateTransition {
     // --- Accounts --- //

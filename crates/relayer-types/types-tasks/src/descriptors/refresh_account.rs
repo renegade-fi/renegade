@@ -2,7 +2,9 @@
 
 use alloy::primitives::Address;
 #[cfg(feature = "rkyv")]
-use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
+use darkpool_types::rkyv_remotes::AddressDef;
+#[cfg(feature = "rkyv")]
+use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize, with::Map};
 use serde::{Deserialize, Serialize};
 use types_account::keychain::KeyChain;
 use types_core::AccountId;
@@ -12,7 +14,6 @@ use super::TaskDescriptor;
 /// The task descriptor for the `RefreshAccount` task
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "rkyv", derive(Archive, RkyvSerialize, RkyvDeserialize))]
-#[cfg_attr(feature = "rkyv", rkyv(derive(Debug)))]
 pub struct RefreshAccountTaskDescriptor {
     /// The account ID to refresh
     pub account_id: AccountId,
@@ -22,6 +23,7 @@ pub struct RefreshAccountTaskDescriptor {
     /// in the wallet's active public intents. See
     /// `SyncAccountRequest::additional_tokens` for rationale.
     #[serde(default)]
+    #[cfg_attr(feature = "rkyv", rkyv(with = Map<AddressDef>))]
     pub additional_tokens: Vec<Address>,
 }
 
