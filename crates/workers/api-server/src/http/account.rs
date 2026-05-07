@@ -186,7 +186,8 @@ impl TypedHandler for SyncAccountHandler {
         let keychain = KeyChain::new(private_keys, req.schnorr_public_key);
 
         // Create and append the task
-        let descriptor = RefreshAccountTaskDescriptor::new(account_id, keychain);
+        let descriptor = RefreshAccountTaskDescriptor::new(account_id, keychain)
+            .with_additional_tokens(req.additional_tokens);
         let task_id =
             append_task(descriptor.into(), blocking, &self.state, &self.task_queue).await?;
 

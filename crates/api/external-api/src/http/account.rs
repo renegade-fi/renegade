@@ -78,6 +78,15 @@ pub struct SyncAccountRequest {
     /// The schnorr public key used for in-circuit verification
     #[serde(with = "serde_helpers::schnorr_public_key_as_string")]
     pub schnorr_public_key: SchnorrPublicKey,
+    /// Tokens whose Ring 0 backing balances should be re-fetched from
+    /// chain in addition to those that appear in the wallet's active
+    /// public intents. Useful for callers that need to force a balance
+    /// refresh for a token before placing the first order against it
+    /// (otherwise the relayer's per-token balance index can be stale,
+    /// since `refresh_state` only walks tokens referenced by current
+    /// intents). Defaults to empty for backward compatibility.
+    #[serde(default)]
+    pub additional_tokens: Vec<Address>,
 }
 
 /// Response from syncing an account

@@ -144,6 +144,9 @@ pub struct RefreshAccountTask {
     pub account_id: AccountId,
     /// The keychain for the account
     pub keychain: KeyChain,
+    /// Tokens to refresh balances for in addition to those that appear
+    /// in the wallet's active public intents.
+    pub additional_tokens: Vec<Address>,
     /// The order IDs that were refreshed (for success hook)
     pub refreshed_order_ids: Vec<OrderId>,
     /// The state of the task's execution
@@ -162,6 +165,7 @@ impl Task for RefreshAccountTask {
         Ok(Self {
             account_id: descriptor.account_id,
             keychain: descriptor.keychain,
+            additional_tokens: descriptor.additional_tokens,
             refreshed_order_ids: Vec::new(),
             task_state: RefreshAccountTaskState::Pending,
             ctx,
@@ -223,6 +227,21 @@ impl Descriptor for RefreshAccountTaskDescriptor {}
 // -----------------------
 
 impl RefreshAccountTask {
+    /// Resolve the on-chain owner address for the wallet when no
+    /// active intent is available to read the owner from. Reads any
+    /// existing balance entry's `owner()`. Errors if the wallet has
+    /// neither active intents nor any balance entries.
+    async fn fetch_owner_for_account(&self) -> Result<Address> {
+        let balances = self.ctx.state.get_account_balances(&self.account_id).await?;
+        balances.first().map(|b| b.owner()).ok_or_else(|| {
+            RefreshAccountTaskError::setup(format!(
+                "cannot resolve owner for account {} — no active intents and no \
+                 stored balances; cannot refresh `additional_tokens`",
+                self.account_id
+            ))
+        })
+    }
+
     /// Ensure the account exists, creating it if necessary
     async fn ensure_account_exists(&self) -> Result<()> {
         let state = &self.ctx.state;
@@ -257,19 +276,45 @@ impl RefreshAccountTask {
             })
             .collect();
 
-        if public_intents.is_empty() {
-            info!("No public intents found for account {}", self.account_id);
+        // Early-return only when there's nothing to refresh: no active
+        // intents and no caller-provided additional tokens. Without this
+        // check the caller-provided-tokens path has no `owner` to query
+        // (we currently derive it from the first intent).
+        if public_intents.is_empty() && self.additional_tokens.is_empty() {
+            info!(
+                "No public intents and no additional tokens to refresh for account {}",
+                self.account_id
+            );
             return Ok(());
         }
 
-        info!("Found {} public intents for account {}", public_intents.len(), self.account_id);
+        info!(
+            "Found {} public intents and {} additional tokens to refresh for account {}",
+            public_intents.len(),
+            self.additional_tokens.len(),
+            self.account_id
+        );
 
-        // Collect unique input tokens from the intents
-        let input_tokens: HashSet<Address> =
+        // Collect unique input tokens from the intents, then union with
+        // caller-provided additional tokens. Caller-provided tokens let
+        // a client force a balance refresh for tokens not currently
+        // referenced by any intent (e.g. before placing the first order
+        // against a freshly-deposited token).
+        let mut input_tokens: HashSet<Address> =
             public_intents.iter().map(|intent| intent.order.input_token()).collect();
+        for token in &self.additional_tokens {
+            input_tokens.insert(*token);
+        }
 
-        // Refresh ring 0 balances for each input token
-        let owner = public_intents.first().unwrap().order.intent.inner.owner;
+        // Resolve the on-chain owner address. Prefer the owner declared
+        // by an existing intent; fall back to the wallet's stored
+        // signer address when only `additional_tokens` was supplied.
+        let owner = match public_intents.first() {
+            Some(intent) => intent.order.intent.inner.owner,
+            None => self.fetch_owner_for_account().await?,
+        };
+
+        // Refresh ring 0 balances for the unioned token set
         let mut balances = Vec::new();
         for token in input_tokens {
             if let Some(balance) = fetch_eoa_balance(&self.ctx, token, owner)
