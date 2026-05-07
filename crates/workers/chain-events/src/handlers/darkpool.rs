@@ -125,7 +125,7 @@ impl OnChainEventListenerExecutor {
                 event.intentHash,
                 fill_amount,
                 account_id,
-                &external_matches,
+                external_matches,
             )
         } else {
             warn!(

@@ -162,7 +162,7 @@ impl MatchingEngineExecutor {
     ///        second condition to be false
     ///
     /// This check may be executed after a match settlement fails
-    async fn order_still_valid(&self, order_id: &OrderId) -> Result<bool, MatchingEngineError> {
+    async fn order_still_valid(&self, _order_id: &OrderId) -> Result<bool, MatchingEngineError> {
         warn!("Re-implement order still valid check");
         Ok(true)
     }

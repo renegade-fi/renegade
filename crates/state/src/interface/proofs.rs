@@ -338,7 +338,8 @@ impl StateInner {
         bundle: ValidityProofBundle,
     ) -> Result<ProposalWaiter, StateError> {
         let locator = ValidityProofLocator::Intent { order_id };
-        self.send_proposal(StateTransition::AddValidityProof { locator, bundle }).await
+        self.send_proposal(StateTransition::AddValidityProof { locator, bundle: Box::new(bundle) })
+            .await
     }
 
     /// Propose adding a validity proof for a balance, keyed by account id and
@@ -351,6 +352,7 @@ impl StateInner {
         bundle: ValidityProofBundle,
     ) -> Result<ProposalWaiter, StateError> {
         let locator = ValidityProofLocator::Balance { account_id, mint };
-        self.send_proposal(StateTransition::AddValidityProof { locator, bundle }).await
+        self.send_proposal(StateTransition::AddValidityProof { locator, bundle: Box::new(bundle) })
+            .await
     }
 }

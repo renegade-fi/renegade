@@ -258,7 +258,7 @@ impl TypedHandler for AdminGetOrdersHandler {
         let orders: Vec<ApiAdminOrder> = orders_data
             .into_iter()
             .filter(|(_, _, matching_pool, _)| {
-                pool_filter.as_ref().map_or(true, |filter| matching_pool == filter)
+                pool_filter.as_ref().is_none_or(|filter| matching_pool == filter)
             })
             .map(|(order, account_id, matching_pool, matchable_amount)| ApiAdminOrder {
                 order: ApiOrder::from(order),

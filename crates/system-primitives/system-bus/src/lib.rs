@@ -249,12 +249,12 @@ impl<M: Clone + Sync> MessageBus<M> {
     }
 
     /// Acquire a read lock on the topic mesh
-    fn read_topic_mesh(&self) -> RwLockReadGuard<HashMap<String, Shared<TopicFabric<M>>>> {
+    fn read_topic_mesh(&self) -> RwLockReadGuard<'_, HashMap<String, Shared<TopicFabric<M>>>> {
         self.topic_mesh.read().expect("topic_mesh lock poisoned")
     }
 
     /// Acquire a write lock on the topic mesh
-    fn write_topic_mesh(&self) -> RwLockWriteGuard<HashMap<String, Shared<TopicFabric<M>>>> {
+    fn write_topic_mesh(&self) -> RwLockWriteGuard<'_, HashMap<String, Shared<TopicFabric<M>>>> {
         self.topic_mesh.write().expect("topic_mesh lock poisoned")
     }
 

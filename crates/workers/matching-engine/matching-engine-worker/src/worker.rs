@@ -4,11 +4,7 @@ use std::thread::{Builder, JoinHandle};
 
 use async_trait::async_trait;
 use circuit_types::Amount;
-use job_types::{
-    matching_engine::{MatchingEngineWorkerQueue, MatchingEngineWorkerReceiver},
-    network_manager::NetworkManagerQueue,
-    task_driver::TaskDriverQueue,
-};
+use job_types::{matching_engine::MatchingEngineWorkerReceiver, task_driver::TaskDriverQueue};
 use matching_engine_core::MatchingEngine;
 use price_state::PriceStreamStates;
 use state::State;

@@ -230,7 +230,7 @@ impl GossipProtocolExecutor {
 
     /// Assert that a nullifier is unused in the contract, returns a GossipError
     /// if the nullifier has been used
-    async fn assert_nullifier_unused(&self, nullifier: Nullifier) -> Result<(), GossipError> {
+    async fn assert_nullifier_unused(&self, _nullifier: Nullifier) -> Result<(), GossipError> {
         todo!("Implement `assert_nullifier_unused`");
         // self.darkpool_client()
         //     .check_nullifier_used(nullifier)

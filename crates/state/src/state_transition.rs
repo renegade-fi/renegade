@@ -73,7 +73,7 @@ pub enum StateTransition {
         /// The locator at which to store the proof bundle
         locator: ValidityProofLocator,
         /// The validity proof bundle
-        bundle: ValidityProofBundle,
+        bundle: Box<ValidityProofBundle>,
     },
 
     // --- Merkle Proofs --- //
