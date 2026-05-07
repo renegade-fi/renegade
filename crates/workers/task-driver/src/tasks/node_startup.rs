@@ -302,22 +302,12 @@ impl NodeStartupTask {
             .send(msg)
             .map_err(|_| NodeStartupTaskError::Enqueue(ERR_SEND_JOB.to_string()))?;
 
-        // After warmup, decide whether to initialize a new raft or join an existing one.
-        // Only the bootstrap node may initialize; all other nodes wait to be added as a
-        // learner by the bootstrap leader via `sync_membership`. Without this gate, a
-        // non-bootstrap node restarting with raft state wiped (raft tables are excluded
-        // from S3 snapshots) would also take the initialize path and race the bootstrap
-        // for leadership.
         let already_initialized = self
             .state
             .is_raft_initialized()
             .await
             .map_err(err_str!(NodeStartupTaskError::State))?;
-        self.task_state = if already_initialized || !in_bootstrap_mode() {
-            NodeStartupTaskState::JoinRaft
-        } else {
-            NodeStartupTaskState::InitializeRaft
-        };
+        self.task_state = next_state_after_warmup(already_initialized, in_bootstrap_mode());
 
         Ok(())
     }
@@ -430,5 +420,59 @@ impl NodeStartupTask {
         }
 
         Ok(())
+    }
+}
+
+/// Decide the next task state after gossip warmup.
+///
+/// Only the bootstrap node may initialize a new raft. All other nodes must
+/// join an existing one (waiting to be added as a learner by the bootstrap
+/// leader via `sync_membership`). Without this gate, a non-bootstrap node
+/// restarting with raft state wiped (raft tables are excluded from S3
+/// snapshots) would also take the initialize path and race the bootstrap for
+/// leadership.
+fn next_state_after_warmup(
+    already_initialized: bool,
+    bootstrap_mode: bool,
+) -> NodeStartupTaskState {
+    if already_initialized || !bootstrap_mode {
+        NodeStartupTaskState::JoinRaft
+    } else {
+        NodeStartupTaskState::InitializeRaft
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{NodeStartupTaskState, next_state_after_warmup};
+
+    #[test]
+    fn fresh_bootstrap_node_initializes() {
+        assert_eq!(
+            next_state_after_warmup(false, true),
+            NodeStartupTaskState::InitializeRaft,
+        );
+    }
+
+    #[test]
+    fn fresh_non_bootstrap_node_joins() {
+        // Regression: previously this case took the InitializeRaft path and could
+        // displace the bootstrap leader after S3-snapshot-based restart.
+        assert_eq!(
+            next_state_after_warmup(false, false),
+            NodeStartupTaskState::JoinRaft,
+        );
+    }
+
+    #[test]
+    fn already_initialized_always_joins() {
+        assert_eq!(
+            next_state_after_warmup(true, true),
+            NodeStartupTaskState::JoinRaft,
+        );
+        assert_eq!(
+            next_state_after_warmup(true, false),
+            NodeStartupTaskState::JoinRaft,
+        );
     }
 }
