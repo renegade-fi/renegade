@@ -44,6 +44,10 @@ pub struct TokenInfo {
     address: String,
     /// The number of decimals the token uses in the ERC20 representation
     decimals: u8,
+    /// Whether the token has been delisted or is otherwise not tradable on
+    /// Renegade. Optional in the JSON; absent or false means enabled.
+    #[serde(default)]
+    disabled: bool,
     /// The exchanges that list the token, along with the ticker that we should
     /// use to fetch the token's price from the exchange
     supported_exchanges: HashMap<Exchange, String>,
@@ -52,6 +56,11 @@ pub struct TokenInfo {
 }
 
 impl TokenRemap {
+    /// Tickers in the remap with `disabled: true`
+    pub fn disabled_tickers(&self) -> Vec<String> {
+        self.tokens.iter().filter(|t| t.disabled).map(|t| t.ticker.clone()).collect()
+    }
+
     /// Set the static mapping of token addresses to tickers using the token
     /// mapping
     pub fn set_token_remap(&self, chain: Chain) {
@@ -110,7 +119,13 @@ impl TokenRemap {
 }
 
 /// Setup token remaps in the global `OnceCell`
-pub fn setup_token_remaps(remap_file: Option<String>, chain: Chain) -> Result<(), String> {
+///
+/// Returns the list of tickers marked `disabled: true` in the JSON, so callers
+/// that hold a CLI-provided disabled list can cross-check for drift.
+pub fn setup_token_remaps(
+    remap_file: Option<String>,
+    chain: Chain,
+) -> Result<Vec<String>, String> {
     // If the remap file is not provided, fetch the Renegade maintained remap file
     // from the default location
     let mut map = if let Some(file) = remap_file {
@@ -133,7 +148,34 @@ pub fn setup_token_remaps(remap_file: Option<String>, chain: Chain) -> Result<()
     // Set the default chain, if it has not already been set
     set_default_chain(chain);
 
-    Ok(())
+    Ok(map.disabled_tickers())
+}
+
+/// Emit a warning if the JSON `disabled` flags don't match the CLI
+/// `disabled_assets` list. The two are independent inputs today: the JSON is
+/// informational for clients, the CLI list drives the relayer's `AssetFilter`.
+/// Drift between them means clients and the relayer disagree about which
+/// tokens are tradable.
+pub fn warn_on_disabled_mismatch(json_disabled: &[String], cli_disabled: &[String]) {
+    use std::collections::HashSet;
+    let json_set: HashSet<&str> = json_disabled.iter().map(String::as_str).collect();
+    let cli_set: HashSet<&str> = cli_disabled.iter().map(String::as_str).collect();
+
+    let only_in_json: Vec<&str> = json_set.difference(&cli_set).copied().collect();
+    let only_in_cli: Vec<&str> = cli_set.difference(&json_set).copied().collect();
+
+    if !only_in_json.is_empty() {
+        tracing::warn!(
+            "token-mappings disabled list disagrees with --disabled-assets: \
+             tokens marked disabled in JSON but not in CLI: {only_in_json:?}"
+        );
+    }
+    if !only_in_cli.is_empty() {
+        tracing::warn!(
+            "token-mappings disabled list disagrees with --disabled-assets: \
+             tokens in --disabled-assets but not marked disabled in JSON: {only_in_cli:?}"
+        );
+    }
 }
 
 /// Lowercase all addresses in the remap
@@ -196,6 +238,7 @@ mod test {
                 ticker: "RNG".to_string(),
                 address: "0x1234".to_string(),
                 decimals: 18,
+                disabled: false,
                 supported_exchanges: HashMap::new(),
                 canonical_exchange: Exchange::Renegade,
             }],
