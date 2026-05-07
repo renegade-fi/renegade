@@ -302,12 +302,19 @@ impl NodeStartupTask {
             .send(msg)
             .map_err(|_| NodeStartupTaskError::Enqueue(ERR_SEND_JOB.to_string()))?;
 
-        // After warmup, check for an existing raft cluster
-        if self.state.is_raft_initialized().await.map_err(err_str!(NodeStartupTaskError::State))? {
-            self.task_state = NodeStartupTaskState::JoinRaft;
+        // After warmup, decide whether to initialize a new raft or join an existing one.
+        // Only the bootstrap node may initialize; all other nodes wait to be added as a
+        // learner by the bootstrap leader via `sync_membership`. Without this gate, a
+        // non-bootstrap node restarting with raft state wiped (raft tables are excluded
+        // from S3 snapshots) would also take the initialize path and race the bootstrap
+        // for leadership.
+        let already_initialized =
+            self.state.is_raft_initialized().await.map_err(err_str!(NodeStartupTaskError::State))?;
+        self.task_state = if already_initialized || !in_bootstrap_mode() {
+            NodeStartupTaskState::JoinRaft
         } else {
-            self.task_state = NodeStartupTaskState::InitializeRaft;
-        }
+            NodeStartupTaskState::InitializeRaft
+        };
 
         Ok(())
     }
