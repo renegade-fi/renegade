@@ -190,7 +190,8 @@ impl StateApplicator {
         // Remove from the matching engine
         self.matching_engine().cancel_order(&order, pool.clone());
 
-        // Publish admin order update event (cancelled orders have zero matchable amount)
+        // Publish admin order update event (cancelled orders have zero matchable
+        // amount)
         self.publish_admin_order_update(
             account_id,
             &order,
@@ -211,7 +212,9 @@ impl StateApplicator {
         let order_id = order.id;
         let old_order = match tx.get_order(&order_id)? {
             Some(archived) => Order::from_archived(&archived)?,
-            None => return Err(StateApplicatorError::reject(format!("order {order_id} not found"))),
+            None => {
+                return Err(StateApplicatorError::reject(format!("order {order_id} not found")));
+            },
         };
 
         // Get the account ID for the order
