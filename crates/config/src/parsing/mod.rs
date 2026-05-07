@@ -18,6 +18,7 @@ use crate::{
         utils::{parse_cluster_keys, parse_symmetric_key},
     },
     setup_token_remaps,
+    token_remaps::warn_on_disabled_mismatch,
     validation::validate_config,
 };
 
@@ -54,7 +55,8 @@ pub fn parse_command_line_args() -> Result<RelayerConfig, String> {
 
     let cli = Cli::parse_from(full_args);
     // Setup the token remap
-    setup_token_remaps(cli.token_remap_file.clone(), cli.chain_id)?;
+    let json_disabled = setup_token_remaps(cli.token_remap_file.clone(), cli.chain_id)?;
+    warn_on_disabled_mismatch(&json_disabled, &cli.disabled_assets);
     // Set the bootstrap mode
     set_bootstrap_mode(cli.bootstrap_mode);
 
