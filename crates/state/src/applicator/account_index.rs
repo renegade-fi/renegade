@@ -9,7 +9,7 @@ use matching_engine_core::MatchingEngine;
 use renegade_solidity_abi::v2::IDarkpoolV2::PublicIntentPermit;
 use system_bus::{
     ADMIN_BALANCE_UPDATES_TOPIC, ADMIN_ORDER_UPDATES_TOPIC, AdminOrderUpdateType,
-    OWNER_INDEX_CHANGED_TOPIC, SystemBusMessage,
+    OWNER_INDEX_CHANGED_TOPIC, SystemBusMessage, account_fills_topic,
 };
 use types_account::{
     MatchingPoolName, OrderRefreshData,
@@ -205,11 +205,11 @@ impl StateApplicator {
     pub fn update_order(&self, order: &Order) -> Result<ApplicatorReturnType> {
         let tx = self.db().new_write_tx()?;
 
-        // Verify the order exists
+        // Read the pre-update order so we can compute the fill delta.
         let order_id = order.id;
-        if tx.get_order(&order_id)?.is_none() {
-            return Err(StateApplicatorError::reject(format!("order {order_id} not found")));
-        }
+        let old_order = tx
+            .get_order(&order_id)?
+            .ok_or_else(|| StateApplicatorError::reject(format!("order {order_id} not found")))?;
 
         // Get the account ID for the order
         let account_id = tx
@@ -239,6 +239,19 @@ impl StateApplicator {
             AdminOrderUpdateType::Updated,
             matchable_amount,
         );
+
+        // If `amount_in` decreased, treat this as a fill and publish to the
+        // per-account fills topic. v2's `update_order` is currently only
+        // invoked by the settlement task post-match, but guard on the delta
+        // anyway so non-fill updates (if any are added later) don't emit a
+        // spurious fill event.
+        let old_amount = old_order.amount_in();
+        let new_amount = order.amount_in();
+        if new_amount < old_amount {
+            let fill_amount = old_amount - new_amount;
+            self.publish_fill(account_id, order, fill_amount, new_amount == 0);
+        }
+
         Ok(ApplicatorReturnType::None)
     }
 
@@ -405,6 +418,23 @@ impl StateApplicator {
         let msg =
             SystemBusMessage::AdminBalanceUpdate { account_id, balance: Box::new(balance.clone()) };
         self.system_bus().publish(ADMIN_BALANCE_UPDATES_TOPIC.to_string(), msg);
+    }
+
+    /// Publish a per-account fill event to the system bus
+    fn publish_fill(
+        &self,
+        account_id: AccountId,
+        order: &Order,
+        fill_amount: Amount,
+        filled: bool,
+    ) {
+        let msg = SystemBusMessage::Fill {
+            account_id,
+            order: Box::new(order.clone()),
+            fill_amount,
+            filled,
+        };
+        self.system_bus().publish(account_fills_topic(&account_id), msg);
     }
 
     /// Notify the chain-events worker that the owner index changed

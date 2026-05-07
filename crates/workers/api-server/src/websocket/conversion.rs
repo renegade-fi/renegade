@@ -2,7 +2,8 @@
 
 use external_api::types::{
     AdminBalanceUpdateMessage, AdminOrderUpdateMessage, ApiAdminOrder, ApiBalance, ApiOrder,
-    ApiOrderUpdateType, ServerWebsocketMessageBody,
+    ApiOrderCore, ApiOrderUpdateType, ApiPartialOrderFill, ApiTimestampedPriceFloat, FeeTake,
+    FillMessage, ServerWebsocketMessageBody,
 };
 use system_bus::{AdminOrderUpdateType, SystemBusMessage};
 
@@ -27,6 +28,9 @@ pub fn system_bus_message_to_websocket_body(msg: SystemBusMessage) -> ServerWebs
         ),
         SystemBusMessage::AdminBalanceUpdate { account_id, balance } => {
             convert_admin_balance_update(account_id, *balance)
+        },
+        SystemBusMessage::Fill { account_id: _, order, fill_amount, filled } => {
+            convert_fill(*order, fill_amount, filled)
         },
         // Other message types are not intended for websocket consumption
         SystemBusMessage::HandshakeInProgress { .. }
@@ -76,6 +80,27 @@ fn convert_admin_balance_update(
         account_id,
         balance: api_balance,
     })
+}
+
+/// Convert a Fill system bus message to a websocket message body.
+///
+/// The relayer's per-order state does not yet carry a price/fee/tx_hash for
+/// the fill, so those fields are emitted as zero/empty placeholders. The
+/// `amount` is the delta of the order's `amount_in` between pre- and
+/// post-fill, computed by the publisher.
+fn convert_fill(
+    order: types_account::order::Order,
+    fill_amount: circuit_types::Amount,
+    filled: bool,
+) -> ServerWebsocketMessageBody {
+    let api_order_core: ApiOrderCore = order.into();
+    let fill = ApiPartialOrderFill {
+        amount: fill_amount,
+        price: ApiTimestampedPriceFloat { price: "0".to_string(), timestamp: 0 },
+        fees: FeeTake::default(),
+        tx_hash: String::new(),
+    };
+    ServerWebsocketMessageBody::Fill(FillMessage { fill, order: api_order_core, filled })
 }
 
 /// Convert an AdminOrderUpdateType to an ApiOrderUpdateType

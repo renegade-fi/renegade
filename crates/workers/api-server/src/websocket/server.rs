@@ -49,6 +49,10 @@ const ADMIN_ORDER_UPDATES_ROUTE: &str = "/v2/admin/orders";
 /// The admin balance updates topic, streams granular balance updates for all
 /// accounts
 const ADMIN_BALANCE_UPDATES_ROUTE: &str = "/v2/admin/balances";
+/// Per-account fills topic; streams `Fill` events for orders owned by the
+/// caller's account. The bus topic equals the subscribed URL, which the
+/// applicator constructs via `system_bus::account_fills_topic`.
+const ACCOUNT_FILLS_ROUTE: &str = "/v2/account/:account_id/fills";
 
 // --------------------
 // | Websocket Server |
@@ -100,6 +104,14 @@ impl WebsocketServer {
                 )),
             )
             .expect("failed to insert admin balance updates route");
+
+        // The "/v2/account/:account_id/fills" route
+        router
+            .insert(
+                ACCOUNT_FILLS_ROUTE,
+                Box::new(DefaultHandler::new(AuthType::Account, config.system_bus.clone())),
+            )
+            .expect("failed to insert account fills route");
 
         router
     }

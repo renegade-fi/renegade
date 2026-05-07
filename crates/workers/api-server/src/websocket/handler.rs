@@ -51,6 +51,13 @@ impl DefaultHandler {
     pub fn new_with_remap(auth_type: AuthType, topic_remap: String, system_bus: SystemBus) -> Self {
         Self { auth_type, system_bus, topic_remap: Some(topic_remap) }
     }
+
+    /// Constructor that uses the subscribed URL as the bus topic verbatim
+    /// (no remap). Use for parameterised routes where the bus topic is
+    /// derived from URL params.
+    pub fn new(auth_type: AuthType, system_bus: SystemBus) -> Self {
+        Self { auth_type, system_bus, topic_remap: None }
+    }
 }
 
 #[async_trait]

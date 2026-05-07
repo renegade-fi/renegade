@@ -45,6 +45,14 @@ pub fn task_topic(task_id: &TaskIdentifier) -> String {
     format!("task-updates-{task_id}")
 }
 
+/// Get the topic name for fills on an account's orders.
+///
+/// Must match the URL path the SDK subscribes to in
+/// `subscribe_fills` (`renegade-wallet-client/websocket/client.rs`).
+pub fn account_fills_topic(account_id: &AccountId) -> String {
+    format!("/v2/account/{account_id}/fills")
+}
+
 /// Get a topic name for an atomic match response
 pub fn gen_atomic_match_response_topic() -> String {
     format!("atomic-match-{}", Uuid::new_v4())
@@ -155,6 +163,19 @@ pub enum SystemBusMessage {
         account_id: AccountId,
         /// The updated balance
         balance: Box<Balance>,
+    },
+
+    // --- Account Fills --- //
+    /// A fill on one of the account's orders
+    Fill {
+        /// The account that owns the filled order
+        account_id: AccountId,
+        /// The order after the fill
+        order: Box<Order>,
+        /// The amount filled in this match (delta of `amount_in`)
+        fill_amount: Amount,
+        /// Whether the order is now fully filled
+        filled: bool,
     },
 
     // --- Chain Events -- //
