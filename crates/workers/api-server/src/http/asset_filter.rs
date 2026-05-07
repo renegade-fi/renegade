@@ -14,6 +14,7 @@ const ERR_TOKEN_DISABLED: &str = "token is not supported";
 /// a small API for checking and filtering tokens.
 #[derive(Clone, Debug)]
 pub(crate) struct AssetFilter {
+    /// Set of disabled asset addresses
     disabled: HashSet<Address>,
 }
 

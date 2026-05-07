@@ -206,10 +206,13 @@ impl StateApplicator {
         let tx = self.db().new_write_tx()?;
 
         // Read the pre-update order so we can compute the fill delta.
+        // Deserialize into an owned `Order` so the archived borrow doesn't
+        // block `tx.commit()` below.
         let order_id = order.id;
-        let old_order = tx
-            .get_order(&order_id)?
-            .ok_or_else(|| StateApplicatorError::reject(format!("order {order_id} not found")))?;
+        let old_order = match tx.get_order(&order_id)? {
+            Some(archived) => Order::from_archived(&archived)?,
+            None => return Err(StateApplicatorError::reject(format!("order {order_id} not found"))),
+        };
 
         // Get the account ID for the order
         let account_id = tx
