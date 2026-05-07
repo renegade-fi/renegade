@@ -122,10 +122,7 @@ impl TokenRemap {
 ///
 /// Returns the list of tickers marked `disabled: true` in the JSON, so callers
 /// that hold a CLI-provided disabled list can cross-check for drift.
-pub fn setup_token_remaps(
-    remap_file: Option<String>,
-    chain: Chain,
-) -> Result<Vec<String>, String> {
+pub fn setup_token_remaps(remap_file: Option<String>, chain: Chain) -> Result<Vec<String>, String> {
     // If the remap file is not provided, fetch the Renegade maintained remap file
     // from the default location
     let mut map = if let Some(file) = remap_file {
