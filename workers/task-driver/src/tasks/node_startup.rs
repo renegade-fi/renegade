@@ -334,12 +334,25 @@ impl NodeStartupTask {
             .send(msg)
             .map_err(|_| NodeStartupTaskError::Enqueue(ERR_SEND_JOB.to_string()))?;
 
-        // After warmup, check for an existing raft cluster
-        if self.state.is_raft_initialized().await.map_err(err_str!(NodeStartupTaskError::State))? {
-            self.task_state = NodeStartupTaskState::JoinRaft;
+        // After warmup, decide how to enter the raft.
+        //
+        // The bootstrap node must never call `initialize_raft`: it starts
+        // with an empty state machine (snapshot download is skipped in
+        // bootstrap mode), so if it self-initializes before a relayer-leader
+        // has added it as a learner, it forms a parallel empty raft that
+        // later overwrites real state via install_snapshot. Instead it
+        // always waits for the leader to add it as a learner via
+        // `sync_membership`.
+        let raft_initialized = self
+            .state
+            .is_raft_initialized()
+            .await
+            .map_err(err_str!(NodeStartupTaskError::State))?;
+        self.task_state = if raft_initialized || in_bootstrap_mode() {
+            NodeStartupTaskState::JoinRaft
         } else {
-            self.task_state = NodeStartupTaskState::InitializeRaft;
-        }
+            NodeStartupTaskState::InitializeRaft
+        };
 
         Ok(())
     }
