@@ -358,10 +358,20 @@ impl NodeStartupTask {
     }
 
     /// Initialize a new raft cluster
+    ///
+    /// Always initializes the raft with only the local node as a voter.
+    /// Other cluster peers known via gossip are added later as learners by
+    /// the leader's `sync_membership` timer, which goes through openraft's
+    /// add_learner -> install_snapshot path. This is required because
+    /// openraft's `initialize` does NOT trigger install_snapshot for the
+    /// initial members -- it assumes all listed nodes start with identical
+    /// (empty) state machines. When a node has recovered state from a
+    /// snapshot and another peer has not, including the second peer in the
+    /// initial membership would let it apply log entries against a state
+    /// machine that's missing data, panicking the raft core.
     async fn initialize_raft(&mut self) -> Result<(), NodeStartupTaskError> {
-        // Get the list of other peers in the cluster
-        let my_cluster = self.state.get_cluster_id()?;
-        let peers = self.state.get_cluster_peers(&my_cluster).await?;
+        let my_peer_id = self.state.get_peer_id()?;
+        let peers = vec![my_peer_id];
 
         info!("initializing raft with {} peers", peers.len());
         self.state.initialize_raft(peers).await?;
@@ -373,7 +383,6 @@ impl NodeStartupTask {
         let leader = self.state.get_leader().unwrap();
         info!("leader elected: {}", leader);
 
-        let my_peer_id = self.state.get_peer_id()?;
         if leader != my_peer_id {
             info!("elected leader is a cluster peer");
             self.task_state = NodeStartupTaskState::JoinRaft;

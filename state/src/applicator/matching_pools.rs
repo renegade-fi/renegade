@@ -37,12 +37,24 @@ impl StateApplicator {
     }
 
     /// Assign an order to a matching pool
+    ///
+    /// Returns a rejection (non-fatal) if the pool does not exist on this
+    /// node. The previous behavior was to propagate a `StorageError`, which
+    /// the raft state machine treats as fatal and panics the RaftCore. This
+    /// can happen when a node joins the cluster via `initialize_raft`
+    /// without install_snapshot and its state machine is missing pools that
+    /// the leader's state machine has.
     pub fn assign_order_to_matching_pool(
         &self,
         order_id: &OrderIdentifier,
         pool_name: &str,
     ) -> Result<ApplicatorReturnType, StateApplicatorError> {
         let tx = self.db().new_write_tx()?;
+
+        if !tx.matching_pool_exists(pool_name)? {
+            return Err(StateApplicatorError::reject(MATCHING_POOL_DOES_NOT_EXIST_ERR));
+        }
+
         tx.assign_order_to_matching_pool(order_id, pool_name)?;
         tx.commit()?;
 
