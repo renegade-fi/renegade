@@ -75,7 +75,11 @@ pub fn compute_price_reporter_state(
     local_timestamp: u64,
     exchange_prices: &[(Exchange, (Price, u64))],
 ) -> PriceReporterState {
-    if price == Price::default() {
+    // Fail closed on non-finite or non-positive served prices: NaN, +Inf, -Inf,
+    // 0, and negatives. The pre-existing check only caught literal 0.0, but a
+    // corrupted upstream feed could produce any of these. See incident
+    // 2026-05-08 (cbBTC).
+    if !price.is_finite() || price <= 0.0 {
         return PriceReporterState::NotEnoughDataReported(0);
     }
 
