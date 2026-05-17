@@ -37,6 +37,9 @@ use circuits_core::zk_circuits::{
         intent_only_public_settlement::{
             IntentOnlyPublicSettlementStatement, IntentOnlyPublicSettlementWitness,
         },
+        batched_settlement::{
+            BatchedSettlementStatement, BatchedSettlementWitness,
+        },
     },
     valid_balance_create::{ValidBalanceCreateStatement, ValidBalanceCreateWitness},
     valid_deposit::{SizedValidDepositWitness, ValidDepositStatement},
@@ -72,6 +75,7 @@ use types_proofs::{
     ValidDepositBundle, ValidNoteRedemptionBundle, ValidOrderCancellationBundle,
     ValidPrivateProtocolFeePaymentBundle, ValidPrivateRelayerFeePaymentBundle,
     ValidPublicProtocolFeePaymentBundle, ValidPublicRelayerFeePaymentBundle, ValidWithdrawalBundle,
+    BatchedSettlementBundle,
 };
 use util::channels::{
     TracedCrossbeamReceiver, TracedCrossbeamSender, new_traced_crossbeam_channel,
@@ -129,6 +133,8 @@ pub enum ProofManagerResponse {
     IntentOnlyBoundedSettlement(IntentOnlyBoundedSettlementBundle),
     /// A proof bundle for `INTENT ONLY PUBLIC SETTLEMENT`
     IntentOnlyPublicSettlement(IntentOnlyPublicSettlementBundle),
+    /// A proof bundle for `BATCHED SETTLEMENT`
+    BatchedSettlement(BatchedSettlementBundle),
     // Fee proofs
     /// A proof bundle for `VALID NOTE REDEMPTION`
     ValidNoteRedemption(ValidNoteRedemptionBundle),
@@ -273,6 +279,15 @@ impl From<ProofManagerResponse> for IntentOnlyPublicSettlementBundle {
         match value {
             ProofManagerResponse::IntentOnlyPublicSettlement(bundle) => bundle,
             other => panic!("Expected IntentOnlyPublicSettlement, got {:?}", other),
+        }
+    }
+}
+
+impl From<ProofManagerResponse> for BatchedSettlementBundle {
+    fn from(value: ProofManagerResponse) -> Self {
+        match value {
+            ProofManagerResponse::BatchedSettlement(bundle) => bundle,
+            other => panic!("Expected BatchedSettlement, got {:?}", other),
         }
     }
 }
@@ -430,6 +445,11 @@ pub enum ProofJob {
         statement: IntentOnlyPublicSettlementStatement,
         /// The link hint for the validity proof
         validity_link_hint: ProofLinkingHint,
+    },
+    /// Prove `BATCHED SETTLEMENT`
+    BatchedSettlement {
+        witness: BatchedSettlementWitness,
+        statement: BatchedSettlementStatement,
     },
     // Fee proofs
     /// Prove `VALID NOTE REDEMPTION`
