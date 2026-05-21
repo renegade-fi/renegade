@@ -24,6 +24,7 @@ use job_types::matching_engine::{
 };
 use price_state::PriceStreamStates;
 use renegade_solidity_abi::v2::IDarkpoolV2::{self, SettlementBundle};
+use serde::Serialize;
 use state::State;
 use system_bus::{SystemBus, SystemBusMessage};
 use types_account::{order::Order, pair::Pair};
@@ -46,6 +47,10 @@ const QUOTE_DEADLINE: Duration = Duration::from_secs(10);
 
 /// Error message for no external match found
 const ERR_NO_EXTERNAL_MATCH_FOUND: &str = "no external match found";
+/// Error message for an expired external match quote
+const ERR_QUOTE_EXPIRED: &str = "quote expired";
+/// Error message for an invalid external match quote signature
+const ERR_INVALID_QUOTE_SIGNATURE: &str = "invalid quote signature";
 
 // -------------
 // | Processor |
@@ -108,8 +113,8 @@ impl ExternalMatchProcessor {
         let deadline = quote.timestamp + QUOTE_DEADLINE.as_millis() as u64;
 
         // Sign the quote
-        let quote_bytes = serde_json::to_vec(&quote).map_err(internal_error)?;
-        let signature = self.admin_key.compute_mac(&quote_bytes);
+        let payload = Self::quote_signature_payload(&quote, deadline)?;
+        let signature = self.admin_key.compute_mac(&payload);
         Ok(ApiSignedQuote { quote, signature, deadline })
     }
 
@@ -275,15 +280,42 @@ impl ExternalMatchProcessor {
         req: &AssembleExternalMatchRequest,
     ) -> Result<(), ApiServerError> {
         if let ExternalMatchAssemblyType::QuotedOrder { signed_quote, .. } = &req.order {
-            let quote_bytes = serde_json::to_vec(&signed_quote.quote).map_err(internal_error)?;
-            let sig = signed_quote.signature.clone();
-            let verified = self.admin_key.verify_mac(&quote_bytes, &sig);
-            if !verified {
-                return Err(unauthorized("invalid quote signature"));
-            }
+            Self::verify_signed_quote(&self.admin_key, signed_quote)?;
         };
 
         Ok(())
+    }
+
+    /// Verify a signed quote and its deadline
+    fn verify_signed_quote(
+        admin_key: &HmacKey,
+        signed_quote: &ApiSignedQuote,
+    ) -> Result<(), ApiServerError> {
+        if get_current_time_millis() >= signed_quote.deadline {
+            return Err(unauthorized(ERR_QUOTE_EXPIRED));
+        }
+
+        let payload = Self::quote_signature_payload(&signed_quote.quote, signed_quote.deadline)?;
+        if !admin_key.verify_mac(&payload, &signed_quote.signature) {
+            return Err(unauthorized(ERR_INVALID_QUOTE_SIGNATURE));
+        }
+
+        Ok(())
+    }
+
+    /// Serialize the exact payload committed to by an external match quote
+    /// signature
+    fn quote_signature_payload(
+        quote: &ApiExternalQuote,
+        deadline: u64,
+    ) -> Result<Vec<u8>, ApiServerError> {
+        #[derive(Serialize)]
+        struct QuoteSignaturePayload<'a> {
+            quote: &'a ApiExternalQuote,
+            deadline: u64,
+        }
+
+        serde_json::to_vec(&QuoteSignaturePayload { quote, deadline }).map_err(internal_error)
     }
 
     /// Build the matching engine options for an assembly request
@@ -508,7 +540,8 @@ impl ExternalMatchProcessor {
 #[cfg(test)]
 mod tests {
     use alloy::primitives::Address;
-    use external_api::types::ExternalOrder;
+    use external_api::types::{ApiFeeTake, ExternalOrder};
+    use hyper::StatusCode;
 
     use super::*;
 
@@ -539,6 +572,47 @@ mod tests {
             FixedPoint::from_f64_round_down(relayer),
             FixedPoint::from_f64_round_down(protocol),
         )
+    }
+
+    /// Build a default external quote for testing
+    fn mock_external_quote(timestamp: u64) -> ApiExternalQuote {
+        let price = mock_price(2.0);
+        let order = mock_external_order();
+        let send = ApiExternalAssetTransfer::new(order.input_mint, order.input_amount);
+        let receive = ApiExternalAssetTransfer::new(order.output_mint, order.output_amount);
+
+        ApiExternalQuote {
+            order,
+            match_result: ApiExternalMatchResult {
+                input_mint: dummy_addr(0x01),
+                output_mint: dummy_addr(0x02),
+                input_amount: 100,
+                output_amount: 200,
+                price_fp: price.into(),
+            },
+            fees: ApiFeeTake { relayer_fee: 0, protocol_fee: 0 },
+            send,
+            receive,
+            price: TimestampedPrice { price: 2.0, timestamp }.into(),
+            timestamp,
+        }
+    }
+
+    /// Sign an external quote with the same payload format used in production
+    fn sign_quote(key: &HmacKey, quote: ApiExternalQuote, deadline: u64) -> ApiSignedQuote {
+        let payload = ExternalMatchProcessor::quote_signature_payload(&quote, deadline).unwrap();
+        ApiSignedQuote { quote, signature: key.compute_mac(&payload), deadline }
+    }
+
+    /// Assert that an API server error has the expected HTTP status and message
+    fn assert_status_error(err: ApiServerError, status: StatusCode, msg: &str) {
+        match err {
+            ApiServerError::HttpStatusCode(actual_status, actual_msg) => {
+                assert_eq!(actual_status, status);
+                assert_eq!(actual_msg, msg);
+            },
+            err => panic!("expected HTTP status error, got {err:?}"),
+        }
     }
 
     /// Simulate the production gross-up → settlement pipeline and return
@@ -681,6 +755,45 @@ mod tests {
         assert!(options.only_quote);
         assert_eq!(options.relayer_fee_rate, FixedPoint::from_f64_round_down(0.0002));
         assert_eq!(options.price.expect("price missing").price.to_f64(), 1.5);
+    }
+
+    /// Tests that unexpired signed quotes are accepted
+    #[test]
+    fn test_verify_signed_quote_accepts_valid_quote() {
+        let key = HmacKey::random();
+        let quote = mock_external_quote(get_current_time_millis());
+        let deadline = get_current_time_millis() + QUOTE_DEADLINE.as_millis() as u64;
+        let signed_quote = sign_quote(&key, quote, deadline);
+
+        ExternalMatchProcessor::verify_signed_quote(&key, &signed_quote).unwrap();
+    }
+
+    /// Tests that expired signed quotes are rejected
+    #[test]
+    fn test_verify_signed_quote_rejects_expired_quote() {
+        let key = HmacKey::random();
+        let quote =
+            mock_external_quote(get_current_time_millis() - 2 * QUOTE_DEADLINE.as_millis() as u64);
+        let deadline = get_current_time_millis() - 1;
+        let signed_quote = sign_quote(&key, quote, deadline);
+
+        let err = ExternalMatchProcessor::verify_signed_quote(&key, &signed_quote).unwrap_err();
+        assert_status_error(err, StatusCode::UNAUTHORIZED, ERR_QUOTE_EXPIRED);
+    }
+
+    /// Tests that a quote's deadline cannot be extended without invalidating
+    /// its signature
+    #[test]
+    fn test_verify_signed_quote_rejects_tampered_deadline() {
+        let key = HmacKey::random();
+        let quote = mock_external_quote(get_current_time_millis());
+        let deadline = get_current_time_millis() + QUOTE_DEADLINE.as_millis() as u64;
+        let mut signed_quote = sign_quote(&key, quote, deadline);
+
+        signed_quote.deadline += QUOTE_DEADLINE.as_millis() as u64;
+
+        let err = ExternalMatchProcessor::verify_signed_quote(&key, &signed_quote).unwrap_err();
+        assert_status_error(err, StatusCode::UNAUTHORIZED, ERR_INVALID_QUOTE_SIGNATURE);
     }
 
     /// Tests the end-to-end invariant: after gross-up, price conversion,
