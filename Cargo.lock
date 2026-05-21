@@ -8990,6 +8990,7 @@ dependencies = [
  "num-traits",
  "openraft",
  "rand 0.8.5",
+ "renegade-metrics",
  "rkyv",
  "serde",
  "system-bus",

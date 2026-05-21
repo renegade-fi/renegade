@@ -7,6 +7,7 @@ pub mod merkle_proofs;
 pub mod node_metadata;
 pub mod order_book;
 pub mod peer_index;
+mod peer_metrics;
 pub mod proofs;
 pub mod raft;
 mod raft_metrics;
@@ -242,6 +243,7 @@ impl StateInner {
         this.setup_core_panic_timer(system_clock, failure_send).await?;
         this.setup_membership_sync_timer(system_clock).await?;
         this.setup_raft_metrics_timer(system_clock).await?;
+        this.setup_peer_metrics_timer(system_clock).await?;
 
         Ok(this)
     }
