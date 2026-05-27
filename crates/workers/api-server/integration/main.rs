@@ -20,7 +20,9 @@ use external_api::{
 use mock_node::MockNodeController;
 use reqwest::{Method, header::HeaderMap};
 use state::test_helpers::tmp_db_path;
-use test_helpers::{integration_test, integration_test_async, integration_test_main, types::TestVerbosity};
+use test_helpers::{
+    integration_test, integration_test_async, integration_test_main, types::TestVerbosity,
+};
 use types_account::account::mocks::mock_empty_account;
 use types_core::HmacKey;
 use util::{on_chain::set_protocol_fee, telemetry::LevelFilter};
@@ -144,8 +146,8 @@ async fn test_set_account_default_pool_persists(args: IntegrationTestArgs) -> ey
     state.create_matching_pool(TEST_POOL_NAME.to_string()).await?.await?;
 
     // Call the admin route to bind the account to the pool
-    let route = ADMIN_SET_ACCOUNT_DEFAULT_POOL_ROUTE
-        .replace(":account_id", &account_id.to_string());
+    let route =
+        ADMIN_SET_ACCOUNT_DEFAULT_POOL_ROUTE.replace(":account_id", &account_id.to_string());
     let req =
         SetAccountDefaultMatchingPoolRequest { matching_pool: Some(TEST_POOL_NAME.to_string()) };
     let body = serde_json::to_vec(&req)?;
@@ -173,10 +175,7 @@ async fn test_unbound_account_uses_global_pool(args: IntegrationTestArgs) -> eyr
     state.new_account(account).await?.await?;
 
     let loaded = state.get_account(&account_id).await?.expect("account not found");
-    assert!(
-        loaded.default_matching_pool.is_none(),
-        "expected no default pool for unbound account"
-    );
+    assert!(loaded.default_matching_pool.is_none(), "expected no default pool for unbound account");
 
     // Confirm the fallback logic: None maps to GLOBAL_MATCHING_POOL
     let pool = loaded.default_matching_pool.unwrap_or_else(|| GLOBAL_MATCHING_POOL.to_string());

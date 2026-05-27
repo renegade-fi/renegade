@@ -708,10 +708,8 @@ impl TypedHandler for AdminSetAccountDefaultPoolHandler {
             }
         }
 
-        let waiter = self
-            .state
-            .set_account_default_matching_pool(account_id, req.matching_pool)
-            .await?;
+        let waiter =
+            self.state.set_account_default_matching_pool(account_id, req.matching_pool).await?;
         waiter.await?;
 
         Ok(EmptyRequestResponse {})

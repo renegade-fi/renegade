@@ -250,9 +250,7 @@ mod test {
         drop(tx);
 
         // Set the default pool
-        applicator
-            .set_account_default_matching_pool(account.id, Some(pool_name.as_str()))
-            .unwrap();
+        applicator.set_account_default_matching_pool(account.id, Some(pool_name.as_str())).unwrap();
 
         let tx = applicator.db().new_read_tx().unwrap();
         let pool = tx.get_account_default_matching_pool(&account.id).unwrap();

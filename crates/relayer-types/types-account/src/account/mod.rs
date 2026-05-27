@@ -102,7 +102,13 @@ impl Account {
             loc_map.insert(balance.location, balance);
         }
 
-        Self { id, orders: orders_map, balances: balances_map, keychain, default_matching_pool: None }
+        Self {
+            id,
+            orders: orders_map,
+            balances: balances_map,
+            keychain,
+            default_matching_pool: None,
+        }
     }
 }
 

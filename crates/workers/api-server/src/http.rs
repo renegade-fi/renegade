@@ -20,8 +20,8 @@ use admin::{
     AdminAssignOrderToPoolHandler, AdminCreateMatchingPoolHandler, AdminCreateOrderInPoolHandler,
     AdminDestroyMatchingPoolHandler, AdminGetAccountOrdersHandler, AdminGetDisabledAssetsHandler,
     AdminGetOrderByIdHandler, AdminGetOrdersHandler, AdminGetTaskQueuePausedHandler,
-    AdminRefreshMatchFeesHandler, AdminRefreshTokenMappingHandler, AdminSetAccountDefaultPoolHandler,
-    AdminTriggerSnapshotHandler, IsLeaderHandler,
+    AdminRefreshMatchFeesHandler, AdminRefreshTokenMappingHandler,
+    AdminSetAccountDefaultPoolHandler, AdminTriggerSnapshotHandler, IsLeaderHandler,
 };
 use async_trait::async_trait;
 use balance::{
