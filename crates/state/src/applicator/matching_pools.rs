@@ -2,6 +2,7 @@
 
 use libmdbx::RW;
 use types_account::{MatchingPoolName, OrderId, order::Order};
+use types_core::AccountId;
 
 use crate::{
     applicator::reject_order_missing,
@@ -56,6 +57,24 @@ impl StateApplicator {
         tx.assign_order_to_matching_pool(&order_id, new_pool)?;
         tx.commit()?;
 
+        Ok(ApplicatorReturnType::None)
+    }
+
+    /// Set the default matching pool for an account
+    ///
+    /// Passing `None` clears the binding so future orders fall back to the
+    /// global pool.
+    pub fn set_account_default_matching_pool(
+        &self,
+        account_id: AccountId,
+        pool: Option<&str>,
+    ) -> Result<ApplicatorReturnType, StateApplicatorError> {
+        let tx = self.db().new_write_tx()?;
+        if !tx.contains_account(&account_id)? {
+            return Err(StateApplicatorError::reject("account not found"));
+        }
+        tx.set_account_default_matching_pool(&account_id, pool)?;
+        tx.commit()?;
         Ok(ApplicatorReturnType::None)
     }
 
@@ -212,5 +231,39 @@ mod test {
         // Try assigning the order to a nonexistent matching pool
         let result = applicator.assign_order_to_matching_pool(order_id, &pool_name);
         assert!(result.is_err());
+    }
+
+    /// Tests setting and clearing the default matching pool for an account
+    #[test]
+    fn test_set_account_default_matching_pool() {
+        let applicator = mock_applicator();
+        let account = mock_empty_account();
+        let pool_name: MatchingPoolName = TEST_POOL_NAME.to_string();
+
+        // Create the account
+        applicator.create_account(&account).unwrap();
+
+        // Default should be None
+        let tx = applicator.db().new_read_tx().unwrap();
+        let pool = tx.get_account_default_matching_pool(&account.id).unwrap();
+        assert!(pool.is_none());
+        drop(tx);
+
+        // Set the default pool
+        applicator
+            .set_account_default_matching_pool(account.id, Some(pool_name.as_str()))
+            .unwrap();
+
+        let tx = applicator.db().new_read_tx().unwrap();
+        let pool = tx.get_account_default_matching_pool(&account.id).unwrap();
+        assert_eq!(pool.as_deref(), Some(TEST_POOL_NAME));
+        drop(tx);
+
+        // Clear the default pool by setting None
+        applicator.set_account_default_matching_pool(account.id, None).unwrap();
+
+        let tx = applicator.db().new_read_tx().unwrap();
+        let pool = tx.get_account_default_matching_pool(&account.id).unwrap();
+        assert!(pool.is_none());
     }
 }

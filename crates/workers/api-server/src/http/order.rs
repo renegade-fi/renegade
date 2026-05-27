@@ -180,13 +180,23 @@ impl TypedHandler for CreateOrderHandler {
             return Err(conflict(ERR_ORDER_ALREADY_EXISTS));
         }
 
-        // Create the task descriptor with the global matching pool
+        // Look up the account's default matching pool, falling back to global
+        let account = self
+            .state
+            .get_account(&account_id)
+            .await?
+            .ok_or_else(|| not_found(format!("account {account_id} not found")))?;
+        let matching_pool = account
+            .default_matching_pool
+            .clone()
+            .unwrap_or_else(|| GLOBAL_MATCHING_POOL.to_string());
+
         let auth = req.get_order_auth(self.executor).map_err(bad_request)?;
         let task_id = append_create_order_task(
             account_id,
             req.order,
             auth,
-            GLOBAL_MATCHING_POOL.to_string(),
+            matching_pool,
             blocking,
             &self.state,
             &self.task_queue,

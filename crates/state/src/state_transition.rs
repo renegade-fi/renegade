@@ -91,6 +91,11 @@ pub enum StateTransition {
     DestroyMatchingPool { pool_name: MatchingPoolName },
     /// Assign an order to a matching pool
     AssignOrderToMatchingPool { order_id: OrderId, pool_name: MatchingPoolName },
+    /// Set the default matching pool for an account
+    ///
+    /// When `None`, the account's default pool binding is cleared and new
+    /// orders will be placed in the global matching pool.
+    SetAccountDefaultMatchingPool { account_id: AccountId, pool: Option<MatchingPoolName> },
 
     // --- Task Queue --- //
     /// Add a task to the task queue

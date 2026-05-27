@@ -120,6 +120,9 @@ impl StateApplicator {
             StateTransition::AssignOrderToMatchingPool { order_id, pool_name } => {
                 self.assign_order_to_matching_pool(order_id, &pool_name)
             },
+            StateTransition::SetAccountDefaultMatchingPool { account_id, pool } => {
+                self.set_account_default_matching_pool(account_id, pool.as_deref())
+            },
             StateTransition::AppendTask { task, executor } => self.append_task(&task, &executor),
             StateTransition::PopTask { task_id, success } => self.pop_task(task_id, success),
             StateTransition::TransitionTask { task_id, state } => {

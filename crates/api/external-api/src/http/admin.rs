@@ -36,6 +36,9 @@ pub const ADMIN_CREATE_ORDER_IN_POOL_ROUTE: &str =
     "/v2/relayer-admin/account/:account_id/orders/create-order-in-pool";
 /// Route to assign an order to a matching pool
 pub const ADMIN_ASSIGN_ORDER_TO_POOL_ROUTE: &str = "/v2/relayer-admin/orders/:order_id/assign-pool";
+/// Route to set the default matching pool for an account
+pub const ADMIN_SET_ACCOUNT_DEFAULT_POOL_ROUTE: &str =
+    "/v2/admin/account/:account_id/default-matching-pool";
 
 // -------------------
 // | Request/Response |
@@ -60,4 +63,11 @@ pub struct GetDisabledAssetsResponse {
 pub struct AssignOrderToPoolRequest {
     /// The matching pool to assign the order to
     pub matching_pool: String,
+}
+
+/// Request to set the default matching pool for an account
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SetAccountDefaultMatchingPoolRequest {
+    /// The matching pool name, or null to clear the binding
+    pub matching_pool: Option<String>,
 }
