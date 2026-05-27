@@ -258,6 +258,7 @@ impl StateApplicator {
             self.publish_fill(account_id, order, fill_amount, new_amount == 0);
         }
 
+
         Ok(ApplicatorReturnType::None)
     }
 
