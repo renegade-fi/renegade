@@ -1,0 +1,26 @@
+[package]
+name = "dump-v1-snapshot"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# One-off tool for the 2026-05-10 v1 darkpool exploit refund-ledger work.
+# Opens a relayer MDBX snapshot, iterates the `wallet-info` table, and emits
+# one JSONL row per wallet. Output is credential material (sk_root, symmetric
+# key per wallet). See renegade-map/tickets/2026-05-11-compute-per-wallet-
+# repayment-ledger-v1-exploit.
+
+[dependencies]
+state = { workspace = true }
+common = { workspace = true, features = ["all-types"] }
+circuit-types = { workspace = true, features = ["proof-system-types"] }
+constants = { workspace = true, features = ["default"] }
+renegade-crypto = { workspace = true }
+
+clap = { version = "4", features = ["derive"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+eyre = { workspace = true }
+hex = "0.4"
+k256 = "0.13"
+num-bigint = { workspace = true }

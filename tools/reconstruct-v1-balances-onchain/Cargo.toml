@@ -1,0 +1,44 @@
+[package]
+name = "reconstruct-v1-balances-onchain"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# One-off tool for the 2026-05-10 v1 darkpool exploit refund-ledger work.
+# For each wallet in the relayer snapshot, walks the blinder stream forward
+# from snapshot state to attack block, decoding each on-chain WalletUpdated
+# event's calldata to extract authoritative balances at attack block.
+# See renegade-map/tickets/2026-05-11-compute-per-wallet-repayment-ledger-v1-exploit.
+
+[dependencies]
+state = { workspace = true }
+common = { workspace = true, features = ["all-types"] }
+circuit-types = { workspace = true, features = ["proof-system-types"] }
+constants = { workspace = true, features = ["default"] }
+renegade-crypto = { workspace = true }
+darkpool-client = { workspace = true, features = ["arbitrum"] }
+util = { workspace = true }
+
+alloy = { workspace = true, features = [
+    "providers",
+    "provider-debug-api",
+    "rpc-types",
+    "rpc-types-trace",
+    "transports",
+    "transport-http",
+    "reqwest",
+    "network",
+] }
+alloy-primitives = { workspace = true }
+alloy-sol-types = { workspace = true }
+
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+clap = { version = "4", features = ["derive"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+eyre = { workspace = true }
+hex = "0.4"
+num-bigint = { workspace = true }
+uuid = "1"
+tracing = { workspace = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

@@ -1,0 +1,17 @@
+[package]
+name = "derive-v1-wallet-id"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# Compute v1 renegade wallet_ids from ETH private keys.
+# Used by the Task 4 internal-wallet enumeration to derive quoter and
+# custodied-funds wallet IDs from the corresponding secrets.
+
+[dependencies]
+common = { workspace = true, features = ["all-types"] }
+circuit-types = { workspace = true, features = ["proof-system-types"] }
+alloy = { workspace = true, features = ["signer-local", "signers"] }
+k256 = "0.13"
+hex = "0.4"
+eyre = { workspace = true }

@@ -1,0 +1,33 @@
+[package]
+name = "resolve-v1-addresses"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# Phase 5 of the v1-refund pipeline. Pure transform — no RPC.
+#
+# For each external-user v1 wallet without a HSE-recorded `on_chain_addr`,
+# resolves the owner's Ethereum address using the proxy event index and tx
+# cache produced by phase 1 (`ingest-v1-chain`).
+#
+# Two-tier verification:
+#   1. pk_root_match (cryptographic): the wallet's tx-cache hit for some
+#      ExternalTransfer carries `old_pk_root_eth_addr` equal to the wallet's
+#      snapshot pk_root_eth_addr. The on-chain darkpool already verified the
+#      authorization signature against that pk_root, so a match is proof.
+#   2. unique_amount_consensus (fallback for wallets whose pk_root rotated
+#      after their last external transfer): if ≥1 of the wallet's HSE events
+#      maps to a globally unique (mint, is_withdrawal, amount) tuple in the
+#      proxy index and all such unique-tuple matches agree on `account`,
+#      accept it.
+
+[dependencies]
+alloy-primitives = { workspace = true }
+clap = { version = "4", features = ["derive"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+eyre = { workspace = true }
+hex = "0.4"
+csv = "1"
+tracing = { workspace = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

@@ -1,0 +1,50 @@
+[package]
+name = "ingest-v1-chain"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# Phase 1 of the refactored v1-refund pipeline.
+#
+# Single-pass RPC ingest of the v1 darkpool proxy from DEPLOY_BLOCK to
+# ATTACK_BLOCK. Produces three append-only JSONL files in --out-dir:
+#
+#   external-transfers.jsonl  -- every ExternalTransfer event from the proxy
+#   wallet-updated.jsonl      -- every WalletUpdated event from the proxy
+#   update-wallet-txs.jsonl   -- for every unique tx_hash referenced above,
+#                                eth_getTransactionByHash() once, decoded if
+#                                its top-level selector is updateWallet, with
+#                                old_pk_root_eth_addr pre-computed so phase 4
+#                                (resolve-addresses) needs zero RPC.
+#
+# Resumable: a CHECKPOINT.events file records the last fully-completed
+# event-enumeration block. The tx fetch step deduplicates against the
+# tx file's existing tx_hashes, so any subset can be re-run safely.
+
+[dependencies]
+common = { workspace = true, features = ["all-types"] }
+circuit-types = { workspace = true, features = ["proof-system-types"] }
+constants = { workspace = true, features = ["default"] }
+darkpool-client = { workspace = true, features = ["arbitrum"] }
+
+alloy = { workspace = true, features = [
+    "providers",
+    "rpc-types",
+    "transports",
+    "transport-http",
+    "reqwest",
+    "network",
+] }
+alloy-primitives = { workspace = true }
+alloy-sol-types = { workspace = true }
+
+k256 = "0.13"
+futures = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync"] }
+clap = { version = "4", features = ["derive", "env"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+eyre = { workspace = true }
+hex = "0.4"
+tracing = { workspace = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

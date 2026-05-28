@@ -1,0 +1,57 @@
+[package]
+name = "redeem-v1-fees-onchain"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# Headless redemption of v1 darkpool fees on chains whose live v1 relayer has
+# been wound down. Operates by reconstructing fee-redemption wallet state from
+# on-chain calldata + AWS-stored root keys, generating ValidFeeRedemption /
+# ValidWalletUpdate proofs in-process, and submitting redemption +
+# withdrawal txs directly to the darkpool contract.
+#
+# Phase 0 (this commit) implements `inspect` only: DB-only listing of
+# unredeemed fees and fee-redemption wallets. No on-chain reads, no writes.
+# Subsequent phases add wallet reconstruction, note decryption, proof
+# generation, and tx submission.
+
+[[bin]]
+name = "redeem-v1-fees-onchain"
+path = "src/main.rs"
+
+[dependencies]
+# --- CLI / runtime --- #
+clap = { version = "4", features = ["derive", "env"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tracing = { workspace = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# --- Renegade crates (Phase 1+: wallet derivation + reconstruction) --- #
+common = { workspace = true, features = ["all-types"] }
+circuit-types = { workspace = true, features = ["proof-system-types"] }
+constants = { workspace = true, features = ["default"] }
+renegade-crypto = { workspace = true }
+darkpool-client = { workspace = true, features = ["all-chains"] }
+util = { workspace = true }
+alloy = { workspace = true, features = ["providers", "signer-local", "rpc-types", "transports", "transport-http", "reqwest", "network"] }
+alloy-primitives = { workspace = true }
+hex = "0.4"
+num-bigint = { workspace = true }
+
+# --- Postgres --- #
+tokio-postgres = { version = "0.7", features = ["with-uuid-1", "with-chrono-0_4"] }
+postgres-native-tls = "0.5"
+native-tls = "0.2"
+
+# --- AWS --- #
+aws-config = { version = "1.5", features = ["credentials-login"] }
+aws-sdk-secretsmanager = "1.37"
+
+# --- HTTP (token-mappings + price reporter) --- #
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+
+# --- Misc --- #
+eyre = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+uuid = { version = "1", features = ["serde"] }
