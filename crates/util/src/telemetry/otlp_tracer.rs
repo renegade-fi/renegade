@@ -69,12 +69,11 @@ pub fn configure_otlp_tracer(
         trace::Config::default().with_sampler(sampler)
     };
 
-    let batch_config = BatchConfigBuilder::default()
+    let batch_config = BatchConfig::default()
         .with_max_queue_size(BSP_MAX_QUEUE_SIZE)
         .with_max_export_batch_size(BSP_MAX_EXPORT_BATCH_SIZE)
         .with_scheduled_delay(BSP_SCHEDULED_DELAY)
-        .with_max_concurrent_exports(BSP_MAX_CONCURRENT_EXPORTS)
-        .build();
+        .with_max_concurrent_exports(BSP_MAX_CONCURRENT_EXPORTS);
 
     opentelemetry_otlp::new_pipeline()
         .tracing()
