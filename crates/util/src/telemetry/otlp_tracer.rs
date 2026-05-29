@@ -6,7 +6,7 @@ use opentelemetry::KeyValue;
 use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_sdk::{
     Resource, runtime,
-    trace::{self, BatchConfigBuilder, Sampler, Tracer},
+    trace::{self, BatchConfig, Sampler, Tracer},
 };
 use opentelemetry_semantic_conventions::{
     SCHEMA_URL,
