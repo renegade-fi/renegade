@@ -40,11 +40,30 @@ impl MatchingEngineExecutor {
         &self,
         descriptor: TaskDescriptor,
     ) -> Result<(), MatchingEngineError> {
-        // Send the proposal to the raft
+        // Send the proposal to the raft. The serial-preemption reject is
+        // surfaced as a typed `PreemptionConflict` (transient, retryable by the
+        // caller); all other state errors propagate normally.
         let accounts = descriptor.affected_accounts();
-        let (tid, waiter) =
-            self.state.enqueue_preemptive_task(accounts, descriptor, true /* is_serial */).await?;
-        waiter.await?;
+        let (tid, waiter) = match self
+            .state
+            .enqueue_preemptive_task(accounts, descriptor, true /* is_serial */)
+            .await
+        {
+            Ok(res) => res,
+            Err(e) if e.is_serial_preemption_conflict() => {
+                return Err(MatchingEngineError::PreemptionConflict);
+            },
+            Err(e) => return Err(e.into()),
+        };
+
+        // The reject is typically surfaced when the proposal is applied (via the
+        // waiter), so classify it there too.
+        if let Err(e) = waiter.await {
+            if e.is_serial_preemption_conflict() {
+                return Err(MatchingEngineError::PreemptionConflict);
+            }
+            return Err(e.into());
+        }
 
         // Await a completion notification from the task driver
         let (job, rx) = TaskDriverJob::new_notification(tid);

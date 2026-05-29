@@ -29,6 +29,11 @@ pub enum MatchingEngineError {
     /// Error interacting with global state
     #[error("state error: {0}")]
     State(String),
+    /// A settlement could not preempt a wallet's task queue because it was
+    /// exclusively locked (another serial/committed task held it). Transient
+    /// and retryable -- see `StateError::is_serial_preemption_conflict`.
+    #[error("settlement preempted: wallet task queue exclusively locked")]
+    PreemptionConflict,
     /// Error verifying a proof
     #[error("proof verification error: {0}")]
     VerificationError(String),

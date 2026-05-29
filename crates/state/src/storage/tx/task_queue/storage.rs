@@ -21,7 +21,7 @@ const ERR_TASK_NOT_FOUND: &str = "task not found";
 /// The error message emitted when a task cannot be popped from the queue
 const ERR_TASK_NOT_POPPED: &str = "task not popped from queue";
 /// The error message emitted when a task cannot be preempted
-const ERR_CANNOT_SERIALLY_PREEMPT: &str = "serial preemption not allowed";
+pub(crate) const ERR_CANNOT_SERIALLY_PREEMPT: &str = "serial preemption not allowed";
 /// The error message emitted when a task cannot be preempted concurrently
 const ERR_CANNOT_CONCURRENTLY_PREEMPT: &str = "concurrent preemption not allowed";
 

@@ -4,7 +4,7 @@ use system_clock::SystemClockError;
 
 use crate::{
     applicator::error::StateApplicatorError, replication::error::ReplicationError,
-    storage::error::StorageError,
+    storage::error::StorageError, storage::tx::task_queue::storage::ERR_CANNOT_SERIALLY_PREEMPT,
 };
 
 /// The state error type
@@ -45,6 +45,15 @@ impl StateError {
     pub fn serde<T: ToString>(msg: T) -> Self {
         Self::Serde(msg.to_string())
     }
+
+    /// Whether this error is the transient "serial preemption not allowed"
+    /// reject — a settlement could not preempt a wallet queue because another
+    /// serial (exclusive) task, or a committed task, holds it. This is expected
+    /// under contention and is safe to retry (the reject itself is intentional;
+    /// it guards committed settlements and prevents a two-wallet deadlock).
+    pub fn is_serial_preemption_conflict(&self) -> bool {
+        matches!(self, StateError::TransitionRejected(msg) if msg.contains(ERR_CANNOT_SERIALLY_PREEMPT))
+    }
 }
 
 impl From<StorageError> for StateError {
@@ -69,5 +78,22 @@ impl From<ReplicationError> for StateError {
 impl From<StateApplicatorError> for StateError {
     fn from(e: StateApplicatorError) -> Self {
         StateError::Applicator(e)
+    }
+}
+
+#[cfg(test)]
+mod preemption_conflict_test {
+    use super::StateError;
+
+    #[test]
+    fn test_is_serial_preemption_conflict() {
+        let conflict = StateError::TransitionRejected("serial preemption not allowed".to_string());
+        assert!(conflict.is_serial_preemption_conflict());
+
+        let other_reject = StateError::TransitionRejected("nullifier spent".to_string());
+        assert!(!other_reject.is_serial_preemption_conflict());
+
+        let unrelated = StateError::Proposal("raft down".to_string());
+        assert!(!unrelated.is_serial_preemption_conflict());
     }
 }
