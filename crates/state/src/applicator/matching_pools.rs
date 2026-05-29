@@ -1,6 +1,7 @@
 //! Applicator methods for matching pools
 
 use libmdbx::RW;
+use tracing::warn;
 use types_account::{MatchingPoolName, OrderId, order::Order};
 use types_core::AccountId;
 
@@ -51,6 +52,17 @@ impl StateApplicator {
         new_pool: &MatchingPoolName,
     ) -> Result<ApplicatorReturnType, StateApplicatorError> {
         let tx = self.db().new_write_tx()?;
+
+        // A committed log entry may reference a pool that no longer exists (e.g.
+        // it was destroyed between proposal and apply). Apply must be infallible
+        // on a committed entry: returning an error here panics the raft core and
+        // crashes the node. Skip the assignment and warn instead.
+        if !tx.matching_pool_exists(new_pool)? {
+            warn!(
+                "skipping assignment of order {order_id} to nonexistent matching pool {new_pool}"
+            );
+            return Ok(ApplicatorReturnType::None);
+        }
 
         // Update the matching engine then the database
         self.update_matching_engine_after_order_assignment(order_id, new_pool.clone(), &tx)?;
@@ -221,16 +233,23 @@ mod test {
         assert!(result.is_err());
     }
 
-    /// Tests assigning an order to a nonexistent matching pool
+    /// Tests that assigning an order to a nonexistent matching pool is a no-op
+    /// rather than a fatal error. A committed raft log entry may reference a
+    /// destroyed pool; applying it must not panic the raft core.
     #[test]
     fn test_assign_order_to_nonexistent_matching_pool() {
         let applicator = mock_applicator();
         let pool_name: MatchingPoolName = TEST_POOL_NAME.to_string();
         let order_id = OrderId::new_v4();
 
-        // Try assigning the order to a nonexistent matching pool
+        // Assigning to a nonexistent pool succeeds as a no-op (does not error)
         let result = applicator.assign_order_to_matching_pool(order_id, &pool_name);
-        assert!(result.is_err());
+        assert!(result.is_ok());
+
+        // The order is not assigned to the missing pool; it resolves to global
+        let tx = applicator.db().new_read_tx().unwrap();
+        let pool_for_order = tx.get_matching_pool_for_order(&order_id).unwrap();
+        assert_eq!(pool_for_order, GLOBAL_MATCHING_POOL.to_string());
     }
 
     /// Tests setting and clearing the default matching pool for an account
