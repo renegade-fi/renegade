@@ -22,6 +22,11 @@ pub const MATCH_BASE_VOLUME_METRIC: &str = "match_base_volume";
 pub const MATCH_QUOTE_VOLUME_METRIC: &str = "match_quote_volume";
 /// Metric describing the total fees collected by asset
 pub const FEES_COLLECTED_METRIC: &str = "fees_collected";
+/// Metric counting internal-match settlement outcomes, tagged by matching pool
+/// and outcome. The rate per pool is the per-base settlement demand (λ); the
+/// failed/(settled+failed) ratio is the per-pool preemption-conflict rate. Used
+/// to size quoter sharding (see ticket 2026-05-30-batched-internal-match-settlement).
+pub const INTERNAL_MATCH_SETTLE_METRIC: &str = "internal_match_settle";
 
 // P2P metrics
 
@@ -58,6 +63,10 @@ pub const ASSET_METRIC_TAG: &str = "asset";
 pub const BASE_ASSET_METRIC_TAG: &str = "base_asset";
 /// Metric tag for whether a match is external
 pub const EXTERNAL_MATCH_METRIC_TAG: &str = "is_external_match";
+/// Metric tag for the matching pool an internal-match settlement targets
+pub const MATCHING_POOL_METRIC_TAG: &str = "matching_pool";
+/// Metric tag for an internal-match settlement outcome (`settled` | `failed`)
+pub const SETTLE_OUTCOME_METRIC_TAG: &str = "outcome";
 /// Helper to generate wallet ID tag names
 pub fn wallet_id_tag(n: usize) -> String {
     format!("wallet_id{}", n)

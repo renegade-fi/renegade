@@ -2,6 +2,7 @@
 
 use circuit_types::Amount;
 use matching_engine_core::SuccessfulMatch;
+use renegade_metrics::record_internal_match_settle;
 use tracing::{error, info, instrument, warn};
 use types_account::order::PrivacyRing;
 use types_account::{MatchingPoolName, OrderId, order::Order};
@@ -35,6 +36,9 @@ impl MatchingEngineExecutor {
         // Lookup the order, matchable amount, and matching pool
         let (order, matchable_amount) = self.fetch_order_and_matchable_amount(&order_id).await?;
         let matching_pool = self.fetch_matching_pool(&order_id).await?;
+        // Captured for the per-pool settlement metric (the pool name is moved
+        // into `find_internal_match` below).
+        let pool_label = matching_pool.clone();
 
         // Check if either asset in the pair is disabled for matching
         let pair = order.pair();
@@ -58,10 +62,16 @@ impl MatchingEngineExecutor {
         let other_id = successful_match.other_order_id;
         match self.try_settle_match(order_id, successful_match).await {
             Ok(()) => {
+                // Per-pool settlement demand signal (success).
+                record_internal_match_settle(&pool_label, true /* settled */);
                 // Stop matching if a match was found
                 return Ok(());
             },
             Err(e) => {
+                // Per-pool settlement demand signal (failure — largely preemption
+                // contention under load). The failed/total ratio per pool is the
+                // conflict rate used to size sharding.
+                record_internal_match_settle(&pool_label, false /* settled */);
                 error!("internal match settlement failed for {} x {}: {e}", other_id, order_id,);
 
                 // Check whether matching should continue

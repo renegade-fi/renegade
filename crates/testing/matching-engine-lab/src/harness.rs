@@ -408,4 +408,53 @@ mod test {
             "batching should beat retry throughput: {batched} vs {retry}"
         );
     }
+
+    /// Sharding sweep: hold the *total demand* for one base fixed and vary the
+    /// number of sub-wallets (shards) it's split across (the quoter `-N` index
+    /// mechanism). Per-shard serial throughput is `1/hold`, so clearing demand
+    /// `λ` needs about `N = λ·hold` shards. Quantifies how many indices a hot
+    /// base needs to stop dropping settlements.
+    ///
+    /// NOTE: settlement-throughput dimension only — this does NOT model
+    /// liquidity fragmentation (each shard holds 1/N of the depth), which bounds
+    /// N from above. So this gives the *lower* bound on N (enough to clear load).
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn sharding_sweep() {
+        let hold = Duration::from_millis(100);
+        let rate = 60.0; // fixed total demand for one base (settles/s)
+        let per_shard = 1.0 / hold.as_secs_f64();
+        let need = (rate * hold.as_secs_f64()).ceil() as usize;
+        println!(
+            "\n=== sharding sweep: demand={rate}/s, settle={hold:?}, per-shard ceiling={per_shard:.0}/s, N_needed≈{need} ==="
+        );
+
+        let mut one = None;
+        let mut many = None;
+        for shards in [1usize, 2, 4, 6, 8, 12] {
+            let wl = Workload {
+                n_counterparties: shards,
+                target_rate_per_sec: rate,
+                max_in_flight: 48,
+                duration: Duration::from_millis(1200),
+                hold,
+                settle_timeout: Duration::from_secs(5),
+            };
+            let rep = run_load(strat(hold), Arc::new(DirectApplicatorBackend::new()), &wl).await;
+            println!("N={shards:<2} {rep}");
+            if shards == 1 {
+                one = Some(rep.clone());
+            }
+            if shards == 12 {
+                many = Some(rep);
+            }
+        }
+        let one = one.unwrap();
+        let many = many.unwrap();
+        // One shard saturates (drops most); enough shards clear the demand.
+        assert!(one.conflicts > one.settled, "1 shard should saturate: {one}");
+        assert!(
+            many.conflicts * 10 < one.conflicts.max(1),
+            "enough shards should clear most conflicts: N=12 [{many}] vs N=1 [{one}]"
+        );
+    }
 }

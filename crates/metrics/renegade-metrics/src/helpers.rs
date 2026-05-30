@@ -7,7 +7,8 @@ use util::hex::address_to_hex_string;
 
 use crate::labels::{
     ASSET_METRIC_TAG, BASE_ASSET_METRIC_TAG, EXTERNAL_MATCH_METRIC_TAG, FEES_COLLECTED_METRIC,
-    MATCH_BASE_VOLUME_METRIC, MATCH_QUOTE_VOLUME_METRIC, wallet_id_tag,
+    INTERNAL_MATCH_SETTLE_METRIC, MATCH_BASE_VOLUME_METRIC, MATCH_QUOTE_VOLUME_METRIC,
+    MATCHING_POOL_METRIC_TAG, SETTLE_OUTCOME_METRIC_TAG, wallet_id_tag,
 };
 
 /// Get the human-readable asset and volume of
@@ -81,6 +82,20 @@ pub fn record_match_volume_from_obligation(
 /// Record the volume of a fee settlement into the relayer's wallet
 pub fn record_relayer_fee_settlement(mint: &Address, amount: u128) {
     record_volume(mint, amount, FEES_COLLECTED_METRIC);
+}
+
+/// Record an internal-match settlement outcome, tagged by matching pool.
+///
+/// The per-pool rate is the per-base settlement demand (λ); the
+/// `failed / (settled + failed)` ratio is the per-pool preemption-conflict rate.
+/// Together they size quoter sharding (`N ≈ 1.5·λ·L`).
+pub fn record_internal_match_settle(matching_pool: &str, settled: bool) {
+    let outcome = if settled { "settled" } else { "failed" };
+    let labels = [
+        (MATCHING_POOL_METRIC_TAG.to_string(), matching_pool.to_string()),
+        (SETTLE_OUTCOME_METRIC_TAG.to_string(), outcome.to_string()),
+    ];
+    metrics::counter!(INTERNAL_MATCH_SETTLE_METRIC, &labels).increment(1);
 }
 
 /// Derive (base_mint, base_amount, quote_mint, quote_amount) from an
