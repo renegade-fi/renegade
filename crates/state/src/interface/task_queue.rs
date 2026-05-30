@@ -316,6 +316,48 @@ mod test {
         assert_eq!(state.serial_tasks_queue_len(&account_id).await.unwrap(), 0);
     }
 
+    /// Seam-proof for the matching-engine concurrency lab: a serial preemptive
+    /// task takes exclusive hold of all of its queue keys; a second serial
+    /// preemption that shares any key is rejected until the first completes.
+    /// This validates the lab's mock-executor approach (drive the real
+    /// preemptive queue, hold for a latency, then `pop_task` to release).
+    #[tokio::test]
+    async fn test_serial_preemption_blocks_shared_key() {
+        let state = mock_state().await;
+
+        let a = TaskQueueKey::new_v4();
+        let b = TaskQueueKey::new_v4();
+        let c = TaskQueueKey::new_v4();
+
+        // First serial preemptive settlement over [a, b]
+        let (tid1, w1) = state
+            .enqueue_preemptive_task(vec![a, b], mock_task_descriptor(a), true /* serial */)
+            .await
+            .unwrap();
+        w1.await.unwrap();
+
+        // A second serial preemption that shares key `b` must be rejected
+        let rejected = match state
+            .enqueue_preemptive_task(vec![b, c], mock_task_descriptor(b), true /* serial */)
+            .await
+        {
+            Err(_) => true,
+            Ok((_, w)) => w.await.is_err(),
+        };
+        assert!(rejected, "second serial preemption sharing key b should be rejected");
+
+        // Completing the first releases the hold on both keys
+        let w = state.pop_task(tid1, true /* success */).await.unwrap();
+        w.await.unwrap();
+
+        // Now the previously-rejected preemption succeeds
+        let (_, w3) = state
+            .enqueue_preemptive_task(vec![b, c], mock_task_descriptor(b), true /* serial */)
+            .await
+            .unwrap();
+        w3.await.unwrap();
+    }
+
     /// Tests transitioning the state of a task
     #[tokio::test]
     async fn test_transition() {

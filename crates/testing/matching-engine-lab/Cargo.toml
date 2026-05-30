@@ -1,0 +1,24 @@
+[package]
+name = "matching-engine-lab"
+version = "0.1.0"
+edition = "2024"
+description = "In-process design + load-testing lab for the matching engine's concurrency handling"
+
+[dependencies]
+# === Workspace crates === #
+state = { workspace = true, features = ["mocks"] }
+types-gossip = { workspace = true }
+types-tasks = { workspace = true, features = ["mocks"] }
+types-account = { workspace = true, features = ["mocks"] }
+types-core = { workspace = true }
+
+# === Runtime === #
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros", "time", "sync"] }
+async-trait = { workspace = true }
+eyre = { workspace = true }
+
+[dev-dependencies]
+futures = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time"] }
+types-tasks = { workspace = true, features = ["mocks"] }
+types-core = { workspace = true }

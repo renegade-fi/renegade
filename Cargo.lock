@@ -5778,6 +5778,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "matching-engine-lab"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "eyre",
+ "futures",
+ "state",
+ "tokio",
+ "types-account",
+ "types-core",
+ "types-gossip",
+ "types-tasks",
+]
+
+[[package]]
 name = "matching-engine-worker"
 version = "0.1.0"
 dependencies = [

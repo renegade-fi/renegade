@@ -165,7 +165,7 @@ pub mod test_helpers {
     };
     use matching_engine_core::MatchingEngine;
     use system_bus::SystemBus;
-    use types_gossip::ClusterId;
+    use types_gossip::{ClusterId, WrappedPeerId};
 
     use crate::test_helpers::mock_db;
 
@@ -199,5 +199,20 @@ pub mod test_helpers {
         };
 
         StateApplicator::new(config).unwrap()
+    }
+
+    /// Create a mock `StateApplicator` with a local peer id set.
+    ///
+    /// Preemptive-task enqueues read the local peer id (to decide whether to
+    /// start the task locally), so an applicator driven directly — e.g. the
+    /// matching-engine concurrency lab — must have one set or every enqueue
+    /// errors. Use this instead of [`mock_applicator`] for that.
+    pub fn mock_applicator_with_peer() -> StateApplicator {
+        let applicator = mock_applicator();
+        let peer_id = WrappedPeerId::random();
+        let tx = applicator.db().new_write_tx().unwrap();
+        tx.set_peer_id(&peer_id).unwrap();
+        tx.commit().unwrap();
+        applicator
     }
 }
