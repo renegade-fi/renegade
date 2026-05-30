@@ -36,7 +36,8 @@ async fn exclusion_is_per_account_and_releases() {
     let t2 = backend.enqueue_preemptive(mock_task_descriptor(b)).await.expect("admit distinct B");
     // Releasing A frees it for re-admission.
     backend.pop(t1).await;
-    let t3 = backend.enqueue_preemptive(mock_task_descriptor(a)).await.expect("re-admit A after pop");
+    let t3 =
+        backend.enqueue_preemptive(mock_task_descriptor(a)).await.expect("re-admit A after pop");
 
     backend.pop(t2).await;
     backend.pop(t3).await;

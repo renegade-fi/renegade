@@ -11,8 +11,7 @@ use util::{channels::TracedMessage, concurrency::runtime::sleep_forever_blocking
 use crate::{
     error::ProofManagerError,
     implementations::external_proof_manager::prover_service_client::ProofServiceClient,
-    logging::Task,
-    worker::ProofManagerConfig,
+    logging::Task, worker::ProofManagerConfig,
 };
 
 mod api_types;
@@ -70,7 +69,11 @@ impl ExternalProofManager {
                 .has_changed()
                 .map_err(|err| ProofManagerError::RecvError(err.to_string()))?
             {
-                log_task!(Task::ManagerLifecycle, Outcome::Skipped, "Proof manager cancelled, shutting down...");
+                log_task!(
+                    Task::ManagerLifecycle,
+                    Outcome::Skipped,
+                    "Proof manager cancelled, shutting down..."
+                );
                 return Err(ProofManagerError::Cancelled("received cancel signal".to_string()));
             }
 

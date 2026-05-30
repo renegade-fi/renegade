@@ -295,7 +295,9 @@ mod test {
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn parallelism_sweep() {
         let hold = Duration::from_millis(50);
-        println!("\n--- parallelism sweep: DirectApplicator (cps==inflight, distinct accounts) ---");
+        println!(
+            "\n--- parallelism sweep: DirectApplicator (cps==inflight, distinct accounts) ---"
+        );
         let mut at32 = None;
         for n in [4usize, 16, 32, 64] {
             let wl = Workload {
@@ -314,7 +316,10 @@ mod test {
         // the direct applicator removes that consensus ceiling — high
         // parallelism settles cleanly.
         let at32 = at32.unwrap();
-        assert_eq!(at32.timed_out, 0, "direct applicator should not stall at 32 concurrent: {at32}");
+        assert_eq!(
+            at32.timed_out, 0,
+            "direct applicator should not stall at 32 concurrent: {at32}"
+        );
         assert!(at32.settled > 0, "direct applicator should settle at high concurrency: {at32}");
     }
 

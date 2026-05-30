@@ -20,9 +20,7 @@ use util::concurrency::runtime::sleep_forever_async;
 use util::log_task;
 use util::logging::Outcome;
 
-use crate::{
-    error::OnChainEventListenerError, logging::Task, worker::OnChainEventListenerConfig,
-};
+use crate::{error::OnChainEventListenerError, logging::Task, worker::OnChainEventListenerConfig};
 
 /// Minimum delay before non-selected nodes process an event (crash recovery)
 const MIN_CRASH_RECOVERY_DELAY_S: u64 = 20;

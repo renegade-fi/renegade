@@ -162,7 +162,11 @@ impl GossipProtocolExecutor {
         mut self,
         job_sender: GossipServerQueue,
     ) -> Result<(), GossipError> {
-        log_task!(Task::ServerLifecycle, Outcome::Started, "Starting executor loop for heartbeat protocol executor...");
+        log_task!(
+            Task::ServerLifecycle,
+            Outcome::Started,
+            "Starting executor loop for heartbeat protocol executor..."
+        );
 
         // Start a timer to enqueue outbound heartbeats
         HeartbeatTimer::new(

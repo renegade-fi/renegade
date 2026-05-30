@@ -22,7 +22,11 @@ impl StateMachine {
         // Check if the file is empty, this may happen if a dummy snapshot was created
         let metadata = fs::metadata(path).await.map_err(err_str!(ReplicationError::Snapshot))?;
         if metadata.len() == 0 {
-            log_task!(Task::SnapshotRecovery, Outcome::Skipped, "empty snapshot found, skipping...");
+            log_task!(
+                Task::SnapshotRecovery,
+                Outcome::Skipped,
+                "empty snapshot found, skipping..."
+            );
             return Ok(());
         }
 

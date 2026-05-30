@@ -16,9 +16,9 @@ pub use default_wrapper::*;
 pub mod base64;
 #[cfg(feature = "errors")]
 pub mod errors;
-pub mod logging;
 #[cfg(any(feature = "hex", feature = "hex-core"))]
 pub mod hex;
+pub mod logging;
 #[cfg(feature = "networking")]
 pub mod networking;
 #[cfg(feature = "blockchain")]

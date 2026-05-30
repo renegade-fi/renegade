@@ -12,9 +12,7 @@ use tokio_util::codec::{FramedWrite, LengthDelimitedCodec};
 use types_core::Chain;
 use types_runtime::CancelChannel;
 use url::Url;
-use util::{
-    concurrency::runtime::sleep_forever_async, err_str, log_task, logging::Outcome,
-};
+use util::{concurrency::runtime::sleep_forever_async, err_str, log_task, logging::Outcome};
 
 use crate::{error::EventManagerError, logging::Task, worker::EventManagerConfig};
 

@@ -102,12 +102,12 @@ impl SystemClock {
             Box::pin(async move {
                 if let Err(e) = fut.await {
                     log_task!(
-                    Task::ClockCallback,
-                    Outcome::Failed,
-                    subject = %name,
-                    error = %e,
-                    "error in clock callback"
-                )
+                        Task::ClockCallback,
+                        Outcome::Failed,
+                        subject = %name,
+                        error = %e,
+                        "error in clock callback"
+                    )
                 }
             })
         })
