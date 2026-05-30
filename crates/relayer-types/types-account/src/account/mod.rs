@@ -66,12 +66,21 @@ pub struct Account {
     pub balances: BalanceMap,
     /// The keychain for the account
     pub keychain: KeyChain,
+    /// If set, every new order placed by this account is bound to this pool.
+    /// When `None`, orders go to the global matching pool.
+    pub default_matching_pool: Option<MatchingPoolName>,
 }
 
 impl Account {
     /// Create a new empty account from the given seed information
     pub fn new_empty_account(id: AccountId, keychain: KeyChain) -> Self {
-        Self { id, orders: HashMap::new(), balances: HashMap::new(), keychain }
+        Self {
+            id,
+            orders: HashMap::new(),
+            balances: HashMap::new(),
+            keychain,
+            default_matching_pool: None,
+        }
     }
 
     /// Create an account from balances, orders, keychain, id
@@ -93,7 +102,13 @@ impl Account {
             loc_map.insert(balance.location, balance);
         }
 
-        Self { id, orders: orders_map, balances: balances_map, keychain }
+        Self {
+            id,
+            orders: orders_map,
+            balances: balances_map,
+            keychain,
+            default_matching_pool: None,
+        }
     }
 }
 
@@ -277,6 +292,21 @@ impl Account {
     /// Sample a new share stream seed from the master keychain
     pub fn sample_share_stream_seed(&mut self) -> PoseidonCSPRNG {
         self.keychain.secret_keys.sample_share_stream_seed()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[cfg(feature = "mocks")]
+    use crate::account::mocks::mock_empty_account;
+
+    /// Tests that a newly created empty account has no default matching pool
+    #[test]
+    #[cfg(feature = "mocks")]
+    fn test_new_empty_account_default_matching_pool_is_none() {
+        let account = mock_empty_account();
+        assert!(account.default_matching_pool.is_none());
     }
 }
 

@@ -11,6 +11,7 @@ use circuit_types::Amount;
 use libmdbx::{RW, TransactionKind};
 use serde::{Deserialize, Serialize};
 use types_account::{
+    MatchingPoolName,
     account::{Account, OrderId},
     balance::{Balance, BalanceLocation},
     keychain::KeyChain,
@@ -111,6 +112,11 @@ fn intent_hash_key(intent_hash: &B256) -> String {
     format!("intent_index:{intent_hash:?}")
 }
 
+/// Build the key for the account default matching pool
+fn default_pool_key(account_id: &AccountId) -> String {
+    format!("{account_id}:default_pool")
+}
+
 // -----------
 // | Getters |
 // -----------
@@ -119,6 +125,17 @@ impl<T: TransactionKind> StateTxn<'_, T> {
     /// Whether the account exists
     pub fn contains_account(&self, account_id: &AccountId) -> Result<bool, StorageError> {
         self.get_account_header(account_id).map(|opt| opt.is_some())
+    }
+
+    /// Get the default matching pool for an account, if set
+    pub fn get_account_default_matching_pool(
+        &self,
+        account_id: &AccountId,
+    ) -> Result<Option<MatchingPoolName>, StorageError> {
+        let key = default_pool_key(account_id);
+        self.inner()
+            .read::<_, MatchingPoolName>(ACCOUNTS_TABLE, &key)
+            .map(|opt| opt.map(|archived| archived.deserialize()).transpose())?
     }
 
     /// Get the account header for the given ID
@@ -263,8 +280,9 @@ impl<T: TransactionKind> StateTxn<'_, T> {
         let orders = self.fetch_orders_for_account(account_id)?;
         let balances = self.fetch_balances_for_account(account_id)?;
 
-        // Reconstruct the account struct
-        let account = Account::new(header.id, orders, balances, header.keychain);
+        // Reconstruct the account struct and populate the default matching pool
+        let mut account = Account::new(header.id, orders, balances, header.keychain);
+        account.default_matching_pool = self.get_account_default_matching_pool(account_id)?;
         Ok(Some(account))
     }
 
@@ -461,6 +479,22 @@ impl StateTxn<'_, RW> {
         let header = AccountHeader { id: *account_id, keychain: keychain.clone() };
         let key = account_header_key(account_id);
         self.inner().write(ACCOUNTS_TABLE, &key, &header)
+    }
+
+    /// Set or clear the default matching pool for an account
+    ///
+    /// Pass `Some(name)` to bind the account to the given pool, or `None` to
+    /// remove the binding so that future orders fall back to the global pool.
+    pub fn set_account_default_matching_pool(
+        &self,
+        account_id: &AccountId,
+        pool: Option<&str>,
+    ) -> Result<(), StorageError> {
+        let key = default_pool_key(account_id);
+        match pool {
+            Some(name) => self.inner().write(ACCOUNTS_TABLE, &key, &name.to_string()),
+            None => self.inner().delete(ACCOUNTS_TABLE, &key).map(|_| ()),
+        }
     }
 
     /// Remove an order from an account

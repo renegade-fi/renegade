@@ -8,7 +8,10 @@ use darkpool_client::DarkpoolClient;
 use external_api::{
     EmptyRequestResponse,
     http::{
-        admin::{AssignOrderToPoolRequest, GetDisabledAssetsResponse, IsLeaderResponse},
+        admin::{
+            AssignOrderToPoolRequest, GetDisabledAssetsResponse, IsLeaderResponse,
+            SetAccountDefaultMatchingPoolRequest,
+        },
         order::{CreateOrderInPoolRequest, CreateOrderResponse},
     },
     types::{
@@ -657,6 +660,57 @@ impl TypedHandler for AdminAssignOrderToPoolHandler {
 
         let job = MatchingEngineWorkerJob::run_internal_engine(account_id, order_id);
         self.matching_engine_queue.send(job).map_err(|e| internal_error(e.to_string()))?;
+
+        Ok(EmptyRequestResponse {})
+    }
+}
+
+// -----------------------------------------------
+// | Handler: Set Account Default Matching Pool  |
+// -----------------------------------------------
+
+/// Handler for POST /v2/admin/account/:account_id/default-matching-pool
+pub struct AdminSetAccountDefaultPoolHandler {
+    /// A handle to the relayer state
+    state: State,
+}
+
+impl AdminSetAccountDefaultPoolHandler {
+    /// Constructor
+    pub fn new(state: State) -> Self {
+        Self { state }
+    }
+}
+
+#[async_trait]
+impl TypedHandler for AdminSetAccountDefaultPoolHandler {
+    type Request = SetAccountDefaultMatchingPoolRequest;
+    type Response = EmptyRequestResponse;
+
+    async fn handle_typed(
+        &self,
+        _headers: HeaderMap,
+        req: Self::Request,
+        params: UrlParams,
+        _query_params: QueryParams,
+    ) -> Result<Self::Response, ApiServerError> {
+        let account_id = parse_account_id_from_params(&params)?;
+
+        // Verify the account exists
+        if !self.state.contains_account(&account_id).await? {
+            return Err(not_found(format!("account {account_id} not found")));
+        }
+
+        // If a pool name is given, verify it exists
+        if let Some(ref pool_name) = req.matching_pool {
+            if !self.state.matching_pool_exists(pool_name.clone()).await? {
+                return Err(not_found(ERR_MATCHING_POOL_NOT_FOUND));
+            }
+        }
+
+        let waiter =
+            self.state.set_account_default_matching_pool(account_id, req.matching_pool).await?;
+        waiter.await?;
 
         Ok(EmptyRequestResponse {})
     }

@@ -6,6 +6,7 @@
 
 use types_account::MatchingPoolName;
 use types_account::account::OrderId;
+use types_core::AccountId;
 
 use crate::{
     StateInner, error::StateError, notifications::ProposalWaiter, state_transition::StateTransition,
@@ -81,5 +82,17 @@ impl StateInner {
         pool_name: MatchingPoolName,
     ) -> Result<ProposalWaiter, StateError> {
         self.send_proposal(StateTransition::AssignOrderToMatchingPool { order_id, pool_name }).await
+    }
+
+    /// Set the default matching pool for an account
+    ///
+    /// Pass `None` to clear the binding so future orders use the global pool.
+    pub async fn set_account_default_matching_pool(
+        &self,
+        account_id: AccountId,
+        pool: Option<MatchingPoolName>,
+    ) -> Result<ProposalWaiter, StateError> {
+        self.send_proposal(StateTransition::SetAccountDefaultMatchingPool { account_id, pool })
+            .await
     }
 }
