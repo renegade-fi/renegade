@@ -2,12 +2,14 @@
 //! logic
 
 use state::{State, error::StateError};
-use tracing::{error, info};
 use types_core::AccountId;
 use types_tasks::TaskIdentifier;
+use util::log_task;
+use util::logging::Outcome;
 
 use crate::{
     error::TaskDriverError,
+    logging::Task as LogTask,
     task_state::TaskStateWrapper,
     traits::{Task, TaskContext, TaskError},
 };
@@ -81,7 +83,13 @@ impl<T: Task> RunnableTask<T> {
     pub async fn step(&mut self) -> Result<bool, TaskDriverError> {
         // Handle a failed step
         if let Err(e) = self.task.step().await {
-            error!("error executing task step: {e}");
+            log_task!(
+                LogTask::TaskExecution,
+                Outcome::Failed,
+                subject = %self.task_id,
+                error = %e,
+                "error executing task step"
+            );
             let retryable = e.retryable() && self.is_task_running().await?;
             return if retryable { Ok(false) } else { Err(e.into()) };
         };
@@ -97,7 +105,14 @@ impl<T: Task> RunnableTask<T> {
         let task_id = self.task_id;
         let name = self.task.name();
         let new_state = self.state();
-        info!("task {name}({task_id:?}) transitioning to state {new_state}");
+        log_task!(
+            LogTask::TaskExecution,
+            Outcome::Started,
+            subject = ?task_id,
+            task_name = %name,
+            state = %new_state,
+            "task transitioning to state"
+        );
 
         // Preemptive tasks need not update state in the consensus engine
         if self.bypass_task_queue() {
@@ -124,7 +139,13 @@ impl<T: Task> RunnableTask<T> {
     ) -> Result<(), TaskDriverError> {
         // Do not propagate errors from cleanup, continue to cleanup
         if let Err(e) = self.task.cleanup().await {
-            error!("error cleaning up task: {e:?}");
+            log_task!(
+                LogTask::TaskExecution,
+                Outcome::Failed,
+                subject = %self.task_id,
+                error = ?e,
+                "error cleaning up task"
+            );
         }
 
         // Pop the task from the state, unless this task bypasses the task queue
@@ -132,7 +153,13 @@ impl<T: Task> RunnableTask<T> {
         if !self.bypass_task_queue()
             && let Err(e) = self.pop_task_or_clear_queue(success, &affected_accounts).await
         {
-            error!("error popping task: {e}");
+            log_task!(
+                LogTask::TaskExecution,
+                Outcome::Failed,
+                subject = %self.task_id,
+                error = %e,
+                "error popping task"
+            );
         }
 
         Ok(())
@@ -168,7 +195,12 @@ impl<T: Task> RunnableTask<T> {
         let is_running = task.is_some_and(|t| t.state.is_running());
 
         if !is_running {
-            error!("task {} is not running", self.task_id);
+            log_task!(
+                LogTask::TaskExecution,
+                Outcome::Failed,
+                subject = %self.task_id,
+                "task is not running"
+            );
         }
 
         Ok(is_running)

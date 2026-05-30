@@ -11,7 +11,7 @@ use darkpool_types::{
 };
 use serde::Serialize;
 use state::{State, error::StateError};
-use tracing::{info, instrument, warn};
+use tracing::instrument;
 use types_account::{
     MatchingPoolName, OrderId,
     balance::BalanceLocation,
@@ -19,11 +19,15 @@ use types_account::{
     order::{Order, OrderMetadata, PrivacyRing},
     order_auth::OrderAuth,
 };
-use types_core::AccountId;
+use types_core::{AccountId, Token};
 use types_tasks::CreateOrderTaskDescriptor;
+
+use util::log_task;
+use util::logging::Outcome;
 
 use crate::{
     hooks::{RefreshAccountHook, RunMatchingEngineHook, TaskHook},
+    logging::Task as LogTask,
     task_state::TaskStateWrapper,
     tasks::validity_proofs::{
         error::ValidityProofsError, intent_and_balance::update_intent_and_balance_validity_proof,
@@ -400,7 +404,14 @@ impl CreateOrderTask {
 
         // Update the account balance if we found a usable balance
         if let Some(bal) = balance {
-            info!("Found usable balance on chain, updating account balance");
+            log_task!(
+                LogTask::CreateOrder,
+                Outcome::Ok,
+                subject = %self.account_id,
+                amount = %bal.amount(),
+                token = %Token::from_alloy_address(&in_token).ticker_or_addr(),
+                "Found usable balance on chain, updating account balance"
+            );
             let waiter = self.state().update_account_balance(self.account_id, bal).await?;
             waiter.await.map_err(CreateOrderTaskError::state)?;
         }
@@ -429,7 +440,13 @@ impl CreateOrderTask {
 
         let msg = Message::UpdatePublicIntentMetadata(message);
         if let Err(e) = self.ctx.indexer_client.submit_message(msg).await {
-            warn!("Failed to send indexer message: {e}");
+            log_task!(
+                LogTask::IndexerMessage,
+                Outcome::Failed,
+                subject = %self.account_id,
+                error = %e,
+                "failed to send indexer message"
+            );
         }
     }
 }

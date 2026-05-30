@@ -9,5 +9,6 @@
 
 pub mod error;
 pub mod executor;
+mod logging;
 pub mod manager;
 pub mod worker;

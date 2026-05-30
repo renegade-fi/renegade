@@ -19,6 +19,7 @@ use crate::error::StateError;
 pub mod applicator;
 pub mod error;
 mod interface;
+mod logging;
 pub mod notifications;
 pub mod replication;
 pub mod state_transition;

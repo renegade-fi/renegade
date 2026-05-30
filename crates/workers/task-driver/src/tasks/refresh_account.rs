@@ -10,15 +10,18 @@ use async_trait::async_trait;
 use darkpool_client::errors::DarkpoolClientError;
 use serde::Serialize;
 use state::error::StateError;
-use tracing::{info, instrument};
+use tracing::instrument;
 use types_account::{
     Account, OrderId, OrderRefreshData, keychain::KeyChain, order_auth::OrderAuth,
 };
 use types_core::AccountId;
 use types_tasks::RefreshAccountTaskDescriptor;
+use util::log_task;
+use util::logging::Outcome;
 
 use crate::{
     hooks::{RunMatchingEngineHook, TaskHook},
+    logging::Task as LogTask,
     task_state::TaskStateWrapper,
     traits::{Descriptor, Task, TaskContext, TaskError, TaskState},
     utils::fetch_eoa_balance,
@@ -248,12 +251,22 @@ impl RefreshAccountTask {
         let exists = state.contains_account(&self.account_id).await?;
 
         if exists {
-            info!("Account {} already exists", self.account_id);
+            log_task!(
+                LogTask::RefreshAccount,
+                Outcome::Skipped,
+                subject = %self.account_id,
+                "account already exists"
+            );
             return Ok(());
         }
 
         // Create the account
-        info!("Creating account {}", self.account_id);
+        log_task!(
+            LogTask::RefreshAccount,
+            Outcome::Started,
+            subject = %self.account_id,
+            "creating account"
+        );
         let account = Account::new_empty_account(self.account_id, self.keychain.clone());
         let waiter = state.new_account(account).await?;
         waiter.await?;
@@ -281,18 +294,22 @@ impl RefreshAccountTask {
         // check the caller-provided-tokens path has no `owner` to query
         // (we currently derive it from the first intent).
         if public_intents.is_empty() && self.additional_tokens.is_empty() {
-            info!(
-                "No public intents and no additional tokens to refresh for account {}",
-                self.account_id
+            log_task!(
+                LogTask::RefreshAccount,
+                Outcome::Skipped,
+                subject = %self.account_id,
+                "no public intents and no additional tokens to refresh for account"
             );
             return Ok(());
         }
 
-        info!(
-            "Found {} public intents and {} additional tokens to refresh for account {}",
-            public_intents.len(),
-            self.additional_tokens.len(),
-            self.account_id
+        log_task!(
+            LogTask::RefreshAccount,
+            Outcome::Started,
+            subject = %self.account_id,
+            num_public_intents = public_intents.len(),
+            num_additional_tokens = self.additional_tokens.len(),
+            "found public intents and additional tokens to refresh for account"
         );
 
         // Collect unique input tokens from the intents, then union with
@@ -346,7 +363,14 @@ impl RefreshAccountTask {
         self.refreshed_order_ids = orders.iter().map(|o| o.order.id).collect();
 
         // Propose the state transition
-        info!("Proposing refresh with {} orders and {} balances", orders.len(), balances.len());
+        log_task!(
+            LogTask::RefreshAccount,
+            Outcome::Started,
+            subject = %self.account_id,
+            num_orders = orders.len(),
+            num_balances = balances.len(),
+            "proposing refresh"
+        );
 
         let waiter = self.ctx.state.refresh_account(self.account_id, orders, balances).await?;
 

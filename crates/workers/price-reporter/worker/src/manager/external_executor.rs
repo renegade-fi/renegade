@@ -20,17 +20,18 @@ use tokio::{
     sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel},
 };
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async};
-use tracing::{error, info, warn};
 use tungstenite::Message;
 use types_core::{Exchange, Price, Token};
 use types_runtime::CancelChannel;
 use url::Url;
 use util::{
     DefaultOption, concurrency::runtime::sleep_forever_async, err_str, get_current_time_millis,
+    log_task, logging::Outcome,
 };
 
 use crate::{
     errors::{ExchangeConnectionError, PriceReporterError},
+    logging::Task,
     manager::utils::get_all_stream_tuples,
     worker::PriceReporterConfig,
 };
@@ -105,7 +106,7 @@ impl ExternalPriceReporterExecutor {
                 }
                 // Await cancellation by the coordinator
                 _ = cancel_channel.changed() => {
-                    info!("ExternalPriceReporter cancelled, shutting down...");
+                    log_task!(Task::ReporterLifecycle, Outcome::Ok, "ExternalPriceReporter cancelled, shutting down...");
                     return Err(PriceReporterError::Cancelled("received cancel signal".to_string()));
                 }
             }
@@ -188,7 +189,7 @@ async fn ws_connect(
     let ws_conn = match connect_async(url.clone()).await {
         Ok((conn, _resp)) => conn,
         Err(e) => {
-            error!("Cannot connect to the remote URL: {}", url);
+            log_task!(Task::ExchangeConnection, Outcome::Failed, subject = %url, "cannot connect to the remote url");
             return Err(ExchangeConnectionError::HandshakeFailure(e.to_string()));
         },
     };
@@ -221,10 +222,10 @@ async fn ws_handler_loop(
                     if let Err(e) = handle_incoming_ws_message(res, &msg_in_tx) {
                         match e {
                             ExchangeConnectionError::ConnectionHangup(_) => {
-                                warn!("Connection to external price reporter lost, reconnecting...");
+                                log_task!(Task::ExchangeConnection, Outcome::Retrying, "Connection to external price reporter lost, reconnecting...");
                             },
                             _ => {
-                                error!("Error handling incoming message from external price reporter: {e}, retrying...");
+                                log_task!(Task::PriceStream, Outcome::Retrying, error = %e, "error handling incoming message from external price reporter, retrying");
                             }
                         }
 
@@ -236,7 +237,7 @@ async fn ws_handler_loop(
                 // Forward outgoing messages from the executor to the external price reporter
                 Some(message) = msg_out_rx.recv() => {
                     if let Err(e) = ws_write.send(Message::Text(serde_json::to_string(&message).unwrap())).await {
-                        error!("Error sending message to external price reporter: {e}, retrying...");
+                        log_task!(Task::PriceStream, Outcome::Retrying, error = %e, "error sending message to external price reporter, retrying");
                         break;
                     }
                 },
@@ -317,7 +318,7 @@ async fn connect_with_retries(price_reporter_url: Url) -> (WsWriteStream, WsRead
         match ws_connect(price_reporter_url.clone()).await {
             Ok((write, read)) => return (write, read),
             Err(e) => {
-                error!("Error connecting to external price reporter: {e}, retrying...");
+                log_task!(Task::ExchangeConnection, Outcome::Retrying, error = %e, "error connecting to external price reporter, retrying");
                 tokio::time::sleep(Duration::from_millis(CONN_RETRY_DELAY_MS)).await;
             },
         }

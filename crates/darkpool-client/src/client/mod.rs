@@ -21,11 +21,13 @@ use constants::{
     ETHEREUM_SEPOLIA_DEPLOY_BLOCK, MERKLE_HEIGHT,
 };
 use renegade_solidity_abi::v2::IDarkpoolV2::{self, IDarkpoolV2Instance};
-use tracing::info;
 use types_core::Chain;
 use util::err_str;
+use util::log_task;
+use util::logging::Outcome;
 
 use crate::errors::{DarkpoolClientConfigError, DarkpoolClientError};
+use crate::logging::Task;
 
 mod contract_interaction;
 pub mod erc20;
@@ -213,7 +215,8 @@ impl DarkpoolClient {
             },
         };
 
-        info!("Pending tx hash: {:#x}", pending_tx.tx_hash());
+        let tx_hash = format!("{:#x}", pending_tx.tx_hash());
+        log_task!(Task::SubmitTx, Outcome::Started, subject = %tx_hash, "submitting tx");
         let receipt = pending_tx
             .with_timeout(Some(TX_RECEIPT_TIMEOUT))
             .get_receipt()

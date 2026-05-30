@@ -8,7 +8,10 @@ use std::{
 
 use async_trait::async_trait;
 use tokio::sync::mpsc::{Receiver, Sender, channel};
-use tracing::error;
+use util::log_task;
+use util::logging::Outcome;
+
+use crate::logging::Task;
 
 /// A channel for sending worker failures
 pub type WorkerFailureSender = Sender<()>;
@@ -81,10 +84,22 @@ pub fn watch_worker<W: Worker>(worker: &mut W, failure_channel: &WorkerFailureSe
             .spawn(move || {
                 match join_handle.join() {
                     Err(panic) => {
-                        error!("worker {worker_name} panicked with error: {panic:?}");
+                        log_task!(
+                            Task::WorkerWatcher,
+                            Outcome::Failed,
+                            subject = %worker_name,
+                            panic = ?panic,
+                            "worker panicked"
+                        );
                     },
                     Ok(err) => {
-                        error!("worker {worker_name} exited with error: {err:?}");
+                        log_task!(
+                            Task::WorkerWatcher,
+                            Outcome::Failed,
+                            subject = %worker_name,
+                            error = ?err,
+                            "worker exited with error"
+                        );
                     },
                 }
                 channel_clone.blocking_send(()).unwrap();

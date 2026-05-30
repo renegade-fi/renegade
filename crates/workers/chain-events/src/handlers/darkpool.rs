@@ -13,11 +13,14 @@ use darkpool_types::{
 use futures_util::Stream;
 use renegade_metrics::record_match_volume_from_obligation;
 use renegade_solidity_abi::v2::IDarkpoolV2::{PublicIntentCancelled, PublicIntentUpdated};
-use tracing::{info, warn};
 use types_account::OrderId;
 use types_core::AccountId;
+use util::log_task;
+use util::logging::Outcome;
 
-use crate::{error::OnChainEventListenerError, executor::OnChainEventListenerExecutor};
+use crate::{
+    error::OnChainEventListenerError, executor::OnChainEventListenerExecutor, logging::Task,
+};
 
 /// Error message for amount remaining overflow
 const ERR_AMOUNT_REMAINING_OVERFLOW: &str = "Amount remaining overflow";
@@ -53,7 +56,12 @@ impl OnChainEventListenerExecutor {
         // flows are expected to update state outside the chain-events listener
         let (tx_hash, external_matches) = self.find_external_matches_for_log(&log).await?;
         if external_matches.is_empty() {
-            info!("Skipping darkpool event from non-external-match tx: tx={tx_hash:#x}");
+            log_task!(
+                Task::HandleDarkpoolEvent,
+                Outcome::Skipped,
+                subject = %tx_hash,
+                "skipping darkpool event from non-external-match tx"
+            );
             return Ok(());
         }
 
@@ -72,7 +80,12 @@ impl OnChainEventListenerExecutor {
                 self.handle_public_intent_cancelled(log, tx_hash).await
             },
             _ => {
-                tracing::warn!("Unknown darkpool event: topic={topic0}");
+                log_task!(
+                    Task::HandleDarkpoolEvent,
+                    Outcome::Partial,
+                    subject = %topic0,
+                    "unknown darkpool event"
+                );
                 Ok(())
             },
         }
@@ -128,8 +141,11 @@ impl OnChainEventListenerExecutor {
                 external_matches,
             )
         } else {
-            warn!(
-                "PublicIntentUpdated fill amount overflow; skipping external-match metrics: tx={tx_hash:#x}"
+            log_task!(
+                Task::HandlePublicIntentUpdated,
+                Outcome::Partial,
+                subject = %tx_hash,
+                "publicintentupdated fill amount overflow; skipping external-match metrics"
             );
         }
 
@@ -176,8 +192,12 @@ impl OnChainEventListenerExecutor {
     ) -> Result<(), OnChainEventListenerError> {
         if amount_remaining == 0 {
             self.state().remove_order_from_account(account_id, order_id).await?.await?;
-            info!(
-                "Removed order {order_id} from account {account_id} via PublicIntentUpdated (amount_remaining=0)"
+            log_task!(
+                Task::HandlePublicIntentUpdated,
+                Outcome::Ok,
+                subject = %order_id,
+                account_id = %account_id,
+                "removed order from account via publicintentupdated (amount_remaining=0)"
             );
             return Ok(());
         }
@@ -207,15 +227,26 @@ impl OnChainEventListenerExecutor {
         let Some((match_res, external_amount_in)) =
             select_external_match_for_intent(external_matches, intent_hash)
         else {
-            warn!(
-                "Could not map PublicIntentUpdated to decoded external match call: no intent-hash match: tx={tx_hash:#x}, intent_hash={intent_hash:#x}, fill_amount={fill_amount}"
+            log_task!(
+                Task::HandlePublicIntentUpdated,
+                Outcome::Partial,
+                subject = %tx_hash,
+                intent_hash = %intent_hash,
+                fill_amount = %fill_amount,
+                "could not map publicintentupdated to decoded external match call: no intent-hash match"
             );
             return;
         };
 
         if match_res.to_external_obligation(external_amount_in).amount_out != fill_amount {
-            warn!(
-                "Mapped PublicIntentUpdated to external match without fill-amount equality: tx={tx_hash:#x}, intent_hash={intent_hash:#x}, fill_amount={fill_amount}, external_amount_in={external_amount_in}"
+            log_task!(
+                Task::HandlePublicIntentUpdated,
+                Outcome::Partial,
+                subject = %tx_hash,
+                intent_hash = %intent_hash,
+                fill_amount = %fill_amount,
+                external_amount_in = %external_amount_in,
+                "mapped publicintentupdated to external match without fill-amount equality"
             );
         }
 
@@ -267,7 +298,13 @@ impl OnChainEventListenerExecutor {
 
         // Remove the cancelled order
         self.state().remove_order_from_account(account_id, order_id).await?.await?;
-        info!("Removed order {order_id} from account {account_id} via PublicIntentCancelled");
+        log_task!(
+            Task::HandlePublicIntentCancelled,
+            Outcome::Ok,
+            subject = %order_id,
+            account_id = %account_id,
+            "removed order from account via publicintentcancelled"
+        );
 
         // TODO: Emit cancellation event to notify clients
 

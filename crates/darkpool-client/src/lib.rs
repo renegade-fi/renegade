@@ -14,5 +14,6 @@
 pub mod client;
 pub mod constants;
 pub mod errors;
+mod logging;
 
 pub use client::DarkpoolClient;

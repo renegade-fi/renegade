@@ -3711,6 +3711,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "url",
+ "util",
 ]
 
 [[package]]
@@ -4850,6 +4851,7 @@ dependencies = [
  "tokio",
  "tracing",
  "url",
+ "util",
  "uuid",
  "warp",
 ]
@@ -10115,6 +10117,7 @@ dependencies = [
  "async-trait",
  "tokio",
  "tracing",
+ "util",
 ]
 
 [[package]]

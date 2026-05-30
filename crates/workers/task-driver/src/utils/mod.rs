@@ -7,9 +7,12 @@ use darkpool_types::{balance::DarkpoolBalance, state_wrapper::StateWrapper};
 use job_types::proof_manager::{ProofJob, ProofManagerJob, ProofManagerResponse};
 use renegade_solidity_abi::v2::relayer_types::u256_to_u128;
 use tokio::sync::oneshot::{self, Receiver as TokioReceiver};
-use tracing::info;
 use types_account::balance::Balance;
+use types_core::Token;
+use util::log_task;
+use util::logging::Outcome;
 
+use crate::logging::Task;
 use crate::traits::TaskContext;
 
 pub mod indexer_client;
@@ -49,16 +52,39 @@ pub(crate) async fn fetch_eoa_balance(
     token: Address,
     owner: Address,
 ) -> eyre::Result<Option<Balance>> {
-    info!("Checking for balance of {token} for owner {owner}");
+    let ticker = Token::from_alloy_address(&token).ticker_or_addr();
+    log_task!(
+        Task::LookupBalance,
+        Outcome::Started,
+        subject = %owner,
+        token = %token,
+        ticker = %ticker,
+        "checking balance for {ticker}"
+    );
     let darkpool_client = &ctx.darkpool_client;
     let usable_balance = darkpool_client.get_erc20_usable_balance(token, owner).await?;
     if usable_balance == U256::ZERO {
-        info!("No usable balance found for token {token}");
+        log_task!(
+            Task::LookupBalance,
+            Outcome::Skipped,
+            subject = %owner,
+            token = %token,
+            ticker = %ticker,
+            "no usable balance found for {ticker}"
+        );
         return Ok(None);
     }
 
     let amt = u256_to_u128(usable_balance);
-    info!("Found usable balance of {amt} for token {token}");
+    log_task!(
+        Task::LookupBalance,
+        Outcome::Ok,
+        subject = %owner,
+        token = %token,
+        ticker = %ticker,
+        amount = %amt,
+        "found usable balance for {ticker}"
+    );
 
     let relayer_fee_addr = get_relayer_fee_addr(ctx)?;
     let balance = create_ring0_balance(token, owner, relayer_fee_addr, amt);

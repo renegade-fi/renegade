@@ -2,9 +2,11 @@
 
 use aws_sdk_s3::Client as S3Client;
 use config::parsing::config_file::parse_config_from_file;
-use tracing::info;
+use util::log_task;
+use util::logging::Outcome;
 use util::raw_err_str;
 
+use crate::logging::Task;
 use crate::{
     CONFIG_PATH, config::ConfigContents, download_s3_file, in_bootstrap_mode, read_env_var,
 };
@@ -18,11 +20,15 @@ pub(crate) async fn download_snapshot(
     cfg: &ConfigContents,
 ) -> Result<(), String> {
     if in_bootstrap_mode(cfg) {
-        info!("skipping snapshot download in bootstrap mode");
+        log_task!(
+            Task::SnapshotDownload,
+            Outcome::Skipped,
+            "skipping snapshot download in bootstrap mode"
+        );
         return Ok(());
     }
 
-    info!("downloading latest snapshot...");
+    log_task!(Task::SnapshotDownload, Outcome::Started, "downloading latest snapshot");
     let bucket = read_env_var::<String>(ENV_SNAP_BUCKET)?;
 
     // Parse the relayer's config
@@ -41,7 +47,7 @@ pub(crate) async fn download_snapshot(
         .contents
         .unwrap_or_default();
     if snaps.is_empty() {
-        info!("no snapshots found in s3");
+        log_task!(Task::SnapshotDownload, Outcome::Skipped, "no snapshots found in s3");
         return Ok(());
     }
 

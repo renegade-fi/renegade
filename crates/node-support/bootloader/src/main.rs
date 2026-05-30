@@ -17,12 +17,16 @@ use helpers::{
 };
 use snapshot::{ENV_SNAP_BUCKET, download_snapshot};
 use tokio::process::Command;
-use tracing::error;
+use util::log_task;
+use util::logging::Outcome;
 use util::telemetry::{LevelFilter, setup_system_logger};
+
+use crate::logging::Task;
 
 mod config;
 mod gas_wallet;
 mod helpers;
+mod logging;
 mod snapshot;
 
 /// The location of the snapshot sidecar binary
@@ -96,10 +100,34 @@ async fn main() -> Result<(), String> {
     )
     .expect("A sidecar or relayer process encountered an error");
 
-    error!("snapshot sidecar exited with: {:?}", snapshot_sidecar_result);
-    error!("event export sidecar exited with: {:?}", event_export_sidecar_result);
-    error!("indexer message sidecar exited with: {:?}", indexer_message_sidecar_result);
-    error!("relayer exited with: {:?}", relayer_result);
+    log_task!(
+        Task::SidecarSupervision,
+        Outcome::Failed,
+        subject = "snapshot-sidecar",
+        error = ?snapshot_sidecar_result,
+        "snapshot sidecar exited"
+    );
+    log_task!(
+        Task::SidecarSupervision,
+        Outcome::Failed,
+        subject = "event-export-sidecar",
+        error = ?event_export_sidecar_result,
+        "event export sidecar exited"
+    );
+    log_task!(
+        Task::SidecarSupervision,
+        Outcome::Failed,
+        subject = "indexer-message-sidecar",
+        error = ?indexer_message_sidecar_result,
+        "indexer message sidecar exited"
+    );
+    log_task!(
+        Task::SidecarSupervision,
+        Outcome::Failed,
+        subject = "relayer",
+        error = ?relayer_result,
+        "relayer exited"
+    );
     Ok(())
 }
 

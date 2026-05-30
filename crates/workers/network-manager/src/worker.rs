@@ -24,9 +24,11 @@ use libp2p_core::Transport;
 use libp2p_core::muxing::StreamMuxerBox;
 use libp2p_swarm::SwarmBuilder;
 use tokio::runtime::Builder as TokioRuntimeBuilder;
-use tracing::info;
+use util::log_task;
+use util::logging::Outcome;
 
 use crate::composed_protocol::ComposedNetworkBehavior;
+use crate::logging::Task;
 
 use super::{
     composed_protocol::ProtocolVersion, error::NetworkManagerError,
@@ -223,7 +225,7 @@ impl Worker for NetworkManager {
         // Add any bootstrap addresses to the peer info table
         let peer_index = block_on(self.config.clone().global_state.get_peer_info_map())?;
         for (peer_id, peer_info) in peer_index.iter() {
-            info!("Adding {:?}: {} to routing table...", peer_id, peer_info.get_addr());
+            log_task!(Task::AddRoutingTableEntry, Outcome::Ok, subject = ?peer_id, addr = %peer_info.get_addr(), "adding peer to routing table");
             behavior.kademlia_dht.add_address(peer_id, peer_info.get_addr());
         }
 

@@ -6,15 +6,18 @@ use std::{collections::HashMap, fmt::Debug, time::Duration};
 use job_types::task_driver::{TaskDriverJob, TaskDriverReceiver, TaskNotificationSender};
 use state::State;
 use tokio::runtime::Builder as TokioRuntimeBuilder;
-use tracing::{error, info, instrument, warn};
+use tracing::instrument;
 use types_core::AccountId;
 use types_tasks::{QueuedTask, TaskDescriptor, TaskIdentifier};
+use util::log_task;
+use util::logging::Outcome;
 use util::{
     channels::TracedMessage,
     concurrency::{Shared, new_shared},
 };
 
 use crate::{
+    logging::Task as LogTask,
     error::TaskDriverError,
     running_task::RunnableTask,
     tasks::{
@@ -146,7 +149,7 @@ impl TaskExecutor {
 
     /// The execution loop of the `TaskExecutor`
     pub fn run(self) -> Result<(), TaskDriverError> {
-        info!("starting task executor loop");
+        log_task!(LogTask::TaskExecution, Outcome::Started, "starting task executor loop");
         let queue = &self.task_queue;
         // Build a runtime
         let runtime = TokioRuntimeBuilder::new_multi_thread()
@@ -162,7 +165,7 @@ impl TaskExecutor {
             let this = self.clone();
             runtime.spawn(async move {
                 if let Err(e) = this.handle_job(job).await {
-                    error!("error handling job: {e:?}");
+                    log_task!(LogTask::TaskExecution, Outcome::Failed, error = ?e, "error handling job");
                 }
             });
         }
@@ -190,7 +193,12 @@ impl TaskExecutor {
     ) -> Result<(), TaskDriverError> {
         // Check that the task exists
         if !self.state().contains_task(&task_id).await? {
-            warn!("got task notification request for non-existent task {task_id:?}");
+            log_task!(
+                LogTask::TaskExecution,
+                Outcome::Failed,
+                subject = ?task_id,
+                "got task notification request for non-existent task"
+            );
             let _ = channel.send(Err(TASK_NOT_FOUND_ERROR.to_string()));
             return Ok(());
         }
@@ -294,7 +302,13 @@ impl TaskExecutor {
         // If we fail to create the task, pop it from the queue (if necessary) so it
         // isn't stuck there in a pending state
         if let Err(e) = task_res {
-            error!("error creating task: {e:?}");
+            log_task!(
+                LogTask::TaskExecution,
+                Outcome::Failed,
+                subject = %id,
+                error = ?e,
+                "error creating task"
+            );
             if !bypasses_queue {
                 let waiter = self.state().pop_task(id, false /* success */).await?;
                 waiter.await?;
@@ -333,13 +347,24 @@ impl TaskExecutor {
             while !task.step().await? {
                 retries -= 1;
                 if retries == 0 {
-                    error!("retries exceeded... task failed");
+                    log_task!(
+                        LogTask::TaskExecution,
+                        Outcome::Failed,
+                        subject = ?id,
+                        "retries exceeded... task failed"
+                    );
                     break 'outer;
                 }
 
                 // Sleep the backoff time and retry
                 tokio::time::sleep(curr_backoff).await;
-                info!("retrying task {id:?} from state: {}", task.state());
+                log_task!(
+                    LogTask::TaskExecution,
+                    Outcome::Retrying,
+                    subject = ?id,
+                    state = %task.state(),
+                    "retrying task from state"
+                );
 
                 curr_backoff *= args.backoff_amplification_factor;
                 curr_backoff = Duration::min(curr_backoff, backoff_ceiling);
@@ -362,7 +387,13 @@ impl TaskExecutor {
         for hook in hooks {
             if let Err(e) = hook.run(&ctx).await {
                 let description = hook.description();
-                error!("error running hook {description}: {e:?}");
+                log_task!(
+                    LogTask::TaskExecution,
+                    Outcome::Failed,
+                    hook = %description,
+                    error = ?e,
+                    "error running hook"
+                );
             }
         }
 

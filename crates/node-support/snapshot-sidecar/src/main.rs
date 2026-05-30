@@ -21,8 +21,12 @@ use config::{RelayerConfig, parsing::config_file::parse_config_from_file};
 use external_api::http::admin::{IS_LEADER_ROUTE, IsLeaderResponse};
 use notify::{Config, EventKind, RecommendedWatcher, RecursiveMode, Watcher, event::RemoveKind};
 use reqwest::Client as HttpClient;
-use tracing::{error, info};
-use util::{get_current_time_millis, raw_err_str};
+use util::logging::Outcome;
+use util::{get_current_time_millis, log_task, raw_err_str};
+
+use crate::logging::Task;
+
+mod logging;
 
 /// The postfix of the snapshot path
 const SNAPSHOT_FILE_NAME: &str = "snapshot.gz";
@@ -98,19 +102,19 @@ async fn maybe_record_snapshot(args: &Cli, conf: &RelayerConfig, s3_client: &Cli
     // Check if the local relayer is the leader first
     match check_leader(&args.http_addr).await {
         Ok(false) => {
-            info!("relayer is not leader, skipping");
+            log_task!(Task::LeaderCheck, Outcome::Skipped, "relayer is not leader, skipping");
             return;
         },
         Ok(true) => {},
         Err(e) => {
-            error!("Failed to check leader: {e}");
+            log_task!(Task::LeaderCheck, Outcome::Failed, error = %e, "failed to check leader");
             return;
         },
     };
 
     // Record the snapshot
     if let Err(e) = handle_new_snapshot(&args.bucket, conf, s3_client).await {
-        error!("Failed to handle new snapshot: {e}");
+        log_task!(Task::HandleSnapshot, Outcome::Failed, error = %e, "failed to handle new snapshot");
     }
 }
 
@@ -125,7 +129,13 @@ async fn handle_new_snapshot(
     let path = snapshot_path(conf);
     let dir = format!("cluster-{}", conf.cluster_id);
     let file_name = format!("{dir}/snapshot-{ts}.gz");
-    info!("uploading snapshot: {file_name} to {bucket}");
+    log_task!(
+        Task::UploadSnapshot,
+        Outcome::Started,
+        subject = %file_name,
+        bucket = %bucket,
+        "uploading snapshot"
+    );
 
     // Send the file at `path` to the s3 bucket
     let body = ByteStream::read_from().path(path).build().await.map_err(raw_err_str!("{}"))?;

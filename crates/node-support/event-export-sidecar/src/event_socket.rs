@@ -10,8 +10,11 @@ use job_types::event_manager::RelayerEvent;
 use tokio::net::{UnixListener, UnixStream};
 use tokio_stream::StreamExt;
 use tokio_util::codec::{FramedRead, LengthDelimitedCodec};
-use tracing::{error, info, warn};
 use url::Url;
+use util::log_task;
+use util::logging::Outcome;
+
+use crate::logging::Task;
 
 // ---------------------
 // | Convenience Types |
@@ -68,7 +71,11 @@ impl EventSocket {
         let listener = UnixListener::bind(Path::new(path))?;
 
         // We only expect one connection, so we can just block on it
-        info!("Waiting for event export socket connection...");
+        log_task!(
+            Task::EventSocket,
+            Outcome::Started,
+            "waiting for event export socket connection"
+        );
         match listener.accept().await {
             Ok((socket, _)) => {
                 let framed_socket = FramedRead::new(socket, LengthDelimitedCodec::new());
@@ -87,11 +94,16 @@ impl EventSocket {
                 // We can consider retry logic or a local dead-letter queue, but
                 // for now we keep things simple.
                 metrics::counter!(NUM_SIDECAR_EXPORT_FAILURES_METRIC).increment(1);
-                error!("Error handling relayer event: {e}");
+                log_task!(
+                    Task::HandleEvent,
+                    Outcome::Failed,
+                    error = %e,
+                    "error handling relayer event"
+                );
             }
         }
 
-        warn!("Event export socket closed");
+        log_task!(Task::EventSocket, Outcome::Skipped, "event export socket closed");
         Ok(())
     }
 
@@ -118,7 +130,12 @@ impl EventSocket {
 impl Drop for EventSocket {
     fn drop(&mut self) {
         if let Err(e) = fs::remove_file(&self.path) {
-            warn!("Failed to remove Unix socket file: {}", e);
+            log_task!(
+                Task::SocketCleanup,
+                Outcome::Failed,
+                error = %e,
+                "failed to remove Unix socket file"
+            );
         }
     }
 }

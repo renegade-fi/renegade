@@ -16,11 +16,15 @@ use futures_util::{
 };
 use job_types::matching_engine::MatchingEngineWorkerJob;
 use renegade_solidity_abi::v2::relayer_types::u256_to_u128;
-use tracing::{debug, info, warn};
+use tracing::debug;
 use types_account::balance::{Balance, BalanceLocation};
-use types_core::{AccountId, get_all_tokens};
+use types_core::{AccountId, Token, get_all_tokens};
+use util::log_task;
+use util::logging::Outcome;
 
-use crate::{error::OnChainEventListenerError, executor::OnChainEventListenerExecutor};
+use crate::{
+    error::OnChainEventListenerError, executor::OnChainEventListenerExecutor, logging::Task,
+};
 
 /// Boxed local stream type for chain event log subscriptions.
 type LogStream = LocalBoxStream<'static, Log>;
@@ -31,12 +35,21 @@ impl OnChainEventListenerExecutor {
         client: &DynProvider,
     ) -> Result<(LogStream, LogStream), OnChainEventListenerError> {
         let owners = self.get_tracked_owners();
-        info!("Tracking {} owners", owners.len());
+        log_task!(
+            Task::CreateTransferSubscriptions,
+            Outcome::Started,
+            count = owners.len(),
+            "tracking owners"
+        );
 
         // Convert owners to topic format for log filtering
         let owner_topics: Vec<B256> = owners.into_iter().map(|addr| addr.into_word()).collect();
         if owner_topics.is_empty() {
-            info!("No tracked owners; skipping ERC20 transfer subscriptions");
+            log_task!(
+                Task::CreateTransferSubscriptions,
+                Outcome::Skipped,
+                "no tracked owners; skipping erc20 transfer subscriptions"
+            );
             return Ok((stream::empty().boxed_local(), stream::empty().boxed_local()));
         }
 
@@ -67,7 +80,11 @@ impl OnChainEventListenerExecutor {
     ) -> Result<(), OnChainEventListenerError> {
         let token = log.address();
         let Some(tx_hash) = log.transaction_hash else {
-            warn!("Transfer event missing transaction hash, skipping");
+            log_task!(
+                Task::HandleTransferEvent,
+                Outcome::Skipped,
+                "transfer event missing transaction hash, skipping"
+            );
             return Ok(());
         };
 
@@ -75,8 +92,9 @@ impl OnChainEventListenerExecutor {
         let event = log.log_decode::<IERC20::Transfer>()?;
         let from = event.inner.from;
         let to = event.inner.to;
+        let ticker = Token::from_alloy_address(&token).ticker_or_addr();
         debug!(
-            "Handling ERC20 transfer: token={token:#x}, from={from:#x}, to={to:#x}, tx={tx_hash:#x}"
+            "Handling ERC20 transfer: token={ticker} ({token:#x}), from={from:#x}, to={to:#x}, tx={tx_hash:#x}"
         );
 
         // Look up accounts for both parties

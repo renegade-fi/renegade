@@ -15,6 +15,7 @@
 pub mod driver;
 pub mod error;
 pub mod hooks;
+mod logging;
 mod running_task;
 pub mod simulation;
 pub mod state_migration;

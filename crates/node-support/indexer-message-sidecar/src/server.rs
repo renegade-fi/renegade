@@ -7,10 +7,12 @@ use eyre::Result;
 use reqwest::Client as HttpClient;
 use task_driver::utils::indexer_client::{GET_USER_STATE_PATH, Message, SUBMIT_MESSAGE_PATH};
 use thiserror::Error;
-use tracing::{error, info};
 use url::Url;
+use util::log_task;
+use util::logging::Outcome;
 use warp::{Filter, Rejection, Reply, http::StatusCode, reject::Reject};
 
+use crate::logging::Task;
 use crate::sqs::submit_message;
 
 // ----------
@@ -94,7 +96,7 @@ pub async fn run_server(
 
     let routes = user_state_route.or(submit_message_route).recover(handle_rejection);
 
-    info!("Starting server on port {port}");
+    log_task!(Task::SidecarLifecycle, Outcome::Started, port = %port, "starting server");
     warp::serve(routes).run(([127, 0, 0, 1], port)).await;
 
     Ok(())
@@ -188,7 +190,7 @@ async fn handle_submit_message(
 /// Handle rejections and convert them to HTTP responses
 async fn handle_rejection(err: Rejection) -> Result<impl Reply, std::convert::Infallible> {
     let (code, message) = if let Some(e) = err.find::<ServerError>() {
-        error!("{e}");
+        log_task!(Task::HandleRequest, Outcome::Failed, error = %e, "request error");
         match e {
             ServerError::Proxy(_) => (StatusCode::BAD_GATEWAY, e.to_string()),
             ServerError::Sqs(_) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
@@ -199,7 +201,7 @@ async fn handle_rejection(err: Rejection) -> Result<impl Reply, std::convert::In
     } else if err.find::<warp::reject::MethodNotAllowed>().is_some() {
         (StatusCode::METHOD_NOT_ALLOWED, "Method not allowed".to_string())
     } else {
-        error!("Unhandled rejection: {:?}", err);
+        log_task!(Task::HandleRejection, Outcome::Failed, error = ?err, "unhandled rejection");
         (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error".to_string())
     };
 

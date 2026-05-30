@@ -105,7 +105,7 @@ use job_types::proof_manager::{
     ProofJob, ProofManagerJob, ProofManagerReceiver, ProofManagerResponse,
 };
 use rayon::{ThreadPool, ThreadPoolBuilder};
-use tracing::{error, info, info_span, instrument};
+use tracing::{info_span, instrument};
 use types_proofs::{
     IntentOnlySettlementProofBundle, PrivateSettlementProofBundle, ProofAndHintBundle, ProofBundle,
     PublicSettlementProofBundle,
@@ -113,8 +113,10 @@ use types_proofs::{
 use types_runtime::CancelChannel;
 use util::{DefaultOption, default_option};
 use util::{channels::TracedMessage, concurrency::runtime::sleep_forever_blocking, err_str};
+use util::log_task;
+use util::logging::Outcome;
 
-use crate::{error::ProofManagerError, worker::ProofManagerConfig};
+use crate::{error::ProofManagerError, logging::Task, worker::ProofManagerConfig};
 
 /// The name prefix for worker threads
 const WORKER_THREAD_PREFIX: &str = "proof-generation-worker";
@@ -173,7 +175,7 @@ impl NativeProofManager {
                 .has_changed()
                 .map_err(|err| ProofManagerError::RecvError(err.to_string()))?
             {
-                info!("Proof manager cancelled, shutting down...");
+                log_task!(Task::ManagerLifecycle, Outcome::Skipped, "Proof manager cancelled, shutting down...");
                 return Err(ProofManagerError::Cancelled("received cancel signal".to_string()));
             }
 
@@ -187,7 +189,7 @@ impl NativeProofManager {
             self.thread_pool.spawn_fifo(move || {
                 let _span = info_span!("handle_proof_job").entered();
                 if let Err(e) = self_clone.handle_proof_job(job) {
-                    error!("Error handling proof manager job: {}", e)
+                    log_task!(Task::HandleProofJob, Outcome::Failed, error = %e, "error handling proof manager job");
                 }
             });
         }

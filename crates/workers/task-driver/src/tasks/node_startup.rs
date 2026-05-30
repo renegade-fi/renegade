@@ -17,15 +17,18 @@ use job_types::{
 };
 use serde::Serialize;
 use state::{State, error::StateError};
-use tracing::{info, instrument};
+use tracing::instrument;
 use types_core::{AccountId, Token, get_all_tokens};
 use types_tasks::NodeStartupTaskDescriptor;
+use util::log_task;
+use util::logging::Outcome;
 use util::{
     err_str,
     on_chain::{set_chain_id, set_default_protocol_fee, set_protocol_fee, set_protocol_pubkey},
 };
 
 use crate::{
+    logging::Task as LogTask,
     state_migration::run_state_migrations,
     task_state::TaskStateWrapper,
     traits::{Descriptor, Task, TaskContext, TaskError, TaskState},
@@ -275,7 +278,11 @@ impl NodeStartupTask {
             .get_protocol_pubkey()
             .await
             .map_err(err_str!(NodeStartupTaskError::FetchConstants))?;
-        info!("Fetched protocol fee and protocol pubkey from on-chain");
+        log_task!(
+            LogTask::NodeStartup,
+            Outcome::Ok,
+            "Fetched protocol fee and protocol pubkey from on-chain"
+        );
 
         // Fetch the external match fee overrides for each mint
         self.setup_external_match_fees().await?;
@@ -292,7 +299,12 @@ impl NodeStartupTask {
 
     /// Warmup the gossip layer into the network
     pub async fn warmup_gossip(&mut self) -> Result<(), NodeStartupTaskError> {
-        info!("Warming up gossip layer for {}ms", self.gossip_warmup_ms);
+        log_task!(
+            LogTask::NodeStartup,
+            Outcome::Started,
+            warmup_ms = self.gossip_warmup_ms,
+            "warming up gossip layer"
+        );
         let wait_time = Duration::from_millis(self.gossip_warmup_ms);
         tokio::time::sleep(wait_time).await;
 
@@ -318,19 +330,24 @@ impl NodeStartupTask {
         let my_cluster = self.state.get_cluster_id()?;
         let peers = self.state.get_cluster_peers(&my_cluster).await?;
 
-        info!("initializing raft with {} peers", peers.len());
+        log_task!(
+            LogTask::NodeStartup,
+            Outcome::Started,
+            num_peers = peers.len(),
+            "initializing raft with peers"
+        );
         self.state.initialize_raft(peers).await?;
 
         // Await election of a leader
-        info!("awaiting leader election");
+        log_task!(LogTask::NodeStartup, Outcome::Started, "awaiting leader election");
         self.state.await_leader().await.map_err(err_str!(NodeStartupTaskError::State))?;
 
         let leader = self.state.get_leader().unwrap();
-        info!("leader elected: {}", leader);
+        log_task!(LogTask::NodeStartup, Outcome::Ok, subject = %leader, "leader elected");
 
         let my_peer_id = self.state.get_peer_id()?;
         if leader != my_peer_id {
-            info!("elected leader is a cluster peer");
+            log_task!(LogTask::NodeStartup, Outcome::Ok, "elected leader is a cluster peer");
             self.task_state = NodeStartupTaskState::JoinRaft;
         } else {
             self.task_state = NodeStartupTaskState::RefreshState;
@@ -363,12 +380,12 @@ impl NodeStartupTask {
     /// Manage the process to join an existing raft cluster
     #[allow(clippy::unused_async)]
     async fn join_raft(&self) -> Result<(), NodeStartupTaskError> {
-        info!("joining raft cluster");
+        log_task!(LogTask::NodeStartup, Outcome::Started, "joining raft cluster");
 
         // Wait for promotion to a voter
-        info!("awaiting promotion to voter");
+        log_task!(LogTask::NodeStartup, Outcome::Started, "awaiting promotion to voter");
         self.state.await_promotion().await.map_err(err_str!(NodeStartupTaskError::State))?;
-        info!("promoted to voter");
+        log_task!(LogTask::NodeStartup, Outcome::Ok, "promoted to voter");
 
         Ok(())
     }

@@ -5,8 +5,10 @@ use std::sync::atomic::Ordering;
 use job_types::gossip_server::GossipServerJob;
 use libp2p::identify::Event as IdentifyEvent;
 use libp2p_core::multiaddr::Protocol;
-use tracing::{error, info};
+use util::log_task;
+use util::logging::Outcome;
 
+use crate::logging::Task;
 use crate::{error::NetworkManagerError, executor::replace_port};
 
 use super::NetworkManagerExecutor;
@@ -30,7 +32,7 @@ impl NetworkManagerExecutor {
             local_addr = local_addr.with(Protocol::P2p(self.local_peer_id.0.into()));
 
             // Update the addr in the global state
-            info!("discovered local peer's public IP: {:?}", local_addr);
+            log_task!(Task::Identify, Outcome::Ok, subject = ?local_addr, "discovered local peer's public IP");
             self.global_state.update_local_peer_addr(local_addr).await?;
             self.discovered_identity.store(true, Ordering::Relaxed);
 
@@ -39,7 +41,7 @@ impl NetworkManagerExecutor {
             for peer in self.global_state.get_all_peers_ids(false /* include_self */).await? {
                 if let Err(e) = self.gossip_work_queue.send(GossipServerJob::ExecuteHeartbeat(peer))
                 {
-                    error!("error forwarding heartbeat to gossip server: {e}")
+                    log_task!(Task::ForwardHeartbeat, Outcome::Failed, subject = %peer, error = %e, "error forwarding heartbeat to gossip server")
                 }
             }
         }

@@ -20,6 +20,7 @@
 pub mod error;
 mod executor;
 mod handlers;
+mod logging;
 pub mod worker;
 
 pub use worker::{OnChainEventListener, OnChainEventListenerConfig};

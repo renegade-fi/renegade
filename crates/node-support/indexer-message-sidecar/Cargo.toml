@@ -19,6 +19,7 @@ http = { workspace = true }
 # === Workspace Dependencies === #
 config = { workspace = true }
 task-driver = { workspace = true }
+util = { workspace = true }
 
 # === Serde === #
 serde = { workspace = true, features = ["derive"] }

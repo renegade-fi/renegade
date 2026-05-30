@@ -12,6 +12,7 @@ mod auth;
 mod compliance;
 pub mod error;
 pub mod http;
+mod logging;
 mod param_parsing;
 mod router;
 mod websocket;

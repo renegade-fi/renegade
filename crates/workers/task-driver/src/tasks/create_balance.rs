@@ -18,14 +18,18 @@ use job_types::proof_manager::ProofJob;
 use renegade_solidity_abi::v2::IDarkpoolV2::DepositAuth;
 use serde::Serialize;
 use state::{State, error::StateError};
-use tracing::{info, instrument};
+use tracing::instrument;
 use types_account::{balance::Balance, keychain::KeyChain};
-use types_core::AccountId;
+use types_core::{AccountId, Token};
 use types_proofs::ValidBalanceCreateBundle;
 use types_tasks::CreateBalanceTaskDescriptor;
 
+use util::log_task;
+use util::logging::Outcome;
+
 use crate::{
     hooks::{RefreshAccountHook, RunMatchingEngineForBalanceHook, TaskHook},
+    logging::Task as LogTask,
     task_state::TaskStateWrapper,
     tasks::validity_proofs::balance_update::refresh_validity_proofs_for_updated_balance,
     traits::{Descriptor, Task, TaskContext, TaskError, TaskState},
@@ -266,7 +270,14 @@ impl CreateBalanceTask {
 
     /// Generate a proof of `VALID BALANCE CREATE` for the balance
     pub async fn generate_proof(&mut self) -> Result<()> {
-        info!("Generating balance create proof...");
+        log_task!(
+            LogTask::CreateBalance,
+            Outcome::Started,
+            subject = %self.account_id,
+            amount = %self.amount,
+            token = %Token::from_alloy_address(&self.token).ticker_or_addr(),
+            "Generating balance create proof..."
+        );
 
         // Create a new balance and update the wallet keychain
         let (mut balance, keychain) = self.create_balance_and_update_keychain().await?;
@@ -295,7 +306,13 @@ impl CreateBalanceTask {
         let commitment = proof_bundle.statement.balance_commitment;
         let receipt =
             self.darkpool_client().create_balance(self.auth.clone(), proof_bundle).await?;
-        info!("Successfully created balance at tx: {:#x}", receipt.transaction_hash);
+        log_task!(
+            LogTask::CreateBalance,
+            Outcome::Ok,
+            subject = %self.account_id,
+            tx = %receipt.transaction_hash,
+            "successfully created balance"
+        );
 
         // Parse a Merkle opening for the balance from the receipt
         let opening =

@@ -5,10 +5,11 @@ use alloy_primitives::Address;
 use circuit_types::fixed_point::FixedPoint;
 use config::RelayerConfig;
 use libp2p::{core::Multiaddr, identity::Keypair};
-use tracing::warn;
 use types_gossip::{ClusterId, PeerInfo, WrappedPeerId};
+use util::log_task;
+use util::logging::Outcome;
 
-use crate::{NODE_METADATA_TABLE, StateInner, error::StateError};
+use crate::{NODE_METADATA_TABLE, StateInner, error::StateError, logging::Task};
 
 impl StateInner {
     // -----------
@@ -97,7 +98,7 @@ impl StateInner {
         let executor_key = config.executor_private_key.clone();
 
         if !historical_state_enabled {
-            warn!("Historical state is disabled")
+            log_task!(Task::NodeSetup, Outcome::Partial, "historical state is disabled");
         }
 
         self.with_write_tx(move |tx| {

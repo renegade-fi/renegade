@@ -2,7 +2,10 @@
 
 use renegade_metrics::labels::{NUM_LOCAL_PEERS_METRIC, NUM_REMOTE_PEERS_METRIC};
 use state::{State, error::StateError};
-use tracing::error;
+use util::log_task;
+use util::logging::Outcome;
+
+use crate::logging::Task;
 
 /// Get the number of local and remote peers the cluster is connected to
 async fn get_num_peers(state: &State) -> Result<(usize, usize), StateError> {
@@ -18,7 +21,7 @@ pub async fn record_num_peers_metrics(state: &State) {
     let (num_local_peers, num_remote_peers) = match get_num_peers(state).await {
         Ok(peers) => peers,
         Err(e) => {
-            error!("Error getting number of peers: {}", e);
+            log_task!(Task::PeerMetrics, Outcome::Failed, error = %e, "error getting number of peers");
             return;
         },
     };

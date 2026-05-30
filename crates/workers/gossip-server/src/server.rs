@@ -25,12 +25,15 @@ use std::{
     thread::JoinHandle,
     time::{Duration, Instant},
 };
-use tracing::{error, info, instrument, warn};
+use tracing::instrument;
 use types_gossip::WrappedPeerId;
 use types_runtime::CancelChannel;
 use util::DefaultWrapper;
+use util::log_task;
+use util::logging::Outcome;
 use util::{channels::TracedMessage, err_str};
 
+use crate::logging::Task;
 use crate::peer_discovery::{
     expiry_window::PeerExpiryWindows,
     heartbeat::{CLUSTER_HEARTBEAT_INTERVAL_MS, HEARTBEAT_INTERVAL_MS},
@@ -159,7 +162,7 @@ impl GossipProtocolExecutor {
         mut self,
         job_sender: GossipServerQueue,
     ) -> Result<(), GossipError> {
-        info!("Starting executor loop for heartbeat protocol executor...");
+        log_task!(Task::ServerLifecycle, Outcome::Started, "Starting executor loop for heartbeat protocol executor...");
 
         // Start a timer to enqueue outbound heartbeats
         HeartbeatTimer::new(
@@ -180,14 +183,14 @@ impl GossipProtocolExecutor {
                     let self_clone = self.clone();
                     tokio::spawn(async move {
                         if let Err(e) = self_clone.handle_job(job).await {
-                            error!("error handling gossip server job: {e}");
+                            log_task!(Task::JobDispatch, Outcome::Failed, error = %e, "error handling gossip server job");
                         }
                     });
                 },
 
                 // Await a cancel signal from the coordinator
                 _ = self.cancel_channel.changed() => {
-                    info!("Gossip server cancelled, shutting down...");
+                    log_task!(Task::ServerLifecycle, Outcome::Ok, "Gossip server cancelled, shutting down...");
                     return Err(GossipError::Cancelled("server cancelled".to_string()));
                 }
             }
@@ -215,7 +218,7 @@ impl GossipProtocolExecutor {
         // Log slow jobs
         let elapsed = start.elapsed();
         if start.elapsed() > GOSSIP_JOB_LATENCY_WARNING_MS {
-            warn!("gossip server job took {elapsed:.2?}");
+            log_task!(Task::JobDispatch, Outcome::Partial, elapsed = ?elapsed, "gossip server job exceeded latency warning");
         }
 
         Ok(())

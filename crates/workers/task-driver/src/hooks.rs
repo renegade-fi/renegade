@@ -4,10 +4,12 @@ use alloy::primitives::Address;
 use async_trait::async_trait;
 use itertools::Itertools;
 use job_types::matching_engine::MatchingEngineWorkerJob;
-use tracing::info;
+use util::log_task;
+use util::logging::Outcome;
 use types_account::OrderId;
 use types_core::AccountId;
 
+use crate::logging::Task;
 use crate::traits::TaskContext;
 
 /// A task hook is a function that is called in the task execution flow. It may
@@ -111,11 +113,13 @@ impl TaskHook for RunMatchingEngineForBalanceHook {
             .await
             .map_err(TaskHookError::execution)?;
 
-        info!(
-            "running matching engine on {} orders for balance update (account={}, token={})",
-            order_ids.len(),
-            self.account_id,
-            self.token
+        log_task!(
+            Task::TaskExecution,
+            Outcome::Started,
+            subject = %self.account_id,
+            token = %self.token,
+            num_orders = order_ids.len(),
+            "running matching engine on orders for balance update"
         );
 
         // Queue matching jobs for each order
@@ -159,7 +163,13 @@ impl TaskHook for RefreshAccountHook {
                 .await
                 .map_err(TaskHookError::execution)?;
 
-            info!("enqueued account refresh task ({task_id}) for {account_id}");
+            log_task!(
+                Task::RefreshAccount,
+                Outcome::Started,
+                subject = %account_id,
+                task_id = %task_id,
+                "enqueued account refresh task"
+            );
         }
 
         Ok(())

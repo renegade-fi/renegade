@@ -11,9 +11,12 @@ use futures_util::{
     StreamExt,
     stream::{self, LocalBoxStream},
 };
-use tracing::{info, warn};
+use util::log_task;
+use util::logging::Outcome;
 
-use crate::{error::OnChainEventListenerError, executor::OnChainEventListenerExecutor};
+use crate::{
+    error::OnChainEventListenerError, executor::OnChainEventListenerExecutor, logging::Task,
+};
 
 /// Boxed local stream type for chain event log subscriptions.
 type LogStream = LocalBoxStream<'static, Log>;
@@ -29,11 +32,20 @@ impl OnChainEventListenerExecutor {
         client: &DynProvider,
     ) -> Result<(LogStream, LogStream), OnChainEventListenerError> {
         let owners = self.get_tracked_owners();
-        info!("Tracking {} owners for Permit2", owners.len());
+        log_task!(
+            Task::CreatePermit2Subscriptions,
+            Outcome::Started,
+            count = owners.len(),
+            "tracking owners for permit2"
+        );
 
         let owner_topics: Vec<B256> = owners.into_iter().map(|addr| addr.into_word()).collect();
         if owner_topics.is_empty() {
-            info!("No tracked owners; skipping Permit2 subscriptions");
+            log_task!(
+                Task::CreatePermit2Subscriptions,
+                Outcome::Skipped,
+                "no tracked owners; skipping permit2 subscriptions"
+            );
             return Ok((stream::empty().boxed_local(), stream::empty().boxed_local()));
         }
 
@@ -74,7 +86,11 @@ impl OnChainEventListenerExecutor {
         // topics[0] = event signature, topics[1] = owner, topics[2] = token
         let topics = log.topics();
         if topics.len() < 3 {
-            warn!("Permit2 event missing expected topics, skipping");
+            log_task!(
+                Task::HandlePermit2Event,
+                Outcome::Skipped,
+                "permit2 event missing expected topics, skipping"
+            );
             return Ok(());
         }
 
@@ -82,7 +98,14 @@ impl OnChainEventListenerExecutor {
         let token = Address::from_word(topics[2]);
         let tx_hash = log.transaction_hash.unwrap_or_default();
 
-        info!("Handling Permit2 event: owner={owner:#x}, token={token:#x}, tx={tx_hash:#x}");
+        log_task!(
+            Task::HandlePermit2Event,
+            Outcome::Started,
+            subject = %tx_hash,
+            owner = %owner,
+            token = %token,
+            "handling permit2 event"
+        );
 
         // Look up account by owner
         let Some(account_id) = self.state().get_account_by_owner(&owner).await? else {

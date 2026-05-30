@@ -8,10 +8,13 @@ use job_types::{event_manager::EventManagerQueue, matching_engine::MatchingEngin
 use state::State;
 use system_bus::SystemBus;
 use tokio::runtime::Builder as RuntimeBuilder;
-use tracing::error;
 use types_runtime::{CancelChannel, Worker};
+use util::log_task;
+use util::logging::Outcome;
 
-use crate::{error::OnChainEventListenerError, executor::OnChainEventListenerExecutor};
+use crate::{
+    error::OnChainEventListenerError, executor::OnChainEventListenerExecutor, logging::Task,
+};
 
 /// The configuration passed to the listener upon startup
 #[derive(Clone)]
@@ -78,7 +81,12 @@ impl Worker for OnChainEventListener {
 
                 runtime.block_on(async {
                     if let Err(e) = executor.execute().await {
-                        error!("Chain event listener crashed with error: {e}");
+                        log_task!(
+                            Task::ListenerLifecycle,
+                            Outcome::Failed,
+                            error = %e,
+                            "chain event listener crashed with error"
+                        );
                         return e;
                     }
                     OnChainEventListenerError::StreamEnded

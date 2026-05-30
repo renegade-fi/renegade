@@ -5,14 +5,14 @@ use std::thread::{Builder, JoinHandle};
 use async_trait::async_trait;
 use job_types::event_manager::EventManagerReceiver;
 use tokio::runtime::Builder as RuntimeBuilder;
-use tracing::info;
 use types_core::Chain;
 use types_runtime::{CancelChannel, Worker};
 use url::Url;
-use util::err_str;
+use util::{err_str, log_task, logging::Outcome};
 
 use crate::{
     error::EventManagerError,
+    logging::Task,
     manager::{EventManager, EventManagerExecutor},
 };
 
@@ -70,7 +70,7 @@ impl Worker for EventManager {
     }
 
     fn start(&mut self) -> Result<(), Self::Error> {
-        info!("Starting event manager executor...");
+        log_task!(Task::ManagerLifecycle, Outcome::Started, "Starting event manager executor...");
 
         let executor = self.executor.take().unwrap();
         let executor_handle = Builder::new()

@@ -25,14 +25,16 @@ use job_types::{
     task_driver::TaskDriverQueue,
 };
 use state::State;
-use tracing::info;
 use types_core::{Chain, Token, get_all_tokens};
+use util::log_task;
+use util::logging::Outcome;
 use util::on_chain::{set_default_protocol_fee, set_protocol_fee};
 
 use types_account::OrderId;
 
 use crate::{
     error::{ApiServerError, bad_request, conflict, internal_error, not_found},
+    logging::Task,
     http::helpers::append_create_order_task,
     param_parsing::{
         parse_account_id_from_params, parse_matching_pool_from_query_params,
@@ -159,7 +161,7 @@ impl TypedHandler for AdminRefreshTokenMappingHandler {
         _params: UrlParams,
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
-        info!("Refreshing token mapping from repo");
+        log_task!(Task::RefreshTokenMapping, Outcome::Started, "Refreshing token mapping from repo");
 
         let chain = self.chain;
         tokio::task::spawn_blocking(move || setup_token_remaps(None /* remap_file */, chain))
@@ -196,7 +198,7 @@ impl TypedHandler for AdminRefreshMatchFeesHandler {
         _params: UrlParams,
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
-        info!("Refreshing match fees from contract");
+        log_task!(Task::RefreshMatchFees, Outcome::Started, "Refreshing match fees from contract");
 
         // Fetch the default protocol fee from the contract
         let protocol_fee = self.darkpool_client.get_default_protocol_fee().await?;

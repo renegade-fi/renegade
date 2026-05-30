@@ -10,8 +10,11 @@ use price_state::PriceStreamStates;
 use state::State;
 use system_bus::SystemBus;
 use tokio::runtime::Builder as RuntimeBuilder;
-use tracing::info;
 use types_core::Token;
+use util::log_task;
+use util::logging::Outcome;
+
+use crate::logging::Task;
 use types_runtime::{CancelChannel, Worker};
 
 use crate::{
@@ -100,7 +103,7 @@ impl Worker for MatchingEngineManager {
     }
 
     fn start(&mut self) -> Result<(), Self::Error> {
-        info!("Starting executor loop for handshake protocol executor...");
+        log_task!(Task::StartWorker, Outcome::Started, "starting executor loop for handshake protocol executor");
 
         // Spawn both the executor and the scheduler in a thread
         let executor = self.executor.take().unwrap();

@@ -5,6 +5,7 @@
 #![allow(incomplete_features)]
 
 pub mod error;
+pub mod logging;
 mod state;
 pub mod util;
 pub use state::*;

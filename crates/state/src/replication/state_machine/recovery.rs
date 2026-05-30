@@ -2,9 +2,11 @@
 
 use openraft::SnapshotMeta;
 use tokio::fs;
-use tracing::info;
 use util::err_str;
+use util::log_task;
+use util::logging::Outcome;
 
+use crate::logging::Task;
 use crate::replication::error::ReplicationError;
 
 use super::StateMachine;
@@ -20,12 +22,12 @@ impl StateMachine {
         // Check if the file is empty, this may happen if a dummy snapshot was created
         let metadata = fs::metadata(path).await.map_err(err_str!(ReplicationError::Snapshot))?;
         if metadata.len() == 0 {
-            info!("empty snapshot found, skipping...");
+            log_task!(Task::SnapshotRecovery, Outcome::Skipped, "empty snapshot found, skipping...");
             return Ok(());
         }
 
         // Open the snap DB and apply a dummy snapshot
-        info!("snapshot found, recovering...");
+        log_task!(Task::SnapshotRecovery, Outcome::Started, "snapshot found, recovering...");
         self.recovered_from_snapshot = true;
         let snap_db = self.open_snap_db().await?;
         let dummy_meta = SnapshotMeta {

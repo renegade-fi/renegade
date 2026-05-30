@@ -12,12 +12,14 @@ use gossip_api::{
     },
 };
 use job_types::network_manager::{NetworkManagerControlSignal, NetworkManagerJob};
-use tracing::{info, instrument};
+use tracing::instrument;
 use types_gossip::{PeerInfo, WrappedPeerId};
+use util::log_task;
+use util::logging::Outcome;
 use util::{err_str, get_current_time_millis};
 
 use crate::{
-    errors::GossipError, peer_discovery::peer_metrics::record_num_peers_metrics,
+    errors::GossipError, logging::Task, peer_discovery::peer_metrics::record_num_peers_metrics,
     server::GossipProtocolExecutor,
 };
 
@@ -160,7 +162,7 @@ impl GossipProtocolExecutor {
         let peer_info = match maybe_info {
             Some(info) => info,
             None => {
-                info!("could not find info for peer {peer_id:?}");
+                log_task!(Task::PeerExpiry, Outcome::Skipped, subject = ?peer_id, "could not find info for peer");
                 return Ok(());
             },
         };
@@ -179,7 +181,7 @@ impl GossipProtocolExecutor {
 
         // Otherwise transition the node to an expiry candidate state
         // and notify cluster peers
-        info!("proposing expiry of peer: {peer_id}");
+        log_task!(Task::PeerExpiry, Outcome::Started, subject = %peer_id, "proposing expiry of peer");
         self.expiry_buffer.mark_expiry_candidate(peer_id).await;
         let msg = ClusterManagementMessage {
             cluster_id: cluster_id.clone(),
@@ -225,7 +227,7 @@ impl GossipProtocolExecutor {
     /// Expire a peer
     async fn expire_peer(&self, peer_id: WrappedPeerId) -> Result<(), GossipError> {
         // Remove expired peer from global state & DHT
-        info!("Expiring peer {peer_id}");
+        log_task!(Task::PeerExpiry, Outcome::Ok, subject = %peer_id, "expiring peer");
         self.state.remove_peer(peer_id).await?;
         self.network_channel
             .send(NetworkManagerJob::internal(NetworkManagerControlSignal::PeerExpired { peer_id }))

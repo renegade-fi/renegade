@@ -2,10 +2,12 @@
 //! discoverability
 
 use serde::{Deserialize, Serialize};
-use tracing::warn;
 use types_proofs::{ValidityProofBundle, ValidityProofLocator};
+use util::log_task;
+use util::logging::Outcome;
 
 use super::{Result, StateApplicator, return_type::ApplicatorReturnType};
+use crate::logging::Task;
 
 // -------------
 // | Constants |
@@ -63,7 +65,12 @@ impl StateApplicator {
         if let ValidityProofLocator::Intent { order_id } = locator
             && tx.get_order(order_id)?.is_none()
         {
-            warn!("Order {order_id} not found in state, aborting `add_validity_proof`");
+            log_task!(
+                Task::OrderBookUpdate,
+                Outcome::Skipped,
+                subject = %order_id,
+                "order not found in state, aborting `add_validity_proof`"
+            );
             return Ok(ApplicatorReturnType::None);
         }
 

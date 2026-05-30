@@ -14,7 +14,11 @@ use matching_engine_core::MatchingEngine;
 use price_state::PriceStreamStates;
 use state::State;
 use system_bus::SystemBus;
-use tracing::{Instrument, error, info, info_span, instrument};
+use tracing::{Instrument, info_span, instrument};
+use util::log_task;
+use util::logging::Outcome;
+
+use crate::logging::Task;
 use types_runtime::CancelChannel;
 use util::{DefaultOption, channels::TracedMessage, concurrency::runtime::sleep_forever_async};
 
@@ -104,14 +108,14 @@ impl MatchingEngineExecutor {
                     let self_clone = self.clone();
                     tokio::task::spawn(async move {
                         if let Err(e) = self_clone.handle_job(job).await {
-                            error!("error executing matching engine job: {e}")
+                            log_task!(Task::RunMatchingEngine, Outcome::Failed, error = %e, "error executing matching engine job");
                         }
                     }.instrument(info_span!("handle_matching_engine_job")));
                 },
 
                 // Await cancellation by the coordinator
                 _ = self.cancel.changed() => {
-                    info!("Matching engine manager received cancel signal, shutting down...");
+                    log_task!(Task::RunMatchingEngine, Outcome::Skipped, "matching engine manager received cancel signal, shutting down");
                     return MatchingEngineError::Cancelled("received cancel signal".to_string());
                 }
             }

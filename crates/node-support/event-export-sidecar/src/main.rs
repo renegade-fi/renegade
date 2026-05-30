@@ -9,12 +9,15 @@
 #![deny(clippy::needless_pass_by_ref_mut)]
 
 mod event_socket;
+mod logging;
 
 use clap::Parser;
 use config::parsing::config_file::parse_config_from_file;
+use crate::logging::Task;
 use event_socket::EventSocket;
 use eyre::Error;
-use tracing::{info, warn};
+use util::log_task;
+use util::logging::Outcome;
 
 // -------
 // | CLI |
@@ -45,7 +48,11 @@ async fn main() -> Result<(), Error> {
     relayer_config.configure_telemetry().expect("failed to configure telemetry");
 
     if relayer_config.event_export_url.is_none() {
-        warn!("Event export disabled, not creating event sidecar");
+        log_task!(
+            Task::SidecarLifecycle,
+            Outcome::Skipped,
+            "event export disabled, not creating event sidecar"
+        );
         return Ok(());
     }
 
@@ -53,7 +60,11 @@ async fn main() -> Result<(), Error> {
         EventSocket::new(&relayer_config.event_export_url.unwrap(), cli.queue_url, cli.region)
             .await?;
 
-    info!("Event export sidecar connected to socket, awaiting events...");
+    log_task!(
+        Task::SidecarLifecycle,
+        Outcome::Started,
+        "event export sidecar connected to socket, awaiting events"
+    );
 
     event_socket.listen_for_events().await
 }

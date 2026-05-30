@@ -11,9 +11,11 @@ use types_core::HmacKey;
 
 use libp2p::PeerId;
 use toml::Value;
-use tracing::{info, warn};
+use util::log_task;
+use util::logging::Outcome;
 
 use crate::helpers::read_env_var;
+use crate::logging::Task;
 
 // -------------
 // | Constants |
@@ -66,11 +68,15 @@ pub(crate) async fn setup_gas_wallet(
     peer_id: PeerId,
     config: &mut HashMap<String, Value>,
 ) -> Result<(), String> {
-    info!("registering gas wallet for relayer...");
+    log_task!(Task::GasWalletRegistration, Outcome::Started, "registering gas wallet for relayer");
     let url = match read_env_var::<String>(ENV_FUNDS_MANAGER_URL) {
         Ok(url) => url,
         Err(_) => {
-            warn!("funds manager url not set, skipping gas wallet registration...");
+            log_task!(
+                Task::GasWalletRegistration,
+                Outcome::Skipped,
+                "funds manager url not set, skipping gas wallet registration"
+            );
             return Ok(());
         },
     };

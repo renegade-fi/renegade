@@ -10,6 +10,7 @@
 
 pub mod error;
 pub mod implementations;
+pub mod logging;
 #[cfg(feature = "mocks")]
 pub mod mock;
 pub mod worker;

@@ -1,15 +1,17 @@
 //! Simulates the effect of wallet tasks on the relayer state
 
 use state::State;
-use tracing::warn;
 use types_account::{Account, balance::BalanceLocation};
 use types_tasks::{
     CreateBalanceTaskDescriptor, CreateOrderTaskDescriptor, DepositTaskDescriptor,
     NewAccountTaskDescriptor, QueuedTask, SettleInternalMatchTaskDescriptor,
     SettlePrivateMatchTaskDescriptor, TaskDescriptor, WithdrawTaskDescriptor,
 };
+use util::log_task;
+use util::logging::Outcome;
 
 use super::error::TaskSimulationError;
+use crate::logging::Task;
 
 // ----------
 // | Errors |
@@ -30,7 +32,12 @@ pub fn simulate_account_tasks(
 ) -> Result<(), TaskSimulationError> {
     for task in tasks {
         if !should_simulate(&task) {
-            warn!("Skipping simulation for task {}", task.id);
+            log_task!(
+                Task::TaskSimulation,
+                Outcome::Skipped,
+                subject = %task.id,
+                "skipping simulation for task"
+            );
             continue;
         }
 
@@ -91,7 +98,7 @@ fn simulate_new_account(
         return Err(TaskSimulationError::InvalidTask(ERR_INVALID_ACCOUNT_ID));
     }
 
-    warn!("TODO: Implement new account simulation");
+    log_task!(Task::TaskSimulation, Outcome::Partial, "TODO: Implement new account simulation");
     Ok(())
 }
 
@@ -155,6 +162,6 @@ fn simulate_withdraw(
     _account: &mut Account,
     _desc: &WithdrawTaskDescriptor,
 ) -> Result<(), TaskSimulationError> {
-    warn!("TODO: Implement withdraw simulation");
+    log_task!(Task::TaskSimulation, Outcome::Partial, "TODO: Implement withdraw simulation");
     Ok(())
 }

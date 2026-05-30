@@ -21,9 +21,12 @@ use types_account::{
 };
 use types_core::AccountId;
 use types_proofs::ValidityProofLocator;
+use util::log_task;
+use util::logging::Outcome;
 
 use crate::{
     applicator::error::StateApplicatorError,
+    logging::Task,
     storage::{traits::RkyvValue, tx::StateTxn},
 };
 
@@ -41,7 +44,12 @@ pub fn update_matchable_amounts<T: libmdbx::TransactionKind>(
         let order = match tx.get_order(&order_id)? {
             Some(archived_order) => Order::from_archived(&archived_order)?,
             None => {
-                tracing::warn!("order {order_id} not found, skipping matchable amount update");
+                log_task!(
+                    Task::AccountIndexUpdate,
+                    Outcome::Skipped,
+                    subject = %order_id,
+                    "order not found, skipping matchable amount update"
+                );
                 continue;
             },
         };

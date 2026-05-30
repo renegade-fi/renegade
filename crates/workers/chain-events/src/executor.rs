@@ -16,10 +16,13 @@ use futures_util::StreamExt;
 use rand::Rng;
 use state::State;
 use system_bus::{OWNER_INDEX_CHANGED_TOPIC, SystemBus, SystemBusMessage};
-use tracing::{error, info, warn};
 use util::concurrency::runtime::sleep_forever_async;
+use util::log_task;
+use util::logging::Outcome;
 
-use crate::{error::OnChainEventListenerError, worker::OnChainEventListenerConfig};
+use crate::{
+    error::OnChainEventListenerError, logging::Task, worker::OnChainEventListenerConfig,
+};
 
 /// Minimum delay before non-selected nodes process an event (crash recovery)
 const MIN_CRASH_RECOVERY_DELAY_S: u64 = 20;
@@ -63,7 +66,12 @@ impl OnChainEventListenerExecutor {
         let mut cache = self.tracked_owners.write().unwrap();
         cache.clear();
         cache.extend(owners);
-        info!("Initialized tracked owners cache with {} owners", cache.len());
+        log_task!(
+            Task::InitTrackedOwners,
+            Outcome::Ok,
+            count = cache.len(),
+            "initialized tracked owners cache"
+        );
         Ok(())
     }
 
@@ -88,16 +96,25 @@ impl OnChainEventListenerExecutor {
             sleep_forever_async().await;
         }
 
-        info!("Starting on-chain event listener");
+        log_task!(Task::ListenerLifecycle, Outcome::Started, "Starting on-chain event listener");
 
         let res = self.run_event_loop().await.unwrap_err();
-        error!("on-chain event listener stream ended unexpectedly: {res}");
+        log_task!(
+            Task::ListenerLifecycle,
+            Outcome::Failed,
+            error = %res,
+            "on-chain event listener stream ended unexpectedly"
+        );
         Err(res)
     }
 
     /// Main event loop that watches all chain events via websocket
     async fn run_event_loop(&self) -> Result<(), OnChainEventListenerError> {
-        info!("listening for chain events via websocket");
+        log_task!(
+            Task::ListenerLifecycle,
+            Outcome::Started,
+            "listening for chain events via websocket"
+        );
 
         // Initialize the tracked owners cache from DB
         self.init_tracked_owners().await?;
@@ -121,7 +138,12 @@ impl OnChainEventListenerExecutor {
                     let executor = self.clone();
                     tokio::task::spawn(async move {
                         if let Err(e) = executor.handle_transfer_event(log).await {
-                            error!("error handling transfer event: {e}");
+                            log_task!(
+                                Task::HandleTransferEvent,
+                                Outcome::Failed,
+                                error = %e,
+                                "error handling transfer event"
+                            );
                         }
                     });
                 }
@@ -131,7 +153,12 @@ impl OnChainEventListenerExecutor {
                     let executor = self.clone();
                     tokio::task::spawn(async move {
                         if let Err(e) = executor.handle_transfer_event(log).await {
-                            error!("error handling transfer event: {e}");
+                            log_task!(
+                                Task::HandleTransferEvent,
+                                Outcome::Failed,
+                                error = %e,
+                                "error handling transfer event"
+                            );
                         }
                     });
                 }
@@ -141,7 +168,12 @@ impl OnChainEventListenerExecutor {
                     let executor = self.clone();
                     tokio::task::spawn(async move {
                         if let Err(e) = executor.handle_permit2_event(log).await {
-                            error!("error handling Permit2 approval event: {e}");
+                            log_task!(
+                                Task::HandlePermit2Event,
+                                Outcome::Failed,
+                                error = %e,
+                                "error handling permit2 approval event"
+                            );
                         }
                     });
                 }
@@ -151,7 +183,12 @@ impl OnChainEventListenerExecutor {
                     let executor = self.clone();
                     tokio::task::spawn(async move {
                         if let Err(e) = executor.handle_permit2_event(log).await {
-                            error!("error handling Permit2 permit event: {e}");
+                            log_task!(
+                                Task::HandlePermit2Event,
+                                Outcome::Failed,
+                                error = %e,
+                                "error handling permit2 permit event"
+                            );
                         }
                     });
                 }
@@ -161,7 +198,12 @@ impl OnChainEventListenerExecutor {
                     let executor = self.clone();
                     tokio::task::spawn(async move {
                         if let Err(e) = executor.dispatch_darkpool_event(log).await {
-                            error!("error handling darkpool event: {e}");
+                            log_task!(
+                                Task::HandleDarkpoolEvent,
+                                Outcome::Failed,
+                                error = %e,
+                                "error handling darkpool event"
+                            );
                         }
                     });
                 }
@@ -180,23 +222,41 @@ impl OnChainEventListenerExecutor {
                                 transfer_from = from;
                                 transfer_to = to;
                             }
-                            Err(e) => error!("Failed to refresh transfer subscriptions: {e}"),
+                            Err(e) => log_task!(
+                                Task::RefreshSubscriptions,
+                                Outcome::Failed,
+                                error = %e,
+                                "failed to refresh transfer subscriptions"
+                            ),
                         }
                         match self.create_permit2_subscriptions(&client).await {
                             Ok((approval, permit)) => {
                                 permit2_approval = approval;
                                 permit2_permit = permit;
                             }
-                            Err(e) => error!("Failed to refresh Permit2 subscriptions: {e}"),
+                            Err(e) => log_task!(
+                                Task::RefreshSubscriptions,
+                                Outcome::Failed,
+                                error = %e,
+                                "failed to refresh permit2 subscriptions"
+                            ),
                         }
                     } else {
-                        warn!("Unexpected message on owner index topic");
+                        log_task!(
+                            Task::HandleOwnerIndexChange,
+                            Outcome::Partial,
+                            "Unexpected message on owner index topic"
+                        );
                     }
                 }
 
                 // Handle shutdown signal
                 _ = cancel.changed() => {
-                    info!("on-chain event listener received cancel signal");
+                    log_task!(
+                        Task::ListenerLifecycle,
+                        Outcome::Ok,
+                        "on-chain event listener received cancel signal"
+                    );
                     return Err(OnChainEventListenerError::Cancelled);
                 }
 

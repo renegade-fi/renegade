@@ -6,12 +6,15 @@ use job_types::{
 };
 use libmdbx::{RW, TransactionKind};
 use system_bus::{SystemBusMessage, TaskStatus, task_topic};
-use tracing::{error, info, instrument};
+use tracing::instrument;
 use types_gossip::WrappedPeerId;
 use types_tasks::{
     ArchivedQueuedTask, HistoricalTask, QueuedTask, QueuedTaskState, TaskIdentifier, TaskQueueKey,
 };
+use util::log_task;
+use util::logging::Outcome;
 
+use crate::logging::Task;
 use crate::storage::{traits::RkyvValue, tx::StateTxn};
 
 use super::{
@@ -189,7 +192,14 @@ impl StateApplicator {
         let tx = self.db().new_write_tx()?;
         let reassigned_tasks = tx.reassign_tasks(from, to)?;
         if !reassigned_tasks.is_empty() {
-            info!("Reassigning {} tasks from {from} to {to}", reassigned_tasks.len());
+            log_task!(
+                Task::TaskQueue,
+                Outcome::Ok,
+                count = reassigned_tasks.len(),
+                from = %from,
+                to = %to,
+                "reassigning tasks"
+            );
         }
 
         // Handle in-flight tasks that were reassigned
@@ -322,7 +332,12 @@ impl StateApplicator {
                 if my_peer_id == executor {
                     let event = RelayerEventType::TaskCompletion(TaskCompletionEvent::new(*key, t));
                     if let Err(e) = try_send_event(event, &self.config.event_queue) {
-                        error!("error sending task completion event: {e}");
+                        log_task!(
+                            Task::TaskQueue,
+                            Outcome::Failed,
+                            error = %e,
+                            "error sending task completion event"
+                        );
                     }
                 }
             }

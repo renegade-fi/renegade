@@ -13,14 +13,17 @@ use job_types::proof_manager::{ProofJob, ProofManagerResponse};
 use renegade_solidity_abi::v2::IDarkpoolV2::WithdrawalAuth;
 use serde::Serialize;
 use state::{State, error::StateError};
-use tracing::{info, instrument};
+use tracing::instrument;
 use types_account::{MerkleAuthenticationPath, balance::Balance};
-use types_core::AccountId;
+use types_core::{AccountId, Token};
 use types_proofs::ValidWithdrawalBundle;
 use types_tasks::WithdrawTaskDescriptor;
+use util::log_task;
+use util::logging::Outcome;
 
 use crate::{
     hooks::TaskHook,
+    logging::Task as LogTask,
     task_state::TaskStateWrapper,
     tasks::validity_proofs::balance_update::refresh_validity_proofs_for_updated_balance,
     traits::{Descriptor, Task, TaskContext, TaskError, TaskState},
@@ -230,7 +233,14 @@ impl WithdrawTask {
 
     /// Generate a proof of `VALID WITHDRAWAL` for the withdrawal
     pub async fn generate_proof(&mut self) -> Result<()> {
-        info!("Generating withdrawal proof...");
+        log_task!(
+            LogTask::Withdraw,
+            Outcome::Started,
+            subject = %self.account_id,
+            amount = %self.amount,
+            token = %Token::from_alloy_address(&self.token).ticker_or_addr(),
+            "Generating withdrawal proof..."
+        );
         let (witness, statement, updated_balance) = self.build_witness_statement().await?;
         self.updated_balance = Some(updated_balance);
 
@@ -247,7 +257,12 @@ impl WithdrawTask {
 
     /// Update the relayer state with the post-withdrawal balance
     pub async fn update_state(&self) -> Result<()> {
-        info!("Updating relayer state after withdrawal...");
+        log_task!(
+            LogTask::Withdraw,
+            Outcome::Started,
+            subject = %self.account_id,
+            "Updating relayer state after withdrawal..."
+        );
         let balance = self.updated_balance.clone().unwrap();
         let waiter = self.state().update_account_balance(self.account_id, balance).await?;
         waiter.await?;
@@ -264,7 +279,12 @@ impl WithdrawTask {
 
     /// Submit the withdrawal transaction to the darkpool
     pub async fn submit_withdrawal(&self) -> Result<()> {
-        info!("Submitting withdrawal...");
+        log_task!(
+            LogTask::Withdraw,
+            Outcome::Started,
+            subject = %self.account_id,
+            "Submitting withdrawal..."
+        );
         let proof_bundle = self
             .proof_bundle
             .clone()

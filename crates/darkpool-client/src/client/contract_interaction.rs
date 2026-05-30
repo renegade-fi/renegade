@@ -13,9 +13,13 @@ use renegade_solidity_abi::v2::IDarkpoolV2::{
     PublicIntentPermit, SettlementBundle, SignatureWithNonce, WithdrawalAuth,
     WithdrawalProofBundle,
 };
-use tracing::{info, instrument};
+use tracing::instrument;
 use types_proofs::{ValidBalanceCreateBundle, ValidDepositBundle, ValidWithdrawalBundle};
+use util::log_task;
+use util::logging::Outcome;
 use util::telemetry::helpers::backfill_trace_field;
+
+use crate::logging::Task;
 
 use crate::errors::DarkpoolClientError;
 
@@ -157,7 +161,7 @@ impl DarkpoolClient {
 
         let tx_hash = format!("{:#x}", receipt.transaction_hash);
         backfill_trace_field("tx_hash", &tx_hash);
-        info!("`create_balance` tx hash: {tx_hash}");
+        log_task!(Task::CreateBalance, Outcome::Ok, subject = %tx_hash, "create_balance tx submitted");
 
         Ok(receipt)
     }
@@ -188,7 +192,7 @@ impl DarkpoolClient {
 
         let tx_hash = format!("{:#x}", receipt.transaction_hash);
         backfill_trace_field("tx_hash", &tx_hash);
-        info!("`deposit` tx hash: {tx_hash}");
+        log_task!(Task::Deposit, Outcome::Ok, subject = %tx_hash, "deposit tx submitted");
 
         Ok(receipt)
     }
@@ -219,7 +223,7 @@ impl DarkpoolClient {
 
         let tx_hash = format!("{:#x}", receipt.transaction_hash);
         backfill_trace_field("tx_hash", &tx_hash);
-        info!("`withdraw` tx hash: {tx_hash}");
+        log_task!(Task::Withdraw, Outcome::Ok, subject = %tx_hash, "withdraw tx submitted");
 
         Ok(receipt)
     }
@@ -237,7 +241,7 @@ impl DarkpoolClient {
 
         let tx_hash = format!("{:#x}", receipt.transaction_hash);
         backfill_trace_field("tx_hash", &tx_hash);
-        info!("`settle_match` tx hash: {tx_hash}");
+        log_task!(Task::SettleMatch, Outcome::Ok, subject = %tx_hash, "settle_match tx submitted");
 
         Ok(receipt)
     }
@@ -257,7 +261,7 @@ impl DarkpoolClient {
 
         let tx_hash = format!("{:#x}", receipt.transaction_hash);
         backfill_trace_field("tx_hash", &tx_hash);
-        info!("`cancel_public_order` tx hash: {tx_hash}");
+        log_task!(Task::CancelOrder, Outcome::Ok, subject = %tx_hash, "cancel_public_order tx submitted");
 
         Ok(receipt)
     }

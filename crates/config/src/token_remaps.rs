@@ -9,7 +9,11 @@ use types_core::{
     Chain, Exchange, USD_TICKER, set_default_chain, write_exchange_support,
     write_token_decimals_map, write_token_remaps,
 };
+use util::log_task;
+use util::logging::Outcome;
 use util::raw_err_str;
+
+use crate::logging::Task;
 
 /// The base URL for raw token remap files
 const REMAP_BASE_URL: &str = "https://raw.githubusercontent.com/renegade-fi/token-mappings/main/";
@@ -162,15 +166,19 @@ pub fn warn_on_disabled_mismatch(json_disabled: &[String], cli_disabled: &[Strin
     let only_in_cli: Vec<&str> = cli_set.difference(&json_set).copied().collect();
 
     if !only_in_json.is_empty() {
-        tracing::warn!(
-            "token-mappings disabled list disagrees with --disabled-assets: \
-             tokens marked disabled in JSON but not in CLI: {only_in_json:?}"
+        log_task!(
+            Task::ValidateTokenRemap,
+            Outcome::Partial,
+            tokens = ?only_in_json,
+            "token-mappings disabled list disagrees with --disabled-assets: tokens marked disabled in JSON but not in CLI"
         );
     }
     if !only_in_cli.is_empty() {
-        tracing::warn!(
-            "token-mappings disabled list disagrees with --disabled-assets: \
-             tokens in --disabled-assets but not marked disabled in JSON: {only_in_cli:?}"
+        log_task!(
+            Task::ValidateTokenRemap,
+            Outcome::Partial,
+            tokens = ?only_in_cli,
+            "token-mappings disabled list disagrees with --disabled-assets: tokens in --disabled-assets but not marked disabled in JSON"
         );
     }
 }

@@ -10,12 +10,15 @@ use async_trait::async_trait;
 use renegade_metrics::labels::NUM_NEW_WALLETS_METRIC;
 use serde::Serialize;
 use state::error::StateError;
-use tracing::{instrument, warn};
+use tracing::instrument;
 use types_account::{Account, keychain::KeyChain};
 use types_core::AccountId;
 use types_tasks::NewAccountTaskDescriptor;
+use util::log_task;
+use util::logging::Outcome;
 
 use crate::{
+    logging::Task as LogTask,
     task_state::TaskStateWrapper,
     traits::{Descriptor, Task, TaskContext, TaskError, TaskState},
     utils::indexer_client::{MasterViewSeedMessage, Message},
@@ -190,7 +193,13 @@ impl CreateNewAccountTask {
 
         let msg = Message::RegisterMasterViewSeed(message);
         if let Err(e) = self.ctx.indexer_client.submit_message(msg).await {
-            warn!("Failed to send indexer message: {e}");
+            log_task!(
+                LogTask::IndexerMessage,
+                Outcome::Failed,
+                subject = %self.account_id,
+                error = %e,
+                "failed to send indexer message"
+            );
         }
     }
 }

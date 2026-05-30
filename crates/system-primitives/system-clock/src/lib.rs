@@ -15,8 +15,12 @@
 use std::{fmt::Display, future::Future, time::Duration};
 
 use tokio_cron_scheduler::{Job, JobScheduler};
-use tracing::error;
 use util::err_str;
+use util::log_task;
+use util::logging::Outcome;
+
+mod logging;
+use crate::logging::Task;
 
 /// The error type returned by the clock
 #[derive(Debug, Clone)]
@@ -62,7 +66,13 @@ impl SystemClock {
 
         let job = Job::new_repeated(run_every, move |_, _| {
             if let Err(e) = callback() {
-                error!("error in clock callback {name}: {e}")
+                log_task!(
+                    Task::ClockCallback,
+                    Outcome::Failed,
+                    subject = %name,
+                    error = %e,
+                    "error in clock callback"
+                )
             }
         })
         .map_err(err_str!(SystemClockError))?;
@@ -91,7 +101,13 @@ impl SystemClock {
             let name = name.clone();
             Box::pin(async move {
                 if let Err(e) = fut.await {
-                    error!("error in clock callback {name}: {e}")
+                    log_task!(
+                    Task::ClockCallback,
+                    Outcome::Failed,
+                    subject = %name,
+                    error = %e,
+                    "error in clock callback"
+                )
                 }
             })
         })

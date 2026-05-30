@@ -14,12 +14,14 @@ use openraft::{
     StorageError as RaftStorageError, StoredMembership, storage::RaftStateMachine,
 };
 use tokio::fs::File;
-use tracing::error;
+use util::log_task;
+use util::logging::Outcome;
 use util::{err_str, res_some};
 
 use crate::{
     applicator::{StateApplicator, error::StateApplicatorError},
     error::StateError,
+    logging::Task,
     notifications::OpenNotifications,
     replication::error::new_apply_error,
     state_transition::Proposal,
@@ -99,7 +101,12 @@ impl StateMachine {
 
         // Do not error on an invalid snapshot
         if let Err(e) = this.maybe_recover_snapshot().await {
-            error!("Failed to recover from snapshot: {e:?}");
+            log_task!(
+                Task::SnapshotRecovery,
+                Outcome::Failed,
+                error = ?e,
+                "failed to recover from snapshot"
+            );
         }
 
         Ok(this)

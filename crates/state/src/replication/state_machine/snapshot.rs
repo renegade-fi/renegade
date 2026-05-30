@@ -12,9 +12,11 @@ use openraft::{
     ErrorSubject, ErrorVerb, LogId, RaftSnapshotBuilder, Snapshot, SnapshotMeta,
     StorageError as RaftStorageError, StoredMembership,
 };
-use tracing::info;
+use util::log_task;
+use util::logging::Outcome;
 use util::{err_str, get_current_time_millis};
 
+use crate::logging::Task;
 use crate::replication::error::{ReplicationError, new_snapshot_error};
 use crate::storage::db::{DB, DbConfig};
 use crate::{
@@ -284,7 +286,12 @@ impl StateMachine {
         }
 
         tx.commit()?;
-        info!("hydrated {n_hydrated} orders into the matching engine from snapshot");
+        log_task!(
+            Task::SnapshotRecovery,
+            Outcome::Ok,
+            count = n_hydrated,
+            "hydrated orders into the matching engine from snapshot"
+        );
         Ok(())
     }
 

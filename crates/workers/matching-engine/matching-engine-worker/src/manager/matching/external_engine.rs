@@ -13,11 +13,15 @@ use circuit_types::Amount;
 use darkpool_types::bounded_match_result::BoundedMatchResult;
 use job_types::matching_engine::ExternalMatchingEngineOptions;
 use system_bus::SystemBusMessage;
-use tracing::{info, instrument, warn};
+use tracing::instrument;
 use types_account::{account::OrderId, order::Order};
+use types_core::Token;
 
 use types_tasks::{ExternalRelayerFeeRate, SettleExternalMatchTaskDescriptor};
+use util::log_task;
+use util::logging::Outcome;
 
+use crate::logging::Task;
 use crate::{error::MatchingEngineError, executor::MatchingEngineExecutor};
 use matching_engine_core::SuccessfulMatch;
 
@@ -46,7 +50,17 @@ impl MatchingEngineExecutor {
         // Check if either asset in the pair is disabled for matching
         let pair = order.pair();
         if self.is_asset_disabled(&pair.in_token) || self.is_asset_disabled(&pair.out_token) {
-            warn!("Asset disabled for matching, skipping external matching engine...");
+            let in_tok = pair.in_token().ticker_or_addr();
+            let out_tok = pair.out_token().ticker_or_addr();
+            log_task!(
+                Task::ExternalMatch,
+                Outcome::Skipped,
+                in_token = %in_tok,
+                in_addr = %pair.in_token,
+                out_token = %out_tok,
+                out_addr = %pair.out_token,
+                "asset disabled for matching, skipping external matching engine for {in_tok}/{out_tok}"
+            );
             self.handle_no_match(response_topic);
             return Ok(());
         }
@@ -174,7 +188,15 @@ impl MatchingEngineExecutor {
     /// Forward a quote to the client
     #[allow(clippy::needless_pass_by_value)]
     fn forward_quote(&self, response_topic: String, res: SuccessfulMatch) {
-        info!("forwarding quote to client");
+        let base_tk = res.match_result.base_token().ticker_or_addr();
+        let quote_tk = Token::usdc().ticker_or_addr();
+        log_task!(
+            Task::ForwardQuote,
+            Outcome::Ok,
+            base = %base_tk,
+            quote = %quote_tk,
+            "forwarding quote to client for {base_tk}/{quote_tk} pair"
+        );
         // We don't need to expose input bounds for a quote, we just treat the requested
         // amount as an exact trade amount and return an exact-sized bundle.
         // The assemble endpoint will generate matchable bounds for a bundle.
@@ -196,7 +218,7 @@ impl MatchingEngineExecutor {
 
     /// Send a message on the response topic indicating that no match was found
     fn handle_no_match(&self, response_topic: String) {
-        info!("no match found for external order");
+        log_task!(Task::ExternalMatch, Outcome::Skipped, "no match found for external order");
         let response = SystemBusMessage::NoExternalMatchFound;
         self.system_bus.publish(response_topic, response);
     }

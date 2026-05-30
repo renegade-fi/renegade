@@ -7,6 +7,7 @@
 #![deny(clippy::needless_pass_by_value)]
 #![deny(clippy::needless_pass_by_ref_mut)]
 
+mod logging;
 mod server;
 mod sqs;
 
@@ -16,8 +17,11 @@ use clap::Parser;
 use config::parsing::config_file::parse_config_from_file;
 use eyre::Result;
 use server::run_server;
-use tracing::info;
 use url::Url;
+use util::log_task;
+use util::logging::Outcome;
+
+use crate::logging::Task;
 
 // -------
 // | CLI |
@@ -63,7 +67,7 @@ async fn main() -> Result<()> {
     let config = aws_config::from_env().region(Region::new(cli.region)).load().await;
     let sqs_client = SqsClient::new(&config);
 
-    info!("Starting indexer message sidecar on port {}", cli.port);
+    log_task!(Task::SidecarLifecycle, Outcome::Started, port = %cli.port, "starting indexer message sidecar");
 
     // Run the server
     run_server(cli.port, indexer_url, sqs_client, cli.queue_url).await

@@ -13,13 +13,16 @@ use itertools::Itertools;
 use matchit::{Params, Router as MatchRouter};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use state::State;
-use tracing::{debug, instrument, warn};
+use tracing::{debug, instrument};
 use types_core::HmacKey;
+use util::log_task;
+use util::logging::Outcome;
 use util::telemetry::propagation::set_parent_span_from_headers;
 
 use crate::{
     auth::{AuthMiddleware, AuthType},
     error::bad_request,
+    logging::Task,
 };
 
 use super::{error::ApiServerError, param_parsing::parse_account_id_from_params};
@@ -259,7 +262,12 @@ impl Router {
         if self.auth_middleware.admin_auth_enabled() {
             self.add_route(method, route, AuthType::Admin, handler);
         } else {
-            warn!("Admin authentication is not enabled, skipping route {route}");
+            log_task!(
+                Task::RegisterRoute,
+                Outcome::Skipped,
+                subject = %route,
+                "admin authentication not enabled, skipping route"
+            );
         }
     }
 

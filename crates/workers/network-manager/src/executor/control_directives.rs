@@ -7,10 +7,12 @@ use itertools::Itertools;
 use job_types::network_manager::NetworkManagerControlSignal;
 use libp2p::PeerId;
 use libp2p_core::Multiaddr;
-use tracing::info;
+use util::log_task;
+use util::logging::Outcome;
 use util::networking::is_dialable_multiaddr;
 
 use crate::error::NetworkManagerError;
+use crate::logging::Task;
 
 use super::{NetworkManagerExecutor, behavior::BehaviorJob};
 
@@ -54,7 +56,7 @@ impl NetworkManagerExecutor {
     fn handle_new_addr(&self, peer_id: PeerId, addr: Multiaddr) -> Result<(), NetworkManagerError> {
         // If we cannot parse the address or it is not dialable, skip indexing
         if !is_dialable_multiaddr(&addr, self.allow_local) {
-            info!("skipping local addr {addr:?}");
+            log_task!(Task::IndexAddr, Outcome::Skipped, subject = ?addr, "skipping local addr");
             return Ok(());
         }
 

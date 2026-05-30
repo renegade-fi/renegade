@@ -8,11 +8,14 @@ use std::{
 
 use openraft::{ChangeMembers, Config as RaftConfig, Membership, RaftMetrics, ServerState};
 use tokio::sync::Mutex;
-use tracing::{error, info, instrument};
+use tracing::instrument;
 use types_gossip::WrappedPeerId;
+use util::log_task;
+use util::logging::Outcome;
 use util::{err_str, telemetry::helpers::backfill_trace_field};
 
 use crate::{
+    logging::Task,
     notifications::ProposalId,
     replication::{error::ReplicationError, get_raft_id},
     state_transition::{Proposal, StateTransition},
@@ -297,7 +300,7 @@ impl RaftClient {
         if let StateTransition::RemoveRaftPeers { peer_ids } = update.transition.as_ref()
             && peer_ids.contains(&leader_nid)
         {
-            info!("removing raft leader");
+            log_task!(Task::LeaderElection, Outcome::Started, "removing raft leader");
             leader_nid = self.change_leader().await?;
         }
 
@@ -337,10 +340,20 @@ impl RaftClient {
         tokio::spawn(async move {
             match rx.await {
                 Err(e) => {
-                    error!("error watching proposal: {e}");
+                    log_task!(
+                        Task::Proposal,
+                        Outcome::Failed,
+                        error = %e,
+                        "error watching proposal"
+                    );
                 },
                 Ok(Err(raft_err)) => {
-                    error!("raft error: {raft_err}");
+                    log_task!(
+                        Task::Proposal,
+                        Outcome::Failed,
+                        error = %raft_err,
+                        "raft error"
+                    );
                 },
                 _ => (),
             }
@@ -596,7 +609,12 @@ impl RaftClient {
         for peer in known_peers {
             let raft_id = get_raft_id(peer);
             if membership.get_node(&raft_id).is_none() {
-                info!("found missed learner {peer}, adding...");
+                log_task!(
+                    Task::MembershipChange,
+                    Outcome::Started,
+                    subject = %peer,
+                    "found missed learner, adding..."
+                );
                 learners_to_add.push((raft_id, RaftNode::new(*peer)));
             }
         }
@@ -636,7 +654,12 @@ impl RaftClient {
 
             let lag = my_log.saturating_sub(latest_log.index);
             if lag < self.config.learner_promotion_threshold {
-                info!("promoting {learner} to voter");
+                log_task!(
+                    Task::MembershipChange,
+                    Outcome::Started,
+                    subject = %learner,
+                    "promoting learner to voter"
+                );
                 learners_to_promote.push(learner);
             }
         }
@@ -672,7 +695,12 @@ impl RaftClient {
         let mut peers_to_expire = Vec::new();
         for (id, info) in members.nodes() {
             if !known_peers_set.contains(&info.peer_id) {
-                info!("found missed expiry, removing raft peer: {id}");
+                log_task!(
+                    Task::MembershipChange,
+                    Outcome::Started,
+                    subject = %id,
+                    "found missed expiry, removing raft peer"
+                );
                 peers_to_expire.push(*id);
             }
         }

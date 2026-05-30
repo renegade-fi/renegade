@@ -24,11 +24,14 @@ use job_types::{
 use libmdbx::{RO, RW};
 use system_bus::SystemBus;
 use system_clock::SystemClock;
-use tracing::{Span, error, info_span, instrument};
+use tracing::{Span, info_span, instrument};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 use types_runtime::WorkerFailureSender;
+use util::log_task;
+use util::logging::Outcome;
 use util::{err_str, raw_err_str, telemetry::propagation::set_parent_span};
 
+use crate::logging::Task;
 use crate::state_transition::{Proposal, StateTransition};
 use crate::{
     applicator::{StateApplicator, StateApplicatorConfig},
@@ -289,7 +292,11 @@ impl StateInner {
                 let chan = failure_send.clone();
                 async move {
                     if client.raft_core_panicked().await {
-                        error!("raft core panicked, sending failure signal");
+                        log_task!(
+                            Task::RaftLifecycle,
+                            Outcome::Failed,
+                            "raft core panicked, sending failure signal"
+                        );
                         chan.send(()).await.expect("could not send state failure signal");
                     }
 

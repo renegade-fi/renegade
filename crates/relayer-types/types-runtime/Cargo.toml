@@ -10,3 +10,4 @@ default = []
 async-trait = { workspace = true }
 tokio = { workspace = true, features = ["sync"] }
 tracing = { workspace = true }
+util = { workspace = true, default-features = false }

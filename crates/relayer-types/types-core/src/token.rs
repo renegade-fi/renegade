@@ -193,6 +193,15 @@ impl Token {
         remaps.get(&self.chain).and_then(|remap| remap.get_by_left(&self.get_addr()).cloned())
     }
 
+    /// Returns the token's ticker if known, otherwise its (lowercased) address.
+    ///
+    /// Intended for log lines: yields a human-readable symbol when the token is
+    /// in the remap, and falls back to the raw address for long-tail assets
+    /// that have no ticker.
+    pub fn ticker_or_addr(&self) -> String {
+        self.get_ticker().unwrap_or_else(|| self.get_addr())
+    }
+
     /// Returns the ERC-20 `decimals` field by scanning the default chain's
     /// decimals.
     pub fn get_decimals(&self) -> Option<u8> {

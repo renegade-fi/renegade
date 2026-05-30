@@ -11,11 +11,13 @@ use gossip_api::{
     },
 };
 use job_types::network_manager::{NetworkManagerControlSignal, NetworkManagerJob};
-use tracing::{info, instrument, warn};
+use tracing::instrument;
 use types_gossip::{PeerInfo, WrappedPeerId};
+use util::log_task;
+use util::logging::Outcome;
 use util::{err_str, get_current_time_millis};
 
-use crate::{errors::GossipError, server::GossipProtocolExecutor};
+use crate::{errors::GossipError, logging::Task, server::GossipProtocolExecutor};
 
 use super::{heartbeat::CLUSTER_HEARTBEAT_FAILURE_MS, peer_metrics::record_num_peers_metrics};
 
@@ -77,14 +79,16 @@ impl GossipProtocolExecutor {
         let now = get_current_time_millis();
         let time_since_last_heartbeat = now - info.last_heartbeat;
         if time_since_last_heartbeat < CLUSTER_HEARTBEAT_FAILURE_MS / 2 {
-            info!(
-                "rejecting expiry of {peer_id} from {sender}, last heartbeat was {time_since_last_heartbeat}ms ago"
+            log_task!(
+                Task::PeerExpiry, Outcome::Ok, subject = %peer_id, sender = %sender,
+                time_since_last_heartbeat_ms = %time_since_last_heartbeat,
+                "rejecting expiry, recent heartbeat"
             );
 
             self.send_expiry_rejection(peer_id, info.last_heartbeat)?;
         } else {
             // If we do not reject the expiry, begin expiring on the local node
-            info!("received expiry request, marking {peer_id} as expiry candidate");
+            log_task!(Task::PeerExpiry, Outcome::Ok, subject = %peer_id, "received expiry request, marking as expiry candidate");
             self.expiry_buffer.mark_expiry_candidate(peer_id).await;
         }
 
@@ -99,7 +103,7 @@ impl GossipProtocolExecutor {
         peer_id: WrappedPeerId,
         last_heartbeat: u64,
     ) -> Result<(), GossipError> {
-        info!("received reject expiry request for {peer_id} from {sender}");
+        log_task!(Task::PeerExpiry, Outcome::Ok, subject = %peer_id, sender = %sender, "received reject expiry request");
         // Remove from the expiry buffer if present
         self.expiry_buffer.remove_expiry_candidate(peer_id).await;
 
@@ -108,8 +112,9 @@ impl GossipProtocolExecutor {
         let mut info = match maybe_info {
             Some(info) => info,
             None => {
-                warn!(
-                    "received reject expiry request for {peer_id} from {sender}, but {peer_id} is not in the peer index"
+                log_task!(
+                    Task::PeerExpiry, Outcome::Skipped, subject = %peer_id, sender = %sender,
+                    "received reject expiry request, but peer is not in the peer index"
                 );
                 return Ok(());
             },
@@ -157,7 +162,7 @@ impl GossipProtocolExecutor {
 
             // Check that the cluster auth signature on the peer is valid
             if peer.verify_cluster_auth_sig().is_err() {
-                warn!("Peer {} info has invalid cluster auth signature", peer.peer_id);
+                log_task!(Task::PeerIndexing, Outcome::Skipped, subject = %peer.peer_id, "peer info has invalid cluster auth signature");
                 continue;
             }
 

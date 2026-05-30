@@ -16,7 +16,11 @@ use libp2p::{
     request_response::Event as RequestResponseEvent, swarm::SwarmEvent,
 };
 use state::State;
-use tracing::{debug, error, info};
+use tracing::debug;
+use util::log_task;
+use util::logging::Outcome;
+
+use crate::logging::Task;
 use types_core::HmacKey;
 use types_gossip::WrappedPeerId;
 use types_runtime::CancelChannel;
@@ -163,7 +167,7 @@ impl NetworkManagerExecutor {
         mut self,
         mut swarm: Swarm<ComposedNetworkBehavior>,
     ) -> NetworkManagerError {
-        info!("Starting executor loop for network manager...");
+        log_task!(Task::ExecutorLoop, Outcome::Started, "starting executor loop for network manager");
         let mut cancel_channel = self.cancel.take().unwrap();
         let mut job_channel = self.job_channel.take().unwrap();
         let mut behavior_channel = self.behavior_rx.take().unwrap();
@@ -173,7 +177,7 @@ impl NetworkManagerExecutor {
                 // Handle behavior requests from inside the worker
                 Some(behavior_request) = behavior_channel.recv() => {
                     if let Err(err) = self.handle_behavior_job(behavior_request, &mut swarm).await {
-                        error!("Error handling behavior job: {err}");
+                        log_task!(Task::HandleBehaviorJob, Outcome::Failed, error = %err, "error handling behavior job");
                     }
                 },
 
@@ -183,7 +187,7 @@ impl NetworkManagerExecutor {
                     let this = self.clone();
                     tokio::spawn(async move {
                         if let Err(err) = this.handle_job(job).await {
-                            error!("Error sending outbound message: {err}");
+                            log_task!(Task::HandleOutbound, Outcome::Failed, error = %err, "error sending outbound message");
                         }
                     });
                 },
@@ -195,12 +199,12 @@ impl NetworkManagerExecutor {
                             let this = self.clone();
                             tokio::spawn(async move {
                                 if let Err(err) = this.handle_inbound_message(event).await {
-                                    error!("error in network manager: {:?}", err);
+                                    log_task!(Task::HandleInbound, Outcome::Failed, error = ?err, "error in network manager");
                                 }
                             });
                         },
                         SwarmEvent::NewListenAddr { address, .. } => {
-                            info!("Listening on {}/p2p/{}\n", address, self.local_peer_id);
+                            log_task!(Task::Listen, Outcome::Ok, subject = %address, local_peer_id = %self.local_peer_id, "listening on p2p address");
                         },
                         // This catchall may be enabled for fine-grained libp2p introspection
                         x => { debug!("Unhandled swarm event: {:?}", x) }

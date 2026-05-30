@@ -17,14 +17,17 @@ use job_types::proof_manager::ProofJob;
 use renegade_solidity_abi::v2::IDarkpoolV2::DepositAuth;
 use serde::Serialize;
 use state::{State, error::StateError};
-use tracing::{info, instrument};
+use tracing::instrument;
 use types_account::{MerkleAuthenticationPath, balance::Balance};
-use types_core::AccountId;
+use types_core::{AccountId, Token};
 use types_proofs::ValidDepositBundle;
 use types_tasks::DepositTaskDescriptor;
+use util::log_task;
+use util::logging::Outcome;
 
 use crate::{
     hooks::{RefreshAccountHook, RunMatchingEngineForBalanceHook, TaskHook},
+    logging::Task as LogTask,
     task_state::TaskStateWrapper,
     tasks::validity_proofs::balance_update::refresh_validity_proofs_for_updated_balance,
     traits::{Descriptor, Task, TaskContext, TaskError, TaskState},
@@ -273,7 +276,14 @@ impl DepositTask {
 
     /// Generate a proof of `VALID DEPOSIT` for the deposit
     pub async fn generate_proof(&mut self) -> Result<()> {
-        info!("Generating deposit proof...");
+        log_task!(
+            LogTask::Deposit,
+            Outcome::Started,
+            subject = %self.account_id,
+            amount = %self.amount,
+            token = %Token::from_alloy_address(&self.token).ticker_or_addr(),
+            "Generating deposit proof..."
+        );
         let (witness, statement, updated_balance) =
             self.get_valid_deposit_witness_statement().await?;
         self.updated_balance = Some(updated_balance);
@@ -291,7 +301,12 @@ impl DepositTask {
     /// Submit the deposit transaction to the darkpool
     pub async fn submit_deposit(&self) -> Result<()> {
         // Submit the deposit transaction to the darkpool
-        info!("Submitting deposit...");
+        log_task!(
+            LogTask::Deposit,
+            Outcome::Started,
+            subject = %self.account_id,
+            "Submitting deposit..."
+        );
         let proof_bundle = self
             .proof_bundle
             .clone()
@@ -313,7 +328,12 @@ impl DepositTask {
 
     /// Update the relayer state with the post-deposit balance
     pub async fn update_state(&self) -> Result<()> {
-        info!("Updating relayer state after deposit...");
+        log_task!(
+            LogTask::Deposit,
+            Outcome::Started,
+            subject = %self.account_id,
+            "Updating relayer state after deposit..."
+        );
         let balance = self
             .updated_balance
             .clone()

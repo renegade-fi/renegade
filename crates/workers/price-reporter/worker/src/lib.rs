@@ -9,6 +9,7 @@
 
 pub mod errors;
 pub mod exchange;
+pub mod logging;
 pub mod manager;
 #[cfg(feature = "mocks")]
 pub mod mock;

@@ -90,15 +90,18 @@ use job_types::proof_manager::{
     ProofJob, ProofManagerJob, ProofManagerReceiver, ProofManagerResponse,
 };
 use tokio::runtime::Handle;
-use tracing::{error, instrument};
+use tracing::instrument;
 use types_proofs::mocks::{dummy_link_hint, dummy_link_proof, dummy_proof};
 use types_proofs::{
     IntentOnlySettlementProofBundle, PrivateSettlementProofBundle, ProofAndHintBundle, ProofBundle,
     PublicSettlementProofBundle,
 };
 use util::channels::TracedMessage;
+use util::log_task;
+use util::logging::Outcome;
 
 use crate::error::ProofManagerError;
+use crate::logging::Task;
 
 /// The error message emitted when a response channel closes early
 const ERR_RESPONSE_CHANNEL_CLOSED: &str = "error sending proof, channel closed";
@@ -116,7 +119,7 @@ impl MockProofManager {
     pub fn start(job_queue: ProofManagerReceiver, skip_constraints: bool) {
         Handle::current().spawn_blocking(move || {
             if let Err(e) = Self::execution_loop(&job_queue, skip_constraints) {
-                error!("error in mock proof manager: {e}");
+                log_task!(Task::ManagerLifecycle, Outcome::Failed, error = %e, "error in mock proof manager");
             }
         });
     }

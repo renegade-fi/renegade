@@ -7,13 +7,16 @@ use darkpool_client::errors::DarkpoolClientError;
 use renegade_solidity_abi::v2::IDarkpoolV2::{OrderCancellationAuth, SignatureWithNonce};
 use serde::Serialize;
 use state::{State, error::StateError};
-use tracing::{info, instrument};
+use tracing::instrument;
 use types_account::{OrderId, order::PrivacyRing, order_auth::OrderAuth};
 use types_core::AccountId;
 use types_tasks::CancelOrderTaskDescriptor;
+use util::log_task;
+use util::logging::Outcome;
 
 use crate::{
     hooks::{RefreshAccountHook, TaskHook},
+    logging::Task as LogTask,
     task_state::TaskStateWrapper,
     traits::{Descriptor, Task, TaskContext, TaskError, TaskState},
 };
@@ -215,7 +218,13 @@ impl CancelOrderTask {
         let receipt =
             self.ctx.darkpool_client.cancel_public_order(auth, permit, intent_signature).await?;
 
-        info!("Submitted cancel_public_order tx: {:#x}", receipt.transaction_hash);
+        log_task!(
+            LogTask::CancelOrder,
+            Outcome::Ok,
+            subject = %self.order_id,
+            tx = %receipt.transaction_hash,
+            "submitted cancel_public_order tx"
+        );
         Ok(())
     }
 
@@ -224,7 +233,13 @@ impl CancelOrderTask {
         let waiter = self.state().remove_order_from_account(self.account_id, self.order_id).await?;
         waiter.await.map_err(CancelOrderTaskError::state)?;
 
-        info!("Removed order {} from account {}", self.order_id, self.account_id);
+        log_task!(
+            LogTask::CancelOrder,
+            Outcome::Ok,
+            subject = %self.order_id,
+            account_id = %self.account_id,
+            "removed order from account"
+        );
         Ok(())
     }
 }

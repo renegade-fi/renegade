@@ -9,13 +9,14 @@ use job_types::event_manager::{EventManagerReceiver, RelayerEvent, RelayerEventT
 use renegade_metrics::labels::NUM_EVENT_EXPORT_FAILURES_METRIC;
 use tokio::net::UnixStream;
 use tokio_util::codec::{FramedWrite, LengthDelimitedCodec};
-use tracing::{error, info, warn};
 use types_core::Chain;
 use types_runtime::CancelChannel;
 use url::Url;
-use util::{concurrency::runtime::sleep_forever_async, err_str};
+use util::{
+    concurrency::runtime::sleep_forever_async, err_str, log_task, logging::Outcome,
+};
 
-use crate::{error::EventManagerError, worker::EventManagerConfig};
+use crate::{error::EventManagerError, logging::Task, worker::EventManagerConfig};
 
 // -------------
 // | Constants |
@@ -108,19 +109,19 @@ impl EventManagerExecutor {
             tokio::select! {
                 Some(event) = self.event_queue.recv() => {
                     if disabled {
-                        warn!("EventManager received event while disabled, ignoring...");
+                        log_task!(Task::HandleEvent, Outcome::Skipped, "EventManager received event while disabled, ignoring...");
                         continue;
                     }
                     let sink = sink.as_mut().unwrap();
 
                     if let Err(e) = self.handle_relayer_event(event.into_message(), sink).await {
                         metrics::counter!(NUM_EVENT_EXPORT_FAILURES_METRIC).increment(1);
-                        error!("Failed to handle relayer event: {e}");
+                        log_task!(Task::HandleEvent, Outcome::Failed, error = %e, "Failed to handle relayer event");
                     }
                 },
 
                 _ = self.cancel_channel.changed() => {
-                    info!("EventManager received cancel signal, shutting down...");
+                    log_task!(Task::ManagerLifecycle, Outcome::Ok, "EventManager received cancel signal, shutting down...");
                     return Err(EventManagerError::Cancelled("received cancel signal".to_string()));
                 }
             }

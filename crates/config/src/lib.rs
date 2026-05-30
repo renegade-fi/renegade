@@ -1,6 +1,7 @@
 //! Groups configurations used throughout the relayer passed to the CLI
 
 mod cli;
+mod logging;
 pub mod parsing;
 mod token_remaps;
 mod validation;

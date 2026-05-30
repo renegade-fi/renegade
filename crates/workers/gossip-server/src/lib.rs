@@ -4,6 +4,7 @@
 #![allow(incomplete_features)]
 
 pub mod errors;
+mod logging;
 mod orderbook;
 pub(crate) mod peer_discovery;
 pub mod server;

@@ -2,13 +2,16 @@
 
 use constants::in_bootstrap_mode;
 use job_types::proof_manager::{ProofJob, ProofManagerJob, ProofManagerReceiver};
-use tracing::{error, info, instrument};
+use tracing::instrument;
 use types_runtime::CancelChannel;
+use util::log_task;
+use util::logging::Outcome;
 use util::{channels::TracedMessage, concurrency::runtime::sleep_forever_blocking};
 
 use crate::{
     error::ProofManagerError,
     implementations::external_proof_manager::prover_service_client::ProofServiceClient,
+    logging::Task,
     worker::ProofManagerConfig,
 };
 
@@ -67,7 +70,7 @@ impl ExternalProofManager {
                 .has_changed()
                 .map_err(|err| ProofManagerError::RecvError(err.to_string()))?
             {
-                info!("Proof manager cancelled, shutting down...");
+                log_task!(Task::ManagerLifecycle, Outcome::Skipped, "Proof manager cancelled, shutting down...");
                 return Err(ProofManagerError::Cancelled("received cancel signal".to_string()));
             }
 
@@ -81,7 +84,7 @@ impl ExternalProofManager {
             let client = self.client.clone();
             tokio::spawn(async move {
                 if let Err(err) = Self::handle_proof_job(client, job).await {
-                    error!("Error handling proof job: {err:?}");
+                    log_task!(Task::HandleProofJob, Outcome::Failed, error = ?err, "error handling proof job");
                 }
             });
         }

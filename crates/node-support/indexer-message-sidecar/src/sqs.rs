@@ -3,7 +3,10 @@
 use aws_sdk_sqs::Client as SqsClient;
 use eyre::{Result, eyre};
 use task_driver::utils::indexer_client::Message;
-use tracing::info;
+use util::log_task;
+use util::logging::Outcome;
+
+use crate::logging::Task;
 
 /// Submits a message to the SQS queue
 pub async fn submit_message(
@@ -26,6 +29,6 @@ pub async fn submit_message(
     // No deduplication ID - using content-based deduplication
     request.send().await.map_err(|e| eyre!("failed to send SQS message: {e}"))?;
 
-    info!("Successfully submitted message to SQS queue");
+    log_task!(Task::SubmitSqs, Outcome::Ok, "successfully submitted message to SQS queue");
     Ok(())
 }

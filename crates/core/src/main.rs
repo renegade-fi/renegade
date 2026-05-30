@@ -8,6 +8,7 @@
 #![deny(clippy::missing_docs_in_private_items)]
 
 mod error;
+mod logging;
 mod setup;
 
 use std::{thread, time::Duration};
@@ -41,8 +42,10 @@ use error::CoordinatorError;
 use system_clock::SystemClock;
 use task_driver::worker::{TaskDriver, TaskDriverConfig};
 use tokio::select;
-use tracing::info;
+use util::log_task;
+use util::logging::{install_panic_hook, Outcome};
 
+use crate::logging::Task;
 use crate::setup::node_setup;
 
 /// The amount of time to wait between sending teardown signals and terminating
@@ -86,12 +89,23 @@ async fn main() -> Result<(), CoordinatorError> {
         .expect("error parsing command line args");
     let setup_config = args.clone();
     args.configure_telemetry().expect("failed to configure telemetry");
+
+    // Route panics through the structured `[task] [outcome]` envelope. Install
+    // after telemetry is configured so the panic line reaches the subscriber.
+    install_panic_hook();
+
     let min_order_size = args.min_fill_size_decimal_adjusted();
 
-    info!("Relayer running with\n\t port: {}\n\t cluster: {:?}", args.p2p_port, args.cluster_id);
+    log_task!(
+        Task::ServiceLifecycle,
+        Outcome::Started,
+        port = args.p2p_port,
+        cluster = ?args.cluster_id,
+        "relayer running"
+    );
 
     if in_bootstrap_mode() {
-        info!("Running in bootstrap mode");
+        log_task!(Task::ServiceLifecycle, Outcome::Started, "running in bootstrap mode");
     }
 
     // Build communication primitives
@@ -401,7 +415,12 @@ async fn main() -> Result<(), CoordinatorError> {
     // Wait for an error, log the error, and teardown the relayer
     let loop_res: Result<(), CoordinatorError> = recovery_loop().await;
     let err = loop_res.err().unwrap();
-    info!("Error in coordinator thread: {:?}", err);
+    log_task!(
+        Task::ServiceLifecycle,
+        Outcome::Failed,
+        error = ?err,
+        "coordinator thread exiting on error"
+    );
 
     // Send cancel signals to all workers
     for cancel_channel in [
@@ -419,9 +438,9 @@ async fn main() -> Result<(), CoordinatorError> {
     }
 
     // Give workers time to teardown execution then terminate
-    info!("Tearing down workers...");
+    log_task!(Task::ServiceLifecycle, Outcome::Started, "tearing down workers");
     thread::sleep(Duration::from_millis(TERMINATION_TIMEOUT_MS));
-    info!("Terminating...");
+    log_task!(Task::ServiceLifecycle, Outcome::Ok, "terminating");
 
     if args.otlp_enabled {
         opentelemetry::global::shutdown_tracer_provider();
@@ -432,12 +451,17 @@ async fn main() -> Result<(), CoordinatorError> {
 /// Attempt to recover a failed module by cleaning up its resources and
 /// re-allocating it
 fn recover_worker<W: Worker>(failed_worker: W) -> Result<W, CoordinatorError> {
+    let name = failed_worker.name();
     if !failed_worker.is_recoverable() {
-        return Err(CoordinatorError::Recovery(format!(
-            "worker {} is not recoverable",
-            failed_worker.name()
-        )));
+        log_task!(
+            Task::WorkerRecovery,
+            Outcome::Failed,
+            subject = %name,
+            "worker is not recoverable"
+        );
+        return Err(CoordinatorError::Recovery(format!("worker {name} is not recoverable")));
     }
 
+    log_task!(Task::WorkerRecovery, Outcome::Started, subject = %name, "recovering worker");
     Ok(failed_worker.recover())
 }

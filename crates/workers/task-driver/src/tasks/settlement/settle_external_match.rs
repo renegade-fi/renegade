@@ -13,12 +13,15 @@ use renegade_solidity_abi::v2::IDarkpoolV2::SettlementBundle;
 use serde::Serialize;
 use state::error::StateError;
 use system_bus::SystemBusMessage;
-use tracing::{info, instrument};
+use tracing::instrument;
 use types_account::OrderId;
 use types_core::AccountId;
 use types_tasks::{ExternalRelayerFeeRate, SettleExternalMatchTaskDescriptor};
+use util::log_task;
+use util::logging::Outcome;
 
 use crate::{
+    logging::Task as LogTask,
     task_state::TaskStateWrapper,
     tasks::settlement::helpers::{SettlementProcessor, error::SettlementError},
     traits::{Descriptor, Task, TaskContext, TaskError, TaskState},
@@ -240,7 +243,12 @@ impl Descriptor for SettleExternalMatchTaskDescriptor {
 impl SettleExternalMatchTask {
     /// Generate calldata for the match settlement
     async fn generate_calldata(&mut self) -> Result<()> {
-        info!("generating calldata for match settlement...");
+        log_task!(
+            LogTask::SettleExternalMatch,
+            Outcome::Started,
+            subject = %self.order_id,
+            "generating calldata for match settlement..."
+        );
 
         // Set a block deadline for the match result
         // This must be done before generating calldata as the executor must sign the
@@ -266,7 +274,12 @@ impl SettleExternalMatchTask {
 
     /// Forward the bounded match to the client
     async fn forward_bounded_match(&self) -> Result<()> {
-        info!("forwarding bounded match to client...");
+        log_task!(
+            LogTask::SettleExternalMatch,
+            Outcome::Started,
+            subject = %self.order_id,
+            "forwarding bounded match to client..."
+        );
         let settlement_bundle = self.settlement_bundle.clone().unwrap();
         let message = SystemBusMessage::ExternalOrderBundle {
             match_result: self.match_result.clone(),

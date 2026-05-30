@@ -10,13 +10,15 @@ use std::collections::HashMap;
 use gossip_api::request_response::heartbeat::HeartbeatMessage;
 use itertools::Itertools;
 use system_bus::{NETWORK_TOPOLOGY_TOPIC, SystemBusMessage};
-use tracing::info;
 use types_gossip::{ClusterId, PeerInfo, WrappedPeerId};
+use util::log_task;
+use util::logging::Outcome;
 use util::res_some;
 
 use crate::{
     StateInner,
     error::StateError,
+    logging::Task,
     replication::{RaftNode, get_raft_id},
     storage::traits::RkyvValue,
 };
@@ -150,7 +152,7 @@ impl StateInner {
     /// Add a batch of peers to the index
     pub async fn add_peer_batch(&self, peers: Vec<PeerInfo>) -> Result<(), StateError> {
         for peer in &peers {
-            info!("Adding peer {}", peer.peer_id);
+            log_task!(Task::PeerIndex, Outcome::Ok, subject = %peer.peer_id, "adding peer");
         }
 
         // Index each peer, and return those that should be added as raft learners to

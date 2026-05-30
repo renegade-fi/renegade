@@ -3,14 +3,17 @@
 use circuit_types::Amount;
 use matching_engine_core::SuccessfulMatch;
 use renegade_metrics::record_internal_match_settle;
-use tracing::{error, info, instrument, warn};
+use tracing::instrument;
 use types_account::order::PrivacyRing;
 use types_account::{MatchingPoolName, OrderId, order::Order};
 use types_core::AccountId;
 use types_tasks::{
     SettleInternalMatchTaskDescriptor, SettlePrivateMatchTaskDescriptor, TaskDescriptor,
 };
+use util::log_task;
+use util::logging::Outcome;
 
+use crate::logging::Task;
 use crate::{error::MatchingEngineError, executor::MatchingEngineExecutor};
 
 // ------------------------
@@ -32,7 +35,7 @@ impl MatchingEngineExecutor {
         account_id: AccountId,
         order_id: OrderId,
     ) -> Result<(), MatchingEngineError> {
-        info!("Running internal matching engine on order {order_id}");
+        log_task!(Task::InternalMatch, Outcome::Started, subject = %order_id, "running internal matching engine on order");
         // Lookup the order, matchable amount, and matching pool
         let (order, matchable_amount) = self.fetch_order_and_matchable_amount(&order_id).await?;
         let matching_pool = self.fetch_matching_pool(&order_id).await?;
@@ -43,7 +46,18 @@ impl MatchingEngineExecutor {
         // Check if either asset in the pair is disabled for matching
         let pair = order.pair();
         if self.is_asset_disabled(&pair.in_token) || self.is_asset_disabled(&pair.out_token) {
-            warn!("Asset disabled for matching, skipping internal matching engine for {order_id}");
+            let in_tok = pair.in_token().ticker_or_addr();
+            let out_tok = pair.out_token().ticker_or_addr();
+            log_task!(
+                Task::InternalMatch,
+                Outcome::Skipped,
+                subject = %order_id,
+                in_token = %in_tok,
+                in_addr = %pair.in_token,
+                out_token = %out_tok,
+                out_addr = %pair.out_token,
+                "asset disabled for matching, skipping internal matching engine for {in_tok}/{out_tok}"
+            );
             return Ok(());
         }
 
@@ -52,7 +66,16 @@ impl MatchingEngineExecutor {
         let successful_match = match res {
             Some(match_res) => match_res,
             None => {
-                info!("No internal matches found for {order_id:?}");
+                let base = pair.base_token().ticker_or_addr();
+                let quote = pair.quote_token().ticker_or_addr();
+                log_task!(
+                    Task::InternalMatch,
+                    Outcome::Ok,
+                    subject = %order_id,
+                    base = %base,
+                    quote = %quote,
+                    "no internal matches found for {base}/{quote} order"
+                );
                 return Ok(());
             },
         };
@@ -72,11 +95,29 @@ impl MatchingEngineExecutor {
                 // contention under load). The failed/total ratio per pool is the
                 // conflict rate used to size sharding.
                 record_internal_match_settle(&pool_label, false /* settled */);
-                error!("internal match settlement failed for {} x {}: {e}", other_id, order_id,);
+                let base = pair.base_token().ticker_or_addr();
+                let quote = pair.quote_token().ticker_or_addr();
+                log_task!(
+                    Task::SettleInternalMatch,
+                    Outcome::Failed,
+                    subject = %order_id,
+                    other_order_id = %other_id,
+                    base = %base,
+                    quote = %quote,
+                    error = %e,
+                    "internal match settlement failed for {base}/{quote} order pair"
+                );
 
                 // Check whether matching should continue
                 if !self.order_still_valid(&order_id).await? {
-                    info!("account has changed, stopping internal matching engine...");
+                    log_task!(
+                        Task::InternalMatch,
+                        Outcome::Skipped,
+                        subject = %order_id,
+                        base = %base,
+                        quote = %quote,
+                        "account has changed for {base}/{quote}, stopping internal matching engine"
+                    );
                     return Ok(());
                 }
             },
@@ -173,7 +214,7 @@ impl MatchingEngineExecutor {
     ///
     /// This check may be executed after a match settlement fails
     async fn order_still_valid(&self, _order_id: &OrderId) -> Result<bool, MatchingEngineError> {
-        warn!("Re-implement order still valid check");
+        log_task!(Task::CheckOrderValid, Outcome::Partial, subject = %_order_id, "re-implement order still valid check");
         Ok(true)
     }
 

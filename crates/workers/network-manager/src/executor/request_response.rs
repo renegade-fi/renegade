@@ -12,8 +12,12 @@ use gossip_api::{
 use job_types::{gossip_server::GossipServerJob, network_manager::NetworkResponseChannel};
 use libp2p::PeerId;
 use libp2p::request_response::{Message as RequestResponseMessage, ResponseChannel};
-use tracing::{error, instrument, warn};
+use tracing::instrument;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
+use util::log_task;
+use util::logging::Outcome;
+
+use crate::logging::Task;
 use types_gossip::WrappedPeerId;
 use util::{err_str, telemetry::propagation::set_parent_span_from_context};
 
@@ -95,7 +99,7 @@ impl NetworkManagerExecutor {
                     && !chan.is_closed()
                     && chan.send(body.clone()).is_err()
                 {
-                    error!("error sending response notification for request: {request_id}");
+                    log_task!(Task::SendResponseNotification, Outcome::Failed, subject = %request_id, "error sending response notification for request");
                 }
 
                 match body.destination() {
@@ -155,7 +159,7 @@ impl NetworkManagerExecutor {
 
         let elapsed = start.elapsed();
         if elapsed > RAFT_JOB_LATENCY_WARNING_MS {
-            warn!("raft request took: {elapsed:.2?}");
+            log_task!(Task::HandleRaftRequest, Outcome::Partial, elapsed = ?elapsed, "raft request exceeded latency threshold");
         }
 
         let resp = GossipResponseType::Raft(resp.to_bytes()?);
