@@ -167,7 +167,11 @@ impl NetworkManagerExecutor {
         mut self,
         mut swarm: Swarm<ComposedNetworkBehavior>,
     ) -> NetworkManagerError {
-        log_task!(Task::ExecutorLoop, Outcome::Started, "starting executor loop for network manager");
+        log_task!(
+            Task::ExecutorLoop,
+            Outcome::Started,
+            "starting executor loop for network manager"
+        );
         let mut cancel_channel = self.cancel.take().unwrap();
         let mut job_channel = self.job_channel.take().unwrap();
         let mut behavior_channel = self.behavior_rx.take().unwrap();

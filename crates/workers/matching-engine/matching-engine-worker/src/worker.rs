@@ -103,7 +103,11 @@ impl Worker for MatchingEngineManager {
     }
 
     fn start(&mut self) -> Result<(), Self::Error> {
-        log_task!(Task::StartWorker, Outcome::Started, "starting executor loop for handshake protocol executor");
+        log_task!(
+            Task::StartWorker,
+            Outcome::Started,
+            "starting executor loop for handshake protocol executor"
+        );
 
         // Spawn both the executor and the scheduler in a thread
         let executor = self.executor.take().unwrap();

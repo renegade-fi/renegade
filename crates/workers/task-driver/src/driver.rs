@@ -17,8 +17,8 @@ use util::{
 };
 
 use crate::{
-    logging::Task as LogTask,
     error::TaskDriverError,
+    logging::Task as LogTask,
     running_task::RunnableTask,
     tasks::{
         cancel_order::CancelOrderTask,

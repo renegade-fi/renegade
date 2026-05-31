@@ -4,10 +4,10 @@ use alloy::primitives::Address;
 use async_trait::async_trait;
 use itertools::Itertools;
 use job_types::matching_engine::MatchingEngineWorkerJob;
-use util::log_task;
-use util::logging::Outcome;
 use types_account::OrderId;
 use types_core::AccountId;
+use util::log_task;
+use util::logging::Outcome;
 
 use crate::logging::Task;
 use crate::traits::TaskContext;

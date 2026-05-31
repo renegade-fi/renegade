@@ -111,10 +111,10 @@ use types_proofs::{
     PublicSettlementProofBundle,
 };
 use types_runtime::CancelChannel;
-use util::{DefaultOption, default_option};
-use util::{channels::TracedMessage, concurrency::runtime::sleep_forever_blocking, err_str};
 use util::log_task;
 use util::logging::Outcome;
+use util::{DefaultOption, default_option};
+use util::{channels::TracedMessage, concurrency::runtime::sleep_forever_blocking, err_str};
 
 use crate::{error::ProofManagerError, logging::Task, worker::ProofManagerConfig};
 
@@ -175,7 +175,11 @@ impl NativeProofManager {
                 .has_changed()
                 .map_err(|err| ProofManagerError::RecvError(err.to_string()))?
             {
-                log_task!(Task::ManagerLifecycle, Outcome::Skipped, "Proof manager cancelled, shutting down...");
+                log_task!(
+                    Task::ManagerLifecycle,
+                    Outcome::Skipped,
+                    "Proof manager cancelled, shutting down..."
+                );
                 return Err(ProofManagerError::Cancelled("received cancel signal".to_string()));
             }
 

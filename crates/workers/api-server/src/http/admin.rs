@@ -34,8 +34,8 @@ use types_account::OrderId;
 
 use crate::{
     error::{ApiServerError, bad_request, conflict, internal_error, not_found},
-    logging::Task,
     http::helpers::append_create_order_task,
+    logging::Task,
     param_parsing::{
         parse_account_id_from_params, parse_matching_pool_from_query_params,
         parse_matching_pool_from_url_params, parse_order_id_from_params, should_block_on_task,
@@ -161,7 +161,11 @@ impl TypedHandler for AdminRefreshTokenMappingHandler {
         _params: UrlParams,
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
-        log_task!(Task::RefreshTokenMapping, Outcome::Started, "Refreshing token mapping from repo");
+        log_task!(
+            Task::RefreshTokenMapping,
+            Outcome::Started,
+            "Refreshing token mapping from repo"
+        );
 
         let chain = self.chain;
         tokio::task::spawn_blocking(move || setup_token_remaps(None /* remap_file */, chain))

@@ -11,9 +11,9 @@
 mod event_socket;
 mod logging;
 
+use crate::logging::Task;
 use clap::Parser;
 use config::parsing::config_file::parse_config_from_file;
-use crate::logging::Task;
 use event_socket::EventSocket;
 use eyre::Error;
 use util::log_task;
