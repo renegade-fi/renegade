@@ -52,6 +52,15 @@ opt-level = 3     # Full optimizations
 codegen-units = 1
 lto = true
 
+# Fast-to-build variant for CI checks, tests, and local dev.
+# Trades a small amount of runtime speed for a much faster build:
+# no fat LTO, and all CPU cores used for codegen. Ship production
+# artifacts with `--release` above, not this profile.
+[profile.release-fast]
+inherits = "release"
+lto = false
+codegen-units = 16
+
 [workspace.dependencies]
 # === Arithmetic + Cryptography === #
 ark-mpc = { git = "https://github.com/renegade-fi/ark-mpc", default-features = false }
