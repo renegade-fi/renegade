@@ -242,7 +242,10 @@ mod test {
     use crate::{
         backend::{DirectApplicatorBackend, RaftBackend},
         ledger::MockBalanceLedger,
-        strategies::{BatchedPerCounterpartyMock, RetrySerialPerAccountMock, SerialPerAccountMock},
+        strategies::{
+            BatchedPerCounterpartyMock, PipelinedOptimisticMock, RetrySerialPerAccountMock,
+            SerialPerAccountMock,
+        },
     };
 
     fn strat(hold: Duration) -> Arc<SerialPerAccountMock> {
@@ -406,6 +409,85 @@ mod test {
         assert!(
             batched.settled_per_sec > retry.settled_per_sec,
             "batching should beat retry throughput: {batched} vs {retry}"
+        );
+    }
+
+    /// PIPELINING — quantify optimistic chaining against the serial baseline and
+    /// the batched ceiling, under the same concentrated quoter/MM workload as
+    /// `strategy_comparison`. Pipelining splits the 50ms settlement into a 5ms
+    /// account-held submit + a 45ms off-lock confirm (same 50ms total latency),
+    /// with an 8-deep optimistic chain per counterparty. Because only the 5ms
+    /// submit serializes per account (confirms overlap), per-wallet throughput
+    /// rises far above the serial `1/hold` ceiling **without** batching's circuit
+    /// change. Run with `--nocapture` for the table — the evidence for shipping
+    /// pipelining (Track P) first.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn pipelined_quantify() {
+        let hold = Duration::from_millis(50);
+        let submit = Duration::from_millis(5);
+        let confirm = Duration::from_millis(45); // submit + confirm == hold
+        let depth = 8;
+        let wl = Workload {
+            n_counterparties: 4,
+            target_rate_per_sec: 300.0,
+            max_in_flight: 32,
+            duration: Duration::from_millis(1000),
+            hold,
+            settle_timeout: Duration::from_secs(5),
+        };
+        let led = || Arc::new(MockBalanceLedger::new());
+        let direct = || Arc::new(DirectApplicatorBackend::new());
+
+        let serial =
+            run_load(Arc::new(SerialPerAccountMock::new(hold, led())), direct(), &wl).await;
+        let pipelined = run_load(
+            Arc::new(PipelinedOptimisticMock::new(submit, confirm, led(), depth)),
+            direct(),
+            &wl,
+        )
+        .await;
+        let pipelined_reverts = run_load(
+            Arc::new(
+                PipelinedOptimisticMock::new(submit, confirm, led(), depth).with_revert_every(10),
+            ),
+            direct(),
+            &wl,
+        )
+        .await;
+        let batched =
+            run_load(Arc::new(BatchedPerCounterpartyMock::new(hold, led())), direct(), &wl).await;
+
+        println!("\n=== pipelining: 4 hot counterparties, hold=50ms (submit=5ms + confirm=45ms), depth=8 ===");
+        println!("{serial}");
+        println!("{pipelined}");
+        println!("{pipelined_reverts} (10% revert)");
+        println!("{batched}");
+
+        // The core win is structural (CPU-independent, unlike the throughput
+        // ratio which the printed table reports): pipelining converts the serial
+        // drop-most-load regime into settle-(nearly)-all.
+        //   - serial sheds most offered load to conflicts (success rate < 50%),
+        assert!(
+            serial.settled * 2 < serial.offered,
+            "serial baseline should shed most load: {serial}"
+        );
+        //   - pipelining eliminates the conflict storm and settles most offered,
+        assert!(
+            pipelined.conflicts * 10 < serial.conflicts,
+            "pipelining should eliminate the conflict storm: {pipelined} vs {serial}"
+        );
+        assert!(
+            pipelined.settled * 2 > pipelined.offered,
+            "pipelining should settle most offered load: {pipelined}"
+        );
+        // No genuine failures or backend stalls on the happy path.
+        assert_eq!(pipelined.failed, 0, "pipelining happy path should not fail: {pipelined}");
+        assert_eq!(pipelined.timed_out, 0, "pipelining should not stall: {pipelined}");
+        // A modest revert rate still beats the serial baseline (rollback is cheap
+        // at shallow depth).
+        assert!(
+            pipelined_reverts.settled_per_sec > serial.settled_per_sec,
+            "pipelining w/ reverts should still beat serial: {pipelined_reverts} vs {serial}"
         );
     }
 

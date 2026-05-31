@@ -2,12 +2,15 @@
 
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc, Mutex,
+    },
     time::Duration,
 };
 
 use async_trait::async_trait;
-use tokio::sync::oneshot;
+use tokio::sync::{oneshot, Semaphore};
 use types_core::AccountId;
 use types_tasks::TaskDescriptor;
 
@@ -243,6 +246,172 @@ impl SettlementStrategy for BatchedPerCounterpartyMock {
     }
 }
 
+/// Fallback attempts if an enqueue still conflicts despite the per-counterparty
+/// submit lock (e.g. cross-account contention). The lock makes this rare.
+const PIPELINE_SUBMIT_ATTEMPTS: u32 = 16;
+/// Backoff between fallback submit re-attempts.
+const PIPELINE_SUBMIT_BACKOFF: Duration = Duration::from_millis(2);
+
+/// Models pipelined / optimistic-chained settlement (NO protocol change). The
+/// per-account serial hold is split in two:
+///   - `submit_hold` — the local critical section (state transition + tx build +
+///     submit). This is the ONLY part held on the account's serial-preemption
+///     queue, so it is what serializes per counterparty.
+///   - `confirm_hold` — the on-chain confirmation wait. The account is already
+///     released, so confirms of successive settlements **overlap** instead of
+///     each blocking the next.
+///
+/// Successive settlements are built against the predicted post-settlement state
+/// (deterministic reblind chain), so settlement N+1 doesn't wait for N to
+/// confirm. The optimistic in-flight window is bounded per counterparty by
+/// `max_chain_depth` (a revert unwinds the tail, so the chain is kept shallow).
+///
+/// Per-counterparty throughput rises from `1/(submit+confirm)` to
+/// `min(1/submit_hold, max_chain_depth/(submit+confirm))` — i.e. it stops being
+/// capped by the on-chain latency, without batching's circuit change. Gas is
+/// unchanged (still one tx per fill).
+pub struct PipelinedOptimisticMock {
+    /// Local critical section held on the account (state + build + submit).
+    pub submit_hold: Duration,
+    /// On-chain confirmation wait, overlapped off the account lock.
+    pub confirm_hold: Duration,
+    /// Accounting of settled fills.
+    pub ledger: Arc<MockBalanceLedger>,
+    /// Optimistic in-flight window per counterparty (chain depth bound).
+    pub max_chain_depth: usize,
+    /// Deterministic revert knob: revert every Nth confirm to exercise the
+    /// rollback-and-resubmit cost. `None` = never (happy-path ceiling).
+    pub revert_every: Option<u64>,
+    /// Per-counterparty depth limiters.
+    depth: Mutex<HashMap<AccountId, Arc<Semaphore>>>,
+    /// Per-counterparty FIFO submit locks. The production preemptive queue orders
+    /// submits per account; this models that (rather than retry-dropping), so the
+    /// account-serialized part is `submit_hold` per settlement, in order.
+    submit_locks: Mutex<HashMap<AccountId, Arc<tokio::sync::Mutex<()>>>>,
+    /// Global settlement counter, for the deterministic revert schedule.
+    seq: AtomicU64,
+}
+
+impl PipelinedOptimisticMock {
+    /// Create a pipelined strategy. `submit_hold + confirm_hold` should equal the
+    /// baseline's single `hold` for an apples-to-apples comparison (same total
+    /// settlement latency, just pipelined).
+    pub fn new(
+        submit_hold: Duration,
+        confirm_hold: Duration,
+        ledger: Arc<MockBalanceLedger>,
+        max_chain_depth: usize,
+    ) -> Self {
+        Self {
+            submit_hold,
+            confirm_hold,
+            ledger,
+            max_chain_depth,
+            revert_every: None,
+            depth: Mutex::new(HashMap::new()),
+            submit_locks: Mutex::new(HashMap::new()),
+            seq: AtomicU64::new(0),
+        }
+    }
+
+    /// Enable a deterministic revert every `n`th confirm (rollback cost study).
+    pub fn with_revert_every(mut self, n: u64) -> Self {
+        self.revert_every = Some(n);
+        self
+    }
+
+    /// Get (or create) the per-counterparty depth limiter.
+    fn depth_sem(&self, cp: AccountId) -> Arc<Semaphore> {
+        self.depth
+            .lock()
+            .unwrap()
+            .entry(cp)
+            .or_insert_with(|| Arc::new(Semaphore::new(self.max_chain_depth)))
+            .clone()
+    }
+
+    /// Get (or create) the per-counterparty FIFO submit lock.
+    fn submit_lock(&self, cp: AccountId) -> Arc<tokio::sync::Mutex<()>> {
+        self.submit_locks
+            .lock()
+            .unwrap()
+            .entry(cp)
+            .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+            .clone()
+    }
+
+    /// Run the submit critical section on the account: take the per-cp FIFO
+    /// submit lock (ordered submits), drive the real serial preemption, hold
+    /// `submit_hold`, release. Returns whether the submit landed.
+    async fn submit_critical(
+        &self,
+        backend: &dyn Backend,
+        cp: AccountId,
+        descriptor: TaskDescriptor,
+    ) -> bool {
+        let lock = self.submit_lock(cp);
+        let _ordered = lock.lock().await;
+        for _ in 0..PIPELINE_SUBMIT_ATTEMPTS {
+            match backend.enqueue_preemptive(descriptor.clone()).await {
+                Ok(tid) => {
+                    tokio::time::sleep(self.submit_hold).await;
+                    backend.pop(tid).await;
+                    return true;
+                },
+                // Rare with the per-cp lock held; brief backoff and retry.
+                Err(BackendError::PreemptionConflict) => {
+                    tokio::time::sleep(PIPELINE_SUBMIT_BACKOFF).await;
+                },
+                Err(BackendError::Other(_)) => return false,
+            }
+        }
+        false
+    }
+}
+
+#[async_trait]
+impl SettlementStrategy for PipelinedOptimisticMock {
+    async fn settle(&self, backend: &dyn Backend, descriptor: TaskDescriptor) -> SettleOutcome {
+        let cp = match descriptor.affected_accounts().last().copied() {
+            Some(c) => c,
+            None => return SettleOutcome::Failed("no counterparty".to_string()),
+        };
+
+        // Bound the optimistic in-flight chain per counterparty. Held across the
+        // whole submit+confirm, so at most `max_chain_depth` settlements sit in
+        // the (overlapping) confirm stage at once.
+        let sem = self.depth_sem(cp);
+        let _permit = sem.acquire_owned().await.unwrap();
+
+        // One rollback+resubmit on a (deterministic) revert. A real cascade would
+        // also invalidate downstream optimistic settlements, so this is a LOWER
+        // bound on revert cost — documented limitation, not modeled here.
+        let revert_attempts = if self.revert_every.is_some() { 2 } else { 1 };
+        for _ in 0..revert_attempts {
+            // Submit: the only account-serialized part.
+            if !self.submit_critical(backend, cp, descriptor.clone()).await {
+                return SettleOutcome::PreemptionConflict;
+            }
+
+            // Confirm off the account lock — overlaps with other settlements.
+            tokio::time::sleep(self.confirm_hold).await;
+
+            let n = self.seq.fetch_add(1, Ordering::Relaxed) + 1;
+            let reverted = self.revert_every.map(|e| n % e == 0).unwrap_or(false);
+            if !reverted {
+                self.ledger.record_settled(cp);
+                return SettleOutcome::Settled;
+            }
+            // Reverted: roll back and resubmit the next loop iteration.
+        }
+        SettleOutcome::Failed("settlement reverted past resubmit budget".to_string())
+    }
+
+    fn name(&self) -> &'static str {
+        "pipelined_optimistic"
+    }
+}
+
 #[cfg(test)]
 mod test {
     use std::{sync::Arc, time::Duration};
@@ -251,7 +420,7 @@ mod test {
     use types_core::AccountId;
     use types_tasks::mocks::mock_task_descriptor;
 
-    use super::SerialPerAccountMock;
+    use super::{PipelinedOptimisticMock, SerialPerAccountMock};
     use crate::{
         backend::RaftBackend,
         ledger::MockBalanceLedger,
@@ -285,5 +454,32 @@ mod test {
         let d3 = mock_task_descriptor(quoter);
         assert_eq!(strat.settle(&backend, d3).await, SettleOutcome::Settled);
         assert_eq!(ledger.settled_count(), 2);
+    }
+
+    /// Contrast with `serializes_on_shared_counterparty`: under the SAME backend
+    /// and two concurrent settlements on the SAME counterparty, pipelining lets
+    /// **both** settle (the serial baseline drops one to a preemption conflict).
+    /// Only the short submit serializes; the long confirms overlap, so neither is
+    /// dropped.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn pipelines_same_counterparty() {
+        let backend = RaftBackend::new(mock_state().await);
+        let ledger = Arc::new(MockBalanceLedger::new());
+        let strat = PipelinedOptimisticMock::new(
+            Duration::from_millis(10),  // submit
+            Duration::from_millis(120), // confirm
+            ledger.clone(),
+            8,
+        );
+
+        let quoter = AccountId::new_v4();
+        let d1 = mock_task_descriptor(quoter);
+        let d2 = mock_task_descriptor(quoter);
+
+        let (o1, o2) = tokio::join!(strat.settle(&backend, d1), strat.settle(&backend, d2));
+
+        assert_eq!(o1, SettleOutcome::Settled, "first should settle; got {o1:?}");
+        assert_eq!(o2, SettleOutcome::Settled, "second should settle, not conflict; got {o2:?}");
+        assert_eq!(ledger.settled_count(), 2, "both fills should be recorded");
     }
 }
