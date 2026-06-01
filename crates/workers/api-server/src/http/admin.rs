@@ -708,10 +708,10 @@ impl TypedHandler for AdminSetAccountDefaultPoolHandler {
         }
 
         // If a pool name is given, verify it exists
-        if let Some(ref pool_name) = req.matching_pool {
-            if !self.state.matching_pool_exists(pool_name.clone()).await? {
-                return Err(not_found(ERR_MATCHING_POOL_NOT_FOUND));
-            }
+        if let Some(ref pool_name) = req.matching_pool
+            && !self.state.matching_pool_exists(pool_name.clone()).await?
+        {
+            return Err(not_found(ERR_MATCHING_POOL_NOT_FOUND));
         }
 
         let waiter =

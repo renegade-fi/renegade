@@ -43,10 +43,10 @@ async fn exclusion_is_per_account_and_releases() {
     backend.pop(t3).await;
 }
 
-/// INVARIANT (under concurrency): the serial queue admits at most **one** holder
-/// per account at any instant (mutual exclusion); every admitted settlement
-/// **releases** (no leaked holds / deadlock); and **every offer resolves**
-/// (settled or conflicted — conservation). Interleaving-independent.
+/// INVARIANT (under concurrency): the serial queue admits at most **one**
+/// holder per account at any instant (mutual exclusion); every admitted
+/// settlement **releases** (no leaked holds / deadlock); and **every offer
+/// resolves** (settled or conflicted — conservation). Interleaving-independent.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn mutual_exclusion_and_no_leaks_under_concurrency() {
     const K: usize = 8; // distinct counterparty accounts

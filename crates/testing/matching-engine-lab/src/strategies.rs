@@ -254,8 +254,8 @@ const PIPELINE_SUBMIT_BACKOFF: Duration = Duration::from_millis(2);
 
 /// Models pipelined / optimistic-chained settlement (NO protocol change). The
 /// per-account serial hold is split in two:
-///   - `submit_hold` — the local critical section (state transition + tx build +
-///     submit). This is the ONLY part held on the account's serial-preemption
+///   - `submit_hold` — the local critical section (state transition + tx build
+///     + submit). This is the ONLY part held on the account's serial-preemption
 ///     queue, so it is what serializes per counterparty.
 ///   - `confirm_hold` — the on-chain confirmation wait. The account is already
 ///     released, so confirms of successive settlements **overlap** instead of
@@ -284,18 +284,19 @@ pub struct PipelinedOptimisticMock {
     pub revert_every: Option<u64>,
     /// Per-counterparty depth limiters.
     depth: Mutex<HashMap<AccountId, Arc<Semaphore>>>,
-    /// Per-counterparty FIFO submit locks. The production preemptive queue orders
-    /// submits per account; this models that (rather than retry-dropping), so the
-    /// account-serialized part is `submit_hold` per settlement, in order.
+    /// Per-counterparty FIFO submit locks. The production preemptive queue
+    /// orders submits per account; this models that (rather than
+    /// retry-dropping), so the account-serialized part is `submit_hold` per
+    /// settlement, in order.
     submit_locks: Mutex<HashMap<AccountId, Arc<tokio::sync::Mutex<()>>>>,
     /// Global settlement counter, for the deterministic revert schedule.
     seq: AtomicU64,
 }
 
 impl PipelinedOptimisticMock {
-    /// Create a pipelined strategy. `submit_hold + confirm_hold` should equal the
-    /// baseline's single `hold` for an apples-to-apples comparison (same total
-    /// settlement latency, just pipelined).
+    /// Create a pipelined strategy. `submit_hold + confirm_hold` should equal
+    /// the baseline's single `hold` for an apples-to-apples comparison
+    /// (same total settlement latency, just pipelined).
     pub fn new(
         submit_hold: Duration,
         confirm_hold: Duration,
@@ -397,7 +398,7 @@ impl SettlementStrategy for PipelinedOptimisticMock {
             tokio::time::sleep(self.confirm_hold).await;
 
             let n = self.seq.fetch_add(1, Ordering::Relaxed) + 1;
-            let reverted = self.revert_every.map(|e| n % e == 0).unwrap_or(false);
+            let reverted = self.revert_every.map(|e| n.is_multiple_of(e)).unwrap_or(false);
             if !reverted {
                 self.ledger.record_settled(cp);
                 return SettleOutcome::Settled;
@@ -427,9 +428,10 @@ mod test {
         strategy::{SettleOutcome, SettlementStrategy},
     };
 
-    /// Two settlements against the same counterparty must serialize: exactly one
-    /// settles, the other hits a preemption conflict, and the ledger records the
-    /// single fill. The quoter/MM hot-account bottleneck, reproduced in-process.
+    /// Two settlements against the same counterparty must serialize: exactly
+    /// one settles, the other hits a preemption conflict, and the ledger
+    /// records the single fill. The quoter/MM hot-account bottleneck,
+    /// reproduced in-process.
     #[tokio::test]
     async fn serializes_on_shared_counterparty() {
         let backend = RaftBackend::new(mock_state().await);
@@ -456,11 +458,11 @@ mod test {
         assert_eq!(ledger.settled_count(), 2);
     }
 
-    /// Contrast with `serializes_on_shared_counterparty`: under the SAME backend
-    /// and two concurrent settlements on the SAME counterparty, pipelining lets
-    /// **both** settle (the serial baseline drops one to a preemption conflict).
-    /// Only the short submit serializes; the long confirms overlap, so neither is
-    /// dropped.
+    /// Contrast with `serializes_on_shared_counterparty`: under the SAME
+    /// backend and two concurrent settlements on the SAME counterparty,
+    /// pipelining lets **both** settle (the serial baseline drops one to a
+    /// preemption conflict). Only the short submit serializes; the long
+    /// confirms overlap, so neither is dropped.
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn pipelines_same_counterparty() {
         let backend = RaftBackend::new(mock_state().await);

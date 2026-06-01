@@ -82,7 +82,8 @@ impl IntegrationTestArgs {
         (config, admin_key)
     }
 
-    /// Build admin auth headers for a POST request to the given path with the given body
+    /// Build admin auth headers for a POST request to the given path with the
+    /// given body
     fn admin_headers(&self, path: &str, body: &[u8]) -> HeaderMap {
         let mut headers = HeaderMap::new();
         add_expiring_auth_to_headers(path, &mut headers, body, &self.admin_key, AUTH_EXPIRY);

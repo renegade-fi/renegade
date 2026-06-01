@@ -33,7 +33,8 @@ pub struct Workload {
     pub n_counterparties: usize,
     /// Offered settlements per second.
     pub target_rate_per_sec: f64,
-    /// Maximum settlements in flight at once (offered concurrency / backpressure).
+    /// Maximum settlements in flight at once (offered concurrency /
+    /// backpressure).
     pub max_in_flight: usize,
     /// How long to offer load.
     pub duration: Duration,
@@ -291,10 +292,10 @@ mod test {
     ///
     /// FINDING (2026-05-30): the `mock_state` raft backend stalls at ~16
     /// concurrent distinct-account proposals (≥89% timeouts), and raising the
-    /// runtime to 16 worker threads does NOT move the ceiling — so it's the raft
-    /// consensus transport, not executor starvation. The lab must drive the
-    /// state-machine applicator directly (bypass raft consensus) to study
-    /// realistic parallelism. See the ticket.
+    /// runtime to 16 worker threads does NOT move the ceiling — so it's the
+    /// raft consensus transport, not executor starvation. The lab must
+    /// drive the state-machine applicator directly (bypass raft consensus)
+    /// to study realistic parallelism. See the ticket.
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn parallelism_sweep() {
         let hold = Duration::from_millis(50);
@@ -417,15 +418,16 @@ mod test {
         );
     }
 
-    /// PIPELINING — quantify optimistic chaining against the serial baseline and
-    /// the batched ceiling, under the same concentrated quoter/MM workload as
-    /// `strategy_comparison`. Pipelining splits the 50ms settlement into a 5ms
-    /// account-held submit + a 45ms off-lock confirm (same 50ms total latency),
-    /// with an 8-deep optimistic chain per counterparty. Because only the 5ms
-    /// submit serializes per account (confirms overlap), per-wallet throughput
-    /// rises far above the serial `1/hold` ceiling **without** batching's circuit
-    /// change. Run with `--nocapture` for the table — the evidence for shipping
-    /// pipelining (Track P) first.
+    /// PIPELINING — quantify optimistic chaining against the serial baseline
+    /// and the batched ceiling, under the same concentrated quoter/MM
+    /// workload as `strategy_comparison`. Pipelining splits the 50ms
+    /// settlement into a 5ms account-held submit + a 45ms off-lock confirm
+    /// (same 50ms total latency), with an 8-deep optimistic chain per
+    /// counterparty. Because only the 5ms submit serializes per account
+    /// (confirms overlap), per-wallet throughput rises far above the serial
+    /// `1/hold` ceiling **without** batching's circuit change. Run with
+    /// `--nocapture` for the table — the evidence for shipping pipelining
+    /// (Track P) first.
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn pipelined_quantify() {
         let hold = Duration::from_millis(50);
@@ -505,8 +507,9 @@ mod test {
     /// base needs to stop dropping settlements.
     ///
     /// NOTE: settlement-throughput dimension only — this does NOT model
-    /// liquidity fragmentation (each shard holds 1/N of the depth), which bounds
-    /// N from above. So this gives the *lower* bound on N (enough to clear load).
+    /// liquidity fragmentation (each shard holds 1/N of the depth), which
+    /// bounds N from above. So this gives the *lower* bound on N (enough to
+    /// clear load).
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn sharding_sweep() {
         let hold = Duration::from_millis(100);
