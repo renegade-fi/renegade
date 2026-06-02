@@ -32,6 +32,37 @@ fn parse_url(url_str: &str, description: &str) -> Result<Url, String> {
     url_str.parse().map_err(|e| format!("Invalid {description}: {e}"))
 }
 
+/// Load a libp2p keypair from `path`, or generate one and persist it there.
+///
+/// The key is stored as base64-encoded protobuf. Persisting it gives the node a
+/// stable peer id (and thus raft node id) across restarts, so a restarting node
+/// rejoins under its existing identity rather than appearing as a brand-new node.
+#[allow(deprecated)]
+fn load_or_create_p2p_key(path: &str) -> Keypair {
+    use std::{fs, io::Write, os::unix::fs::OpenOptionsExt};
+
+    if std::path::Path::new(path).exists() {
+        let encoded = fs::read_to_string(path).expect("error reading p2p key file");
+        let decoded =
+            base64::decode(encoded.trim()).expect("p2p key file formatted incorrectly");
+        return Keypair::from_protobuf_encoding(&decoded).expect("error parsing p2p key file");
+    }
+
+    // Generate a fresh key and persist it for subsequent restarts
+    let keypair = Keypair::generate_ed25519();
+    let encoded =
+        base64::encode(keypair.to_protobuf_encoding().expect("error encoding p2p key"));
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(path)
+        .expect("error creating p2p key file");
+    file.write_all(encoded.as_bytes()).expect("error writing p2p key file");
+    keypair
+}
+
 /// Parses command line args into the node config
 ///
 /// We allow for configurations to come from both a config file and overrides
@@ -84,10 +115,13 @@ pub(crate) fn parse_config_from_args(cli_args: Cli) -> Result<RelayerConfig, Str
     let permit2_address = address_from_hex_string(&cli_args.permit2_address)
         .map_err(|e| format!("could not parse permit2 address: {e}"))?;
 
-    // Parse the p2p keypair or generate one
+    // Parse the p2p keypair. Precedence: an inline `p2p_key`, then a persisted
+    // key at `p2p_key_path` (loaded or created), otherwise a fresh ephemeral key.
     let p2p_key = if let Some(keypair) = cli_args.p2p_key {
         let decoded = base64::decode(keypair).expect("p2p key formatted incorrectly");
         Keypair::from_protobuf_encoding(&decoded).expect("error parsing p2p key")
+    } else if let Some(path) = cli_args.p2p_key_path.as_ref() {
+        load_or_create_p2p_key(path)
     } else {
         Keypair::generate_ed25519()
     };

@@ -185,11 +185,18 @@ pub struct Cli {
     /// A fresh key is generated at startup if this is not present
     #[clap(long, value_parser)]
     pub p2p_key: Option<String>,
+    /// Path to a file persisting the local p2p key (base64-encoded protobuf)
+    ///
+    /// If the file exists the key is loaded from it; otherwise a fresh key is
+    /// generated and written there. Persisting the key gives the node a stable
+    /// peer id (and raft node id) across restarts. Ignored if `p2p_key` is set.
+    #[clap(long, value_parser, env = "P2P_KEY_PATH")]
+    pub p2p_key_path: Option<String>,
     /// The path at which to open up the database
-    #[clap(long, value_parser, default_value = "./relayer_state.db")]
+    #[clap(long, value_parser, env = "DB_PATH", default_value = "./relayer_state.db")]
     pub db_path: String,
     /// The path at which to save raft snapshots
-    #[clap(long, value_parser, default_value = "/raft_snapshots")]
+    #[clap(long, value_parser, env = "RAFT_SNAPSHOT_PATH", default_value = "/raft_snapshots")]
     pub raft_snapshot_path: String,
     /// Whether to record historical state locally
     #[clap(long, value_parser)]
