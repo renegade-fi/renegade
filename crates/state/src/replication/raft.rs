@@ -426,8 +426,7 @@ impl RaftClient {
         let existing_voters: HashSet<_> = members.voter_ids().collect();
         let existing_learners: HashSet<_> = members.learner_ids().collect();
 
-        let mut voters_to_remove: Vec<_> =
-            existing_voters.intersection(&peers).copied().collect();
+        let mut voters_to_remove: Vec<_> = existing_voters.intersection(&peers).copied().collect();
         let learners_to_remove: Vec<_> = existing_learners.intersection(&peers).copied().collect();
 
         // Never remove the entire voter set. openraft computes its commit/quorum

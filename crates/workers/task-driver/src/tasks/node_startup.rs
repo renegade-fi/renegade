@@ -376,11 +376,7 @@ impl NodeStartupTask {
     async fn initialize_raft(&mut self) -> Result<(), NodeStartupTaskError> {
         let my_peer_id = self.state.get_peer_id()?;
 
-        log_task!(
-            LogTask::NodeStartup,
-            Outcome::Started,
-            "initializing single-node raft (seed)"
-        );
+        log_task!(LogTask::NodeStartup, Outcome::Started, "initializing single-node raft (seed)");
         self.state.initialize_raft(vec![my_peer_id]).await?;
 
         // Await election of a leader
