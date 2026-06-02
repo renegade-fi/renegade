@@ -43,15 +43,13 @@ fn load_or_create_p2p_key(path: &str) -> Keypair {
 
     if std::path::Path::new(path).exists() {
         let encoded = fs::read_to_string(path).expect("error reading p2p key file");
-        let decoded =
-            base64::decode(encoded.trim()).expect("p2p key file formatted incorrectly");
+        let decoded = base64::decode(encoded.trim()).expect("p2p key file formatted incorrectly");
         return Keypair::from_protobuf_encoding(&decoded).expect("error parsing p2p key file");
     }
 
     // Generate a fresh key and persist it for subsequent restarts
     let keypair = Keypair::generate_ed25519();
-    let encoded =
-        base64::encode(keypair.to_protobuf_encoding().expect("error encoding p2p key"));
+    let encoded = base64::encode(keypair.to_protobuf_encoding().expect("error encoding p2p key"));
     let mut file = fs::OpenOptions::new()
         .write(true)
         .create(true)
