@@ -181,6 +181,7 @@ pub(crate) fn parse_config_from_args(cli_args: Cli) -> Result<RelayerConfig, Str
         indexer_url,
         indexer_hmac_key,
         bootstrap_mode: cli_args.bootstrap_mode,
+        raft_seed: cli_args.raft_seed,
         bootstrap_servers: parsed_bootstrap_addrs,
         p2p_port: cli_args.p2p_port,
         http_port: cli_args.http_port,

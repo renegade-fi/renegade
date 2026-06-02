@@ -16,14 +16,16 @@ pub struct NodeStartupTaskDescriptor {
     /// The amount of time to wait for the gossip layer to warmup before setting
     /// up the rest of the node
     pub gossip_warmup_ms: u64,
+    /// Whether this node is the designated raft bootstrap seed
+    pub raft_seed: bool,
 }
 
 impl NodeStartupTaskDescriptor {
     /// Construct a new node startup task descriptor
-    pub fn new(gossip_warmup_ms: u64) -> Self {
+    pub fn new(gossip_warmup_ms: u64, raft_seed: bool) -> Self {
         let id = TaskIdentifier::new_v4();
 
-        Self { id, gossip_warmup_ms }
+        Self { id, gossip_warmup_ms, raft_seed }
     }
 }
 

@@ -149,6 +149,14 @@ pub struct Cli {
     #[clap(long, env = "BOOTSTRAP_MODE")]
     pub bootstrap_mode: bool,
 
+    /// Whether this node is the designated raft bootstrap seed
+    ///
+    /// On a cold start (no persisted raft state) exactly one node — the seed —
+    /// initializes the cluster; all others wait to be adopted as learners. Set
+    /// on exactly one task. Ignored once persisted raft state exists.
+    #[clap(long, env = "RAFT_SEED")]
+    pub raft_seed: bool,
+
     /// The bootstrap servers that the peer should dial initially
     #[clap(short, long, value_parser, env = "BOOTSTRAP_SERVERS", use_value_delimiter = true)]
     pub bootstrap_servers: Option<Vec<String>>,
@@ -366,6 +374,11 @@ pub struct RelayerConfig {
     /// Bootstrap mode omits much of the relayer's functionality and ignores
     /// most messages
     pub bootstrap_mode: bool,
+    /// Whether this node is the designated raft bootstrap seed
+    ///
+    /// On a cold start exactly one node initializes the cluster; all others wait
+    /// to be adopted. Ignored once persisted raft state exists.
+    pub raft_seed: bool,
     /// Bootstrap servers that the peer should connect to
     pub bootstrap_servers: Vec<(WrappedPeerId, Multiaddr)>,
     /// The cluster keypair

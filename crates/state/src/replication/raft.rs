@@ -426,8 +426,29 @@ impl RaftClient {
         let existing_voters: HashSet<_> = members.voter_ids().collect();
         let existing_learners: HashSet<_> = members.learner_ids().collect();
 
-        let voters_to_remove: Vec<_> = existing_voters.intersection(&peers).copied().collect();
+        let mut voters_to_remove: Vec<_> =
+            existing_voters.intersection(&peers).copied().collect();
         let learners_to_remove: Vec<_> = existing_learners.intersection(&peers).copied().collect();
+
+        // Never remove the entire voter set. openraft computes its commit/quorum
+        // index over the voters; an empty voter set underflows (index `usize::MAX`
+        // into a length-0 slice) and panics the raft core, tearing down the node.
+        // Retain at least one voter, preferring the local node.
+        if !voters_to_remove.is_empty() && voters_to_remove.len() == existing_voters.len() {
+            let keep = if existing_voters.contains(&self.node_id()) {
+                self.node_id()
+            } else {
+                // Deterministic fallback so all nodes agree on the retained voter
+                voters_to_remove.iter().copied().min().expect("voters_to_remove is non-empty")
+            };
+            voters_to_remove.retain(|id| *id != keep);
+            log_task!(
+                Task::MembershipChange,
+                Outcome::Started,
+                subject = %keep,
+                "refusing to remove the last raft voter; retaining it"
+            );
+        }
 
         // Remove voters
         if !voters_to_remove.is_empty() {
@@ -692,8 +713,14 @@ impl RaftClient {
         let known_peers_set: HashSet<_> = known_peers.iter().collect();
         let members = self.membership();
 
+        let local_id = self.node_id();
         let mut peers_to_expire = Vec::new();
         for (id, info) in members.nodes() {
+            // Never expire the local (leader) node: removing the node that drives
+            // the membership change can empty the voter set and panic the raft core.
+            if *id == local_id {
+                continue;
+            }
             if !known_peers_set.contains(&info.peer_id) {
                 log_task!(
                     Task::MembershipChange,

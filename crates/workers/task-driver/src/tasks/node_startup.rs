@@ -5,12 +5,7 @@
 // | Task State |
 // --------------
 
-use std::{
-    error::Error,
-    fmt::Display,
-    iter,
-    time::{Duration, Instant},
-};
+use std::{error::Error, fmt::Display, iter, time::Duration};
 
 use async_trait::async_trait;
 use constants::{NATIVE_ASSET_ADDRESS, in_bootstrap_mode};
@@ -44,16 +39,6 @@ const NODE_STARTUP_TASK_NAME: &str = "node-startup";
 
 /// Error sending a job to another worker
 const ERR_SEND_JOB: &str = "error sending job";
-
-/// The interval at which to poll for adoption into an existing raft cluster
-const RAFT_ADOPTION_POLL_INTERVAL_MS: u64 = 1_000; // 1 second
-/// The maximum time to wait to be adopted as a learner by an existing cluster
-/// before falling back to bootstrapping a new raft
-///
-/// Only the deterministic seed node bootstraps after this timeout; every other
-/// node continues to wait to be adopted. This prevents a restarting node from
-/// forming a competing single-node cluster (split brain) while a leader is live.
-const RAFT_ADOPTION_TIMEOUT_MS: u64 = 20_000; // 20 seconds
 
 /// Defines the state of the node startup task
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -170,6 +155,8 @@ impl From<StateError> for NodeStartupTaskError {
 pub struct NodeStartupTask {
     /// The amount of time to wait for the gossip layer to warm up
     pub gossip_warmup_ms: u64,
+    /// Whether this node is the designated raft bootstrap seed
+    pub raft_seed: bool,
     /// The darkpool client to use for submitting transactions
     pub darkpool_client: DarkpoolClient,
     /// A sender to the network manager's work queue
@@ -193,6 +180,7 @@ impl Task for NodeStartupTask {
     async fn new(descriptor: Self::Descriptor, ctx: TaskContext) -> Result<Self, Self::Error> {
         Ok(Self {
             gossip_warmup_ms: descriptor.gossip_warmup_ms,
+            raft_seed: descriptor.raft_seed,
             darkpool_client: ctx.darkpool_client,
             network_sender: ctx.network_queue,
             state: ctx.state,
@@ -338,106 +326,62 @@ impl NodeStartupTask {
     /// Decide whether the node should bootstrap a new raft or join an existing
     /// one.
     ///
-    /// A node must never bootstrap a competing cluster while another cluster is
-    /// live, otherwise the relayer split-brains. Because all peers in a cluster
-    /// share a `cluster_id`, a live leader adopts newly-discovered same-cluster
-    /// peers as learners (see `add_peer_batch`), which initializes the local
-    /// raft. The decision flow is therefore:
-    ///   1. If the local raft is already initialized (recovered from disk, or we
-    ///      were already adopted), join.
-    ///   2. If gossip discovered no other peers in our cluster, we are the first
-    ///      node; bootstrap.
-    ///   3. Otherwise wait to be adopted as a learner by an existing leader
-    ///      (the local raft becomes initialized) up to a timeout.
-    ///   4. If not adopted before the timeout (cold start, or no reachable
-    ///      leader), only the deterministic seed bootstraps; all other nodes
-    ///      join and await promotion.
+    /// To avoid split brain, a node must never bootstrap a competing cluster
+    /// while another cluster is (or will become) live. The decision is:
+    ///   1. If the local raft already has membership — recovered from a
+    ///      persistent volume, or we were already adopted as a learner — rejoin
+    ///      the existing cluster. This covers every restart of an existing node.
+    ///   2. Otherwise this is a genuine cold start with no local state. Exactly
+    ///      one node, the configured `raft_seed`, bootstraps the cluster; every
+    ///      other node waits to be adopted as a learner by the seed (the live
+    ///      leader adopts same-cluster peers via `add_peer_batch`, then promotes
+    ///      them to voters).
+    ///
+    /// The seed is designated by static configuration, not elected from gossip,
+    /// so the decision is deterministic and cannot race during cold start.
+    /// Restart-safety relies on persisting raft state: a restarting seed
+    /// recovers its state and rejoins at step 1 rather than re-bootstrapping.
     async fn choose_raft_startup_state(
         &self,
     ) -> Result<NodeStartupTaskState, NodeStartupTaskError> {
-        // 1. Already a raft member
         if self.state.is_raft_initialized().await? {
             return Ok(NodeStartupTaskState::JoinRaft);
         }
 
-        // Collect the peers in our cluster that gossip discovered during warmup
-        let my_peer_id = self.state.get_peer_id()?;
-        let cluster_id = self.state.get_cluster_id()?;
-        let peers = self.state.get_cluster_peers(&cluster_id).await?;
-        let others: Vec<_> = peers.into_iter().filter(|p| *p != my_peer_id).collect();
-
-        // 2. No peers discovered; we are the first node in a fresh cluster
-        if others.is_empty() {
+        if self.raft_seed {
             log_task!(
                 LogTask::NodeStartup,
                 Outcome::Started,
-                "no cluster peers discovered, bootstrapping new raft"
-            );
-            return Ok(NodeStartupTaskState::InitializeRaft);
-        }
-
-        // 3. An existing cluster may be live; wait to be adopted as a learner
-        log_task!(
-            LogTask::NodeStartup,
-            Outcome::Started,
-            num_peers = others.len(),
-            "cluster peers discovered, awaiting adoption into existing raft"
-        );
-        if self.await_raft_adoption().await? {
-            log_task!(LogTask::NodeStartup, Outcome::Ok, "adopted into existing raft");
-            return Ok(NodeStartupTaskState::JoinRaft);
-        }
-
-        // 4. Not adopted; break cold-start symmetry with a deterministic seed
-        if is_cluster_seed(&my_peer_id, &others) {
-            log_task!(
-                LogTask::NodeStartup,
-                Outcome::Started,
-                "not adopted before timeout; this node is the cluster seed, bootstrapping new raft"
+                "raft seed with no existing state, bootstrapping new raft"
             );
             Ok(NodeStartupTaskState::InitializeRaft)
         } else {
             log_task!(
                 LogTask::NodeStartup,
                 Outcome::Started,
-                "not adopted before timeout; awaiting promotion from the cluster seed"
+                "non-seed node with no existing state, awaiting adoption by the seed"
             );
             Ok(NodeStartupTaskState::JoinRaft)
         }
     }
 
-    /// Poll until the local raft becomes initialized (i.e. an existing leader
-    /// adopted this node as a learner) or the adoption timeout elapses.
-    ///
-    /// Returns `true` if the node was adopted.
-    async fn await_raft_adoption(&self) -> Result<bool, NodeStartupTaskError> {
-        let timeout = Duration::from_millis(RAFT_ADOPTION_TIMEOUT_MS);
-        let interval = Duration::from_millis(RAFT_ADOPTION_POLL_INTERVAL_MS);
-        let start = Instant::now();
-        while start.elapsed() < timeout {
-            if self.state.is_raft_initialized().await? {
-                return Ok(true);
-            }
-            tokio::time::sleep(interval).await;
-        }
-
-        // Final check after the timeout
-        Ok(self.state.is_raft_initialized().await?)
-    }
-
     /// Initialize a new raft cluster
+    ///
+    /// The seed bootstraps a single-node raft containing only itself; the other
+    /// nodes are added dynamically as learners (and promoted to voters) once
+    /// they are discovered via gossip. Initializing with only the local node
+    /// avoids seeding the membership with peers that have not yet agreed on the
+    /// cluster, which is what entangled concurrent bootstraps in the previous
+    /// implementation.
     async fn initialize_raft(&mut self) -> Result<(), NodeStartupTaskError> {
-        // Get the list of other peers in the cluster
-        let my_cluster = self.state.get_cluster_id()?;
-        let peers = self.state.get_cluster_peers(&my_cluster).await?;
+        let my_peer_id = self.state.get_peer_id()?;
 
         log_task!(
             LogTask::NodeStartup,
             Outcome::Started,
-            num_peers = peers.len(),
-            "initializing raft with peers"
+            "initializing single-node raft (seed)"
         );
-        self.state.initialize_raft(peers).await?;
+        self.state.initialize_raft(vec![my_peer_id]).await?;
 
         // Await election of a leader
         log_task!(LogTask::NodeStartup, Outcome::Started, "awaiting leader election");
@@ -446,7 +390,6 @@ impl NodeStartupTask {
         let leader = self.state.get_leader().unwrap();
         log_task!(LogTask::NodeStartup, Outcome::Ok, subject = %leader, "leader elected");
 
-        let my_peer_id = self.state.get_peer_id()?;
         if leader != my_peer_id {
             log_task!(LogTask::NodeStartup, Outcome::Ok, "elected leader is a cluster peer");
             self.task_state = NodeStartupTaskState::JoinRaft;
@@ -538,47 +481,5 @@ impl NodeStartupTask {
         }
 
         Ok(())
-    }
-}
-
-/// Whether `me` is the deterministic bootstrap seed for the cluster.
-///
-/// The seed is the cluster member with the smallest id. Every node computes the
-/// same seed from the same membership set, so exactly one node bootstraps on a
-/// cold start while the rest join and await promotion.
-fn is_cluster_seed<T: Ord>(me: &T, others: &[T]) -> bool {
-    others.iter().all(|peer| me < peer)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::is_cluster_seed;
-
-    /// The smallest id is the seed; a larger id is not
-    #[test]
-    fn test_seed_is_minimum() {
-        assert!(is_cluster_seed(&1u64, &[2, 3, 4]));
-        assert!(!is_cluster_seed(&3u64, &[1, 2, 4]));
-    }
-
-    /// A node with no discovered peers is trivially the seed
-    #[test]
-    fn test_seed_alone() {
-        let others: [u64; 0] = [];
-        assert!(is_cluster_seed(&5u64, &others));
-    }
-
-    /// Exactly one member of a cluster computes itself as the seed
-    #[test]
-    fn test_seed_is_unique() {
-        let members = [10u64, 20, 30];
-        let seed_count = members
-            .iter()
-            .filter(|m| {
-                let others: Vec<u64> = members.iter().copied().filter(|x| x != **m).collect();
-                is_cluster_seed(*m, &others)
-            })
-            .count();
-        assert_eq!(seed_count, 1);
     }
 }
