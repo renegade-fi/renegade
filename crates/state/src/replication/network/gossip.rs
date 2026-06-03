@@ -81,10 +81,22 @@ impl P2PRaftNetwork for GossipNetwork {
         // Send a network manager job
         let peer_id = self.target_info.peer_id;
         let (job, rx) = NetworkManagerJob::request_with_response(peer_id, req);
-        self.network_sender.send(job).unwrap();
+        // A failed send/recv here means the network manager queue is closed or
+        // the peer/response channel is gone (teardown, peer loss). That's a
+        // recoverable *network* error -- openraft will retry -- NOT a reason to
+        // panic, which would take down the raft core (and the node's leadership).
+        self.network_sender.send(job).map_err(|_| {
+            new_network_error(ReplicationError::Raft(
+                "failed to send raft RPC: network manager queue closed".to_string(),
+            ))
+        })?;
 
-        // TODO: timeout and error handling
-        let resp = rx.await.unwrap();
+        // TODO: add a request timeout here as well.
+        let resp = rx.await.map_err(|_| {
+            new_network_error(ReplicationError::Raft(
+                "raft RPC response channel closed before a reply".to_string(),
+            ))
+        })?;
         Self::to_raft_response(resp).map_err(new_network_error)
     }
 }

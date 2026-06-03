@@ -254,9 +254,17 @@ impl RaftClient {
     /// Await the promotion of the local peer to a voter
     pub async fn await_promotion(&self) -> Result<(), ReplicationError> {
         let timeout = Duration::from_millis(DEFAULT_PROMOTION_TIMEOUT_MS);
+        // Wait until the local node is a VOTER -- any non-learner state (Follower,
+        // Candidate, or Leader). Waiting only for `Follower` (as before) breaks the
+        // restart-with-persisted-state path: a node that recovers as the sole voter
+        // -- notably the SEED on its second boot -- becomes the *Leader*, never a
+        // Follower, so the wait hangs until the timeout and crashes the startup task.
+        // That is the bug that required manually wiping the seed's raft state
+        // (relayer_state.db + raft_snapshots) to recover. A freshly-joining learner
+        // still blocks here until it is promoted to a voter.
         self.raft
             .wait(Some(timeout))
-            .state(ServerState::Follower, "local-node-promotion")
+            .metrics(|m| m.state != ServerState::Learner, "local-node-promotion")
             .await
             .map_err(err_str!(ReplicationError::Raft))
             .map(|_| ())
