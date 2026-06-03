@@ -1,5 +1,6 @@
 //! Tests the process of proving and verifying an `INTENT AND BALANCE BOUNDED
 //! SETTLEMENT` circuit
+#![allow(missing_docs)]
 
 use circuit_types::PlonkCircuit;
 use circuit_types::traits::{CircuitBaseType, SingleProverCircuit};

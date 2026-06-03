@@ -11,12 +11,14 @@ pub enum ApiTypeError {
 
 impl ApiTypeError {
     /// Create a parsing error from any type that can be converted to a string
+    #[allow(clippy::needless_pass_by_value)]
     pub fn parsing<T: ToString>(err: T) -> Self {
         Self::Parsing(err.to_string())
     }
 
     /// Create a validation error from any type that can be converted to a
     /// string
+    #[allow(clippy::needless_pass_by_value)]
     pub fn validation<T: ToString>(err: T) -> Self {
         Self::Validation(err.to_string())
     }

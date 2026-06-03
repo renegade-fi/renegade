@@ -191,7 +191,10 @@ pub struct Cli {
     pub websocket_port: u16,
     /// The local peer's base64 encoded p2p key
     /// A fresh key is generated at startup if this is not present
-    #[clap(long, value_parser)]
+    ///
+    /// Takes precedence over `p2p_key_path`. Settable via the `P2P_KEY` env so a
+    /// designated node (e.g. the raft seed) can be pinned to a fixed peer id.
+    #[clap(long, value_parser, env = "P2P_KEY")]
     pub p2p_key: Option<String>,
     /// Path to a file persisting the local p2p key (base64-encoded protobuf)
     ///
@@ -467,6 +470,21 @@ impl RelayerConfig {
         WrappedPeerId(self.p2p_key.public().to_peer_id())
     }
 
+    /// Whether this node is the raft bootstrap seed.
+    ///
+    /// The seed is derived from the bootstrap list rather than a separate flag:
+    /// a node is the seed iff its own p2p identity is published in
+    /// `bootstrap_servers` (the address every other node dials to discover the
+    /// cluster). This keeps the gossip bootstrap node and the raft seed as a
+    /// single designated node. Requires the seed's `p2p_key`/`p2p_key_path` to be
+    /// provisioned so its peer id matches the published bootstrap entry;
+    /// otherwise no node identifies as the seed. The explicit `raft_seed` flag
+    /// still forces seed designation when set.
+    pub fn is_raft_seed(&self) -> bool {
+        let me = self.peer_id();
+        self.raft_seed || self.bootstrap_servers.iter().any(|(peer_id, _)| *peer_id == me)
+    }
+
     /// Get the private key from which the relayer's wallet is derived
     pub fn relayer_wallet_key(&self) -> &PrivateKeySigner {
         &self.private_key
@@ -539,5 +557,35 @@ mod test {
     #[test]
     fn test_default_config() {
         RelayerConfig::default();
+    }
+
+    /// Test that the raft seed is derived from the bootstrap server list
+    #[test]
+    fn test_is_raft_seed_from_bootstrap() {
+        use libp2p::{Multiaddr, identity::Keypair};
+        use types_gossip::WrappedPeerId;
+
+        let mut config = RelayerConfig::default();
+        // No bootstrap servers configured -> not the seed
+        assert!(!config.is_raft_seed());
+
+        // A bootstrap entry for some other peer -> not the seed
+        let other = WrappedPeerId(Keypair::generate_ed25519().public().to_peer_id());
+        config.bootstrap_servers = vec![(other, Multiaddr::empty())];
+        assert!(!config.is_raft_seed());
+
+        // A bootstrap entry matching our own peer id -> the seed
+        let me = config.peer_id();
+        config.bootstrap_servers.push((me, Multiaddr::empty()));
+        assert!(config.is_raft_seed());
+    }
+
+    /// Test that the explicit raft_seed flag forces seed designation
+    #[test]
+    fn test_raft_seed_flag_override() {
+        let mut config = RelayerConfig::default();
+        assert!(!config.is_raft_seed());
+        config.raft_seed = true;
+        assert!(config.is_raft_seed());
     }
 }

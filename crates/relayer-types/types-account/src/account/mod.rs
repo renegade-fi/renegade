@@ -297,7 +297,6 @@ impl Account {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     #[cfg(feature = "mocks")]
     use crate::account::mocks::mock_empty_account;
 

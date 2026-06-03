@@ -25,6 +25,7 @@ impl PriceStateError {
     }
 
     /// Create a new `NoPriceData` error
+    #[allow(clippy::needless_pass_by_value)]
     pub fn no_price_data(msg: impl ToString) -> Self {
         Self::NoPriceData(msg.to_string())
     }

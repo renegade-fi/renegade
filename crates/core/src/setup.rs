@@ -16,7 +16,7 @@ pub async fn node_setup(
 ) -> Result<(), CoordinatorError> {
     // Start the node setup task and await its completion
     let desc: TaskDescriptor =
-        NodeStartupTaskDescriptor::new(config.gossip_warmup, config.raft_seed).into();
+        NodeStartupTaskDescriptor::new(config.gossip_warmup, config.is_raft_seed()).into();
 
     // Send the task to the task driver
     let task = QueuedTask::new(desc);

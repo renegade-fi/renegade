@@ -253,11 +253,11 @@ mod test {
     use types_account::account::mocks::mock_empty_account;
     use types_core::AccountId;
     use types_tasks::{
-        QueuedTaskState, TaskQueueKey,
+        QueuedTaskState, TaskIdentifier, TaskQueueKey,
         mocks::{mock_queued_task, mock_task_descriptor},
     };
 
-    use crate::test_helpers::mock_state;
+    use crate::test_helpers::{mock_db, mock_state};
 
     /// Tests getter methods on an empty queue
     #[tokio::test]
@@ -356,6 +356,279 @@ mod test {
             .await
             .unwrap();
         w3.await.unwrap();
+    }
+
+    /// Reproduction for ticket 2026-06-02-relayer-matching-settlement-concurrency-audit:
+    /// the settlement-starvation that drops market-maker internal-match fills.
+    ///
+    /// A market-maker wallet's serial task queue is held by a COMMITTED
+    /// order-management task (a quote the MM just placed) at the instant a match
+    /// against it settles. Settlement is a serial PREEMPTION over both
+    /// counterparties' queues, which the state layer rejects while a committed
+    /// task is at the queue head (storage::is_serial_preemption_safe). In
+    /// production a single immediate attempt is made, so the fill is dropped.
+    ///
+    /// This test shows the rejection is TRANSIENT: once the committed task
+    /// completes and clears the queue, the same preemption succeeds — so a
+    /// bounded retry-with-backoff that outlasts the commit window resolves it
+    /// (matching-engine-worker `manager/tasks.rs`, "Approach A"). It runs entirely
+    /// in-process against the real preemptive task-queue state machine — the lab
+    /// loop that replaces deploy-and-grep.
+    #[tokio::test]
+    async fn test_settlement_starved_by_committed_order_task() {
+        // Timeout-guarded so a queue/preemption deadlock fails fast instead of
+        // hanging the lab loop (mock-raft can stall; see ticket).
+        tokio::time::timeout(std::time::Duration::from_secs(15), async {
+        let state = mock_state().await;
+
+        // The market-maker wallet (an account so its order task can be popped).
+        let mm_account = mock_empty_account();
+        let mm = mm_account.id;
+        state.new_account(mm_account).await.unwrap().await.unwrap();
+        // The counterparty wallet; the settlement preemption spans both queues.
+        let taker = TaskQueueKey::new_v4();
+
+        // Put a COMMITTED order-management task at the head of the MM queue — past
+        // its commit point, so it cannot be preempted or rolled back.
+        let (order_task, w) = state.append_task(mock_task_descriptor(mm)).await.unwrap();
+        w.await.unwrap();
+        state
+            .transition_task(
+                order_task,
+                QueuedTaskState::Running { state: "placing-order".to_string(), committed: true },
+            )
+            .await
+            .unwrap()
+            .await
+            .unwrap();
+
+        // 1) Today's behavior: the settle (serial preemption over both wallets) is
+        //    REJECTED because the MM queue head is committed -> the fill is dropped.
+        let rejected = match state
+            .enqueue_preemptive_task(vec![mm, taker], mock_task_descriptor(mm), true /* serial */)
+            .await
+        {
+            Ok((_, w)) => w.await.is_err(),
+            Err(_) => true,
+        };
+        assert!(rejected, "settle must be rejected while the MM queue head is committed");
+
+        // 2) The committed order task completes, clearing the queue.
+        state.pop_task(order_task, true /* success */).await.unwrap().await.unwrap();
+
+        // 3) The SAME preemption now succeeds — the rejection was transient, so
+        //    Approach A's bounded retry lands once the commit window passes.
+        let (tid, w) = state
+            .enqueue_preemptive_task(vec![mm, taker], mock_task_descriptor(mm), true)
+            .await
+            .expect("settle enqueue should succeed after the committed task clears");
+        w.await.expect("settle preemption should commit once the queue is free");
+        state.pop_task(tid, true).await.unwrap().await.unwrap();
+        })
+        .await
+        .expect("L0 lab test exceeded 15s — preemption/queue likely deadlocked");
+    }
+
+    /// L2 simulator (tx-direct, synchronous) for ticket
+    /// 2026-06-02-relayer-matching-settlement-concurrency-audit.
+    ///
+    /// Reproduces market-maker internal-match settlement starvation under order
+    /// churn and A/Bs give-up vs retry, driving the preemptive task queue DIRECTLY
+    /// via a write tx — NOT mock_state/raft, which stalls and leaks threads at the
+    /// volume a sim needs (the raft path is exercised by the L0 interface test).
+    /// The MM is "busy" (a committed order task at its queue head) for COMMIT_TICKS,
+    /// then free for GAP_TICKS; matches arrive every MATCH_EVERY ticks. Synchronous
+    /// and deterministic, so it can't hang — no timeout guard needed.
+    #[test]
+    fn sim_settlement_starvation_ab() {
+        const TICKS: usize = 120;
+        const COMMIT_TICKS: usize = 4; // MM busy window (a committed order task)
+        const GAP_TICKS: usize = 2; // MM idle window
+        const MATCH_EVERY: usize = 3;
+
+        // Drive the real preemptive queue under a strategy; returns (settled, dropped).
+        fn run(retry: bool) -> (usize, usize) {
+            let db = mock_db();
+            let tx = db.new_write_tx().unwrap();
+            let mm = TaskQueueKey::new_v4();
+            let taker = TaskQueueKey::new_v4();
+
+            // The MM's current committed order task (the queue head), if any.
+            let mut busy: Option<TaskIdentifier> = None;
+            let (mut settled, mut total, mut pending) = (0usize, 0usize, 0usize);
+
+            for tick in 0..TICKS {
+                let want_busy = (tick % (COMMIT_TICKS + GAP_TICKS)) < COMMIT_TICKS;
+                // Advance MM order churn: enqueue a committed order task, or pop it.
+                if want_busy && busy.is_none() {
+                    let mut order = mock_queued_task(mm);
+                    order.state =
+                        QueuedTaskState::Running { state: "order".to_string(), committed: true };
+                    tx.enqueue_serial_task(&mm, &order).unwrap();
+                    busy = Some(order.id);
+                } else if !want_busy && busy.is_some() {
+                    tx.pop_task(&busy.take().unwrap()).unwrap();
+                }
+
+                // A new match arrives. A "settle" is a serial preemption over both
+                // wallets; on success we pop it to release the hold.
+                if tick % MATCH_EVERY == 0 {
+                    total += 1;
+                    if retry {
+                        pending += 1; // Approach A queues it
+                    } else {
+                        let s = mock_queued_task(mm);
+                        if tx.preempt_queue_with_serial(&[mm, taker], &s).is_ok() {
+                            tx.pop_task(&s.id).unwrap();
+                            settled += 1;
+                        }
+                    }
+                }
+
+                // Approach A: drain a queued match the moment the wallet is free.
+                if retry && pending > 0 && busy.is_none() {
+                    let s = mock_queued_task(mm);
+                    if tx.preempt_queue_with_serial(&[mm, taker], &s).is_ok() {
+                        tx.pop_task(&s.id).unwrap();
+                        settled += 1;
+                        pending -= 1;
+                    }
+                }
+            }
+            (settled, total - settled)
+        }
+
+        let (giveup_settled, giveup_dropped) = run(false);
+        let (retry_settled, retry_dropped) = run(true);
+
+        eprintln!("[sim] give-up: settled={giveup_settled} dropped={giveup_dropped}");
+        eprintln!("[sim] retry  : settled={retry_settled} dropped={retry_dropped}");
+
+        // Reproduces starvation: a give-up settle drops fills under churn ...
+        assert!(
+            giveup_dropped > 0,
+            "give-up strategy should drop fills under MM order churn (starvation)"
+        );
+        // ... and Approach A (retry) recovers strictly more of them.
+        assert!(
+            retry_settled > giveup_settled,
+            "retry strategy must settle strictly more than give-up (giveup={giveup_settled}, retry={retry_settled})"
+        );
+    }
+
+    /// L4 — settlement-strategy comparison across a small churn sweep, for ticket
+    /// 2026-06-02-relayer-matching-settlement-concurrency-audit. Scores candidate
+    /// strategies on the SAME workload at rising MM contention. give-up + retry are
+    /// MEASURED against the real preemptive queue (tx-direct); priority-preempt and
+    /// separate-lane are PROJECTED (they need state-machine changes not yet built)
+    /// to show whether they're worth implementing. Synchronous + deterministic.
+    #[test]
+    fn sim_strategy_comparison() {
+        const TICKS: usize = 60;
+        // (label, commit_ticks, gap_ticks, match_every): rising contention.
+        let sweep = [
+            ("light  busy~50% sparse", 2usize, 2usize, 3usize),
+            ("heavy  busy~75% moderate", 6usize, 2usize, 3usize),
+            ("saturated busy~75% dense", 6usize, 2usize, 1usize),
+        ];
+
+        fn busy_at(tick: usize, commit: usize, gap: usize) -> bool {
+            (tick % (commit + gap)) < commit
+        }
+
+        // MEASURED give-up / retry against the real preemptive queue (tx-direct).
+        fn run_measured(retry: bool, ticks: usize, commit: usize, gap: usize, me: usize) -> (usize, usize) {
+            let db = mock_db();
+            let tx = db.new_write_tx().unwrap();
+            let mm = TaskQueueKey::new_v4();
+            let taker = TaskQueueKey::new_v4();
+
+            let mut busy: Option<TaskIdentifier> = None;
+            let (mut settled, mut total, mut pending) = (0usize, 0usize, 0usize);
+            for tick in 0..ticks {
+                let want_busy = busy_at(tick, commit, gap);
+                if want_busy && busy.is_none() {
+                    let mut order = mock_queued_task(mm);
+                    order.state =
+                        QueuedTaskState::Running { state: "order".to_string(), committed: true };
+                    tx.enqueue_serial_task(&mm, &order).unwrap();
+                    busy = Some(order.id);
+                } else if !want_busy && busy.is_some() {
+                    tx.pop_task(&busy.take().unwrap()).unwrap();
+                }
+                if tick % me == 0 {
+                    total += 1;
+                    if retry {
+                        pending += 1;
+                    } else {
+                        let s = mock_queued_task(mm);
+                        if tx.preempt_queue_with_serial(&[mm, taker], &s).is_ok() {
+                            tx.pop_task(&s.id).unwrap();
+                            settled += 1;
+                        }
+                    }
+                }
+                if retry && pending > 0 && busy.is_none() {
+                    let s = mock_queued_task(mm);
+                    if tx.preempt_queue_with_serial(&[mm, taker], &s).is_ok() {
+                        tx.pop_task(&s.id).unwrap();
+                        settled += 1;
+                        pending -= 1;
+                    }
+                }
+            }
+            (settled, total)
+        }
+
+        // PROJECTED priority-preempt: settlement preempts the committed order task
+        // -> every match settles; a busy match costs an order rollback.
+        fn project_priority(ticks: usize, commit: usize, gap: usize, me: usize) -> (usize, usize) {
+            let (mut settled, mut rollbacks) = (0usize, 0usize);
+            for tick in 0..ticks {
+                if tick % me == 0 {
+                    settled += 1;
+                    if busy_at(tick, commit, gap) {
+                        rollbacks += 1;
+                    }
+                }
+            }
+            (settled, rollbacks)
+        }
+        // PROJECTED separate settlement lane: every match settles, no rollback.
+        fn project_lane(ticks: usize, me: usize) -> usize {
+            (0..ticks).filter(|t| t % me == 0).count()
+        }
+
+        eprintln!("[L4] settlement strategy success (settled/total) across rising MM contention:");
+        let (mut giveup_tot, mut retry_tot) = (0usize, 0usize);
+        let (mut sat_retry, mut sat_total) = (0usize, 0usize);
+        for (label, commit, gap, me) in sweep {
+            let (g, total) = run_measured(false, TICKS, commit, gap, me);
+            let (r, _) = run_measured(true, TICKS, commit, gap, me);
+            let (p, p_roll) = project_priority(TICKS, commit, gap, me);
+            let l = project_lane(TICKS, me);
+            eprintln!(
+                "[L4]   {label:<26}  give-up {g:>2}/{total}   retry {r:>2}/{total}   priority {p:>2}/{total} (+{p_roll} rb)   sep-lane {l:>2}/{total}"
+            );
+            giveup_tot += g;
+            retry_tot += r;
+            if label.starts_with("saturated") {
+                sat_retry = r;
+                sat_total = total;
+            }
+        }
+
+        // Findings, asserted:
+        //  - retry never settles fewer than give-up, and beats it under contention;
+        //  - under saturation (matches outrun free windows) retry CANNOT keep up —
+        //    evidence that a busy MM needs the architectural fix (priority / lane,
+        //    which settle 100% in projection), not just bot-side retry.
+        assert!(retry_tot >= giveup_tot, "retry must never settle fewer than give-up");
+        assert!(retry_tot > giveup_tot, "retry should beat give-up under contention");
+        assert!(
+            sat_retry < sat_total,
+            "under saturation retry must fall short of total (only priority/lane settle all)"
+        );
     }
 
     /// Tests transitioning the state of a task
