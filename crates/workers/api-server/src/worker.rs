@@ -40,6 +40,21 @@ pub struct ApiServer {
     pub(super) server_runtime: Option<Runtime>,
 }
 
+impl Drop for ApiServer {
+    fn drop(&mut self) {
+        // The coordinator (`#[tokio::main]`) drops workers from within its async
+        // context during teardown. A tokio `Runtime`'s default drop does a
+        // *blocking* shutdown, which panics when run inside an async context
+        // ("Cannot drop a runtime in a context where blocking is not allowed"),
+        // turning an orderly teardown into a hard process abort. Tear the
+        // runtime down in the background instead -- non-blocking, and safe to
+        // call from an async context.
+        if let Some(runtime) = self.server_runtime.take() {
+            runtime.shutdown_background();
+        }
+    }
+}
+
 /// The worker config for the ApiServer
 #[derive(Clone)]
 pub struct ApiServerConfig {

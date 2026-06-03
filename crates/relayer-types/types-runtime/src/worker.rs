@@ -102,7 +102,21 @@ pub fn watch_worker<W: Worker>(worker: &mut W, failure_channel: &WorkerFailureSe
                         );
                     },
                 }
-                channel_clone.blocking_send(()).unwrap();
+                // Notify the coordinator of the worker failure. If the
+                // coordinator has already dropped the receiver -- because the
+                // node is tearing down, or another worker already reported a
+                // failure -- this notification is redundant. Log and exit
+                // instead of `unwrap()`-panicking: panicking here turns an
+                // orderly teardown into a cascade of watcher panics (and, with
+                // the runtime drop on the main thread, a hard process abort).
+                if channel_clone.blocking_send(()).is_err() {
+                    log_task!(
+                        Task::WorkerWatcher,
+                        Outcome::Ok,
+                        subject = %worker_name,
+                        "failure channel closed; coordinator already shutting down, watcher exiting"
+                    );
+                }
             })
             .unwrap();
     }

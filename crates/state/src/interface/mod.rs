@@ -297,7 +297,17 @@ impl StateInner {
                             Outcome::Failed,
                             "raft core panicked, sending failure signal"
                         );
-                        chan.send(()).await.expect("could not send state failure signal");
+                        // If the coordinator has already torn down, its receiver
+                        // is gone and the failure is already being handled. Don't
+                        // `.expect()`-panic on a closed channel -- that compounds
+                        // the teardown into another uncaught panic.
+                        if chan.send(()).await.is_err() {
+                            log_task!(
+                                Task::RaftLifecycle,
+                                Outcome::Ok,
+                                "failure channel closed; coordinator already shutting down"
+                            );
+                        }
                     }
 
                     Ok(())
