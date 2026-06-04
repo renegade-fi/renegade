@@ -379,51 +379,58 @@ mod test {
         // Timeout-guarded so a queue/preemption deadlock fails fast instead of
         // hanging the lab loop (mock-raft can stall; see ticket).
         tokio::time::timeout(std::time::Duration::from_secs(15), async {
-        let state = mock_state().await;
+            let state = mock_state().await;
 
-        // The market-maker wallet (an account so its order task can be popped).
-        let mm_account = mock_empty_account();
-        let mm = mm_account.id;
-        state.new_account(mm_account).await.unwrap().await.unwrap();
-        // The counterparty wallet; the settlement preemption spans both queues.
-        let taker = TaskQueueKey::new_v4();
+            // The market-maker wallet (an account so its order task can be popped).
+            let mm_account = mock_empty_account();
+            let mm = mm_account.id;
+            state.new_account(mm_account).await.unwrap().await.unwrap();
+            // The counterparty wallet; the settlement preemption spans both queues.
+            let taker = TaskQueueKey::new_v4();
 
-        // Put a COMMITTED order-management task at the head of the MM queue — past
-        // its commit point, so it cannot be preempted or rolled back.
-        let (order_task, w) = state.append_task(mock_task_descriptor(mm)).await.unwrap();
-        w.await.unwrap();
-        state
-            .transition_task(
-                order_task,
-                QueuedTaskState::Running { state: "placing-order".to_string(), committed: true },
-            )
-            .await
-            .unwrap()
-            .await
-            .unwrap();
+            // Put a COMMITTED order-management task at the head of the MM queue — past
+            // its commit point, so it cannot be preempted or rolled back.
+            let (order_task, w) = state.append_task(mock_task_descriptor(mm)).await.unwrap();
+            w.await.unwrap();
+            state
+                .transition_task(
+                    order_task,
+                    QueuedTaskState::Running {
+                        state: "placing-order".to_string(),
+                        committed: true,
+                    },
+                )
+                .await
+                .unwrap()
+                .await
+                .unwrap();
 
-        // 1) Today's behavior: the settle (serial preemption over both wallets) is
-        //    REJECTED because the MM queue head is committed -> the fill is dropped.
-        let rejected = match state
-            .enqueue_preemptive_task(vec![mm, taker], mock_task_descriptor(mm), true /* serial */)
-            .await
-        {
-            Ok((_, w)) => w.await.is_err(),
-            Err(_) => true,
-        };
-        assert!(rejected, "settle must be rejected while the MM queue head is committed");
+            // 1) Today's behavior: the settle (serial preemption over both wallets) is
+            //    REJECTED because the MM queue head is committed -> the fill is dropped.
+            let rejected = match state
+                .enqueue_preemptive_task(
+                    vec![mm, taker],
+                    mock_task_descriptor(mm),
+                    true, /* serial */
+                )
+                .await
+            {
+                Ok((_, w)) => w.await.is_err(),
+                Err(_) => true,
+            };
+            assert!(rejected, "settle must be rejected while the MM queue head is committed");
 
-        // 2) The committed order task completes, clearing the queue.
-        state.pop_task(order_task, true /* success */).await.unwrap().await.unwrap();
+            // 2) The committed order task completes, clearing the queue.
+            state.pop_task(order_task, true /* success */).await.unwrap().await.unwrap();
 
-        // 3) The SAME preemption now succeeds — the rejection was transient, so
-        //    Approach A's bounded retry lands once the commit window passes.
-        let (tid, w) = state
-            .enqueue_preemptive_task(vec![mm, taker], mock_task_descriptor(mm), true)
-            .await
-            .expect("settle enqueue should succeed after the committed task clears");
-        w.await.expect("settle preemption should commit once the queue is free");
-        state.pop_task(tid, true).await.unwrap().await.unwrap();
+            // 3) The SAME preemption now succeeds — the rejection was transient, so
+            //    Approach A's bounded retry lands once the commit window passes.
+            let (tid, w) = state
+                .enqueue_preemptive_task(vec![mm, taker], mock_task_descriptor(mm), true)
+                .await
+                .expect("settle enqueue should succeed after the committed task clears");
+            w.await.expect("settle preemption should commit once the queue is free");
+            state.pop_task(tid, true).await.unwrap().await.unwrap();
         })
         .await
         .expect("L0 lab test exceeded 15s — preemption/queue likely deadlocked");
@@ -537,7 +544,13 @@ mod test {
         }
 
         // MEASURED give-up / retry against the real preemptive queue (tx-direct).
-        fn run_measured(retry: bool, ticks: usize, commit: usize, gap: usize, me: usize) -> (usize, usize) {
+        fn run_measured(
+            retry: bool,
+            ticks: usize,
+            commit: usize,
+            gap: usize,
+            me: usize,
+        ) -> (usize, usize) {
             let db = mock_db();
             let tx = db.new_write_tx().unwrap();
             let mm = TaskQueueKey::new_v4();
