@@ -388,10 +388,9 @@ impl NodeStartupTask {
         // transiently-absent leader -- on the seed boot path that panics the
         // node-startup task and crash-loops the boot. Treat it as a retryable
         // setup error instead.
-        let leader = self
-            .state
-            .get_leader()
-            .ok_or_else(|| NodeStartupTaskError::State("no leader present after election".to_string()))?;
+        let leader = self.state.get_leader().ok_or_else(|| {
+            NodeStartupTaskError::State("no leader present after election".to_string())
+        })?;
         log_task!(LogTask::NodeStartup, Outcome::Ok, subject = %leader, "leader elected");
 
         if leader != my_peer_id {
