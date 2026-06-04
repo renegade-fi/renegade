@@ -173,6 +173,24 @@ impl SettlementProcessor {
         obligation: &SettlementObligation,
     ) -> Result<Order, SettlementError> {
         let mut order = self.get_order(order_id).await?;
+
+        // Revalidate against current state before mutating. The matching engine
+        // reserves liquidity, but a reservation can be wiped by a concurrent
+        // balance refresh, so a settlement obligation may still exceed the
+        // order's now-current remaining amount (a stale / over-committed match).
+        // Reject it here rather than underflowing `decrement_amount_in` on the
+        // raft-applying node. Settlement is serialized per account, so this read
+        // is consistent; the chain-events handler reconciles the order from
+        // on-chain state if the match did settle on-chain.
+        if order.amount_in() < obligation.amount_in {
+            return Err(SettlementError::State(format!(
+                "order {order_id} remaining amount_in {} < obligation amount_in {}; \
+                 rejecting stale/over-committed match",
+                order.amount_in(),
+                obligation.amount_in
+            )));
+        }
+
         match order.ring {
             PrivacyRing::Ring0 => {
                 self.update_ring0_intent_after_match(&mut order, obligation).await?
@@ -256,7 +274,23 @@ impl SettlementProcessor {
         let state = &self.ctx.state;
         let location = BalanceLocation::EOA;
         let mut balance = self.get_balance(account_id, obligation.input_token, location).await?;
-        *balance.amount_mut() -= obligation.amount_in;
+
+        // Revalidate the balance covers the obligation before debiting. Sibling
+        // orders of the same account draw on this shared balance and matches are
+        // assembled concurrently against its full value, so a stale obligation
+        // can exceed the current balance. Reject rather than underflow (which
+        // would wrap the balance to a huge value in release builds -- a
+        // fund-safety hazard). Per-account serialized settlement makes this read
+        // consistent.
+        let current = *balance.amount_mut();
+        if current < obligation.amount_in {
+            return Err(SettlementError::State(format!(
+                "account {account_id} balance {current} < obligation amount_in {}; \
+                 rejecting stale/over-committed match",
+                obligation.amount_in
+            )));
+        }
+        *balance.amount_mut() = current - obligation.amount_in;
 
         // Write the balance back to the state
         let waiter = state.update_account_balance(account_id, balance).await?;

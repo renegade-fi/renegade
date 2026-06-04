@@ -383,7 +383,15 @@ impl NodeStartupTask {
         log_task!(LogTask::NodeStartup, Outcome::Started, "awaiting leader election");
         self.state.await_leader().await.map_err(err_str!(NodeStartupTaskError::State))?;
 
-        let leader = self.state.get_leader().unwrap();
+        // `await_leader` resolved, but leadership can change between that and
+        // this read (the just-elected leader may step down). Don't `.unwrap()` a
+        // transiently-absent leader -- on the seed boot path that panics the
+        // node-startup task and crash-loops the boot. Treat it as a retryable
+        // setup error instead.
+        let leader = self
+            .state
+            .get_leader()
+            .ok_or_else(|| NodeStartupTaskError::State("no leader present after election".to_string()))?;
         log_task!(LogTask::NodeStartup, Outcome::Ok, subject = %leader, "leader elected");
 
         if leader != my_peer_id {

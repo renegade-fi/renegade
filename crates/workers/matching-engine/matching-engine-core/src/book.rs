@@ -143,6 +143,43 @@ impl Book {
         self.add_order(account_id, order, matchable_amount);
     }
 
+    /// Reserve `amount` of matchable liquidity on an order, decrementing its
+    /// in-book matchable amount and re-keying the sorted set.
+    ///
+    /// This closes the over-commit race: `find_match` does not decrement
+    /// liquidity, so without a reservation two concurrently-assembled matches
+    /// both see the full `matchable_amount` and can together commit more than
+    /// the order holds (the second settlement then underflows
+    /// `decrement_amount_in`). Reserving the matched amount at match time makes
+    /// a subsequent `find_match` against the same order see the reduced amount.
+    ///
+    /// The reservation is TRANSIENT: the authoritative `matchable_amount` is
+    /// restored by the next `update_order` (settlement apply or balance
+    /// refresh), which reconciles a settled reservation (authoritative value
+    /// already reflects the fill) and releases an unsettled one (authoritative
+    /// value is unchanged). Clamps to the available amount; returns the amount
+    /// actually reserved.
+    pub fn reserve(&mut self, order_id: OrderId, amount: Amount) -> Amount {
+        let Some(order) = self.order_map.get_mut(&order_id) else {
+            return 0;
+        };
+
+        let reserved = Amount::min(amount, order.matchable_amount);
+        if reserved == 0 {
+            return 0;
+        }
+
+        let old_amount = order.matchable_amount;
+        let new_amount = old_amount - reserved;
+        order.matchable_amount = new_amount;
+
+        // Re-key the sorted set with the reduced amount
+        self.sorted_amounts.remove(&ReverseAmountKey::new(old_amount, order_id));
+        self.sorted_amounts.insert(ReverseAmountKey::new(new_amount, order_id));
+
+        reserved
+    }
+
     // --- Matching --- //
 
     /// Find a match for a given order

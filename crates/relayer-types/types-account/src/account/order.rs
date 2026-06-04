@@ -89,17 +89,33 @@ impl Order {
         self.intent.inner.amount_in
     }
 
-    /// Decrement the amount remaining for the order
-    pub fn decrement_amount_in(&mut self, amount: Amount) {
-        let new_amount = self
-            .intent
-            .inner
-            .amount_in
-            .checked_sub(amount)
-            .expect("underflow when decrementing amount_in");
+    /// Decrement the amount remaining for the order by up to `amount`.
+    ///
+    /// Returns the amount actually decremented. Clamps to the remaining amount
+    /// rather than underflowing: the plaintext `inner.amount_in` and the
+    /// `public_share.amount_in` are decremented by the SAME effective amount, so
+    /// the secret-share invariant (and thus the on-chain commitment) stay
+    /// consistent -- subtracting more from the share than the plaintext would
+    /// corrupt it.
+    ///
+    /// Reaching the clamp means a settlement obligation exceeded the order's
+    /// remaining amount (a stale / over-committed match). Settlement-time
+    /// revalidation rejects such matches before they reach here, so this is a
+    /// last-resort backstop: it must never panic (it would crash the
+    /// raft-applying node) nor silently corrupt the share. The `debug_assert`
+    /// surfaces the anomaly in tests; callers can compare the returned amount to
+    /// the requested amount to detect a shortfall in release.
+    pub fn decrement_amount_in(&mut self, amount: Amount) -> Amount {
+        debug_assert!(
+            amount <= self.intent.inner.amount_in,
+            "decrement_amount_in underflow: amount {amount} > remaining {}",
+            self.intent.inner.amount_in
+        );
 
-        self.intent.inner.amount_in = new_amount;
-        self.intent.public_share.amount_in -= Scalar::from(amount);
+        let effective = Amount::min(amount, self.intent.inner.amount_in);
+        self.intent.inner.amount_in -= effective;
+        self.intent.public_share.amount_in -= Scalar::from(effective);
+        effective
     }
 
     /// Whether the order is zero'd out

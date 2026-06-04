@@ -27,11 +27,20 @@ impl MatchingEngineExecutor {
             return Ok(None);
         }
 
-        // Forward to the matching engine
+        // Forward to the matching engine. `find_match` reserves the counterparty
+        // it discovers; reserve the INPUT order here too (find_match never sees
+        // it) so two concurrent internal matches cannot both commit this order's
+        // full liquidity as input. party0 is the input party (the engine builds
+        // its obligation first).
         let res = self
             .matching_engine
-            .find_match(aid, order.ring, pair, input_range, pool, price)
+            .find_match(aid, order.ring, pair, input_range, pool.clone(), price)
             .filter(|res| self.validate_min_fill_size(res));
+
+        if let Some(ref m) = res {
+            let input_amount = m.match_result.party0_obligation().amount_in;
+            self.matching_engine.reserve_order(order, input_amount, pool);
+        }
 
         Ok(res)
     }

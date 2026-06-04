@@ -128,6 +128,28 @@ impl MatchingEngine {
         }
     }
 
+    /// Reserve `amount` of matchable liquidity on an order across both books.
+    ///
+    /// `find_match` reserves the COUNTERPARTY it discovers; this reserves the
+    /// INPUT order of an internal match (which `find_match` never sees), so two
+    /// concurrent matches that use the same order as input cannot both commit
+    /// its full liquidity. Like the counterparty reservation, this is a
+    /// throughput optimization reconciled by the next `update_order`; the
+    /// correctness guarantee is settlement-time revalidation.
+    pub fn reserve_order(&self, order: &Order, amount: Amount, matching_pool: MatchingPoolName) {
+        let pair = order.pair();
+
+        // Reserve in the pool-specific book
+        if let Some(mut book) = self.book_map.get_mut(&(pair, matching_pool)) {
+            book.reserve(order.id, amount);
+        }
+
+        // Reserve in the all-pools book
+        if let Some(mut all_book) = self.all_pools_book.get_mut(&pair) {
+            all_book.reserve(order.id, amount);
+        }
+    }
+
     /// Get the matchable amount for both sides of a pair
     ///
     /// Returns (buy_amount, sell_amount) where buy amount is denominated in the
@@ -304,7 +326,10 @@ impl MatchingEngine {
         let counterparty_price = price.inverse()?;
         let output_range = input_range_to_output_range(input_range, price);
 
-        let book = self.book_map.get(&(counterparty_pair, matching_pool))?;
+        // Hold the book's write guard so the find and the reservation below are
+        // atomic: a concurrent find_match on this book cannot observe the
+        // counterparty's pre-reservation liquidity.
+        let mut book = self.book_map.get_mut(&(counterparty_pair, matching_pool))?;
         let (counterparty_oid, counterparty_input_amount, matchable_amount_bounds) = book
             .find_match(
                 exclude_account_id,
@@ -313,7 +338,25 @@ impl MatchingEngine {
                 output_range,
                 require_externally_matchable,
             )?;
+
+        // Reserve the matched liquidity so concurrently-assembled matches cannot
+        // double-commit the same counterparty amount before settlement
+        // reconciles the book (the over-commit that underflows
+        // `decrement_amount_in`). Only the INTERNAL path reserves: it proceeds to
+        // settlement, whereas external matches are quotes that may never execute,
+        // so reserving them would strand liquidity until the next refresh.
+        if !require_externally_matchable {
+            book.reserve(counterparty_oid, counterparty_input_amount);
+        }
         drop(book);
+
+        // Mirror the reservation into the all-pools book (external matching reads
+        // it) to keep the two views consistent during the reservation window.
+        if !require_externally_matchable
+            && let Some(mut all_book) = self.all_pools_book.get_mut(&counterparty_pair)
+        {
+            all_book.reserve(counterparty_oid, counterparty_input_amount);
+        }
 
         self.build_match_result(
             input_pair,

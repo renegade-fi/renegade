@@ -163,16 +163,17 @@ impl TaskQueue {
 
     /// Pop a task from the queue
     pub fn pop_task(&mut self, id: &TaskIdentifier) -> bool {
-        // Only the first serial task may be popped
+        // Only the first serial task may be popped. The helpers return false if
+        // the queue's preemption state is inconsistent with the pop; propagate
+        // that as a non-pop (the storage layer turns false into a reject) rather
+        // than panicking the raft state-machine worker during apply.
         if self.serial_tasks.first() == Some(id) {
-            self.pop_serial_task();
+            self.pop_serial_task()
         } else if let Some(concurrent_idx) = self.concurrent_tasks.iter().position(|t| t == id) {
-            self.pop_concurrent_task(concurrent_idx);
+            self.pop_concurrent_task(concurrent_idx)
         } else {
-            return false;
+            false
         }
-
-        true
     }
 
     // --- Helpers --- //
@@ -180,18 +181,25 @@ impl TaskQueue {
     /// Pop the first serial task from the queue
     ///
     /// Updates the preemption state after the pop
-    fn pop_serial_task(&mut self) {
-        self.serial_tasks.remove(0);
+    fn pop_serial_task(&mut self) -> bool {
         match self.preemption_state {
-            TaskQueuePreemptionState::SerialPreemptionQueued => {
-                // If this was the serially preemptive task, the queue is no longer preempted
-                self.preemption_state = TaskQueuePreemptionState::NotPreempted;
-            },
             TaskQueuePreemptionState::ConcurrentPreemptionsQueued => {
-                unreachable!("Serial tasks cannot pop when concurrently preempted");
+                // Inconsistent persisted state: a serial task sits at the front
+                // while the queue is concurrently preempted. Reject the pop
+                // (return false) instead of `unreachable!` -- a panic here would
+                // crash the raft state-machine worker on every node applying the
+                // committed PopTask and crash-loop the cluster.
+                false
+            },
+            TaskQueuePreemptionState::SerialPreemptionQueued => {
+                // This was the serially preemptive task; the queue is no longer preempted
+                self.serial_tasks.remove(0);
+                self.preemption_state = TaskQueuePreemptionState::NotPreempted;
+                true
             },
             TaskQueuePreemptionState::NotPreempted => {
-                // Do nothing, no preemption existed before
+                self.serial_tasks.remove(0);
+                true
             },
         }
     }
@@ -199,22 +207,29 @@ impl TaskQueue {
     /// Pop a task from the concurrent tasks list at the given index
     ///
     /// Updates the preemption state after the pop
-    fn pop_concurrent_task(&mut self, idx: usize) {
-        self.concurrent_tasks.remove(idx);
+    fn pop_concurrent_task(&mut self, idx: usize) -> bool {
         match self.preemption_state {
+            TaskQueuePreemptionState::NotPreempted => {
+                // Inconsistent persisted state: popping a concurrent task from a
+                // queue that records no preemption. Reject (return false) instead
+                // of `unreachable!`; a panic here would crash the raft
+                // state-machine worker on every node and crash-loop the cluster.
+                false
+            },
             TaskQueuePreemptionState::SerialPreemptionQueued => {
-                // Noop, the queue waits for the serial preemption to commit
+                // The queue waits for the serial preemption to commit
+                self.concurrent_tasks.remove(idx);
+                true
             },
             TaskQueuePreemptionState::ConcurrentPreemptionsQueued => {
-                // Only update if this is the last concurrent task active
+                self.concurrent_tasks.remove(idx);
+                // Only update if this was the last concurrent task active
                 if self.concurrent_tasks.is_empty() {
                     self.preemption_state = TaskQueuePreemptionState::NotPreempted;
                 }
+                true
             },
-            TaskQueuePreemptionState::NotPreempted => {
-                unreachable!("Task queue must be preempted to pop concurrent tasks");
-            },
-        };
+        }
     }
 }
 
