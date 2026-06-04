@@ -231,6 +231,33 @@ impl RaftClient {
         metrics.membership_config.membership().clone()
     }
 
+    /// Emit a periodic raft-health gauge (term, role, leader, voter/learner
+    /// counts, last-applied index) so cluster degradation -- quorum loss, a
+    /// stuck learner, an unexpected role -- is visible as a queryable signal
+    /// instead of being inferred from low-level error spam. Called from every
+    /// node on the membership-sync tick.
+    pub fn log_health(&self) {
+        let m = self.metrics();
+        let membership = m.membership_config.membership();
+        let voters = membership.voter_ids().count();
+        let learners = membership.learner_ids().count();
+        let last_applied = m.last_applied.map(|l| l.index).unwrap_or(0);
+        let leader =
+            m.current_leader.map(|l| l.to_string()).unwrap_or_else(|| "none".to_string());
+
+        log_task!(
+            Task::RaftLifecycle,
+            Outcome::Ok,
+            term = m.current_term,
+            state = ?m.state,
+            leader = %leader,
+            voters = voters,
+            learners = learners,
+            last_applied = last_applied,
+            "raft health"
+        );
+    }
+
     /// Get the node info an ID for the current leader
     pub(crate) fn leader_info(&self) -> Option<(NodeId, RaftNode)> {
         let metrics = self.metrics();

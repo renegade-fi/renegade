@@ -333,6 +333,9 @@ impl StateInner {
                 let cluster_id = my_cluster.clone();
 
                 async move {
+                    // Emit a raft-health gauge from this node every tick
+                    client.log_health();
+
                     // Fetch known cluster peers from the DB
                     let tx = db.new_read_tx().map_err(raw_err_str!("{}"))?;
                     let known_cluster_peers =

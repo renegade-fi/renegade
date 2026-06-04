@@ -233,8 +233,17 @@ impl RaftStateMachine<TypeConfig> for StateMachine {
 
                     match res {
                         Err(StateApplicatorError::Rejected(msg)) => {
-                            // If the state machine rejected the state transition, notify the client
-                            // with an error state
+                            // Surface the rejection in the logs. It is otherwise only sent to the
+                            // proposal waiter (often disconnected), so app-level issues -- e.g. an
+                            // order placed into a nonexistent matching pool, or a stale /
+                            // over-committed match -- stay invisible until they escalate to a
+                            // fatal error. Logging here makes them detectable directly.
+                            log_task!(
+                                Task::Proposal,
+                                Outcome::Failed,
+                                error = %msg,
+                                "state transition rejected at apply"
+                            );
                             self.notifications
                                 .notify(id, Err(StateError::TransitionRejected(msg)))
                                 .await;

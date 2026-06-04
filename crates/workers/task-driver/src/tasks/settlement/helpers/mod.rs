@@ -183,6 +183,12 @@ impl SettlementProcessor {
         // is consistent; the chain-events handler reconciles the order from
         // on-chain state if the match did settle on-chain.
         if order.amount_in() < obligation.amount_in {
+            tracing::warn!(
+                order_id = %order_id,
+                remaining = order.amount_in(),
+                obligation = obligation.amount_in,
+                "rejecting stale/over-committed match: order remaining amount_in < obligation"
+            );
             return Err(SettlementError::State(format!(
                 "order {order_id} remaining amount_in {} < obligation amount_in {}; \
                  rejecting stale/over-committed match",
@@ -284,6 +290,12 @@ impl SettlementProcessor {
         // consistent.
         let current = *balance.amount_mut();
         if current < obligation.amount_in {
+            tracing::warn!(
+                account_id = %account_id,
+                balance = current,
+                obligation = obligation.amount_in,
+                "rejecting stale/over-committed match: account balance < obligation amount_in"
+            );
             return Err(SettlementError::State(format!(
                 "account {account_id} balance {current} < obligation amount_in {}; \
                  rejecting stale/over-committed match",
