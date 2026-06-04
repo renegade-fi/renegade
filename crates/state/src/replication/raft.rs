@@ -242,8 +242,7 @@ impl RaftClient {
         let voters = membership.voter_ids().count();
         let learners = membership.learner_ids().count();
         let last_applied = m.last_applied.map(|l| l.index).unwrap_or(0);
-        let leader =
-            m.current_leader.map(|l| l.to_string()).unwrap_or_else(|| "none".to_string());
+        let leader = m.current_leader.map(|l| l.to_string()).unwrap_or_else(|| "none".to_string());
 
         log_task!(
             Task::RaftLifecycle,
