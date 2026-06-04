@@ -132,9 +132,13 @@ impl StateTxn<'_, RW> {
         order_id: &OrderId,
         pool_name: &str,
     ) -> Result<(), StorageError> {
-        // Check that the pool exists
+        // Check that the pool exists. This is a validation failure, not a
+        // storage fault, so it must be a `reject`: `From<StorageError>` maps
+        // `Rejected` to a non-fatal `StateApplicatorError::Rejected`, while any
+        // other variant becomes `Storage` -- which the state machine apply
+        // treats as fatal and quits the raft core. Mirrors `create_matching_pool`.
         if !self.matching_pool_exists(pool_name)? {
-            return Err(StorageError::Other(MATCHING_POOL_DOES_NOT_EXIST_ERR.to_string()));
+            return Err(StorageError::reject(MATCHING_POOL_DOES_NOT_EXIST_ERR));
         }
 
         // If assigning to the global pool, simply remove the existing assignment
