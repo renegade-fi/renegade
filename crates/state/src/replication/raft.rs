@@ -1,7 +1,7 @@
 //! Wraps the inner raft in a client interface that handles requests and waiters
 
 use std::{
-    collections::{BTreeMap, BTreeSet, HashSet},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     sync::Arc,
     time::Duration,
 };
@@ -41,6 +41,14 @@ const DEFAULT_ELECTION_TIMEOUT_MIN: u64 = 10_000; // 10 seconds
 const DEFAULT_ELECTION_TIMEOUT_MAX: u64 = 15_000; // 15 seconds
 /// The default log lag threshold for promoting learners
 const DEFAULT_LEARNER_PROMOTION_THRESHOLD: u64 = 20; // 20 log entries
+/// The number of consecutive membership-sync checks a peer must be absent from
+/// the gossip layer's known-peers set before it is expired from the raft.
+///
+/// Acts as failure-detector hysteresis: at the 10s membership-sync interval
+/// this is a ~30s grace window. Without it, a single missed gossip tick evicts
+/// a peer immediately, so a freshly-joined learner can be removed before gossip
+/// has even propagated it -- starving promotion and driving membership churn.
+const DEFAULT_EXPIRY_GRACE_CHECKS: u32 = 3;
 /// The amount of time to await promotion before timing out
 ///
 /// Set to five minutes; giving enough time to receive snapshots and catch up to
@@ -80,6 +88,9 @@ pub struct RaftClientConfig {
     pub election_timeout_max: u64,
     /// The length of a learner's log lag before being promoted to a follower
     pub learner_promotion_threshold: u64,
+    /// The number of consecutive missed gossip checks before a raft peer is
+    /// expired (failure-detector hysteresis)
+    pub expiry_grace_checks: u32,
     /// The directory at which snapshots are stored
     pub snapshot_path: String,
     /// The nodes to initialize the membership with
@@ -105,6 +116,7 @@ impl Default for RaftClientConfig {
             election_timeout_min: DEFAULT_ELECTION_TIMEOUT_MIN,
             election_timeout_max: DEFAULT_ELECTION_TIMEOUT_MAX,
             learner_promotion_threshold: DEFAULT_LEARNER_PROMOTION_THRESHOLD,
+            expiry_grace_checks: DEFAULT_EXPIRY_GRACE_CHECKS,
             snapshot_path: "./raft-snapshots".to_string(),
             initial_nodes: vec![],
             snapshot_max_chunk_size: DEFAULT_SNAPSHOT_MAX_CHUNK_SIZE,
@@ -126,6 +138,11 @@ pub struct RaftClient {
     network_factory: P2PNetworkFactoryWrapper,
     /// A lock to prevent simultaneous membership changes
     membership_change_lock: Arc<Mutex<()>>,
+    /// Per-peer count of consecutive membership-sync checks during which the
+    /// peer was absent from the gossip layer's known-peers set. A peer is only
+    /// expired once its count reaches `config.expiry_grace_checks`; seeing the
+    /// peer again resets it. Maintained only while this node is the leader.
+    expiry_misses: Arc<Mutex<HashMap<NodeId, u32>>>,
 }
 
 impl RaftClient {
@@ -167,6 +184,7 @@ impl RaftClient {
             raft,
             network_factory: p2p_factory,
             membership_change_lock: Arc::new(Mutex::new(())),
+            expiry_misses: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 
@@ -608,12 +626,37 @@ impl RaftClient {
         // Only the leader should update raft membership
         let leader = self.leader().await.unwrap_or(0 /* invalid id */);
         if leader != self.node_id() {
+            // Not the leader: drop expiry bookkeeping so a future leadership
+            // term starts its hysteresis counters fresh.
+            self.expiry_misses.lock().await.clear();
             return Ok(());
         }
 
-        // After each step we return if a change was made, only one membership change
-        // may be made at a time
-        if self.check_expired_nodes(&known_peers).await? > 0 {
+        // Update per-peer liveness counters once per tick and collect the peers
+        // that have been absent long enough to expire (hysteresis applied).
+        let expirable = self.update_expiry_misses(&known_peers).await;
+
+        // openraft permits only one membership change at a time, so we make at
+        // most one change per tick and return after it. The ORDER matters:
+        //
+        //   1. Expire dead VOTERS first -- a dead voter counts against quorum,
+        //      so reclaiming it protects liveness.
+        //   2. Promote caught-up learners -- this must come BEFORE expiring
+        //      dead learners. If expiry runs first and there is always a peer
+        //      to expire (e.g. stale ids left by restarts with ephemeral p2p
+        //      identities), promotion is never reached: joining workers sit as
+        //      learners until the await_promotion timeout, then restart, which
+        //      creates another stale id to expire -- a self-sustaining churn
+        //      loop. Promotion only promotes learners caught up within
+        //      `learner_promotion_threshold`, so dead/lagging ids are never
+        //      wrongly promoted; they fall through to step 4.
+        //   3. Add newly-discovered learners from gossip.
+        //   4. Expire dead learners last (no quorum impact).
+        if self.expire_peers(&expirable, ExpireScope::VotersOnly).await? > 0 {
+            return Ok(());
+        }
+
+        if self.try_promote_learners().await? > 0 {
             return Ok(());
         }
 
@@ -621,7 +664,7 @@ impl RaftClient {
             return Ok(());
         }
 
-        self.try_promote_learners().await.map(|_| ())
+        self.expire_peers(&expirable, ExpireScope::LearnersOnly).await.map(|_| ())
     }
 
     /// Add any nodes missed by gossip
@@ -700,50 +743,101 @@ impl RaftClient {
         Ok(num_learners)
     }
 
-    /// Expire all raft peers not in the list of known peers
+    /// Update the per-peer consecutive-miss counters against the latest gossip
+    /// view and return the raft node-ids that have been absent for at least
+    /// `config.expiry_grace_checks` consecutive checks (eligible for expiry).
     ///
-    /// Used to sync gossip failure detection with the raft in the case that a
-    /// node removal is dropped
+    /// This applies failure-detector hysteresis so that a transient gossip
+    /// absence -- including a freshly-joined learner that gossip has not yet
+    /// propagated -- does not immediately evict a peer. The local (leader) node
+    /// is never tracked or expired: removing the node that drives the
+    /// membership change can empty the voter set and panic the raft core.
     ///
-    /// Returns the number of nodes expired
-    pub async fn check_expired_nodes(
-        &self,
-        known_peers: &[WrappedPeerId],
-    ) -> Result<usize, ReplicationError> {
-        // Only the leader should expire old raft nodes
-        let leader_id = self.leader_info().map(|(id, _)| id).unwrap_or(0 /* invalid id */);
-        if self.node_id() != leader_id {
-            return Ok(0);
-        }
-
-        // Check for raft peers not in the list of peers known to the gossip layer
+    /// Called once per membership-sync tick, before any membership change, so
+    /// the counters advance consistently regardless of which change is made.
+    async fn update_expiry_misses(&self, known_peers: &[WrappedPeerId]) -> Vec<NodeId> {
         let known_peers_set: HashSet<_> = known_peers.iter().collect();
         let members = self.membership();
-
         let local_id = self.node_id();
-        let mut peers_to_expire = Vec::new();
+
+        let member_ids: HashSet<NodeId> = members.nodes().map(|(id, _)| *id).collect();
+        let mut misses = self.expiry_misses.lock().await;
+
+        // Forget counters for nodes no longer in the membership
+        misses.retain(|id, _| member_ids.contains(id));
+
+        let mut expirable = Vec::new();
         for (id, info) in members.nodes() {
-            // Never expire the local (leader) node: removing the node that drives
-            // the membership change can empty the voter set and panic the raft core.
             if *id == local_id {
                 continue;
             }
-            if !known_peers_set.contains(&info.peer_id) {
-                log_task!(
-                    Task::MembershipChange,
-                    Outcome::Started,
-                    subject = %id,
-                    "found missed expiry, removing raft peer"
-                );
-                peers_to_expire.push(*id);
+
+            if known_peers_set.contains(&info.peer_id) {
+                // Seen this tick -- reset the miss counter
+                misses.remove(id);
+            } else {
+                let count = misses.entry(*id).or_insert(0);
+                *count += 1;
+                if *count >= self.config.expiry_grace_checks {
+                    expirable.push(*id);
+                }
             }
         }
 
-        let num_peers_to_expire = peers_to_expire.len();
-        if num_peers_to_expire > 0 {
-            self.remove_peers(peers_to_expire).await?;
+        expirable
+    }
+
+    /// Expire the eligible peers that fall within the given scope (voters or
+    /// learners). Splitting expiry by scope lets the membership-sync loop
+    /// reclaim dead voters with priority (quorum safety) while deferring dead
+    /// learner cleanup below promotion, so promotion is never starved.
+    ///
+    /// Returns the number of peers expired.
+    async fn expire_peers(
+        &self,
+        expirable: &[NodeId],
+        scope: ExpireScope,
+    ) -> Result<usize, ReplicationError> {
+        if expirable.is_empty() {
+            return Ok(0);
         }
 
-        Ok(num_peers_to_expire)
+        let members = self.membership();
+        let voters: HashSet<_> = members.voter_ids().collect();
+        let to_expire: Vec<NodeId> = expirable
+            .iter()
+            .copied()
+            .filter(|id| match scope {
+                ExpireScope::VotersOnly => voters.contains(id),
+                ExpireScope::LearnersOnly => !voters.contains(id),
+            })
+            .collect();
+
+        if to_expire.is_empty() {
+            return Ok(0);
+        }
+
+        for id in &to_expire {
+            log_task!(
+                Task::MembershipChange,
+                Outcome::Started,
+                subject = %id,
+                "found missed expiry, removing raft peer"
+            );
+        }
+
+        let num = to_expire.len();
+        self.remove_peers(to_expire).await?;
+        Ok(num)
     }
+}
+
+/// The set of peers a single expiry pass should consider, used to prioritize
+/// reclaiming dead voters over dead learners within a membership-sync tick.
+#[derive(Clone, Copy)]
+enum ExpireScope {
+    /// Only expire peers that are currently voters
+    VotersOnly,
+    /// Only expire peers that are currently learners (non-voters)
+    LearnersOnly,
 }
