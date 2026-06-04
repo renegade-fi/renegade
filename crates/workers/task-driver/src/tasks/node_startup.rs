@@ -422,10 +422,12 @@ impl NodeStartupTask {
     async fn join_raft(&self) -> Result<(), NodeStartupTaskError> {
         log_task!(LogTask::NodeStartup, Outcome::Started, "joining raft cluster");
 
-        // Wait for promotion to a voter
-        log_task!(LogTask::NodeStartup, Outcome::Started, "awaiting promotion to voter");
+        // Wait until the node is part of the cluster. In voter-promotion mode
+        // this blocks until the node is promoted to a voter; in sole-voter mode
+        // it blocks until the node is adopted as a learner with a known leader.
+        log_task!(LogTask::NodeStartup, Outcome::Started, "awaiting raft cluster membership");
         self.state.await_promotion().await.map_err(err_str!(NodeStartupTaskError::State))?;
-        log_task!(LogTask::NodeStartup, Outcome::Ok, "promoted to voter");
+        log_task!(LogTask::NodeStartup, Outcome::Ok, "joined raft cluster");
 
         Ok(())
     }

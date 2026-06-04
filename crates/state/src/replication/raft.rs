@@ -91,6 +91,15 @@ pub struct RaftClientConfig {
     /// The number of consecutive missed gossip checks before a raft peer is
     /// expired (failure-detector hysteresis)
     pub expiry_grace_checks: u32,
+    /// Whether to promote caught-up learners to voters.
+    ///
+    /// When false (sole-voter mode) the seed remains the only voter and all
+    /// workers stay learners. This is the safe mode while workers have
+    /// ephemeral p2p identities: promoting a worker to voter is unsafe because
+    /// a restart brings it back with a new node-id, leaving a dead voter the
+    /// leader cannot remove without quorum -- a permanent quorum deadlock.
+    /// Re-enable once workers have stable identities.
+    pub enable_voter_promotion: bool,
     /// The directory at which snapshots are stored
     pub snapshot_path: String,
     /// The nodes to initialize the membership with
@@ -117,6 +126,9 @@ impl Default for RaftClientConfig {
             election_timeout_max: DEFAULT_ELECTION_TIMEOUT_MAX,
             learner_promotion_threshold: DEFAULT_LEARNER_PROMOTION_THRESHOLD,
             expiry_grace_checks: DEFAULT_EXPIRY_GRACE_CHECKS,
+            // Sole-voter mode by default: workers have ephemeral identities, so
+            // promoting them to voters risks a quorum deadlock on restart.
+            enable_voter_promotion: false,
             snapshot_path: "./raft-snapshots".to_string(),
             initial_nodes: vec![],
             snapshot_max_chunk_size: DEFAULT_SNAPSHOT_MAX_CHUNK_SIZE,
@@ -272,6 +284,30 @@ impl RaftClient {
     /// Await the promotion of the local peer to a voter
     pub async fn await_promotion(&self) -> Result<(), ReplicationError> {
         let timeout = Duration::from_millis(DEFAULT_PROMOTION_TIMEOUT_MS);
+
+        // Sole-voter mode: a worker stays a learner for its whole lifetime, so
+        // it must NOT wait to become a voter -- that wait never resolves and
+        // would time out into a restart loop (the original churn). Instead wait
+        // until it has been adopted into the cluster as a learner: a leader
+        // exists and the local node is present in the membership (the seed has
+        // added it and it is now replicating).
+        if !self.config.enable_voter_promotion {
+            let my_id = self.node_id();
+            return self
+                .raft
+                .wait(Some(timeout))
+                .metrics(
+                    |m| {
+                        m.current_leader.is_some()
+                            && m.membership_config.membership().get_node(&my_id).is_some()
+                    },
+                    "local-node-adoption",
+                )
+                .await
+                .map_err(err_str!(ReplicationError::Raft))
+                .map(|_| ());
+        }
+
         // Wait until the local node is a VOTER -- any non-learner state (Follower,
         // Candidate, or Leader). Waiting only for `Follower` (as before) breaks the
         // restart-with-persisted-state path: a node that recovers as the sole voter
@@ -656,7 +692,11 @@ impl RaftClient {
             return Ok(());
         }
 
-        if self.try_promote_learners().await? > 0 {
+        // Promote caught-up learners -- only in voter-promotion mode. In
+        // sole-voter mode (default) the seed stays the only voter and workers
+        // remain learners, which avoids the dead-voter quorum deadlock that
+        // ephemeral worker identities create on restart.
+        if self.config.enable_voter_promotion && self.try_promote_learners().await? > 0 {
             return Ok(());
         }
 
