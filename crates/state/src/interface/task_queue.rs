@@ -580,15 +580,58 @@ mod test {
             (settled, total)
         }
 
-        // PROJECTED priority-preempt: settlement preempts the committed order task
-        // -> every match settles; a busy match costs an order rollback.
-        fn project_priority(ticks: usize, commit: usize, gap: usize, me: usize) -> (usize, usize) {
-            let (mut settled, mut rollbacks) = (0usize, 0usize);
+        // MEASURED priority order-yield against the real preemptive queue
+        // (tx-direct). Order-management tasks YIELD before committing, so the MM
+        // order head is NON-committed (preemptable) for its whole busy window
+        // EXCEPT the last tick (its `SubmittingTx`, modeled committed). A settle
+        // preempts a non-committed head (the real queue allows it) at a rollback
+        // cost; during the brief committed tick it cannot (Rule 1) and defers.
+        // Returns (settled, rollbacks).
+        fn run_measured_priority(
+            ticks: usize,
+            commit: usize,
+            gap: usize,
+            me: usize,
+        ) -> (usize, usize) {
+            let db = mock_db();
+            let tx = db.new_write_tx().unwrap();
+            let mm = TaskQueueKey::new_v4();
+            let taker = TaskQueueKey::new_v4();
+            let mut head: Option<(TaskIdentifier, bool)> = None; // (id, committed)
+            let (mut settled, mut rollbacks, mut pending) = (0usize, 0usize, 0usize);
             for tick in 0..ticks {
+                let want_busy = busy_at(tick, commit, gap);
+                // The order commits only on the last busy tick (its SubmittingTx).
+                let commit_tick = want_busy && !busy_at(tick + 1, commit, gap);
+                let desired = if want_busy { Some(commit_tick) } else { None };
+                if head.map(|(_, c)| c) != desired {
+                    if let Some((id, _)) = head.take() {
+                        tx.pop_task(&id).unwrap();
+                    }
+                    if let Some(committed) = desired {
+                        let mut order = mock_queued_task(mm);
+                        order.state =
+                            QueuedTaskState::Running { state: "order".to_string(), committed };
+                        tx.enqueue_serial_task(&mm, &order).unwrap();
+                        head = Some((order.id, committed));
+                    }
+                }
                 if tick % me == 0 {
-                    settled += 1;
-                    if busy_at(tick, commit, gap) {
-                        rollbacks += 1;
+                    pending += 1;
+                }
+                // Drain pending settles; preempt succeeds unless the head is committed.
+                while pending > 0 {
+                    let s = mock_queued_task(mm);
+                    if tx.preempt_queue_with_serial(&[mm, taker], &s).is_ok() {
+                        tx.pop_task(&s.id).unwrap();
+                        settled += 1;
+                        pending -= 1;
+                        // Preempting a running (non-committed) order forces a re-run.
+                        if matches!(head, Some((_, false))) {
+                            rollbacks += 1;
+                        }
+                    } else {
+                        break; // head committed (irreversible) -> defer to a later tick
                     }
                 }
             }
@@ -598,22 +641,40 @@ mod test {
         fn project_lane(ticks: usize, me: usize) -> usize {
             (0..ticks).filter(|t| t % me == 0).count()
         }
+        // PROJECTED defer-not-reject + run-on-pop priority: a settle blocked by a
+        // committed head is HELD (not rejected) and fires on the next free wallet
+        // tick, ahead of new order tasks. Zero drops (every match eventually
+        // settles) and zero rollbacks (it never preempts a committed task — Rule
+        // 1). But because it must WAIT for committed heads to pop, it's bounded by
+        // the wallet's free-window capacity: settled-within-window =
+        // min(total matches, free ticks). So it does NOT exceed the single-lane
+        // ceiling — it does not reach 100% under saturation. Returns
+        // (settled_in_window, dropped) where dropped is always 0.
+        fn project_defer(ticks: usize, commit: usize, gap: usize, me: usize) -> (usize, usize) {
+            let total = (0..ticks).filter(|t| t % me == 0).count();
+            let free = (0..ticks).filter(|t| !busy_at(*t, commit, gap)).count();
+            (total.min(free), 0)
+        }
 
         eprintln!("[L4] settlement strategy success (settled/total) across rising MM contention:");
         let (mut giveup_tot, mut retry_tot) = (0usize, 0usize);
-        let (mut sat_retry, mut sat_total) = (0usize, 0usize);
+        let (mut sat_retry, mut sat_defer, mut sat_priority, mut sat_total) =
+            (0usize, 0usize, 0usize, 0usize);
         for (label, commit, gap, me) in sweep {
             let (g, total) = run_measured(false, TICKS, commit, gap, me);
             let (r, _) = run_measured(true, TICKS, commit, gap, me);
-            let (p, p_roll) = project_priority(TICKS, commit, gap, me);
+            let (d, _d_drop) = project_defer(TICKS, commit, gap, me);
+            let (p, p_roll) = run_measured_priority(TICKS, commit, gap, me);
             let l = project_lane(TICKS, me);
             eprintln!(
-                "[L4]   {label:<26}  give-up {g:>2}/{total}   retry {r:>2}/{total}   priority {p:>2}/{total} (+{p_roll} rb)   sep-lane {l:>2}/{total}"
+                "[L4]   {label:<26}  give-up {g:>2}/{total}   retry {r:>2}/{total}   defer {d:>2}/{total} (0 rb)   priority {p:>2}/{total} (+{p_roll} rb)   sep-lane {l:>2}/{total}"
             );
             giveup_tot += g;
             retry_tot += r;
             if label.starts_with("saturated") {
                 sat_retry = r;
+                sat_defer = d;
+                sat_priority = p;
                 sat_total = total;
             }
         }
@@ -628,6 +689,48 @@ mod test {
         assert!(
             sat_retry < sat_total,
             "under saturation retry must fall short of total (only priority/lane settle all)"
+        );
+        // DEFER findings (these CORRECT the ticket's draft, which claimed defer
+        // settles 100% under saturation):
+        //  - defer captures at least as many free windows as the engine-side
+        //    retry (it's deterministic / state-layer-held, can't be raced or
+        //    lost), so it never settles fewer; and
+        //  - defer is STILL bounded by the wallet's free-window capacity — it
+        //    cannot preempt a committed head (Rule 1) — so it does NOT reach
+        //    total under saturation. Only priority (order-yield, at a rollback
+        //    cost) or a separate lane settle all. Defer's value is determinism
+        //    and zero-drop, NOT raw saturation throughput.
+        assert!(
+            sat_defer >= sat_retry,
+            "defer must capture at least as many windows as retry (sat_defer={sat_defer}, sat_retry={sat_retry})"
+        );
+        assert!(
+            sat_defer < sat_total,
+            "defer is free-window-bounded and must NOT reach total under saturation \
+             (sat_defer={sat_defer}, sat_total={sat_total}) — refutes the 100% claim"
+        );
+        // PRIORITY (order-yield) — MEASURED: by yielding before commit, the settle
+        // preempts the (non-committed) order, so it settles strictly more than the
+        // free-window-bounded strategies (retry/defer) under saturation — at a
+        // rollback cost, and short only of the brief committed SubmittingTx window.
+        assert!(
+            sat_priority > sat_defer,
+            "priority order-yield must beat the free-window-bounded strategies under saturation \
+             (sat_priority={sat_priority}, sat_defer={sat_defer})"
+        );
+        // ROI ranking (relaxed goal: improve rates, not strictly 100%):
+        //  - retry: simplest (one-file engine retry), 0 rollback, recovers most loss
+        //    at low/moderate contention; collapses to give-up only at full saturation.
+        //  - defer: retry made deterministic/lossless (state-machine change); same
+        //    throughput.
+        //  - priority: highest single-lane rate (preempts non-committed orders) but
+        //    pays rollbacks; needs order-yield-before-commit plumbing.
+        //  - lane: the ceiling (no rollback) but needs the disjoint-state proof + rework.
+        // => ship retry first (high ROI, low risk); escalate to priority/lane only if
+        //    the saturated tail stays material.
+        eprintln!(
+            "[L4] ROI: retry recovers most loss cheaply at low/moderate contention; \
+             priority adds the saturated tail at a rollback cost; lane is the ceiling."
         );
     }
 

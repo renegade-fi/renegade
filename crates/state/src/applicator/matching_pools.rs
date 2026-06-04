@@ -52,6 +52,16 @@ impl StateApplicator {
     ) -> Result<ApplicatorReturnType, StateApplicatorError> {
         let tx = self.db().new_write_tx()?;
 
+        // Reject (non-fatally) if the target pool does not exist. Without this
+        // guard the assignment falls through to the storage layer, which raises
+        // a non-`reject` error -> the state machine apply treats it as fatal and
+        // quits the raft core. Because the offending log entry is already
+        // committed, every node crashes re-applying it on restart -> a
+        // cluster-wide crash loop. Mirrors `destroy_matching_pool`.
+        if !tx.matching_pool_exists(new_pool)? {
+            return Err(StateApplicatorError::reject(MATCHING_POOL_DOES_NOT_EXIST_ERR));
+        }
+
         // Update the matching engine then the database
         self.update_matching_engine_after_order_assignment(order_id, new_pool.clone(), &tx)?;
         tx.assign_order_to_matching_pool(&order_id, new_pool)?;
