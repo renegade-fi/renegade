@@ -69,7 +69,11 @@ impl MatchingEngineExecutor {
         let (tid, waiter) = loop {
             match self
                 .state
-                .enqueue_preemptive_task(accounts.clone(), descriptor.clone(), true /* is_serial */)
+                .enqueue_preemptive_task(
+                    accounts.clone(),
+                    descriptor.clone(),
+                    true, /* is_serial */
+                )
                 .await
             {
                 Ok(res) => break res,
