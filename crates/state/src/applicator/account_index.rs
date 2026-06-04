@@ -27,7 +27,10 @@ use util::logging::Outcome;
 use crate::{
     applicator::error::StateApplicatorError,
     logging::Task,
-    storage::{traits::RkyvValue, tx::StateTxn},
+    storage::{
+        traits::RkyvValue,
+        tx::{StateTxn, matching_pools::MATCHING_POOL_DOES_NOT_EXIST_ERR},
+    },
 };
 
 use super::{Result, StateApplicator, return_type::ApplicatorReturnType};
@@ -100,6 +103,14 @@ impl StateApplicator {
         // Verify account exists
         if !tx.contains_account(&account_id)? {
             return Err(StateApplicatorError::reject("account not found"));
+        }
+
+        // Verify the target matching pool exists. Reject (non-fatally) before
+        // any writes if it does not; otherwise the assignment below hits the
+        // storage layer, which would surface a fatal error and quit the raft
+        // core on every node applying the (already-committed) entry.
+        if !tx.matching_pool_exists(&pool)? {
+            return Err(StateApplicatorError::reject(MATCHING_POOL_DOES_NOT_EXIST_ERR));
         }
 
         // Write the order fields
@@ -345,6 +356,12 @@ impl StateApplicator {
         // Update all orders, their auth, and matching pool assignments
         // Track which orders are new vs updated
         for OrderRefreshData { order, matching_pool, auth } in &orders {
+            // Reject (non-fatally) before any writes if the target pool does
+            // not exist, so the assignment below cannot quit the raft core.
+            if !tx.matching_pool_exists(matching_pool)? {
+                return Err(StateApplicatorError::reject(MATCHING_POOL_DOES_NOT_EXIST_ERR));
+            }
+
             // Check if the order exists
             let order_exists = tx.get_order(&order.id)?.is_some();
 
