@@ -49,6 +49,16 @@ const DEFAULT_LEARNER_PROMOTION_THRESHOLD: u64 = 20; // 20 log entries
 /// a peer immediately, so a freshly-joined learner can be removed before gossip
 /// has even propagated it -- starving promotion and driving membership churn.
 const DEFAULT_EXPIRY_GRACE_CHECKS: u32 = 3;
+/// The maximum time to wait for an openraft membership change to commit.
+///
+/// `change_membership` is awaited with no internal timeout while holding the
+/// `membership_change_lock` from the leader-only membership-sync tick. If the
+/// raft core wedges and the await never returns, the lock is held forever and
+/// the (sequentially-scheduled) membership-sync timer hangs on its next tick --
+/// silently freezing membership reconciliation so workers can no longer be
+/// adopted and the cluster looks leaderless. Bounding the call releases the
+/// lock, keeps the timer alive, and surfaces the hang.
+const CHANGE_MEMBERSHIP_TIMEOUT_MS: u64 = 5_000;
 /// The amount of time to await promotion before timing out
 ///
 /// Set to five minutes; giving enough time to receive snapshots and catch up to
@@ -452,6 +462,29 @@ impl RaftClient {
     }
 
     /// Handle a proposal to add learners
+    /// Apply an openraft membership change, bounded by a timeout so a wedged
+    /// raft core cannot hang the caller (which holds `membership_change_lock`)
+    /// forever. See `CHANGE_MEMBERSHIP_TIMEOUT_MS`.
+    async fn change_membership_bounded(
+        &self,
+        change: ChangeMembers<NodeId, Node>,
+        retain: bool,
+    ) -> Result<(), ReplicationError> {
+        let timeout = Duration::from_millis(CHANGE_MEMBERSHIP_TIMEOUT_MS);
+        match tokio::time::timeout(timeout, self.raft().change_membership(change, retain)).await {
+            Ok(res) => res.map(|_| ()).map_err(err_str!(ReplicationError::Proposal)),
+            Err(_) => {
+                log_task!(
+                    Task::MembershipChange,
+                    Outcome::Failed,
+                    timeout_ms = CHANGE_MEMBERSHIP_TIMEOUT_MS,
+                    "change_membership timed out; raft core may be wedged"
+                );
+                Err(ReplicationError::Proposal("change_membership timed out".to_string()))
+            },
+        }
+    }
+
     async fn handle_add_learners(
         &self,
         learners: Vec<(NodeId, RaftNode)>,
@@ -471,10 +504,7 @@ impl RaftClient {
             let learners = BTreeMap::from_iter(to_add.into_iter());
             let change = ChangeMembers::AddNodes(learners);
 
-            self.raft()
-                .change_membership(change, true /* retain */)
-                .await
-                .map_err(err_str!(ReplicationError::Proposal))?;
+            self.change_membership_bounded(change, true /* retain */).await?;
         }
 
         Ok(())
@@ -496,10 +526,7 @@ impl RaftClient {
         if !to_add.is_empty() {
             let voters = BTreeSet::from_iter(to_add.into_iter());
             let change = ChangeMembers::AddVoterIds(voters);
-            self.raft()
-                .change_membership(change, false /* retain */)
-                .await
-                .map_err(err_str!(ReplicationError::Proposal))?;
+            self.change_membership_bounded(change, false /* retain */).await?;
         }
 
         Ok(())
@@ -542,20 +569,14 @@ impl RaftClient {
         if !voters_to_remove.is_empty() {
             let voter_removal_change =
                 ChangeMembers::RemoveVoters(BTreeSet::from_iter(voters_to_remove.into_iter()));
-            self.raft()
-                .change_membership(voter_removal_change, false /* retain */)
-                .await
-                .map_err(err_str!(ReplicationError::Proposal))?;
+            self.change_membership_bounded(voter_removal_change, false /* retain */).await?;
         }
 
         // Remove learners
         if !learners_to_remove.is_empty() {
             let learner_removal_change =
                 ChangeMembers::RemoveNodes(BTreeSet::from_iter(learners_to_remove.into_iter()));
-            self.raft()
-                .change_membership(learner_removal_change, false /* retain */)
-                .await
-                .map_err(err_str!(ReplicationError::Proposal))?;
+            self.change_membership_bounded(learner_removal_change, false /* retain */).await?;
         }
 
         Ok(())

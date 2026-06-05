@@ -62,6 +62,12 @@ const DEFAULT_MAX_ELECTION_MS: u64 = 15_000; // 15 seconds
 const PANIC_CHECK_MS: u64 = 10_000; // 10 seconds
 /// The frequency with which to check for missed expiry
 const MEMBERSHIP_SYNC_INTERVAL_MS: u64 = 10_000; // 10 seconds
+/// The maximum time a single membership-sync tick may run before it is
+/// abandoned. The clock schedules these callbacks sequentially, so a tick that
+/// hangs (e.g. on a wedged membership change) stops ALL future ticks and freezes
+/// membership reconciliation. Bounding each tick guarantees the timer keeps
+/// running and surfaces the hang instead of silently wedging.
+const MEMBERSHIP_SYNC_TIMEOUT_MS: u64 = 20_000; // 20 seconds
 
 /// A type alias for a proposal queue of state transitions
 pub type ProposalQueue = UnboundedSender<Proposal>;
@@ -350,8 +356,25 @@ impl StateInner {
                     };
                     tx.commit().map_err(raw_err_str!("{}"))?;
 
-                    // Sync the membership
-                    client.sync_membership(peers).await.map_err(|e| e.to_string())
+                    // Sync the membership, bounded so a hung membership op can
+                    // never wedge the timer (callbacks run sequentially: a stuck
+                    // tick stops all future ticks, incl. the health log above).
+                    match tokio::time::timeout(
+                        Duration::from_millis(MEMBERSHIP_SYNC_TIMEOUT_MS),
+                        client.sync_membership(peers),
+                    )
+                    .await
+                    {
+                        Ok(res) => res.map_err(|e| e.to_string()),
+                        Err(_) => {
+                            log_task!(
+                                Task::RaftLifecycle,
+                                Outcome::Failed,
+                                "membership sync tick timed out; skipping to keep the timer alive"
+                            );
+                            Ok(())
+                        },
+                    }
                 }
             })
             .await
