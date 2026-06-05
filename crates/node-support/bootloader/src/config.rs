@@ -33,6 +33,11 @@ const ENV_ADMIN_KEY: &str = "ADMIN_API_KEY";
 pub(crate) const ENV_SQS_QUEUE_URL: &str = "SQS_QUEUE_URL";
 /// The SQS queue URL for indexer messages
 pub(crate) const ENV_INDEXER_SQS_QUEUE_URL: &str = "INDEXER_SQS_QUEUE_URL";
+/// An inline base64-protobuf p2p key, sourced at boot (e.g. from Secrets Manager
+/// via the bootstrap startup script). When set it is the source of truth for the
+/// node's identity, overriding any `p2p-key` already in the config file so the
+/// peer_id is durable across instance replacement.
+pub(crate) const ENV_P2P_KEY: &str = "P2P_KEY";
 
 // --- Constants --- //
 
@@ -142,6 +147,17 @@ fn get_p2p_key(config: &HashMap<String, Value>) -> Result<Option<PeerId>, String
 
 /// Set the p2p key in the relayer config and return the associated peer id
 fn set_p2p_key(config: &mut HashMap<String, Value>) -> Result<PeerId, String> {
+    // A boot-time env key (fetched from Secrets Manager by the bootstrap startup
+    // script) is the source of truth: write it into the config, overriding any
+    // `p2p-key` already present, so the seed's peer_id is durable across instance
+    // replacement instead of drifting with a regenerated config or ephemeral key.
+    if is_env_var_set(ENV_P2P_KEY) {
+        let key_base64 = read_env_var::<String>(ENV_P2P_KEY)?;
+        if !key_base64.is_empty() {
+            config.insert(CONFIG_P2P_KEY.to_string(), Value::String(key_base64));
+        }
+    }
+
     if let Some(peer_id) = get_p2p_key(config)? {
         return Ok(peer_id);
     }
