@@ -9,7 +9,7 @@ use tokio::fs;
 use toml::Value;
 use util::raw_err_str;
 
-use crate::{download_s3_file, is_env_var_set, read_env_var, setup_gas_wallet};
+use crate::{download_s3_file, in_bootstrap_mode, is_env_var_set, read_env_var, setup_gas_wallet};
 
 // --- Env Vars --- //
 
@@ -162,6 +162,22 @@ fn set_p2p_key(config: &mut HashMap<String, Value>) -> Result<PeerId, String> {
         return Ok(peer_id);
     }
 
+    // No stable key is configured. A seed/bootstrap node must NEVER run an
+    // ephemeral identity: the generated key below is not persisted durably, so it
+    // would drift to a new peer_id on the next restart and break worker adoption
+    // (the 2026-06-05 drift/502 incident). Fail loud so the operator provisions a
+    // stable key -- P2P_KEY from Secrets Manager, or a config `p2p-key`.
+    if in_bootstrap_mode(config) {
+        return Err(
+            "bootstrap/seed node has no stable p2p key: set P2P_KEY (Secrets Manager) or a \
+             config `p2p-key`. Refusing to boot with an ephemeral identity that would drift \
+             on restart and break worker adoption."
+                .to_string(),
+        );
+    }
+
+    // Non-seed (worker/learner): an ephemeral identity is acceptable -- learners
+    // are transient and re-adopted on each (re)start.
     let keypair = Keypair::generate_ed25519();
     let peer_id = keypair.public().to_peer_id();
 

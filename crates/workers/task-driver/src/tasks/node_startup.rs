@@ -345,6 +345,21 @@ impl NodeStartupTask {
         &self,
     ) -> Result<NodeStartupTaskState, NodeStartupTaskError> {
         if self.state.is_raft_initialized().await? {
+            // If our own node-id is absent from the persisted membership, the raft
+            // state belongs to a PRIOR identity (e.g. the seed's p2p key
+            // regenerated to a new node-id). Rejoining would wedge this node as a
+            // Learner the leader can never see -- the silent no-leader hang we hit
+            // on 2026-06-05. Fail fast with the recovery action instead of timing
+            // out in await_promotion and crash-looping.
+            if self.raft_seed && !self.state.local_node_in_membership() {
+                return Err(NodeStartupTaskError::State(
+                    "persisted raft state belongs to a different identity (local node-id not in \
+                     the membership); wipe relayer_state.db + raft_snapshots and restart to \
+                     re-bootstrap a fresh cluster"
+                        .to_string(),
+                ));
+            }
+
             return Ok(NodeStartupTaskState::JoinRaft);
         }
 

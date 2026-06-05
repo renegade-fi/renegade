@@ -27,6 +27,21 @@ impl StateInner {
         self.raft.is_initialized().await.map_err(StateError::Replication)
     }
 
+    /// Whether the local node-id appears in the current (persisted) raft
+    /// membership, as a voter or a learner.
+    ///
+    /// Used at startup to detect a stale/foreign persisted raft state: if this
+    /// node recovered raft state but its own node-id is absent from the
+    /// membership (e.g. its p2p key regenerated to a new node-id), rejoining
+    /// would wedge it as a Learner the leader can never see. The caller should
+    /// re-bootstrap / wipe instead of rejoining.
+    pub fn local_node_in_membership(&self) -> bool {
+        let id = self.raft.node_id();
+        let metrics = self.raft.metrics();
+        let membership = metrics.membership_config.membership();
+        membership.voter_ids().any(|v| v == id) || membership.learner_ids().any(|l| l == id)
+    }
+
     /// Whether the local node is the leader
     pub fn is_leader(&self) -> bool {
         self.raft.is_leader()
