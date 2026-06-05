@@ -277,10 +277,7 @@ impl<T: TransactionKind> StateTxn<'_, T> {
     }
 
     /// Whether a queue already has a deferred preemptive settle recorded
-    pub(crate) fn has_pending_preemption(
-        &self,
-        key: &TaskQueueKey,
-    ) -> Result<bool, StorageError> {
+    pub(crate) fn has_pending_preemption(&self, key: &TaskQueueKey) -> Result<bool, StorageError> {
         let task_key = pending_preempt_task_key(key);
         Ok(self.inner().read::<_, QueuedTask>(TASK_QUEUE_TABLE, &task_key)?.is_some())
     }
@@ -520,10 +517,7 @@ impl StateTxn<'_, RW> {
     }
 
     /// Delete any deferred preemptive settle recorded against a queue
-    pub(crate) fn delete_pending_preemption(
-        &self,
-        key: &TaskQueueKey,
-    ) -> Result<(), StorageError> {
+    pub(crate) fn delete_pending_preemption(&self, key: &TaskQueueKey) -> Result<(), StorageError> {
         let task_key = pending_preempt_task_key(key);
         let keys_key = pending_preempt_keys_key(key);
         self.inner().delete(TASK_QUEUE_TABLE, &task_key)?;
