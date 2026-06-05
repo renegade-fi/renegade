@@ -3,6 +3,7 @@
 ### Relayer ###
 ###############
 
+# Arbitrum Sepolia
 [services.arbitrum-sepolia-relayer]
 [services.arbitrum-sepolia-relayer.build]
 dockerfile = "docker/release/Dockerfile"
@@ -15,6 +16,7 @@ resource = "relayer"
 cluster_name_override = "arbitrum-sepolia-v2-relayer"
 service_name_override = "arbitrum-sepolia-v2-relayer-service"
 
+# Arbitrum One
 [services.arbitrum-one-relayer]
 [services.arbitrum-one-relayer.build]
 dockerfile = "docker/release/Dockerfile"
@@ -27,6 +29,7 @@ resource = "relayer"
 cluster_name_override = "arbitrum-one-v2-relayer"
 service_name_override = "arbitrum-one-v2-relayer-service"
 
+# Base Sepolia
 [services.base-sepolia-relayer]
 [services.base-sepolia-relayer.build]
 dockerfile = "docker/release/Dockerfile"
@@ -39,6 +42,7 @@ resource = "relayer"
 cluster_name_override = "base-sepolia-v2-relayer"
 service_name_override = "base-sepolia-v2-relayer-service"
 
+# Base Mainnet
 [services.base-mainnet-relayer]
 [services.base-mainnet-relayer.build]
 dockerfile = "docker/release/Dockerfile"
@@ -51,6 +55,7 @@ resource = "relayer"
 cluster_name_override = "base-mainnet-v2-relayer"
 service_name_override = "base-mainnet-v2-relayer-service"
 
+# Ethereum Sepolia
 [services.ethereum-sepolia-relayer]
 [services.ethereum-sepolia-relayer.build]
 dockerfile = "docker/release/Dockerfile"
@@ -60,9 +65,12 @@ cargo_features = "default"
 [services.ethereum-sepolia-relayer.deploy]
 environment = "ethereum-sepolia"
 resource = "relayer"
-cluster_name_override = "ethereum-sepolia-relayer"
+cluster_name_override = "ethereum-sepolia-relayer" # should probably be
+                                                   # ethereum-sepolia-v2-relayer, but might not be 
+                                                   # worth it to fix
 service_name_override = "ethereum-sepolia-relayer-service"
 
+# Ethereum Mainnet
 [services.ethereum-mainnet-relayer]
 [services.ethereum-mainnet-relayer.build]
 dockerfile = "docker/release/Dockerfile"
@@ -72,5 +80,5 @@ cargo_features = "default"
 [services.ethereum-mainnet-relayer.deploy]
 environment = "ethereum-mainnet"
 resource = "relayer"
-cluster_name_override = "ethereum-mainnet-relayer"
-service_name_override = "ethereum-mainnet-relayer-service"
+cluster_name_override = "ethereum-mainnet-v2-relayer"
+service_name_override = "ethereum-mainnet-v2-relayer-service"
