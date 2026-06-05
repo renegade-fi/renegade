@@ -25,6 +25,59 @@ const ERR_CANNOT_SERIALLY_PREEMPT: &str = "serial preemption not allowed";
 /// The error message emitted when a task cannot be preempted concurrently
 const ERR_CANNOT_CONCURRENTLY_PREEMPT: &str = "concurrent preemption not allowed";
 
+/// Feature flag gating Stage 1 "defer-not-reject" of serial preemptions.
+///
+/// When `false` (the default) `preempt_queue_with_serial` rejects a preemption
+/// whose target queue head is committed -- identical to the pre-Stage-1
+/// behavior. When `true`, the blocked settle is instead recorded as pending and
+/// re-run automatically when the committing task completes.
+///
+/// This is an apply-path behavior change on raft-replicated state, so it ships
+/// `false`: land the (additive) defer machinery with zero behavior change, then
+/// flip this to `true` in a one-line follow-up commit once verified on testnet.
+/// Every node MUST run the same value (a mixed-version window diverges, as with
+/// any apply-path change). This `const` is not per-chain: a build with it `true`
+/// enables defer on any cluster that takes the image, so mainnet is gated by
+/// deploy targeting (only push the new image to sepolia-v2 until proven).
+#[cfg_attr(test, allow(dead_code))]
+const ENABLE_SETTLE_DEFER: bool = true;
+
+/// Whether defer-not-reject is enabled. In production this is the compile-time
+/// `ENABLE_SETTLE_DEFER` const (inlined, zero cost). In test builds it reads a
+/// per-thread override (default `false`) so the defer path can be exercised
+/// without changing the behavior of the existing reject tests.
+#[cfg(not(test))]
+#[inline]
+fn settle_defer_enabled() -> bool {
+    ENABLE_SETTLE_DEFER
+}
+
+#[cfg(test)]
+thread_local! {
+    static TEST_SETTLE_DEFER: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+#[cfg(test)]
+fn settle_defer_enabled() -> bool {
+    TEST_SETTLE_DEFER.with(|c| c.get())
+}
+
+/// Test-only: enable or disable defer-not-reject for the current thread
+#[cfg(test)]
+pub(crate) fn set_test_settle_defer(enabled: bool) {
+    TEST_SETTLE_DEFER.with(|c| c.set(enabled));
+}
+
+/// The outcome of a serial preemption attempt
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PreemptOutcome {
+    /// The queues were preempted; the task is enqueued and may run
+    Preempted,
+    /// The preemption was blocked by a committed head and has been recorded as
+    /// pending; it will run automatically when the blocking task(s) complete
+    Deferred,
+}
+
 /// Get the storage key for a task queue
 pub fn task_queue_key(key: &TaskQueueKey) -> String {
     format!("task-queue-{}", key)
@@ -38,6 +91,16 @@ fn task_key(id: &TaskIdentifier) -> String {
 /// Get the storage key for the task to queue(s) mapping
 fn task_to_queue_key(id: &TaskIdentifier) -> String {
     format!("task-to-queue-{id}")
+}
+
+/// Get the storage key for a deferred (pending) preemptive task on a queue
+fn pending_preempt_task_key(key: &TaskQueueKey) -> String {
+    format!("pending-preempt-task-{key}")
+}
+
+/// Get the storage key for the queue set of a deferred preemptive task
+fn pending_preempt_keys_key(key: &TaskQueueKey) -> String {
+    format!("pending-preempt-keys-{key}")
 }
 
 // -----------------
@@ -168,7 +231,10 @@ impl<T: TransactionKind> StateTxn<'_, T> {
     // --- Helpers --- //
 
     /// Returns whether a given queue is serially preemptable
-    fn is_serial_preemption_safe(&self, key: &TaskQueueKey) -> Result<bool, StorageError> {
+    pub(crate) fn is_serial_preemption_safe(
+        &self,
+        key: &TaskQueueKey,
+    ) -> Result<bool, StorageError> {
         let queue = self.get_task_queue(key)?;
         let Some(queue) = queue else {
             // Empty queue can be preempted
@@ -183,6 +249,40 @@ impl<T: TransactionKind> StateTxn<'_, T> {
         }
 
         Ok(can_preempt)
+    }
+
+    /// Get the deferred (pending) preemptive settle recorded against a queue,
+    /// along with the full set of queues the settle must preempt.
+    ///
+    /// Returns `None` if no settle is pending on the queue.
+    pub(crate) fn get_pending_preemption(
+        &self,
+        key: &TaskQueueKey,
+    ) -> Result<Option<(QueuedTask, Vec<TaskQueueKey>)>, StorageError> {
+        let task_key = pending_preempt_task_key(key);
+        let task = match self.inner().read::<_, QueuedTask>(TASK_QUEUE_TABLE, &task_key)? {
+            Some(archived) => archived.deserialize()?,
+            None => return Ok(None),
+        };
+
+        let keys_key = pending_preempt_keys_key(key);
+        let keys = self
+            .inner()
+            .read::<_, Vec<TaskQueueKey>>(TASK_QUEUE_TABLE, &keys_key)?
+            .map(|archived| archived.deserialize())
+            .transpose()?
+            .unwrap_or_default();
+
+        Ok(Some((task, keys)))
+    }
+
+    /// Whether a queue already has a deferred preemptive settle recorded
+    pub(crate) fn has_pending_preemption(
+        &self,
+        key: &TaskQueueKey,
+    ) -> Result<bool, StorageError> {
+        let task_key = pending_preempt_task_key(key);
+        Ok(self.inner().read::<_, QueuedTask>(TASK_QUEUE_TABLE, &task_key)?.is_some())
     }
 
     /// Get the task queue for a given key
@@ -231,8 +331,61 @@ impl StateTxn<'_, RW> {
         self.write_task(&task.id, vec![*key], task)
     }
 
-    /// Preempt a queue with a serial task
+    /// Preempt a set of queues with a serial task.
+    ///
+    /// The preemption spans all `queues` and is all-or-nothing: if any target
+    /// queue head is committed, no queue is preempted. With `ENABLE_SETTLE_DEFER`
+    /// off, that case is rejected (`Err`). With it on, the task is recorded as a
+    /// pending preemption against every target queue and `Deferred` is returned;
+    /// the completion hook re-runs it once the committing task(s) finish.
     pub fn preempt_queue_with_serial(
+        &self,
+        queues: &[TaskQueueKey],
+        task: &QueuedTask,
+    ) -> Result<PreemptOutcome, StorageError> {
+        // First pass: is any target queue currently blocked (committed head)?
+        let mut blocked = false;
+        for queue_key in queues.iter() {
+            if !self.is_serial_preemption_safe(queue_key)? {
+                blocked = true;
+                break;
+            }
+        }
+
+        if !blocked {
+            self.do_preempt_serial(queues, task)?;
+            return Ok(PreemptOutcome::Preempted);
+        }
+
+        // A queue is blocked. Without defer this is the historical reject.
+        if !settle_defer_enabled() {
+            return Err(StorageError::reject(ERR_CANNOT_SERIALLY_PREEMPT));
+        }
+
+        // Defer. One-pending-per-queue: if any target queue already holds a
+        // pending settle, fall back to reject -- bounds buildup and prevents the
+        // deadlock where two settles each wait on the other's queue.
+        for queue_key in queues.iter() {
+            if self.has_pending_preemption(queue_key)? {
+                return Err(StorageError::reject(ERR_CANNOT_SERIALLY_PREEMPT));
+            }
+        }
+
+        // Record the settle pending against every target queue. No queue is
+        // preempted (all-or-nothing); the hook runs the real preemption when the
+        // blocking task(s) complete and all queues are simultaneously safe.
+        for queue_key in queues.iter() {
+            self.write_pending_preemption(queue_key, task, queues)?;
+        }
+
+        Ok(PreemptOutcome::Deferred)
+    }
+
+    /// Unconditionally preempt a set of queues with a serial task.
+    ///
+    /// Assumes the caller has verified every queue is serial-preemption-safe;
+    /// re-checks defensively and rejects rather than corrupting state.
+    pub(crate) fn do_preempt_serial(
         &self,
         queues: &[TaskQueueKey],
         task: &QueuedTask,
@@ -308,6 +461,10 @@ impl StateTxn<'_, RW> {
             }
         }
 
+        // Drop any deferred preemption recorded against this queue so a cleared
+        // queue cannot leak a pending settle that never re-triggers.
+        self.delete_pending_preemption(key)?;
+
         self.write_task_queue(key, &TaskQueue::default())?;
         Ok(all_tasks)
     }
@@ -344,6 +501,34 @@ impl StateTxn<'_, RW> {
     ) -> Result<(), StorageError> {
         self.update_task(id, task)?;
         self.update_task_to_queues(id, queues)
+    }
+
+    /// Record a deferred preemptive settle against a queue.
+    ///
+    /// Stores both the settle task and the full set of queues it must preempt so
+    /// the completion hook can re-check all queues and clean up every entry.
+    pub(crate) fn write_pending_preemption(
+        &self,
+        key: &TaskQueueKey,
+        task: &QueuedTask,
+        all_keys: &[TaskQueueKey],
+    ) -> Result<(), StorageError> {
+        let task_key = pending_preempt_task_key(key);
+        self.inner().write(TASK_QUEUE_TABLE, &task_key, task)?;
+        let keys_key = pending_preempt_keys_key(key);
+        self.inner().write(TASK_QUEUE_TABLE, &keys_key, &all_keys.to_vec())
+    }
+
+    /// Delete any deferred preemptive settle recorded against a queue
+    pub(crate) fn delete_pending_preemption(
+        &self,
+        key: &TaskQueueKey,
+    ) -> Result<(), StorageError> {
+        let task_key = pending_preempt_task_key(key);
+        let keys_key = pending_preempt_keys_key(key);
+        self.inner().delete(TASK_QUEUE_TABLE, &task_key)?;
+        self.inner().delete(TASK_QUEUE_TABLE, &keys_key)?;
+        Ok(())
     }
 
     /// Mark a task as queued
@@ -820,6 +1005,60 @@ mod test {
             ..Default::default()
         };
         assert_eq!(task_queue, expected_queue);
+        Ok(())
+    }
+
+    /// Tests Stage 1 defer-not-reject: a serial preemption blocked by a
+    /// committed head is deferred (recorded pending, queue untouched), then runs
+    /// when the blocking task completes. Also covers one-pending-per-queue.
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_serial_preemption__defer_and_resume() -> Result<(), StorageError> {
+        super::set_test_settle_defer(true);
+
+        let db = mock_db();
+        let tx = db.new_write_tx()?;
+        let key = TaskQueueKey::new_v4();
+
+        // Add a committed task to the queue -- not serial-preemption-safe
+        let mut blocker = mock_queued_task(key);
+        blocker.state = QueuedTaskState::Running { state: "running".to_string(), committed: true };
+        tx.enqueue_serial_task(&key, &blocker)?;
+
+        // Preempt with a settle: should defer rather than reject
+        let settle = mock_queued_task(key);
+        let outcome = tx.preempt_queue_with_serial(&[key], &settle)?;
+        assert_eq!(outcome, PreemptOutcome::Deferred);
+
+        // The settle is not enqueued; a pending record exists; the queue is
+        // unchanged (still just the blocker).
+        assert!(tx.get_task(&settle.id)?.is_none());
+        assert!(tx.has_pending_preemption(&key)?);
+        let queue = tx.get_task_queue_deserialized(&key)?;
+        assert_eq!(queue.serial_tasks, vec![blocker.id]);
+
+        // One-pending-per-queue: a second settle while one is pending rejects
+        let settle2 = mock_queued_task(key);
+        let err = tx.preempt_queue_with_serial(&[key], &settle2).is_err();
+        assert!(err);
+
+        // Complete the blocker, then run the hook's storage steps: the queue is
+        // now safe, so the deferred settle preempts and the pending clears.
+        tx.pop_task(&blocker.id)?;
+        let (pending_task, pending_keys) =
+            tx.get_pending_preemption(&key)?.expect("settle should still be pending");
+        assert_eq!(pending_task.id, settle.id);
+        assert_eq!(pending_keys, vec![key]);
+        assert!(tx.is_serial_preemption_safe(&key)?);
+        tx.do_preempt_serial(&pending_keys, &pending_task)?;
+        tx.delete_pending_preemption(&key)?;
+
+        // The settle is now the queue head and no pending remains
+        let queue = tx.get_task_queue_deserialized(&key)?;
+        assert_eq!(queue.serial_tasks, vec![settle.id]);
+        assert!(!tx.has_pending_preemption(&key)?);
+
+        super::set_test_settle_defer(false);
         Ok(())
     }
 

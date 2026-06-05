@@ -15,7 +15,7 @@ use util::log_task;
 use util::logging::Outcome;
 
 use crate::logging::Task;
-use crate::storage::{traits::RkyvValue, tx::StateTxn};
+use crate::storage::{traits::RkyvValue, tx::StateTxn, tx::task_queue::PreemptOutcome};
 
 use super::{
     Result, StateApplicator, error::StateApplicatorError, return_type::ApplicatorReturnType,
@@ -98,7 +98,7 @@ impl StateApplicator {
         }
 
         // Pop the task from the queue, remove its assignment, and add it to history
-        let (task, _executor) = self
+        let (task, executor) = self
             .pop_and_record_task(&keys, &task_id, success, &tx)?
             .ok_or_else(|| StateApplicatorError::TaskQueueEmpty(keys[0]))?;
 
@@ -113,6 +113,17 @@ impl StateApplicator {
             // If the queue is non-empty, start the next task
             if let Some(task) = tx.next_runnable_task(&key)? {
                 self.maybe_run_task(&task, &tx)?;
+            }
+        }
+
+        // Completion hook: a deferred serial preemption (Stage 1 defer-not-reject)
+        // may now be unblocked by this completion. Run it after the normal
+        // next-task dispatch -- the settle is not enqueued until preempted here,
+        // so it is dispatched exactly once. Skipped on failure: the queue is
+        // cleared above, which drops the pending record.
+        if success {
+            for key in keys.iter().copied() {
+                self.run_unblocked_preemptions(key, &executor, &tx)?;
             }
         }
 
@@ -171,7 +182,16 @@ impl StateApplicator {
     ) -> Result<ApplicatorReturnType> {
         let tx = self.db().new_write_tx()?;
         // Enqueue the task on the given queues
-        self.try_preempt_queues(keys, task, is_serial, &tx)?;
+        let outcome = self.try_preempt_queues(keys, task, is_serial, &tx)?;
+
+        // If the preemption was deferred, the settle is blocked by a committed
+        // head and has been recorded as pending; it will run automatically when
+        // the blocking task(s) complete. Commit the pending record and stop --
+        // the task is not enqueued, so we must not assign or run it.
+        if matches!(outcome, PreemptOutcome::Deferred) {
+            tx.commit()?;
+            return Ok(ApplicatorReturnType::Deferred);
+        }
 
         // Assign the task and run it if possible
         tx.add_assigned_task(executor, &task.id)?;
@@ -373,19 +393,75 @@ impl StateApplicator {
     }
 
     /// Try preempting a set of task queues with a task, returning a transition
-    /// rejection if this fails
+    /// rejection if this fails.
+    ///
+    /// Returns the preemption outcome: `Preempted` if the queues were taken, or
+    /// `Deferred` if a committed head blocked a serial preemption and the settle
+    /// was recorded as pending (only possible on the serial path).
     fn try_preempt_queues(
         &self,
         keys: &[TaskQueueKey],
         task: &QueuedTask,
         is_serial: bool,
         tx: &StateTxn<'_, RW>,
-    ) -> Result<()> {
-        if is_serial {
-            tx.preempt_queue_with_serial(keys, task)
+    ) -> Result<PreemptOutcome> {
+        let outcome = if is_serial {
+            tx.preempt_queue_with_serial(keys, task)?
         } else {
-            tx.preempt_queue_with_concurrent(keys, task)
-        }?;
+            tx.preempt_queue_with_concurrent(keys, task)?;
+            PreemptOutcome::Preempted
+        };
+
+        Ok(outcome)
+    }
+
+    /// Run any deferred serial preemption recorded against a queue that has just
+    /// become unblocked by a task completion.
+    ///
+    /// Invoked from the pop path after a task is removed from `key`. Re-checks
+    /// that every queue the pending settle targets is now safe and, if so, runs
+    /// the real preemption and clears the pending records. All-or-nothing: while
+    /// any target queue is still committed the records are left in place to
+    /// re-trigger on the next completion. Panic-free: any inconsistency results
+    /// in a no-op (or a transition rejection that rolls back the tx), never a
+    /// panic, since this runs on the apply path on every node.
+    fn run_unblocked_preemptions(
+        &self,
+        key: TaskQueueKey,
+        executor: &WrappedPeerId,
+        tx: &StateTxn<'_, RW>,
+    ) -> Result<()> {
+        let Some((task, all_keys)) = tx.get_pending_preemption(&key)? else {
+            return Ok(());
+        };
+
+        // Self-heal: if the settle is already live (e.g. re-proposed and run via
+        // the normal path), drop the stale pending and stop.
+        if tx.get_task(&task.id)?.is_some() {
+            tx.delete_pending_preemption(&key)?;
+            return Ok(());
+        }
+
+        // All-or-nothing: only run once every target queue is simultaneously
+        // safe. Otherwise leave the records to re-trigger on the next pop.
+        for queue_key in all_keys.iter() {
+            if !tx.is_serial_preemption_safe(queue_key)? {
+                return Ok(());
+            }
+        }
+
+        // Run the real preemption and clear the pending records on every queue.
+        tx.do_preempt_serial(&all_keys, &task)?;
+        for queue_key in all_keys.iter() {
+            tx.delete_pending_preemption(queue_key)?;
+        }
+
+        // Assign to the executor of the task that just completed (same node as
+        // the freed queue) and run it if possible.
+        tx.add_assigned_task(executor, &task.id)?;
+        if let Some(archived_task) = tx.get_task(&task.id)? {
+            self.maybe_run_task(&archived_task, tx)?;
+        }
 
         Ok(())
     }
@@ -481,6 +557,136 @@ mod test {
     // ---------------------
     // | Basic Queue Tests |
     // ---------------------
+
+    /// Tests Stage 1 defer-not-reject end-to-end through the applicator: a
+    /// preemptive settle blocked by a committed head defers, then runs
+    /// automatically via the pop-time completion hook when the blocker finishes.
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_enqueue_preemptive__defer_then_resume_on_completion() -> Result<()> {
+        use crate::storage::tx::task_queue::storage::set_test_settle_defer;
+        set_test_settle_defer(true);
+
+        let (applicator, task_recv) = setup_mock_applicator_with_driver_queue();
+        let peer_id = get_local_peer_id(&applicator);
+        let account_id = AccountId::new_v4();
+
+        // Append a blocker task; it starts running, then mark it committed so the
+        // queue is no longer serial-preemption-safe.
+        let blocker = mock_queued_task(account_id);
+        applicator.append_task(&blocker, &peer_id)?;
+        assert_run_task(task_recv.recv()?, blocker.id);
+        applicator.transition_task_state(
+            blocker.id,
+            QueuedTaskState::Running { state: "submitting".to_string(), committed: true },
+        )?;
+
+        // Enqueue a preemptive serial settle: blocked by the committed head, so
+        // it defers rather than rejecting.
+        let settle = mock_queued_task(account_id);
+        applicator.enqueue_preemptive_task(&[account_id], &settle, &peer_id, true)?;
+
+        // The settle is not enqueued, the queue still holds only the blocker, a
+        // pending record exists, and nothing was dispatched.
+        let queue = get_queue(&applicator, &account_id);
+        assert_eq!(queue.serial_tasks, vec![blocker.id]);
+        {
+            let tx = applicator.db().new_read_tx()?;
+            assert!(tx.get_task(&settle.id)?.is_none());
+            assert!(tx.has_pending_preemption(&account_id)?);
+        }
+        assert!(task_recv.is_empty());
+
+        // Complete the blocker -> the completion hook runs the deferred settle.
+        applicator.pop_task(blocker.id, true /* success */)?;
+
+        // The settle is now the running head, the pending record is cleared, and
+        // the settle was dispatched to the task driver.
+        let queue = get_queue(&applicator, &account_id);
+        assert_eq!(queue.serial_tasks, vec![settle.id]);
+        {
+            let tx = applicator.db().new_read_tx()?;
+            let settle_retrieved = tx.get_task(&settle.id)?.unwrap();
+            assert!(matches!(
+                settle_retrieved.state,
+                ArchivedQueuedTaskState::Running { committed: false, .. }
+            ));
+            assert!(!tx.has_pending_preemption(&account_id)?);
+        }
+        assert_run_task(task_recv.recv()?, settle.id);
+
+        set_test_settle_defer(false);
+        Ok(())
+    }
+
+    /// Tests Stage 1 defer-not-reject across BOTH counterparty queues -- the
+    /// shape that actually occurs in settlement. Both queue heads are committed,
+    /// so the settle defers. Completing one blocker must NOT run it (the other
+    /// queue is still committed); completing the second runs it exactly once.
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_enqueue_preemptive__defer_two_queues_all_or_nothing() -> Result<()> {
+        use crate::storage::tx::task_queue::storage::set_test_settle_defer;
+        set_test_settle_defer(true);
+
+        let (applicator, task_recv) = setup_mock_applicator_with_driver_queue();
+        let peer_id = get_local_peer_id(&applicator);
+        let account_a = AccountId::new_v4();
+        let account_b = AccountId::new_v4();
+
+        // A committed blocker on each counterparty queue
+        let commit_state =
+            QueuedTaskState::Running { state: "submitting".to_string(), committed: true };
+        let blocker_a = mock_queued_task(account_a);
+        applicator.append_task(&blocker_a, &peer_id)?;
+        assert_run_task(task_recv.recv()?, blocker_a.id);
+        applicator.transition_task_state(blocker_a.id, commit_state.clone())?;
+
+        let blocker_b = mock_queued_task(account_b);
+        applicator.append_task(&blocker_b, &peer_id)?;
+        assert_run_task(task_recv.recv()?, blocker_b.id);
+        applicator.transition_task_state(blocker_b.id, commit_state)?;
+
+        // Preemptive settle spanning both queues: both blocked -> defer
+        let settle = mock_queued_task(account_a);
+        applicator.enqueue_preemptive_task(&[account_a, account_b], &settle, &peer_id, true)?;
+        {
+            let tx = applicator.db().new_read_tx()?;
+            assert!(tx.get_task(&settle.id)?.is_none());
+            assert!(tx.has_pending_preemption(&account_a)?);
+            assert!(tx.has_pending_preemption(&account_b)?);
+        }
+        assert!(task_recv.is_empty());
+
+        // Complete blocker A only: B is still committed -> settle must NOT run.
+        // The hook leaves all pending records in place (it only clears them when
+        // the settle actually runs), so the settle stays tracked on both queues.
+        applicator.pop_task(blocker_a.id, true)?;
+        {
+            let tx = applicator.db().new_read_tx()?;
+            assert!(tx.get_task(&settle.id)?.is_none(), "settle ran before both queues were free");
+            assert!(tx.has_pending_preemption(&account_a)?);
+            assert!(tx.has_pending_preemption(&account_b)?);
+        }
+        assert!(task_recv.is_empty(), "settle dispatched before both queues were free");
+
+        // Complete blocker B: both queues now free -> settle runs exactly once
+        applicator.pop_task(blocker_b.id, true)?;
+        let queue_a = get_queue(&applicator, &account_a);
+        let queue_b = get_queue(&applicator, &account_b);
+        assert_eq!(queue_a.serial_tasks, vec![settle.id]);
+        assert_eq!(queue_b.serial_tasks, vec![settle.id]);
+        {
+            let tx = applicator.db().new_read_tx()?;
+            assert!(!tx.has_pending_preemption(&account_a)?);
+            assert!(!tx.has_pending_preemption(&account_b)?);
+        }
+        assert_run_task(task_recv.recv()?, settle.id);
+        assert!(task_recv.is_empty(), "settle dispatched more than once");
+
+        set_test_settle_defer(false);
+        Ok(())
+    }
 
     /// Tests appending a task to an empty queue
     #[test]

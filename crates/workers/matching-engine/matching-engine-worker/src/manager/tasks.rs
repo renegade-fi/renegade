@@ -3,7 +3,7 @@
 use std::time::Duration;
 
 use job_types::task_driver::TaskDriverJob;
-use state::error::StateError;
+use state::{applicator::return_type::ApplicatorReturnType, error::StateError};
 use types_tasks::{QueuedTask, TaskDescriptor};
 
 use crate::{error::MatchingEngineError, executor::MatchingEngineExecutor};
@@ -18,6 +18,12 @@ const PREEMPT_RETRY_BASE_BACKOFF_MS: u64 = 150;
 /// refused because a queue head task is committed
 /// (state/.../task_queue/storage.rs::ERR_CANNOT_SERIALLY_PREEMPT).
 const SERIAL_PREEMPTION_REJECTED: &str = "serial preemption not allowed";
+/// Max time to await a *deferred* settle's completion (Stage 1 defer-not-reject).
+/// A deferred settle runs when the blocking task(s) finish; this bounds the wait
+/// so a perpetually-committed counterparty (the saturated-requote case, which
+/// Stage 2 order-yield addresses) cannot hang the caller indefinitely. Sized to
+/// outlast a normal commit window plus the settle task's own on-chain latency.
+const DEFERRED_SETTLE_TIMEOUT_MS: u64 = 30_000;
 
 impl MatchingEngineExecutor {
     /// Enqueue a serial task and await its completion
@@ -55,10 +61,16 @@ impl MatchingEngineExecutor {
     /// `internal_engine::try_settle_match`); it enqueues a SERIAL PREEMPTIVE task
     /// on both counterparties' wallet queues. If a counterparty's queue head is a
     /// *committed* order-management task — e.g. the order the taker just placed,
-    /// which triggered this very match — the preemption is rejected with
-    /// "serial preemption not allowed". That task is transient (~1s commit
-    /// window), so rather than drop the fill we retry the enqueue with bounded
-    /// exponential backoff that outlasts the commit window.
+    /// which triggered this very match — the preemption cannot proceed.
+    ///
+    /// Two mechanisms keep the fill from being dropped:
+    /// - With Stage 1 defer-not-reject enabled in the state layer, the enqueue
+    ///   succeeds with a `Deferred` outcome: the settle is recorded as pending
+    ///   and run automatically when the blocking task completes. We await its
+    ///   completion with a bounded timeout (`DEFERRED_SETTLE_TIMEOUT_MS`).
+    /// - If the state layer rejects instead (defer disabled, or a second settle
+    ///   already pending on a queue), we retry the enqueue with bounded
+    ///   exponential backoff that outlasts a transient (~1s) commit window.
     async fn enqueue_task_through_raft(
         &self,
         descriptor: TaskDescriptor,
@@ -93,14 +105,42 @@ impl MatchingEngineExecutor {
                 Err(e) => return Err(e.into()),
             }
         };
-        waiter.await?;
 
-        // Await a completion notification from the task driver
+        // Resolve the proposal. The preemption either took the queues
+        // immediately (`None`), or -- with Stage 1 defer-not-reject enabled in
+        // the state layer -- was blocked by a committed head and recorded as
+        // pending (`Deferred`). A deferred settle is not dropped: it runs
+        // automatically via the state layer's completion hook when the blocking
+        // task(s) finish, so we still await its completion below.
+        let deferred = matches!(waiter.await?, ApplicatorReturnType::Deferred);
+
+        // Await a completion notification from the task driver. For a deferred
+        // settle we bound the wait -- a perpetually-committed counterparty (the
+        // saturated-requote case, addressed by Stage 2 order-yield) must not hang
+        // the caller forever. A non-deferred settle awaits completion as before.
         let (job, rx) = TaskDriverJob::new_notification(tid);
         self.task_queue.send(job).map_err(MatchingEngineError::send_message)?;
-        rx.await
-            .map_err(MatchingEngineError::task)? // RecvError
-            .map_err(MatchingEngineError::task) // TaskDriverError
+        let await_completion = async move {
+            rx.await
+                .map_err(MatchingEngineError::task)? // RecvError
+                .map_err(MatchingEngineError::task) // TaskDriverError
+        };
+
+        if deferred {
+            match tokio::time::timeout(
+                Duration::from_millis(DEFERRED_SETTLE_TIMEOUT_MS),
+                await_completion,
+            )
+            .await
+            {
+                Ok(res) => res,
+                Err(_elapsed) => Err(MatchingEngineError::task(
+                    "deferred settlement timed out awaiting a committed counterparty queue",
+                )),
+            }
+        } else {
+            await_completion.await
+        }
     }
 
     /// Enqueue a task directly to the task driver

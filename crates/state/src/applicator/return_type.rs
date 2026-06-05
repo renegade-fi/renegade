@@ -7,11 +7,17 @@
 //! Each of such waiters will be given a copy of the return value
 
 /// The return type from the Applicator
-///
-/// TODO: This is currently empty, deprecate if unnecessary
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum ApplicatorReturnType {
     /// No return value
     None,
+    /// A serial preemptive task was blocked by a committed queue head and has
+    /// been recorded as pending (Stage 1 defer-not-reject); it will run
+    /// automatically when the blocking task(s) complete.
+    ///
+    /// Surfaced to the proposing caller so it can await the deferred task's
+    /// completion with a bounded timeout rather than treating the enqueue as an
+    /// immediate success.
+    Deferred,
 }
