@@ -254,6 +254,14 @@ impl RaftClient {
         let last_applied = m.last_applied.map(|l| l.index).unwrap_or(0);
         let leader = m.current_leader.map(|l| l.to_string()).unwrap_or_else(|| "none".to_string());
 
+        // Per-target replication progress (leader-only): names each follower /
+        // learner by peer id and reports its log lag, or `unreachable`. This is
+        // the missing reverse-map for openraft's opaque
+        // "RPCError: timeout ... AppendEntries <leader>-><target>" log -- raft
+        // node ids are a non-reversible hash of the peer id (`get_raft_id`), so
+        // only the membership can name the peer behind a failing RPC.
+        let replication = self.replication_summary(&m);
+
         log_task!(
             Task::RaftLifecycle,
             Outcome::Ok,
@@ -263,8 +271,47 @@ impl RaftClient {
             voters = voters,
             learners = learners,
             last_applied = last_applied,
+            replication = %replication,
             "raft health"
         );
+    }
+
+    /// Build the compact, leader-only per-target replication summary used by the
+    /// health gauge: `<peer_id>=lag:<n>` for a tracked follower / learner, or
+    /// `<peer_id>=unreachable` when the leader holds no acknowledged match index
+    /// for it. Empty on non-leaders -- openraft only populates `replication` on
+    /// the leader.
+    ///
+    /// Converts openraft's opaque "AppendEntries <id>-><id> timeout" (the
+    /// `RPCError` spam from an unreachable learner) into a peer-attributable,
+    /// queryable signal, since the node id is a non-reversible hash of the peer
+    /// id and cannot otherwise be mapped back to a host.
+    fn replication_summary(&self, m: &RaftMetrics<NodeId, Node>) -> String {
+        let Some(replication) = m.replication.as_ref() else {
+            return String::new();
+        };
+        let membership = m.membership_config.membership();
+        let leader_idx = m.last_log_index.unwrap_or(0);
+        let local = self.node_id();
+
+        let mut parts = Vec::new();
+        for (id, matched) in replication.iter() {
+            if *id == local {
+                continue;
+            }
+            let peer = membership
+                .get_node(id)
+                .map(|n| n.peer_id.to_string())
+                .unwrap_or_else(|| id.to_string());
+            match matched {
+                Some(log_id) => {
+                    let lag = leader_idx.saturating_sub(log_id.index);
+                    parts.push(format!("{peer}=lag:{lag}"));
+                },
+                None => parts.push(format!("{peer}=unreachable")),
+            }
+        }
+        parts.join(",")
     }
 
     /// Get the node info an ID for the current leader
