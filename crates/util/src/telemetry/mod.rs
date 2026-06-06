@@ -1,9 +1,19 @@
 //! Defines helpers for logging
 
-use std::{error::Error, fmt::Display};
+use std::{error::Error, fmt::Display, sync::OnceLock};
+use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{
     EnvFilter, Layer, Registry, fmt, layer::SubscriberExt, util::SubscriberInitExt,
 };
+
+/// Holds the non-blocking log writer's worker guard for the life of the
+/// process.
+///
+/// The guard MUST stay alive: dropping it shuts down the background writer
+/// thread and logs stop flushing. Parking it in a process-lifetime static keeps
+/// the writer alive without threading the guard through every
+/// `configure_telemetry` caller.
+static LOG_WORKER_GUARD: OnceLock<WorkerGuard> = OnceLock::new();
 pub use tracing_subscriber::{filter::LevelFilter, fmt::format::Format};
 
 pub mod datadog;
@@ -62,7 +72,23 @@ impl TelemetryBuilder {
                 opentelemetry_datadog::DatadogPropagator::new(),
             );
 
-            self.with_layer(fmt::layer().json().event_format(datadog::formatter::DatadogFormatter))
+            // Write JSON logs through a non-blocking, background-flushed writer.
+            // The default fmt writer holds the global stdout lock and writes
+            // synchronously, so under high log volume a slow consumer (e.g. the
+            // docker json-file driver) blocks every runtime thread that logs,
+            // wedging the node until the write drains -- observed as /v2/ping
+            // health-check timeouts and ECS killing the task. `non_blocking`
+            // drains a bounded queue on a dedicated thread and drops on overflow
+            // (lossy by default), so logging can never block the runtime.
+            let (writer, guard) = tracing_appender::non_blocking(std::io::stdout());
+            let _ = LOG_WORKER_GUARD.set(guard);
+
+            self.with_layer(
+                fmt::layer()
+                    .json()
+                    .event_format(datadog::formatter::DatadogFormatter)
+                    .with_writer(writer),
+            )
         } else {
             self.with_layer(fmt::layer().pretty())
         }
