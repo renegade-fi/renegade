@@ -751,7 +751,17 @@ impl RaftClient {
             return Ok(());
         }
 
-        self.expire_peers(&expirable, ExpireScope::LearnersOnly).await.map(|_| ())
+        // #3 crash-loop guard (revert once #1 -- persisted last_membership -- is
+        // proven): do NOT expire dead learners. Removing a learner issues a
+        // `change_membership`, which PANICS the raft core when the membership's
+        // anchor log entry has been compacted away on a recovered node (the
+        // `'LogIndex(0)' violates` reboot crash). Learners have no quorum impact,
+        // so leaving stale ids is harmless -- they are re-adopted fresh.
+        const EXPIRE_DEAD_LEARNERS: bool = false;
+        if EXPIRE_DEAD_LEARNERS {
+            return self.expire_peers(&expirable, ExpireScope::LearnersOnly).await.map(|_| ());
+        }
+        Ok(())
     }
 
     /// Add any nodes missed by gossip
