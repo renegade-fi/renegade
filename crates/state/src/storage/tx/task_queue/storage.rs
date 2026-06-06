@@ -68,6 +68,43 @@ pub(crate) fn set_test_settle_defer(enabled: bool) {
     TEST_SETTLE_DEFER.with(|c| c.set(enabled));
 }
 
+/// Feature flag gating Stage 2 "order-yield": when a serial settlement
+/// preemption is blocked by a COMMITTED but *yieldable* order-management head
+/// (an MM requote), preempt it anyway -- the order is requeued and re-run (a
+/// rollback) -- so settlement isn't starved by a perpetually-requoting wallet.
+/// Bounded per queue by `MAX_CONSECUTIVE_YIELDS` so requotes aren't starved in
+/// turn. Off by default: this is an apply-path behavior change (land dark, flip
+/// after testnet) and also requires the task-driver to abort a yielded committed
+/// order task.
+#[cfg_attr(test, allow(dead_code))]
+const ENABLE_ORDER_YIELD: bool = true;
+
+/// Max consecutive settle-yields of a queue's order head before the order is
+/// allowed to commit (per-queue fairness; prevents requote starvation).
+const MAX_CONSECUTIVE_YIELDS: u32 = 3;
+
+#[cfg(not(test))]
+#[inline]
+fn order_yield_enabled() -> bool {
+    ENABLE_ORDER_YIELD
+}
+
+#[cfg(test)]
+thread_local! {
+    static TEST_ORDER_YIELD: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+#[cfg(test)]
+fn order_yield_enabled() -> bool {
+    TEST_ORDER_YIELD.with(|c| c.get())
+}
+
+/// Test-only: enable or disable order-yield for the current thread
+#[cfg(test)]
+pub(crate) fn set_test_order_yield(enabled: bool) {
+    TEST_ORDER_YIELD.with(|c| c.set(enabled));
+}
+
 /// The outcome of a serial preemption attempt
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PreemptOutcome {
@@ -101,6 +138,11 @@ fn pending_preempt_task_key(key: &TaskQueueKey) -> String {
 /// Get the storage key for the queue set of a deferred preemptive task
 fn pending_preempt_keys_key(key: &TaskQueueKey) -> String {
     format!("pending-preempt-keys-{key}")
+}
+
+/// Get the storage key for a queue's consecutive-yield fairness counter
+fn yield_count_key(key: &TaskQueueKey) -> String {
+    format!("yield-count-{key}")
 }
 
 // -----------------
@@ -251,6 +293,32 @@ impl<T: TransactionKind> StateTxn<'_, T> {
         Ok(can_preempt)
     }
 
+    /// Whether the committed head of a queue is a YIELDABLE order-management task
+    /// (Stage 2 order-yield). False for an empty queue, a non-committed head, or
+    /// a non-yieldable head (settlement / account op).
+    pub(crate) fn head_is_yieldable(&self, key: &TaskQueueKey) -> Result<bool, StorageError> {
+        let Some(queue) = self.get_task_queue(key)? else {
+            return Ok(false);
+        };
+        let Some(t) = queue.serial_tasks.first() else {
+            return Ok(false);
+        };
+        let task =
+            self.get_task_deserialized(t)?.ok_or(StorageError::reject(ERR_TASK_NOT_FOUND))?;
+        Ok(task.state.is_committed() && task.descriptor.is_yieldable())
+    }
+
+    /// Read a queue's consecutive-yield fairness counter (0 if unset)
+    pub(crate) fn yield_count(&self, key: &TaskQueueKey) -> Result<u32, StorageError> {
+        let count_key = yield_count_key(key);
+        Ok(self
+            .inner()
+            .read::<_, u32>(TASK_QUEUE_TABLE, &count_key)?
+            .map(|archived| archived.deserialize())
+            .transpose()?
+            .unwrap_or(0))
+    }
+
     /// Get the deferred (pending) preemptive settle recorded against a queue,
     /// along with the full set of queues the settle must preempt.
     ///
@@ -340,21 +408,53 @@ impl StateTxn<'_, RW> {
         queues: &[TaskQueueKey],
         task: &QueuedTask,
     ) -> Result<PreemptOutcome, StorageError> {
-        // First pass: is any target queue currently blocked (committed head)?
-        let mut blocked = false;
+        // First pass: classify queues. A queue is preemptable now if it is
+        // serial-preemption-safe (free / non-committed head), or -- under Stage 2
+        // order-yield -- its committed head is a yieldable order-management task
+        // still within its per-queue fairness budget.
+        let mut hard_blocked = false;
         for queue_key in queues.iter() {
-            if !self.is_serial_preemption_safe(queue_key)? {
-                blocked = true;
-                break;
+            if self.is_serial_preemption_safe(queue_key)? {
+                continue;
             }
+            if order_yield_enabled()
+                && self.head_is_yieldable(queue_key)?
+                && self.yield_count(queue_key)? < MAX_CONSECUTIVE_YIELDS
+            {
+                continue; // committed yieldable head within budget -> will yield
+            }
+            hard_blocked = true;
+            break;
         }
 
-        if !blocked {
-            self.do_preempt_serial(queues, task)?;
+        if !hard_blocked {
+            // Bump the fairness counter for every queue whose committed head we
+            // are about to yield, before the requeue rewrites the head.
+            if order_yield_enabled() {
+                for queue_key in queues.iter() {
+                    if self.head_is_yieldable(queue_key)? {
+                        self.bump_yield_count(queue_key)?;
+                    }
+                }
+            }
+            self.do_preempt_serial_inner(queues, task, order_yield_enabled())?;
             return Ok(PreemptOutcome::Preempted);
         }
 
-        // A queue is blocked. Without defer this is the historical reject.
+        // Hard-blocked. If a yield was refused only because the fairness cap was
+        // hit, reset that queue's counter so its order task gets a turn to commit;
+        // then fall through to defer (Stage 1).
+        if order_yield_enabled() {
+            for queue_key in queues.iter() {
+                if self.head_is_yieldable(queue_key)?
+                    && self.yield_count(queue_key)? >= MAX_CONSECUTIVE_YIELDS
+                {
+                    self.reset_yield_count(queue_key)?;
+                }
+            }
+        }
+
+        // Without defer this is the historical reject.
         if !settle_defer_enabled() {
             return Err(StorageError::reject(ERR_CANNOT_SERIALLY_PREEMPT));
         }
@@ -378,23 +478,42 @@ impl StateTxn<'_, RW> {
         Ok(PreemptOutcome::Deferred)
     }
 
-    /// Unconditionally preempt a set of queues with a serial task.
+    /// Unconditionally preempt a set of queues with a serial task (no yield).
     ///
-    /// Assumes the caller has verified every queue is serial-preemption-safe;
-    /// re-checks defensively and rejects rather than corrupting state.
+    /// Used by the Stage 1 completion hook, which only runs once every target
+    /// queue is already serial-preemption-safe.
     pub(crate) fn do_preempt_serial(
         &self,
         queues: &[TaskQueueKey],
         task: &QueuedTask,
     ) -> Result<(), StorageError> {
+        self.do_preempt_serial_inner(queues, task, false /* allow_yield */)
+    }
+
+    /// Preempt a set of queues with a serial task.
+    ///
+    /// With `allow_yield` (Stage 2), a committed head that is a yieldable
+    /// order-management task is preempted anyway: it is requeued (re-run) rather
+    /// than blocking. Re-checks safety defensively and rejects rather than
+    /// corrupting state.
+    fn do_preempt_serial_inner(
+        &self,
+        queues: &[TaskQueueKey],
+        task: &QueuedTask,
+        allow_yield: bool,
+    ) -> Result<(), StorageError> {
         // Index the task into the queues
         for queue_key in queues.iter() {
-            // 1. Check that the queue can be preempted
-            if !self.is_serial_preemption_safe(queue_key)? {
+            // 1. Check the queue can be preempted -- or, under order-yield, that
+            //    its committed head is a yieldable order-management task.
+            if !self.is_serial_preemption_safe(queue_key)?
+                && !(allow_yield && self.head_is_yieldable(queue_key)?)
+            {
                 return Err(StorageError::reject(ERR_CANNOT_SERIALLY_PREEMPT));
             }
 
-            // 2. Move the existing task back to the queued state
+            // 2. Move the existing head back to the queued state (the yield, for a
+            //    committed order task)
             let mut queue = self.get_task_queue_deserialized(queue_key)?;
             if let Some(t) = queue.serial_tasks.first() {
                 self.requeue_task(t)?;
@@ -525,6 +644,20 @@ impl StateTxn<'_, RW> {
         Ok(())
     }
 
+    /// Increment a queue's consecutive-yield fairness counter
+    pub(crate) fn bump_yield_count(&self, key: &TaskQueueKey) -> Result<(), StorageError> {
+        let next = self.yield_count(key)? + 1;
+        let count_key = yield_count_key(key);
+        self.inner().write(TASK_QUEUE_TABLE, &count_key, &next)
+    }
+
+    /// Reset a queue's consecutive-yield fairness counter to zero
+    pub(crate) fn reset_yield_count(&self, key: &TaskQueueKey) -> Result<(), StorageError> {
+        let count_key = yield_count_key(key);
+        self.inner().delete(TASK_QUEUE_TABLE, &count_key)?;
+        Ok(())
+    }
+
     /// Mark a task as queued
     fn requeue_task(&self, id: &TaskIdentifier) -> Result<(), StorageError> {
         if let Some(mut task) = self.get_task_deserialized(id)? {
@@ -570,7 +703,7 @@ impl StateTxn<'_, RW> {
 
 #[cfg(test)]
 mod test {
-    use types_tasks::mocks::mock_queued_task;
+    use types_tasks::mocks::{mock_create_order_task, mock_queued_task};
 
     use crate::storage::traits::RkyvValue;
     use crate::{storage::tx::task_queue::TaskQueuePreemptionState, test_helpers::mock_db};
@@ -1052,6 +1185,102 @@ mod test {
         assert_eq!(queue.serial_tasks, vec![settle.id]);
         assert!(!tx.has_pending_preemption(&key)?);
 
+        super::set_test_settle_defer(false);
+        Ok(())
+    }
+
+    /// Stage 2 order-yield: a settle blocked by a COMMITTED but yieldable
+    /// (CreateOrder) head preempts (yields) it rather than deferring, and bumps
+    /// the per-queue fairness counter.
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_order_yield__yields_committed_create_order() -> Result<(), StorageError> {
+        super::set_test_order_yield(true);
+
+        let db = mock_db();
+        let tx = db.new_write_tx()?;
+        let key = TaskQueueKey::new_v4();
+
+        // Committed yieldable head: an MM CreateOrder requote past its commit point
+        let mut order = mock_create_order_task(key);
+        order.state = QueuedTaskState::Running { state: "creating".to_string(), committed: true };
+        tx.enqueue_serial_task(&key, &order)?;
+        assert!(tx.head_is_yieldable(&key)?, "committed CreateOrder head must be yieldable");
+
+        // The settle preempts (yields) the committed order rather than deferring.
+        let settle = mock_queued_task(key);
+        let outcome = tx.preempt_queue_with_serial(&[key], &settle)?;
+        assert_eq!(outcome, PreemptOutcome::Preempted);
+        assert_eq!(tx.yield_count(&key)?, 1, "a yield bumps the fairness counter");
+
+        // The settle is now the head; the order was requeued (to be re-run).
+        let queue = tx.get_task_queue_deserialized(&key)?;
+        assert_eq!(queue.serial_tasks, vec![settle.id, order.id]);
+
+        super::set_test_order_yield(false);
+        Ok(())
+    }
+
+    /// Stage 2 fairness: once the per-queue yield cap is hit, the order is NOT
+    /// yielded -- the settle defers (letting the order commit) and the counter
+    /// resets.
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_order_yield__fairness_cap_defers() -> Result<(), StorageError> {
+        super::set_test_order_yield(true);
+        super::set_test_settle_defer(true);
+
+        let db = mock_db();
+        let tx = db.new_write_tx()?;
+        let key = TaskQueueKey::new_v4();
+
+        let mut order = mock_create_order_task(key);
+        order.state = QueuedTaskState::Running { state: "creating".to_string(), committed: true };
+        tx.enqueue_serial_task(&key, &order)?;
+
+        // Drive the fairness counter to the cap.
+        for _ in 0..super::MAX_CONSECUTIVE_YIELDS {
+            tx.bump_yield_count(&key)?;
+        }
+
+        let settle = mock_queued_task(key);
+        let outcome = tx.preempt_queue_with_serial(&[key], &settle)?;
+        assert_eq!(outcome, PreemptOutcome::Deferred, "at the cap the order is not yielded");
+        assert_eq!(tx.yield_count(&key)?, 0, "the cap resets the counter so the order can commit");
+
+        // The order is still the head (not preempted); the settle is pending.
+        let queue = tx.get_task_queue_deserialized(&key)?;
+        assert_eq!(queue.serial_tasks, vec![order.id]);
+        assert!(tx.has_pending_preemption(&key)?);
+
+        super::set_test_order_yield(false);
+        super::set_test_settle_defer(false);
+        Ok(())
+    }
+
+    /// A committed NON-yieldable head (e.g. NewAccount) is never yielded -- the
+    /// settle defers as in Stage 1, even with order-yield on.
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_order_yield__non_yieldable_head_defers() -> Result<(), StorageError> {
+        super::set_test_order_yield(true);
+        super::set_test_settle_defer(true);
+
+        let db = mock_db();
+        let tx = db.new_write_tx()?;
+        let key = TaskQueueKey::new_v4();
+
+        let mut acct = mock_queued_task(key); // NewAccount -> not yieldable
+        acct.state = QueuedTaskState::Running { state: "running".to_string(), committed: true };
+        tx.enqueue_serial_task(&key, &acct)?;
+        assert!(!tx.head_is_yieldable(&key)?);
+
+        let settle = mock_queued_task(key);
+        let outcome = tx.preempt_queue_with_serial(&[key], &settle)?;
+        assert_eq!(outcome, PreemptOutcome::Deferred, "a non-yieldable committed head is not yielded");
+        assert_eq!(tx.yield_count(&key)?, 0);
+
+        super::set_test_order_yield(false);
         super::set_test_settle_defer(false);
         Ok(())
     }

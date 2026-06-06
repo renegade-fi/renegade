@@ -183,6 +183,21 @@ impl TaskDescriptor {
         }
     }
 
+    /// Whether this task may be YIELDED -- preempted while committed and re-run
+    /// from scratch -- so a blocked settlement can take the queue (Stage 2
+    /// order-yield).
+    ///
+    /// True only for order-management tasks verified safe to re-run: re-running
+    /// must be idempotent (no double on-chain/state effect). Currently only
+    /// `CreateOrder` qualifies -- its writes upsert by `order_id`, so a redo
+    /// yields the same single order. `CancelOrder` needs an idempotency fix
+    /// (treat an already-removed order as success) before it can be added, and
+    /// settlements / account ops (deposit, withdraw, new-account) are NEVER
+    /// yieldable -- they are irreversible and not the contention source.
+    pub fn is_yieldable(&self) -> bool {
+        matches!(self, TaskDescriptor::CreateOrder(_))
+    }
+
     /// Returns the IDs of the accounts affected by the task
     pub fn affected_accounts(&self) -> Vec<AccountId> {
         match self {

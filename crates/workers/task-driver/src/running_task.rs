@@ -94,8 +94,18 @@ impl<T: Task> RunnableTask<T> {
             return if retryable { Ok(false) } else { Err(e.into()) };
         };
 
-        // Successful step, attempt to transition the state
-        self.transition_state().await?;
+        // Successful step. Transition the state in consensus. If the transition
+        // is rejected because the task is no longer running, a higher-priority
+        // serial preemption has yielded this task out of the running slot (Stage
+        // 2 order-yield): it has been requeued. Stop cleanly with `Preempted` so
+        // the preemptor can run -- failing the task here would pop it and clear
+        // the queue, destroying the preemptor.
+        if let Err(e) = self.transition_state().await {
+            if !self.is_task_running().await? {
+                return Err(TaskDriverError::Preempted);
+            }
+            return Err(e.into());
+        }
         Ok(true)
     }
 

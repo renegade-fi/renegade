@@ -274,6 +274,14 @@ impl TaskExecutor {
             },
         };
 
+        // A preempted (yielded) task has NOT completed -- it was requeued and
+        // will re-run, notifying its listeners on real completion. Suppress the
+        // premature completion notification (leave the listeners registered) and
+        // do not surface the yield as a job error.
+        if matches!(res, Err(TaskDriverError::Preempted)) {
+            return Ok(());
+        }
+
         // Notify any listeners that the task has completed
         let str_res = res.clone().map_err(|e| e.to_string());
         for sender in self.task_notifications.write().unwrap().remove(&id).unwrap_or_default() {
@@ -319,6 +327,23 @@ impl TaskExecutor {
 
         let mut task = task_res.unwrap();
         let res = Self::run_task_to_completion(&mut task, args).await;
+
+        // A preempted (yielded) task has been requeued by a higher-priority
+        // serial preemption (Stage 2 order-yield). Do NOT clean up / pop / clear
+        // -- leave it queued so it re-runs from scratch when it next becomes the
+        // head. Failing it here would clear the queue and destroy the preemptor.
+        // Propagate `Preempted` so `start_task` can suppress the (premature)
+        // completion notification; the task notifies its waiter on real
+        // completion after the re-run.
+        if matches!(res, Err(TaskDriverError::Preempted)) {
+            log_task!(
+                LogTask::TaskExecution,
+                Outcome::Ok,
+                subject = %id,
+                "task yielded to a higher-priority preemption; left requeued for re-run"
+            );
+            return Err(TaskDriverError::Preempted);
+        }
 
         // Cleanup
         let cleanup_res = task.cleanup(res.is_ok(), affected_accounts).await;
