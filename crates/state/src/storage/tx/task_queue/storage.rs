@@ -1277,7 +1277,11 @@ mod test {
 
         let settle = mock_queued_task(key);
         let outcome = tx.preempt_queue_with_serial(&[key], &settle)?;
-        assert_eq!(outcome, PreemptOutcome::Deferred, "a non-yieldable committed head is not yielded");
+        assert_eq!(
+            outcome,
+            PreemptOutcome::Deferred,
+            "a non-yieldable committed head is not yielded"
+        );
         assert_eq!(tx.yield_count(&key)?, 0);
 
         super::set_test_order_yield(false);
