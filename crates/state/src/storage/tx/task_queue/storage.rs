@@ -1,6 +1,7 @@
 //! Storage implementation for task queue operations
 
 use libmdbx::{RW, TransactionKind};
+use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
 use types_tasks::{QueuedTask, QueuedTaskState, TaskIdentifier, TaskQueueKey};
 use util::res_some;
 
@@ -115,6 +116,33 @@ pub enum PreemptOutcome {
     Deferred,
 }
 
+/// Max deferred settle preemptions retained per queue (Stage 3 multi-pending
+/// FIFO). Bounds buildup: a target queue at this depth rejects further serial
+/// preemptions as backpressure rather than buffering without limit.
+const MAX_PENDING_PER_QUEUE: usize = 16;
+
+/// A deferred (pending) serial preemption, recorded against every queue it must
+/// preempt.
+///
+/// Entries carry a global monotonic `seq` assigned at enqueue. Because enqueues
+/// apply in committed-log order, `seq` is deterministic and identical on every
+/// raft node (mandatory: the completion hook runs on the apply path). A pending
+/// settle runs only when it is the lowest-`seq` entry of EVERY target queue and
+/// all those queues are serial-preemption-safe. The global total order means
+/// the globally-lowest pending settle is always the head of all its queues, so
+/// progress is guaranteed and the "two settles each waiting on the other's
+/// queue" deadlock -- which the previous one-pending-per-queue rule prevented --
+/// cannot occur.
+#[derive(Clone, Debug, Archive, RkyvSerialize, RkyvDeserialize)]
+pub(crate) struct PendingEntry {
+    /// The deferred preemptive (settle) task
+    pub task: QueuedTask,
+    /// The full set of queues the task must preempt (all-or-nothing)
+    pub target_keys: Vec<TaskQueueKey>,
+    /// Global monotonic sequence number for total ordering
+    pub seq: u64,
+}
+
 /// Get the storage key for a task queue
 pub fn task_queue_key(key: &TaskQueueKey) -> String {
     format!("task-queue-{}", key)
@@ -130,14 +158,15 @@ fn task_to_queue_key(id: &TaskIdentifier) -> String {
     format!("task-to-queue-{id}")
 }
 
-/// Get the storage key for a deferred (pending) preemptive task on a queue
-fn pending_preempt_task_key(key: &TaskQueueKey) -> String {
-    format!("pending-preempt-task-{key}")
+/// Get the storage key for a queue's ordered list of deferred preemptive
+/// settles (Stage 3 multi-pending FIFO)
+fn pending_preempt_list_key(key: &TaskQueueKey) -> String {
+    format!("pending-preempt-list-{key}")
 }
 
-/// Get the storage key for the queue set of a deferred preemptive task
-fn pending_preempt_keys_key(key: &TaskQueueKey) -> String {
-    format!("pending-preempt-keys-{key}")
+/// Get the storage key for the global pending-preemption sequence counter
+fn pending_preempt_seq_key() -> String {
+    "pending-preempt-seq".to_string()
 }
 
 /// Get the storage key for a queue's consecutive-yield fairness counter
@@ -319,35 +348,48 @@ impl<T: TransactionKind> StateTxn<'_, T> {
             .unwrap_or(0))
     }
 
-    /// Get the deferred (pending) preemptive settle recorded against a queue,
-    /// along with the full set of queues the settle must preempt.
-    ///
-    /// Returns `None` if no settle is pending on the queue.
-    pub(crate) fn get_pending_preemption(
+    /// Read a queue's ordered list of deferred preemptive settles. Entries are
+    /// stored in append (seq-ascending) order.
+    pub(crate) fn get_pending_preempt_list(
         &self,
         key: &TaskQueueKey,
-    ) -> Result<Option<(QueuedTask, Vec<TaskQueueKey>)>, StorageError> {
-        let task_key = pending_preempt_task_key(key);
-        let task = match self.inner().read::<_, QueuedTask>(TASK_QUEUE_TABLE, &task_key)? {
-            Some(archived) => archived.deserialize()?,
-            None => return Ok(None),
-        };
-
-        let keys_key = pending_preempt_keys_key(key);
-        let keys = self
+    ) -> Result<Vec<PendingEntry>, StorageError> {
+        let list_key = pending_preempt_list_key(key);
+        Ok(self
             .inner()
-            .read::<_, Vec<TaskQueueKey>>(TASK_QUEUE_TABLE, &keys_key)?
+            .read::<_, Vec<PendingEntry>>(TASK_QUEUE_TABLE, &list_key)?
             .map(|archived| archived.deserialize())
             .transpose()?
-            .unwrap_or_default();
-
-        Ok(Some((task, keys)))
+            .unwrap_or_default())
     }
 
-    /// Whether a queue already has a deferred preemptive settle recorded
+    /// The lowest-`seq` (head) deferred settle on a queue, if any.
+    pub(crate) fn pending_preempt_head(
+        &self,
+        key: &TaskQueueKey,
+    ) -> Result<Option<PendingEntry>, StorageError> {
+        Ok(self.get_pending_preempt_list(key)?.into_iter().min_by_key(|e| e.seq))
+    }
+
+    /// Whether a queue has any deferred preemptive settle recorded.
+    ///
+    /// Test-only query helper since Stage 3 (the production defer path uses the
+    /// FIFO depth, not a boolean presence check).
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn has_pending_preemption(&self, key: &TaskQueueKey) -> Result<bool, StorageError> {
-        let task_key = pending_preempt_task_key(key);
-        Ok(self.inner().read::<_, QueuedTask>(TASK_QUEUE_TABLE, &task_key)?.is_some())
+        Ok(!self.get_pending_preempt_list(key)?.is_empty())
+    }
+
+    /// Whether `entry` is the lowest-`seq` (head) entry of the given queue.
+    pub(crate) fn is_pending_head(
+        &self,
+        entry: &PendingEntry,
+        key: &TaskQueueKey,
+    ) -> Result<bool, StorageError> {
+        match self.pending_preempt_head(key)? {
+            Some(head) => Ok(head.seq == entry.seq),
+            None => Ok(false),
+        }
     }
 
     /// Get the task queue for a given key
@@ -459,20 +501,26 @@ impl StateTxn<'_, RW> {
             return Err(StorageError::reject(ERR_CANNOT_SERIALLY_PREEMPT));
         }
 
-        // Defer. One-pending-per-queue: if any target queue already holds a
-        // pending settle, fall back to reject -- bounds buildup and prevents the
-        // deadlock where two settles each wait on the other's queue.
+        // Defer (Stage 3 multi-pending FIFO). Append the settle to every target
+        // queue's bounded list, ordered by a global `seq`. No queue is preempted
+        // (all-or-nothing); the completion hook runs the real preemption once the
+        // settle is the lowest-`seq` entry of every target queue and all are
+        // safe. The total `seq` order makes multi-pending deadlock-free, so we no
+        // longer reject merely because a queue already holds a pending settle.
+        //
+        // The only remaining reject is backpressure: a target queue already at
+        // `MAX_PENDING_PER_QUEUE` bounds buildup. Checked first so the enqueue is
+        // all-or-nothing (no partial append on reject).
         for queue_key in queues.iter() {
-            if self.has_pending_preemption(queue_key)? {
+            if self.get_pending_preempt_list(queue_key)?.len() >= MAX_PENDING_PER_QUEUE {
                 return Err(StorageError::reject(ERR_CANNOT_SERIALLY_PREEMPT));
             }
         }
 
-        // Record the settle pending against every target queue. No queue is
-        // preempted (all-or-nothing); the hook runs the real preemption when the
-        // blocking task(s) complete and all queues are simultaneously safe.
+        let seq = self.next_pending_seq()?;
+        let entry = PendingEntry { task: task.clone(), target_keys: queues.to_vec(), seq };
         for queue_key in queues.iter() {
-            self.write_pending_preemption(queue_key, task, queues)?;
+            self.append_pending_preemption(queue_key, &entry)?;
         }
 
         Ok(PreemptOutcome::Deferred)
@@ -619,28 +667,68 @@ impl StateTxn<'_, RW> {
         self.update_task_to_queues(id, queues)
     }
 
-    /// Record a deferred preemptive settle against a queue.
+    /// Allocate the next global pending-preemption sequence number.
     ///
-    /// Stores both the settle task and the full set of queues it must preempt so
-    /// the completion hook can re-check all queues and clean up every entry.
-    pub(crate) fn write_pending_preemption(
-        &self,
-        key: &TaskQueueKey,
-        task: &QueuedTask,
-        all_keys: &[TaskQueueKey],
-    ) -> Result<(), StorageError> {
-        let task_key = pending_preempt_task_key(key);
-        self.inner().write(TASK_QUEUE_TABLE, &task_key, task)?;
-        let keys_key = pending_preempt_keys_key(key);
-        self.inner().write(TASK_QUEUE_TABLE, &keys_key, &all_keys.to_vec())
+    /// Deterministic across raft nodes: enqueues apply in committed-log order, so
+    /// every node assigns the same `seq` to the same settle.
+    pub(crate) fn next_pending_seq(&self) -> Result<u64, StorageError> {
+        let seq_key = pending_preempt_seq_key();
+        let cur = self
+            .inner()
+            .read::<_, u64>(TASK_QUEUE_TABLE, &seq_key)?
+            .map(|a| a.deserialize())
+            .transpose()?
+            .unwrap_or(0);
+        let next = cur + 1;
+        self.inner().write(TASK_QUEUE_TABLE, &seq_key, &next)?;
+        Ok(next)
     }
 
-    /// Delete any deferred preemptive settle recorded against a queue
+    /// Append a deferred preemptive settle to a queue's pending list.
+    pub(crate) fn append_pending_preemption(
+        &self,
+        key: &TaskQueueKey,
+        entry: &PendingEntry,
+    ) -> Result<(), StorageError> {
+        let mut list = self.get_pending_preempt_list(key)?;
+        list.push(entry.clone());
+        let list_key = pending_preempt_list_key(key);
+        self.inner().write(TASK_QUEUE_TABLE, &list_key, &list)
+    }
+
+    /// Remove a deferred preemptive settle (matched by `seq`) from every queue it
+    /// targets, so no orphaned copy is left to block another queue's head.
+    pub(crate) fn remove_pending_preemption_entry(
+        &self,
+        entry: &PendingEntry,
+    ) -> Result<(), StorageError> {
+        for key in entry.target_keys.iter() {
+            let mut list = self.get_pending_preempt_list(key)?;
+            list.retain(|e| e.seq != entry.seq);
+            let list_key = pending_preempt_list_key(key);
+            if list.is_empty() {
+                self.inner().delete(TASK_QUEUE_TABLE, &list_key)?;
+            } else {
+                self.inner().write(TASK_QUEUE_TABLE, &list_key, &list)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Drop all deferred preemptions recorded against a queue (e.g. on clear).
+    ///
+    /// Each entry is removed from every queue it targets so a cleared queue
+    /// cannot leak a pending settle (here or in a co-targeted queue) that never
+    /// re-triggers.
     pub(crate) fn delete_pending_preemption(&self, key: &TaskQueueKey) -> Result<(), StorageError> {
-        let task_key = pending_preempt_task_key(key);
-        let keys_key = pending_preempt_keys_key(key);
-        self.inner().delete(TASK_QUEUE_TABLE, &task_key)?;
-        self.inner().delete(TASK_QUEUE_TABLE, &keys_key)?;
+        let list = self.get_pending_preempt_list(key)?;
+        for entry in list.iter() {
+            self.remove_pending_preemption_entry(entry)?;
+        }
+        // Ensure this queue's own list key is gone even if an entry did not list
+        // it among its targets (defensive).
+        let list_key = pending_preempt_list_key(key);
+        self.inner().delete(TASK_QUEUE_TABLE, &list_key)?;
         Ok(())
     }
 
@@ -1135,9 +1223,11 @@ mod test {
         Ok(())
     }
 
-    /// Tests Stage 1 defer-not-reject: a serial preemption blocked by a
-    /// committed head is deferred (recorded pending, queue untouched), then runs
-    /// when the blocking task completes. Also covers one-pending-per-queue.
+    /// Tests defer-not-reject + Stage 3 multi-pending: a serial preemption
+    /// blocked by a committed head is deferred (recorded pending, queue
+    /// untouched); a second concurrent settle also defers (no longer rejects);
+    /// and on unblock the lowest-`seq` settle runs first, leaving the rest
+    /// pending in order.
     #[test]
     #[allow(non_snake_case)]
     fn test_serial_preemption__defer_and_resume() -> Result<(), StorageError> {
@@ -1164,26 +1254,113 @@ mod test {
         let queue = tx.get_task_queue_deserialized(&key)?;
         assert_eq!(queue.serial_tasks, vec![blocker.id]);
 
-        // One-pending-per-queue: a second settle while one is pending rejects
+        // Multi-pending FIFO (Stage 3): a second settle while one is pending now
+        // DEFERS too (it no longer rejects). Both are recorded, ordered by seq.
         let settle2 = mock_queued_task(key);
-        let err = tx.preempt_queue_with_serial(&[key], &settle2).is_err();
-        assert!(err);
+        let outcome2 = tx.preempt_queue_with_serial(&[key], &settle2)?;
+        assert_eq!(outcome2, PreemptOutcome::Deferred);
+        assert_eq!(tx.get_pending_preempt_list(&key)?.len(), 2);
 
-        // Complete the blocker, then run the hook's storage steps: the queue is
-        // now safe, so the deferred settle preempts and the pending clears.
+        // The head (lowest seq) is the first settle.
+        let head = tx.pending_preempt_head(&key)?.expect("a settle should be pending");
+        assert_eq!(head.task.id, settle.id);
+        assert_eq!(head.target_keys, vec![key]);
+
+        // Complete the blocker; the queue is now safe, so the head settle (first)
+        // preempts and is removed, leaving settle2 pending behind it.
         tx.pop_task(&blocker.id)?;
-        let (pending_task, pending_keys) =
-            tx.get_pending_preemption(&key)?.expect("settle should still be pending");
-        assert_eq!(pending_task.id, settle.id);
-        assert_eq!(pending_keys, vec![key]);
         assert!(tx.is_serial_preemption_safe(&key)?);
-        tx.do_preempt_serial(&pending_keys, &pending_task)?;
-        tx.delete_pending_preemption(&key)?;
+        let head = tx.pending_preempt_head(&key)?.expect("first settle still pending");
+        assert_eq!(head.task.id, settle.id);
+        tx.do_preempt_serial(&head.target_keys, &head.task)?;
+        tx.remove_pending_preemption_entry(&head)?;
 
-        // The settle is now the queue head and no pending remains
+        // The first settle is now the queue head; settle2 remains pending behind it.
         let queue = tx.get_task_queue_deserialized(&key)?;
         assert_eq!(queue.serial_tasks, vec![settle.id]);
-        assert!(!tx.has_pending_preemption(&key)?);
+        let head2 = tx.pending_preempt_head(&key)?.expect("settle2 still pending");
+        assert_eq!(head2.task.id, settle2.id);
+        assert_eq!(tx.get_pending_preempt_list(&key)?.len(), 1);
+
+        super::set_test_settle_defer(false);
+        Ok(())
+    }
+
+    /// Stage 3 depth cap: once a queue holds `MAX_PENDING_PER_QUEUE` deferred
+    /// settles, a further serial preemption is rejected as backpressure and is
+    /// not recorded.
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_serial_preemption__pending_depth_cap() -> Result<(), StorageError> {
+        super::set_test_settle_defer(true);
+
+        let db = mock_db();
+        let tx = db.new_write_tx()?;
+        let key = TaskQueueKey::new_v4();
+
+        // Committed head -> every settle defers.
+        let mut blocker = mock_queued_task(key);
+        blocker.state = QueuedTaskState::Running { state: "running".to_string(), committed: true };
+        tx.enqueue_serial_task(&key, &blocker)?;
+
+        // Fill the queue's pending list to the cap.
+        for _ in 0..super::MAX_PENDING_PER_QUEUE {
+            let settle = mock_queued_task(key);
+            assert_eq!(tx.preempt_queue_with_serial(&[key], &settle)?, PreemptOutcome::Deferred);
+        }
+        assert_eq!(tx.get_pending_preempt_list(&key)?.len(), super::MAX_PENDING_PER_QUEUE);
+
+        // The next one is rejected (backpressure) and not recorded.
+        let overflow = mock_queued_task(key);
+        assert!(tx.preempt_queue_with_serial(&[key], &overflow).is_err());
+        assert_eq!(tx.get_pending_preempt_list(&key)?.len(), super::MAX_PENDING_PER_QUEUE);
+
+        super::set_test_settle_defer(false);
+        Ok(())
+    }
+
+    /// Stage 3 cross-queue ordering: two settles targeting overlapping queue
+    /// sets both defer and are ordered by `seq` on the shared queue, so the
+    /// lower-`seq` settle is the shared queue's head and the higher one cannot
+    /// run until it clears -- the total order breaks any wait cycle
+    /// (deadlock-free).
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_serial_preemption__cross_queue_ordering() -> Result<(), StorageError> {
+        super::set_test_settle_defer(true);
+
+        let db = mock_db();
+        let tx = db.new_write_tx()?;
+        let a = TaskQueueKey::new_v4();
+        let b = TaskQueueKey::new_v4();
+        let c = TaskQueueKey::new_v4();
+
+        // Commit a head on the shared queue `b` so both settles defer.
+        let mut blocker = mock_queued_task(b);
+        blocker.state = QueuedTaskState::Running { state: "running".to_string(), committed: true };
+        tx.enqueue_serial_task(&b, &blocker)?;
+
+        // settle1 targets {a, b}; settle2 targets {b, c}. `b` is shared.
+        let settle1 = mock_queued_task(b);
+        let settle2 = mock_queued_task(b);
+        assert_eq!(tx.preempt_queue_with_serial(&[a, b], &settle1)?, PreemptOutcome::Deferred);
+        assert_eq!(tx.preempt_queue_with_serial(&[b, c], &settle2)?, PreemptOutcome::Deferred);
+
+        // On the shared queue, settle1 (lower seq) is the head; both are recorded.
+        let head_b = tx.pending_preempt_head(&b)?.expect("shared queue head");
+        assert_eq!(head_b.task.id, settle1.id);
+        assert_eq!(tx.get_pending_preempt_list(&b)?.len(), 2);
+
+        // settle1 is the head of both of its queues; settle2 is NOT the head of
+        // `b`, so it cannot run until settle1 clears.
+        assert!(tx.is_pending_head(&head_b, &a)?);
+        assert!(tx.is_pending_head(&head_b, &b)?);
+        let entry2 = tx
+            .get_pending_preempt_list(&c)?
+            .into_iter()
+            .find(|e| e.task.id == settle2.id)
+            .expect("settle2 recorded on c");
+        assert!(!tx.is_pending_head(&entry2, &b)?);
 
         super::set_test_settle_defer(false);
         Ok(())

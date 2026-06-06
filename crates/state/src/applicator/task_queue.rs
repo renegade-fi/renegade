@@ -431,39 +431,50 @@ impl StateApplicator {
         executor: &WrappedPeerId,
         tx: &StateTxn<'_, RW>,
     ) -> Result<()> {
-        let Some((task, all_keys)) = tx.get_pending_preemption(&key)? else {
-            return Ok(());
-        };
+        // Drain every deferred settle on this queue that has become runnable, in
+        // `seq` order. A settle runs only when it is the lowest-`seq` (head)
+        // entry of EVERY queue it targets and all those queues are
+        // serial-preemption-safe. The global `seq` total order guarantees the
+        // globally-lowest pending settle is the head of all its queues, so this
+        // makes progress without the multi-queue deadlock the one-pending rule
+        // used to prevent. If this queue's head is not yet runnable, nothing
+        // behind it can run on this trigger either.
+        loop {
+            let Some(entry) = tx.pending_preempt_head(&key)? else {
+                return Ok(());
+            };
 
-        // Self-heal: if the settle is already live (e.g. re-proposed and run via
-        // the normal path), drop the stale pending and stop.
-        if tx.get_task(&task.id)?.is_some() {
-            tx.delete_pending_preemption(&key)?;
-            return Ok(());
-        }
+            // Self-heal: if the settle is already live (e.g. re-proposed and run
+            // via the normal path), drop it from every queue and continue.
+            if tx.get_task(&entry.task.id)?.is_some() {
+                tx.remove_pending_preemption_entry(&entry)?;
+                continue;
+            }
 
-        // All-or-nothing: only run once every target queue is simultaneously
-        // safe. Otherwise leave the records to re-trigger on the next pop.
-        for queue_key in all_keys.iter() {
-            if !tx.is_serial_preemption_safe(queue_key)? {
+            let mut runnable = true;
+            for queue_key in entry.target_keys.iter() {
+                if !tx.is_pending_head(&entry, queue_key)?
+                    || !tx.is_serial_preemption_safe(queue_key)?
+                {
+                    runnable = false;
+                    break;
+                }
+            }
+            if !runnable {
                 return Ok(());
             }
-        }
 
-        // Run the real preemption and clear the pending records on every queue.
-        tx.do_preempt_serial(&all_keys, &task)?;
-        for queue_key in all_keys.iter() {
-            tx.delete_pending_preemption(queue_key)?;
-        }
+            // Run the real preemption and clear the entry from every target queue.
+            tx.do_preempt_serial(&entry.target_keys, &entry.task)?;
+            tx.remove_pending_preemption_entry(&entry)?;
 
-        // Assign to the executor of the task that just completed (same node as
-        // the freed queue) and run it if possible.
-        tx.add_assigned_task(executor, &task.id)?;
-        if let Some(archived_task) = tx.get_task(&task.id)? {
-            self.maybe_run_task(&archived_task, tx)?;
+            // Assign to the executor of the task that just completed (same node as
+            // the freed queue) and run it if possible.
+            tx.add_assigned_task(executor, &entry.task.id)?;
+            if let Some(archived_task) = tx.get_task(&entry.task.id)? {
+                self.maybe_run_task(&archived_task, tx)?;
+            }
         }
-
-        Ok(())
     }
 }
 
