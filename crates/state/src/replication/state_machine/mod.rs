@@ -337,10 +337,7 @@ mod test {
     use std::collections::{BTreeMap, BTreeSet};
 
     use crate::{
-        replication::{
-            Node, NodeId,
-            mock_raft::mock_state_machine,
-        },
+        replication::{Node, NodeId, mock_raft::mock_state_machine},
         state_transition::{Proposal, StateTransition},
     };
     use openraft::{
