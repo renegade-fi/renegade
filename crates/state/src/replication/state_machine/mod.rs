@@ -334,11 +334,64 @@ impl RaftStateMachine<TypeConfig> for StateMachine {
 
 #[cfg(test)]
 mod test {
+    use std::collections::{BTreeMap, BTreeSet};
+
     use crate::{
-        replication::mock_raft::mock_state_machine,
+        replication::{
+            Node, NodeId,
+            mock_raft::mock_state_machine,
+        },
         state_transition::{Proposal, StateTransition},
     };
-    use openraft::{Entry, EntryPayload, LeaderId, LogId, storage::RaftStateMachine};
+    use openraft::{
+        Entry, EntryPayload, LeaderId, LogId, Membership,
+        storage::{RaftSnapshotBuilder, RaftStateMachine},
+    };
+
+    /// Tests that recovering from a snapshot restores the real applied log-id and
+    /// membership rather than a dummy `(None, Default)`.
+    ///
+    /// Regression test for the `'LogIndex(0)' violates ... try to get log at
+    /// index 0` crash-loop: recovery used to report nothing applied, so on boot
+    /// openraft replayed from a log index that snapshot compaction had purged.
+    #[tokio::test]
+    async fn test_recover_snapshot_restores_applied_state() {
+        let mut sm = mock_state_machine().await;
+        let leader = LeaderId::new(1 /* term */, 0 /* node */);
+
+        // Apply a membership entry, then advance the applied index past it
+        let mem_log_id = LogId::new(leader, 5 /* index */);
+        let nodes: BTreeMap<NodeId, Node> = BTreeMap::from([(0u64, Node::default())]);
+        let membership = Membership::new(vec![BTreeSet::from([0u64])], nodes);
+        let mem_entry = Entry { log_id: mem_log_id, payload: EntryPayload::Membership(membership) };
+        sm.apply(vec![mem_entry]).await.unwrap();
+
+        let last_log_id = LogId::new(leader, 7 /* index */);
+        let blank = Entry { log_id: last_log_id, payload: EntryPayload::Blank };
+        sm.apply(vec![blank]).await.unwrap();
+
+        // Snapshot persists the metadata (last_log_id = 7, membership anchored at 5)
+        sm.build_snapshot().await.unwrap();
+
+        // Simulate a reboot: drop the in-memory anchors, keep the persisted DB +
+        // snapshot. The old code recovered with a dummy meta -> (None, Default).
+        sm.last_applied_log = None;
+        sm.last_membership = Default::default();
+
+        sm.maybe_recover_snapshot().await.unwrap();
+
+        let (applied, membership) = sm.applied_state().await.unwrap();
+        assert_eq!(
+            applied,
+            Some(last_log_id),
+            "applied log-id must be restored from snapshot metadata"
+        );
+        assert_eq!(
+            membership.log_id(),
+            &Some(mem_log_id),
+            "membership must be restored anchored at its real log-id"
+        );
+    }
 
     /// Tests applying a log with a waiter on the state
     #[tokio::test]
