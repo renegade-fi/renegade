@@ -99,6 +99,7 @@ impl<T: TransactionKind> StateTxn<'_, T> {
     /// Returns the owned entry since cursors deserialize values
     pub fn first_raft_log(&self) -> Result<Option<(u64, EntryValue<'_>)>, StorageError> {
         let mut cursor = self.logs_cursor()?;
+        cursor.seek_first()?;
         let (k, v) = res_some!(cursor.get_current()?);
         let parsed_key = parse_lsn(&k);
         Ok(Some((parsed_key, v)))

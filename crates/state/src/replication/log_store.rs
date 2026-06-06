@@ -141,8 +141,27 @@ impl RaftLogStorage<TypeConfig> for LogStore {
 
     async fn get_log_state(&mut self) -> Result<LogState<TypeConfig>, RaftStorageError<NodeId>> {
         self.with_read_tx(move |tx| {
-            let last_purged_log_id =
+            let mut last_purged_log_id =
                 tx.get_last_purged_log_id()?.map(|v| v.deserialize_with()).transpose()?;
+
+            // A node whose head logs have been compacted MUST report a non-None
+            // `last_purged_log_id`. If it is missing while the log no longer starts
+            // at the genesis, openraft's `LogIdList::load_log_ids` takes its `None`
+            // branch and calls `get_log_id(0)`, which panics on the compacted
+            // region (`'LogIndex(0)' violates: try to get log at index 0 but got
+            // Some(N)`) and crash-loops the node on every reboot. Reconstruct the
+            // purge point from the first retained entry -- raft logs are 1-indexed,
+            // so a first index > 1 means lower entries were purged.
+            if last_purged_log_id.is_none()
+                && let Some((first_idx, first_entry)) = tx.first_raft_log()?
+                && first_idx > 1
+            {
+                let with = With::<ArchivedLogId, LogIdDef>::cast(&first_entry.log_id);
+                let first_log_id: LogId<NodeId> = rkyv::deserialize::<_, rancor::Error>(with)
+                    .map_err(StorageError::serialization)?;
+                last_purged_log_id =
+                    Some(LogId::new(first_log_id.leader_id, first_log_id.index - 1));
+            }
 
             let last_log = tx.last_raft_log()?.map(|(_, entry)| entry);
             let last_log_id = match last_log {
@@ -217,5 +236,43 @@ impl RaftLogStorage<TypeConfig> for LogStore {
 
     async fn get_log_reader(&mut self) -> Self::LogReader {
         self.clone()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use openraft::{Entry, EntryPayload, LeaderId, LogId, storage::RaftLogStorage};
+
+    use crate::applicator::test_helpers::mock_applicator;
+
+    use super::LogStore;
+
+    /// A node whose head logs are compacted but whose persisted
+    /// `last_purged_log_id` is missing must still report a non-None purge point
+    /// from `get_log_state`. Otherwise openraft's `LogIdList::load_log_ids` calls
+    /// `get_log_id(0)` and crash-loops with `'LogIndex(0)' violates: try to get
+    /// log at index 0`. Regression test for the seed reboot crash-loop.
+    #[tokio::test]
+    async fn test_get_log_state_reconstructs_missing_purge_point() {
+        let applicator = mock_applicator();
+        let db = applicator.config.db.clone();
+
+        // Write a single log entry at a high index with NO last_purged persisted,
+        // simulating a recovered node whose log head was compacted.
+        let leader = LeaderId::new(1 /* term */, 0 /* node */);
+        let entry = Entry { log_id: LogId::new(leader, 4950), payload: EntryPayload::Blank };
+        let tx = db.new_write_tx().unwrap();
+        tx.append_log_entries(vec![entry]).unwrap();
+        tx.commit().unwrap();
+
+        let mut log = LogStore::new(db);
+        let state = log.get_log_state().await.unwrap();
+
+        assert_eq!(
+            state.last_purged_log_id,
+            Some(LogId::new(leader, 4949)),
+            "purge point must be reconstructed as (first retained index - 1)"
+        );
+        assert_eq!(state.last_log_id, Some(LogId::new(leader, 4950)));
     }
 }
