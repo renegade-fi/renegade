@@ -46,6 +46,50 @@ impl StateInner {
         .await
     }
 
+    /// Self-heal task queues wedged in `SerialPreemptionQueued` by an orphaned
+    /// committed preemptive (settle) task -- the worker that was running the
+    /// settle restarted without completing it, so the queue stays paused and no
+    /// further settle can run (`deferred-queue full` forever). Clears each such
+    /// queue via the raft `ClearTaskQueue` proposal and enqueues a
+    /// `RefreshAccount` to re-sync wallet state. Leader-only and idempotent;
+    /// invoked once per node startup. Returns the number of queues cleared.
+    ///
+    /// Does NOT re-run the orphaned settle (re-running a committed settle could
+    /// double-settle on-chain); the match is re-derived by the matcher and the
+    /// wallet reconciled by the refresh.
+    pub async fn clear_orphaned_preempted_queues(&self) -> Result<usize, StateError> {
+        // Only the leader reconciles; the clear is raft-proposed so it applies
+        // cluster-wide. Avoids every node racing to clear the same queues.
+        if !self.is_leader() {
+            return Ok(0);
+        }
+
+        let account_ids = self.get_all_account_ids().await?;
+        let mut cleared = 0usize;
+        for account_id in account_ids {
+            let key = account_id;
+            let wedged_head =
+                self.with_read_tx(move |tx| Ok(tx.orphaned_preempt_head(&key)?)).await?;
+            let Some(task_id) = wedged_head else { continue };
+
+            tracing::warn!(
+                %account_id,
+                %task_id,
+                "clearing orphaned SerialPreemptionQueued task queue (wedged committed settle head)"
+            );
+            self.clear_task_queue(&account_id).await?.await?;
+            if let Err(e) = self.append_account_refresh_task(account_id).await {
+                tracing::warn!(%account_id, error = %e, "account refresh after queue clear failed");
+            }
+            cleared += 1;
+        }
+
+        if cleared > 0 {
+            tracing::warn!(count = cleared, "cleared orphaned preempted task queues at startup");
+        }
+        Ok(cleared)
+    }
+
     /// Whether there are any serial tasks enqueued for the given queue
     pub async fn has_active_serial_tasks(&self, key: &TaskQueueKey) -> Result<bool, StateError> {
         let serial_task_len = self.serial_tasks_queue_len(key).await?;

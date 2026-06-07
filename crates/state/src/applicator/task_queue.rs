@@ -999,6 +999,54 @@ mod test {
         Ok(())
     }
 
+    /// Path B detector: `orphaned_preempt_head` flags a queue stuck in
+    /// SerialPreemptionQueued by a COMMITTED head (orphaned settle), and only
+    /// then. A non-committed head (settle still on its way to running) and a
+    /// healthy NotPreempted queue are not flagged.
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_orphaned_preempt_head__detects_committed_wedge() -> Result<()> {
+        let (applicator, task_recv) = setup_mock_applicator_with_driver_queue();
+        let peer = get_local_peer_id(&applicator);
+        let acct = AccountId::new_v4();
+
+        // Preempt the empty queue with a serial settle -> runs immediately
+        // (SerialPreemptionQueued, head not yet committed).
+        let settle = mock_queued_task(acct);
+        applicator.enqueue_preemptive_task(&[acct], &settle, &peer, true)?;
+        assert_run_task(task_recv.recv()?, settle.id);
+
+        // Head not committed yet -> not a wedge.
+        {
+            let tx = applicator.db().new_read_tx()?;
+            assert_eq!(tx.orphaned_preempt_head(&acct)?, None);
+        }
+
+        // Settle commits (reaches submit); its worker then "dies" (never pops).
+        applicator.transition_task_state(
+            settle.id,
+            QueuedTaskState::Running { state: "submitting".to_string(), committed: true },
+        )?;
+        {
+            let tx = applicator.db().new_read_tx()?;
+            assert_eq!(
+                tx.orphaned_preempt_head(&acct)?,
+                Some(settle.id),
+                "committed SerialPreemptionQueued head must be flagged as an orphaned wedge"
+            );
+        }
+
+        // A healthy (NotPreempted) queue with a normal task is never flagged.
+        let other = AccountId::new_v4();
+        let normal = mock_queued_task(other);
+        applicator.append_task(&normal, &peer)?;
+        {
+            let tx = applicator.db().new_read_tx()?;
+            assert_eq!(tx.orphaned_preempt_head(&other)?, None);
+        }
+        Ok(())
+    }
+
     /// Tests appending a task to an empty queue
     #[test]
     fn test_append_empty_queue() -> Result<()> {

@@ -15,7 +15,7 @@ use crate::{
 };
 
 use super::super::StateTxn;
-use super::queue_type::TaskQueue;
+use super::queue_type::{TaskQueue, TaskQueuePreemptionState};
 
 /// The error message emitted when a task is not found
 const ERR_TASK_NOT_FOUND: &str = "task not found";
@@ -392,6 +392,32 @@ impl<T: TransactionKind> StateTxn<'_, T> {
         }
 
         Ok(can_preempt)
+    }
+
+    /// If this queue is wedged in `SerialPreemptionQueued` by a COMMITTED head
+    /// preemptive task, return that task id, else `None`.
+    ///
+    /// This is the orphaned-settle wedge: a settle preempts the queue and
+    /// commits, then its worker restarts (new p2p id) without completing the
+    /// task. The queue stays `SerialPreemptionQueued` forever, so
+    /// `can_preempt_serial()` is false and no further settle can run. A
+    /// NON-committed head is excluded -- that is a settle still legitimately on
+    /// its way to running, not a wedge.
+    pub(crate) fn orphaned_preempt_head(
+        &self,
+        key: &TaskQueueKey,
+    ) -> Result<Option<TaskIdentifier>, StorageError> {
+        let queue = self.get_task_queue_deserialized(key)?;
+        if queue.preemption_state != TaskQueuePreemptionState::SerialPreemptionQueued {
+            return Ok(None);
+        }
+        let Some(head_id) = queue.serial_tasks.first().copied() else {
+            return Ok(None);
+        };
+        let Some(task) = self.get_task_deserialized(&head_id)? else {
+            return Ok(None);
+        };
+        Ok(if task.state.is_committed() { Some(head_id) } else { None })
     }
 
     /// Whether the committed head of a queue is a YIELDABLE order-management task

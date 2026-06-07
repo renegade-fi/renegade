@@ -222,6 +222,13 @@ impl Task for NodeStartupTask {
             },
             NodeStartupTaskState::RunningStateMigrations => {
                 self.run_state_migrations()?;
+                // Self-heal queues wedged by an orphaned committed settle (a
+                // worker restarted mid-settle, leaving the queue paused in
+                // SerialPreemptionQueued). Best-effort: a failure must not block
+                // startup. Leader-only / idempotent inside the state method.
+                if let Err(e) = self.state.clear_orphaned_preempted_queues().await {
+                    tracing::warn!(error = %e, "failed to clear orphaned preempted task queues at startup");
+                }
                 self.task_state = NodeStartupTaskState::Completed;
             },
             NodeStartupTaskState::Completed => {
