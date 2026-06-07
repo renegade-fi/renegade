@@ -23,6 +23,14 @@ const ERR_TASK_NOT_FOUND: &str = "task not found";
 const ERR_TASK_NOT_POPPED: &str = "task not popped from queue";
 /// The error message emitted when a task cannot be preempted
 const ERR_CANNOT_SERIALLY_PREEMPT: &str = "serial preemption not allowed";
+/// The error message emitted when a queue's deferred-preemption FIFO is at
+/// capacity. Distinct from `ERR_CANNOT_SERIALLY_PREEMPT` so the two reject
+/// causes are distinguishable in logs: this one means Stage 3 IS deferring but
+/// per-account settlement throughput can't drain the FIFO fast enough
+/// (backpressure / saturation); `ERR_CANNOT_SERIALLY_PREEMPT` surfacing from
+/// `do_preempt_serial_inner` instead would indicate an apply-time recheck
+/// failure (a bug), not saturation.
+const ERR_PENDING_QUEUE_FULL: &str = "serial preemption deferred-queue full";
 /// The error message emitted when a task cannot be preempted concurrently
 const ERR_CANNOT_CONCURRENTLY_PREEMPT: &str = "concurrent preemption not allowed";
 
@@ -513,7 +521,7 @@ impl StateTxn<'_, RW> {
         // all-or-nothing (no partial append on reject).
         for queue_key in queues.iter() {
             if self.get_pending_preempt_list(queue_key)?.len() >= MAX_PENDING_PER_QUEUE {
-                return Err(StorageError::reject(ERR_CANNOT_SERIALLY_PREEMPT));
+                return Err(StorageError::reject(ERR_PENDING_QUEUE_FULL));
             }
         }
 

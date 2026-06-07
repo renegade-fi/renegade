@@ -1,6 +1,7 @@
 //! Defines a task to settle an internal match
 
 use std::fmt::{Display, Formatter, Result as FmtResult};
+use std::time::Instant;
 
 use alloy::rpc::types::TransactionReceipt;
 use ark_mpc::{PARTY0, PARTY1, network::PartyId};
@@ -175,6 +176,10 @@ pub struct SettleInternalMatchTask {
     pub processor: SettlementProcessor,
     /// The context of the task
     pub ctx: TaskContext,
+    /// When the task started executing, used to measure settlement duration (T):
+    /// how long this committed settle holds the account queue, which is what a
+    /// deferred (Stage-3 FIFO) settle behind it waits on.
+    pub start_time: Instant,
 }
 
 #[async_trait]
@@ -201,6 +206,7 @@ impl Task for SettleInternalMatchTask {
             task_state: SettleInternalMatchTaskState::Pending,
             processor,
             ctx,
+            start_time: Instant::now(),
         })
     }
 
@@ -226,6 +232,16 @@ impl Task for SettleInternalMatchTask {
                     &self.match_result,
                     false, // is_external_match
                     &[self.account_id, self.other_account_id],
+                );
+                // Settlement duration (T): how long this committed settle held the
+                // account queue. Deferred (Stage-3 FIFO) settles behind it wait on
+                // this, so a T above the quoter's fill timeout (3s) is why they
+                // miss their window. Logged here so T is measurable in prod.
+                tracing::info!(
+                    elapsed_ms = self.start_time.elapsed().as_millis() as u64,
+                    order_id = %self.order_id,
+                    other_order_id = %self.other_order_id,
+                    "internal match settle task completed"
                 );
                 self.task_state = SettleInternalMatchTaskState::Completed;
             },
