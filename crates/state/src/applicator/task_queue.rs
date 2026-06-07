@@ -899,6 +899,82 @@ mod test {
         Ok((internal_settled, bypasses, deferred))
     }
 
+    /// Stage 4 REGRESSION: the deferred-preemption FIFO only drains on
+    /// `pop_task` (via `run_unblocked_preemptions`). With fairness ON, a settle
+    /// whose target queue is FREE but whose FIFO is non-empty is DEFERRED rather
+    /// than run. If nothing then pops that queue (it's idle), the drain never
+    /// triggers and the deferred settle is stuck forever — the production wedge
+    /// observed after the cancel-flood fix made quoter queues idle (every settle
+    /// defers, nothing pops, FIFO never drains -> 0 fills).
+    ///
+    /// Returns whether the single-queue settle on the free queue actually ran.
+    fn ran_on_free_queue_with_pending(fairness: bool) -> Result<bool> {
+        use crate::storage::tx::task_queue::storage::{
+            set_test_settle_defer, set_test_settle_fairness,
+        };
+        set_test_settle_defer(true);
+        set_test_settle_fairness(fairness);
+
+        let (app, recv) = setup_mock_applicator_with_driver_queue();
+        let peer = get_local_peer_id(&app);
+        let quoter = AccountId::new_v4();
+        let user = AccountId::new_v4();
+        let committed =
+            || QueuedTaskState::Running { state: "submitting".to_string(), committed: true };
+        let drain = |recv: &TaskDriverReceiver| -> Vec<TaskIdentifier> {
+            let mut ids = Vec::new();
+            while !recv.is_empty() {
+                if let TaskDriverJob::Run { task, .. } = recv.recv().unwrap().into_message() {
+                    ids.push(task.id);
+                }
+            }
+            ids
+        };
+
+        // Make the quoter FIFO non-empty while the quoter queue itself is FREE:
+        // a two-queue settle [quoter, user] defers because `user` is busy.
+        let blocker = mock_queued_task(user);
+        app.append_task(&blocker, &peer)?;
+        app.transition_task_state(blocker.id, committed())?;
+        let _ = drain(&recv);
+        let two_queue = mock_queued_task(quoter);
+        app.enqueue_preemptive_task(&[quoter, user], &two_queue, &peer, true)?;
+        let _ = drain(&recv);
+
+        // Enqueue a single-queue settle on the (free) quoter queue. It is
+        // runnable now, but fairness defers it behind the pending entry; with no
+        // subsequent pop on the quoter queue there is no drain trigger.
+        let one_queue = mock_queued_task(quoter);
+        app.enqueue_preemptive_task(&[quoter], &one_queue, &peer, true)?;
+        let started = drain(&recv);
+        let ran = started.contains(&one_queue.id);
+
+        set_test_settle_defer(false);
+        set_test_settle_fairness(false);
+        Ok(ran)
+    }
+
+    /// With cancels gone the quoter queues are idle; fairness then wedges a
+    /// runnable settle (no pop -> no drain). Disabling fairness restores the
+    /// fast path so the settle runs on the free queue.
+    #[test]
+    fn sim_stage4_idle_queue_wedge() -> Result<()> {
+        let ran_with_fairness = ran_on_free_queue_with_pending(true)?;
+        let ran_without_fairness = ran_on_free_queue_with_pending(false)?;
+        eprintln!(
+            "[stage4-wedge] runnable settle on free queue ran?  fairness ON={ran_with_fairness}  OFF={ran_without_fairness}"
+        );
+        assert!(
+            !ran_with_fairness,
+            "fairness ON wedges a runnable settle on a free idle queue (no pop -> no drain)"
+        );
+        assert!(
+            ran_without_fairness,
+            "fairness OFF must let the settle fast-path and run on the free queue"
+        );
+        Ok(())
+    }
+
     /// Stage 4 A/B: fairness must eliminate external settles cutting ahead of a
     /// ready, waiting internal settle, while still settling every internal.
     #[test]

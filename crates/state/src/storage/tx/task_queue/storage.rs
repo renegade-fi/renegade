@@ -138,8 +138,18 @@ pub(crate) fn set_test_order_yield(enabled: bool) {
 ///
 /// Apply-path behavior change on raft-replicated state: every node MUST run the
 /// same value; gated to sepolia-v2 by deploy targeting (not per-chain in code).
+///
+/// Disabled 2026-06-07: once the cancel-flood fixes (remove-consumed-orders +
+/// idempotent/yieldable cancel + per-quoter rebalance lock) made quoter queues
+/// idle, fairness WEDGED settlement. The deferred-preemption FIFO drains ONLY on
+/// `pop_task`; with fairness on, a runnable settle on a FREE queue still defers
+/// (FIFO non-empty), and with the queue idle nothing pops -> the drain never
+/// fires -> 0 fills (see `sim_stage4_idle_queue_wedge`). Disabling restores the
+/// fast path: a settle on a free queue runs immediately and its completion pops,
+/// draining the FIFO. Re-enable only after the drain also triggers on
+/// enqueue-when-safe (not just on pop).
 #[cfg_attr(test, allow(dead_code))]
-const ENABLE_SETTLE_FAIRNESS: bool = true;
+const ENABLE_SETTLE_FAIRNESS: bool = false;
 
 #[cfg(not(test))]
 #[inline]
