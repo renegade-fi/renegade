@@ -699,6 +699,108 @@ mod test {
         Ok(())
     }
 
+    /// Stage 4 fairness: a single-queue settle must NOT take the immediate fast
+    /// path past a lower-`seq` two-queue settle already pending on its queue --
+    /// it defers behind it. Without fairness the single-queue settle would
+    /// preempt the (free) shared queue immediately, perpetually starving the
+    /// two-queue settle (the observed 100% internal-match failure).
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_fairness__single_queue_defers_behind_pending_two_queue() -> Result<()> {
+        use crate::storage::tx::task_queue::storage::{
+            set_test_settle_defer, set_test_settle_fairness,
+        };
+        set_test_settle_defer(true);
+        set_test_settle_fairness(true);
+
+        let (applicator, task_recv) = setup_mock_applicator_with_driver_queue();
+        let peer_id = get_local_peer_id(&applicator);
+        let user = AccountId::new_v4(); // counterparty queue (busy)
+        let quoter = AccountId::new_v4(); // shared queue (free)
+
+        // Commit a blocker on the user queue only; the quoter queue stays free.
+        let blocker = mock_queued_task(user);
+        applicator.append_task(&blocker, &peer_id)?;
+        assert_run_task(task_recv.recv()?, blocker.id);
+        applicator.transition_task_state(
+            blocker.id,
+            QueuedTaskState::Running { state: "submitting".to_string(), committed: true },
+        )?;
+
+        // Two-queue settle [user, quoter]: user is committed -> defers (seq 1),
+        // pending on both queues.
+        let two_queue = mock_queued_task(quoter);
+        applicator.enqueue_preemptive_task(&[user, quoter], &two_queue, &peer_id, true)?;
+        {
+            let tx = applicator.db().new_read_tx()?;
+            assert!(tx.has_pending_preemption(&quoter)?);
+            assert!(task_recv.is_empty());
+        }
+
+        // Single-queue settle [quoter]: the quoter queue is free, so WITHOUT
+        // fairness it would preempt and run immediately. WITH fairness it must
+        // defer behind the pending two-queue settle.
+        let single_queue = mock_queued_task(quoter);
+        applicator.enqueue_preemptive_task(&[quoter], &single_queue, &peer_id, true)?;
+        {
+            let tx = applicator.db().new_read_tx()?;
+            assert!(
+                tx.get_task(&single_queue.id)?.is_none(),
+                "single-queue settle jumped the FIFO ahead of the pending two-queue settle"
+            );
+        }
+        assert!(task_recv.is_empty(), "single-queue settle dispatched despite fairness");
+
+        // Free the user queue -> the two-queue settle (lowest seq) runs first.
+        applicator.pop_task(blocker.id, true)?;
+        let queue_quoter = get_queue(&applicator, &quoter);
+        assert_eq!(
+            queue_quoter.serial_tasks,
+            vec![two_queue.id],
+            "two-queue settle should run before the single-queue settle"
+        );
+        assert_run_task(task_recv.recv()?, two_queue.id);
+
+        set_test_settle_defer(false);
+        set_test_settle_fairness(false);
+        Ok(())
+    }
+
+    /// Stage 4 fairness: with no pending preemptions on any target queue, the
+    /// immediate fast path is preserved -- a single-queue settle on a free queue
+    /// still preempts and runs immediately (no latency regression in the
+    /// uncontended common case).
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_fairness__uncontended_fast_path_intact() -> Result<()> {
+        use crate::storage::tx::task_queue::storage::{
+            set_test_settle_defer, set_test_settle_fairness,
+        };
+        set_test_settle_defer(true);
+        set_test_settle_fairness(true);
+
+        let (applicator, task_recv) = setup_mock_applicator_with_driver_queue();
+        let peer_id = get_local_peer_id(&applicator);
+        let quoter = AccountId::new_v4();
+
+        // No pending entries anywhere: a single-queue settle on the free queue
+        // takes the immediate fast path and runs.
+        let settle = mock_queued_task(quoter);
+        applicator.enqueue_preemptive_task(&[quoter], &settle, &peer_id, true)?;
+
+        let queue = get_queue(&applicator, &quoter);
+        assert_eq!(queue.serial_tasks, vec![settle.id]);
+        {
+            let tx = applicator.db().new_read_tx()?;
+            assert!(!tx.has_pending_preemption(&quoter)?);
+        }
+        assert_run_task(task_recv.recv()?, settle.id);
+
+        set_test_settle_defer(false);
+        set_test_settle_fairness(false);
+        Ok(())
+    }
+
     /// Tests appending a task to an empty queue
     #[test]
     fn test_append_empty_queue() -> Result<()> {

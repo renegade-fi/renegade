@@ -114,6 +114,55 @@ pub(crate) fn set_test_order_yield(enabled: bool) {
     TEST_ORDER_YIELD.with(|c| c.set(enabled));
 }
 
+/// Feature flag gating Stage 4 "two-queue settle fairness".
+///
+/// A `SettleExternalMatch` preempts ONE queue (the taker is off-chain), while a
+/// `SettleInternalMatch`/`SettlePrivateMatch` preempts TWO (both counterparties,
+/// all-or-nothing). When the shared (quoter) queue is momentarily free, an
+/// arriving single-queue settle takes the immediate fast path and runs even
+/// though a lower-`seq` two-queue settle is already waiting in that queue's
+/// pending FIFO for its OTHER queue to free -- the single-queue settle keeps
+/// stealing the window, so the two-queue settle starves (observed: internal +
+/// MM matches at ~100% `deferred-queue full`, 0 fills).
+///
+/// When enabled, an arriving serial preemption that shares a queue with any
+/// already-pending (lower-`seq`) preemption must NOT take the immediate fast
+/// path -- it defers into the FIFO behind the waiting entries, so the queue
+/// stays free for the older two-queue settle to drain in `seq` order. No
+/// liquidity fragmentation; orders stay dual-book. Requires `ENABLE_SETTLE_DEFER`
+/// (the FIFO is the defer machinery). Reverse starvation (a single-queue settle
+/// behind a two-queue settle whose other queue is busy) is naturally bounded by
+/// the counterparty's task duration -- the two-queue settle becomes runnable
+/// within one task of both queues being free; an explicit cap can be added if
+/// telemetry shows external-settle regression.
+///
+/// Apply-path behavior change on raft-replicated state: every node MUST run the
+/// same value; gated to sepolia-v2 by deploy targeting (not per-chain in code).
+#[cfg_attr(test, allow(dead_code))]
+const ENABLE_SETTLE_FAIRNESS: bool = true;
+
+#[cfg(not(test))]
+#[inline]
+fn fairness_enabled() -> bool {
+    ENABLE_SETTLE_FAIRNESS
+}
+
+#[cfg(test)]
+thread_local! {
+    static TEST_SETTLE_FAIRNESS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+#[cfg(test)]
+fn fairness_enabled() -> bool {
+    TEST_SETTLE_FAIRNESS.with(|c| c.get())
+}
+
+/// Test-only: enable or disable two-queue settle fairness for the current thread
+#[cfg(test)]
+pub(crate) fn set_test_settle_fairness(enabled: bool) {
+    TEST_SETTLE_FAIRNESS.with(|c| c.set(enabled));
+}
+
 /// The outcome of a serial preemption attempt
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PreemptOutcome {
@@ -127,7 +176,12 @@ pub enum PreemptOutcome {
 /// Max deferred settle preemptions retained per queue (Stage 3 multi-pending
 /// FIFO). Bounds buildup: a target queue at this depth rejects further serial
 /// preemptions as backpressure rather than buffering without limit.
-const MAX_PENDING_PER_QUEUE: usize = 16;
+///
+/// Raised 16 -> 64: testnet hot quoter accounts saturated the 16-deep FIFO under
+/// real internal-match flow (`serial preemption deferred-queue full` rejects),
+/// so absorb larger bursts. This only buys headroom; the underlying limit is
+/// per-account serial settlement throughput (1/T).
+const MAX_PENDING_PER_QUEUE: usize = 64;
 
 /// A deferred (pending) serial preemption, recorded against every queue it must
 /// preempt.
@@ -477,7 +531,23 @@ impl StateTxn<'_, RW> {
             break;
         }
 
-        if !hard_blocked {
+        // Stage 4 fairness: even when no queue is hard-blocked, do not let this
+        // preemption jump the FIFO via the immediate fast path if it shares a
+        // queue with an already-pending (lower-`seq`) preemption. Forcing it to
+        // defer keeps the shared queue free for the older (often two-queue)
+        // settle to drain in `seq` order, instead of single-queue settles
+        // perpetually stealing the window. Only meaningful with the defer FIFO.
+        let mut fairness_defer = false;
+        if fairness_enabled() && settle_defer_enabled() {
+            for queue_key in queues.iter() {
+                if !self.get_pending_preempt_list(queue_key)?.is_empty() {
+                    fairness_defer = true;
+                    break;
+                }
+            }
+        }
+
+        if !hard_blocked && !fairness_defer {
             // Bump the fairness counter for every queue whose committed head we
             // are about to yield, before the requeue rewrites the head.
             if order_yield_enabled() {
