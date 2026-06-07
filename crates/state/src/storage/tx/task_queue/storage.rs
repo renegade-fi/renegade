@@ -626,7 +626,37 @@ impl StateTxn<'_, RW> {
         // `MAX_PENDING_PER_QUEUE` bounds buildup. Checked first so the enqueue is
         // all-or-nothing (no partial append on reject).
         for queue_key in queues.iter() {
-            if self.get_pending_preempt_list(queue_key)?.len() >= MAX_PENDING_PER_QUEUE {
+            let pending_depth = self.get_pending_preempt_list(queue_key)?.len();
+            if pending_depth >= MAX_PENDING_PER_QUEUE {
+                // DIAGNOSTIC: the FIFO is saturated and not draining. Dump what
+                // is holding this queue -- the serial head task (type +
+                // committed) and the preemption state -- so we can see WHY
+                // deferred settles never run, instead of inferring it.
+                let q = self.get_task_queue_deserialized(queue_key)?;
+                let head = q
+                    .serial_tasks
+                    .first()
+                    .copied()
+                    .and_then(|id| self.get_task_deserialized(&id).ok().flatten());
+                let (head_desc, head_committed, head_state) = match &head {
+                    Some(t) => (
+                        t.descriptor.display_description(),
+                        t.state.is_committed(),
+                        format!("{:?}", t.state),
+                    ),
+                    None => ("<none>".to_string(), false, "<none>".to_string()),
+                };
+                tracing::warn!(
+                    queue = %queue_key,
+                    preemption_state = ?q.preemption_state,
+                    serial_len = q.serial_tasks.len(),
+                    pending_fifo = pending_depth,
+                    incoming = %task.descriptor.display_description(),
+                    head = %head_desc,
+                    head_committed,
+                    head_state = %head_state,
+                    "deferred-queue full: wedged queue head (FIFO saturated, not draining)"
+                );
                 return Err(StorageError::reject(ERR_PENDING_QUEUE_FULL));
             }
         }
