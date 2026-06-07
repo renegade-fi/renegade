@@ -215,31 +215,62 @@ impl CancelOrderTask {
 
         // Submit the transaction
         let (permit, intent_signature) = self.order_auth.into_public();
-        let receipt =
-            self.ctx.darkpool_client.cancel_public_order(auth, permit, intent_signature).await?;
-
-        log_task!(
-            LogTask::CancelOrder,
-            Outcome::Ok,
-            subject = %self.order_id,
-            tx = %receipt.transaction_hash,
-            "submitted cancel_public_order tx"
-        );
-        Ok(())
+        match self.ctx.darkpool_client.cancel_public_order(auth, permit, intent_signature).await {
+            Ok(receipt) => {
+                log_task!(
+                    LogTask::CancelOrder,
+                    Outcome::Ok,
+                    subject = %self.order_id,
+                    tx = %receipt.transaction_hash,
+                    "submitted cancel_public_order tx"
+                );
+                Ok(())
+            },
+            // Idempotency: the order's intent nonce is already spent on-chain
+            // (it was filled/consumed), so there is nothing left to cancel.
+            // Treat as success and proceed to remove it locally, instead of
+            // erroring and re-attempting forever (the zombie-order /
+            // CancelOrder-flood that starves settlement). This is also what
+            // makes CancelOrder safe to YIELD: a re-run after a yield no-ops.
+            Err(e) if e.to_string().contains("NonceAlreadySpent") => {
+                log_task!(
+                    LogTask::CancelOrder,
+                    Outcome::Ok,
+                    subject = %self.order_id,
+                    "order already spent on-chain (NonceAlreadySpent); treating cancel as success"
+                );
+                Ok(())
+            },
+            Err(e) => Err(e.into()),
+        }
     }
 
     /// Update the local state to remove the order
     async fn update_local_state(&self) -> Result<()> {
         let waiter = self.state().remove_order_from_account(self.account_id, self.order_id).await?;
-        waiter.await.map_err(CancelOrderTaskError::state)?;
-
-        log_task!(
-            LogTask::CancelOrder,
-            Outcome::Ok,
-            subject = %self.order_id,
-            account_id = %self.account_id,
-            "removed order from account"
-        );
+        match waiter.await {
+            Ok(_) => {
+                log_task!(
+                    LogTask::CancelOrder,
+                    Outcome::Ok,
+                    subject = %self.order_id,
+                    account_id = %self.account_id,
+                    "removed order from account"
+                );
+            },
+            // Idempotency: the order may already be gone (removed on full
+            // consumption by settlement, or by a prior cancel). Same end state.
+            Err(e) if e.to_string().contains("not found") => {
+                log_task!(
+                    LogTask::CancelOrder,
+                    Outcome::Ok,
+                    subject = %self.order_id,
+                    account_id = %self.account_id,
+                    "order already removed; cancel is a no-op"
+                );
+            },
+            Err(e) => return Err(CancelOrderTaskError::state(e)),
+        }
         Ok(())
     }
 }

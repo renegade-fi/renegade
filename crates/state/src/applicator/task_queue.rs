@@ -801,6 +801,128 @@ mod test {
         Ok(())
     }
 
+    /// Stage 4 A/B (in-process, against the REAL preemptive queue + FIFO +
+    /// completion-hook drain — no deploy). Deterministically constructs the
+    /// production starvation shape and counts the line-cutting that Stage 4
+    /// eliminates.
+    ///
+    /// Each round: a two-queue INTERNAL settle `[Q, U]` is enqueued while its
+    /// counterparty `U` is busy (a committed order task), so it DEFERS and sits
+    /// pending at the head of the hot quoter queue `Q` — ready, just waiting on
+    /// `U`. Then a burst of single-queue EXTERNAL settles `[Q]` arrives. Without
+    /// fairness each external takes the immediate fast path and settles AHEAD of
+    /// the waiting internal (a "bypass" — exactly how external flow starves
+    /// internal flow in prod). With fairness, each external instead defers behind
+    /// the pending internal, so when `U` frees the internal settles first.
+    ///
+    /// The metric is bypasses: external settles that jumped a ready-and-waiting
+    /// internal settle. Fairness must drive it to zero.
+    fn run_stage4_bypass(fairness: bool) -> Result<(usize, usize, usize)> {
+        use crate::storage::tx::task_queue::storage::{
+            set_test_settle_defer, set_test_settle_fairness,
+        };
+        set_test_settle_defer(true);
+        set_test_settle_fairness(fairness);
+
+        const ROUNDS: usize = 20;
+        const EXTERNALS_PER_ROUND: usize = 5;
+        let committed =
+            || QueuedTaskState::Running { state: "submitting".to_string(), committed: true };
+
+        let (app, recv) = setup_mock_applicator_with_driver_queue();
+        let peer = get_local_peer_id(&app);
+        let quoter = AccountId::new_v4();
+
+        // Drain the task-driver channel, returning the ids that just started.
+        let drain = |recv: &TaskDriverReceiver| -> Vec<TaskIdentifier> {
+            let mut ids = Vec::new();
+            while !recv.is_empty() {
+                if let TaskDriverJob::Run { task, .. } = recv.recv().unwrap().into_message() {
+                    ids.push(task.id);
+                }
+            }
+            ids
+        };
+
+        let (mut internal_settled, mut bypasses, mut deferred) = (0usize, 0usize, 0usize);
+
+        for _ in 0..ROUNDS {
+            // Counterparty U busy (committed order task at its queue head).
+            let user = AccountId::new_v4();
+            let blocker = mock_queued_task(user);
+            app.append_task(&blocker, &peer)?;
+            let _ = drain(&recv); // blocker started (ignored)
+            app.transition_task_state(blocker.id, committed())?;
+
+            // Internal settle [Q, U]: U committed -> defers, pending at Q's head.
+            let internal = mock_queued_task(quoter);
+            app.enqueue_preemptive_task(&[quoter, user], &internal, &peer, true)?;
+            assert!(!drain(&recv).contains(&internal.id), "internal should defer while U is busy");
+
+            // A burst of external settles arrives while the internal waits on U.
+            for _ in 0..EXTERNALS_PER_ROUND {
+                let ext = mock_queued_task(quoter);
+                app.enqueue_preemptive_task(&[quoter], &ext, &peer, true)?;
+                if drain(&recv).contains(&ext.id) {
+                    // Ran immediately => jumped the ready-and-waiting internal.
+                    bypasses += 1;
+                    app.pop_task(ext.id, true)?; // release Q for the next external
+                    let _ = drain(&recv); // internal still can't run (U busy)
+                } else {
+                    deferred += 1; // fairness forced it behind the internal
+                }
+            }
+
+            // U frees -> the internal settles; then drain+pop everything (incl.
+            // any externals that deferred behind it) to reset Q for next round.
+            app.pop_task(blocker.id, true)?;
+            let mut saw_internal = false;
+            loop {
+                let ids = drain(&recv);
+                if ids.is_empty() {
+                    break;
+                }
+                if ids.contains(&internal.id) {
+                    saw_internal = true;
+                }
+                for id in ids {
+                    app.pop_task(id, true)?;
+                }
+            }
+            if saw_internal {
+                internal_settled += 1;
+            }
+        }
+
+        set_test_settle_defer(false);
+        set_test_settle_fairness(false);
+        Ok((internal_settled, bypasses, deferred))
+    }
+
+    /// Stage 4 A/B: fairness must eliminate external settles cutting ahead of a
+    /// ready, waiting internal settle, while still settling every internal.
+    #[test]
+    fn sim_stage4_fairness_ab() -> Result<()> {
+        let (off_settled, off_bypass, off_deferred) = run_stage4_bypass(false)?;
+        let (on_settled, on_bypass, on_deferred) = run_stage4_bypass(true)?;
+
+        eprintln!(
+            "[stage4] fairness OFF: internal settled={off_settled:<3} external bypasses={off_bypass:<3} external deferred={off_deferred}"
+        );
+        eprintln!(
+            "[stage4] fairness ON : internal settled={on_settled:<3} external bypasses={on_bypass:<3} external deferred={on_deferred}"
+        );
+
+        // Without fairness, externals routinely jump the waiting internal.
+        assert!(off_bypass > 0, "expected external bypasses without fairness; got {off_bypass}");
+        // Fairness eliminates the line-cutting entirely.
+        assert_eq!(on_bypass, 0, "fairness must let no external bypass a pending internal");
+        // Every internal still settles under both (correctness, not just fairness).
+        assert_eq!(off_settled, on_settled, "internal settle count must be unaffected");
+        assert!(on_settled > 0, "internals must settle");
+        Ok(())
+    }
+
     /// Tests appending a task to an empty queue
     #[test]
     fn test_append_empty_queue() -> Result<()> {

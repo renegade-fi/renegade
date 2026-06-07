@@ -223,23 +223,46 @@ impl StateApplicator {
 
     /// Update an existing order
     pub fn update_order(&self, order: &Order) -> Result<ApplicatorReturnType> {
-        let tx = self.db().new_write_tx()?;
+        // When true, a fully-consumed order (amount_in == 0) is REMOVED rather
+        // than left listed with amount 0. A retained amount-0 order is a zombie:
+        // its on-chain nonce was already spent on the fill, so a later cancel
+        // reverts `NonceAlreadySpent` and the order can never be removed by the
+        // owner; the quoter rebalance then re-detects it as a duplicate every
+        // cycle, flooding non-yieldable CancelOrder tasks that starve settlement.
+        // Apply-path behavior change: every node must run the same value.
+        const REMOVE_CONSUMED_ORDERS: bool = true;
 
-        // Read the pre-update order so we can compute the fill delta.
-        // Deserialize into an owned `Order` so the archived borrow doesn't
-        // block `tx.commit()` below.
         let order_id = order.id;
-        let old_order = match tx.get_order(&order_id)? {
-            Some(archived) => Order::from_archived(&archived)?,
-            None => {
-                return Err(StateApplicatorError::reject(format!("order {order_id} not found")));
-            },
-        };
 
-        // Get the account ID for the order
-        let account_id = tx
-            .get_account_id_for_order(&order_id)?
-            .ok_or_else(|| StateApplicatorError::reject("order not associated with account"))?;
+        // Peek the pre-update order (fill delta) and its account without holding
+        // a write tx, so we can branch on full consumption before mutating.
+        let (old_amount, account_id) = {
+            let rtx = self.db().new_read_tx()?;
+            let old_order = match rtx.get_order(&order_id)? {
+                Some(archived) => Order::from_archived(&archived)?,
+                None => {
+                    return Err(StateApplicatorError::reject(format!(
+                        "order {order_id} not found"
+                    )));
+                },
+            };
+            let account_id = rtx
+                .get_account_id_for_order(&order_id)?
+                .ok_or_else(|| StateApplicatorError::reject("order not associated with account"))?;
+            (old_order.amount_in(), account_id)
+        };
+        let new_amount = order.amount_in();
+
+        // Fully consumed -> remove instead of leaving a zombie. Publish the
+        // consuming fill first so consumers still observe it.
+        if REMOVE_CONSUMED_ORDERS && new_amount == 0 {
+            if new_amount < old_amount {
+                self.publish_fill(account_id, order, old_amount - new_amount, true);
+            }
+            return self.remove_order_from_account(account_id, order_id);
+        }
+
+        let tx = self.db().new_write_tx()?;
 
         // Update the order in storage
         tx.update_order(&account_id, order)?;
@@ -265,13 +288,11 @@ impl StateApplicator {
             matchable_amount,
         );
 
-        // If `amount_in` decreased, treat this as a fill and publish to the
-        // per-account fills topic. v2's `update_order` is currently only
-        // invoked by the settlement task post-match, but guard on the delta
-        // anyway so non-fill updates (if any are added later) don't emit a
-        // spurious fill event.
-        let old_amount = old_order.amount_in();
-        let new_amount = order.amount_in();
+        // If `amount_in` decreased, treat this as a partial fill and publish to
+        // the per-account fills topic. (Full consumption was handled above by
+        // the remove branch.) v2's `update_order` is currently only invoked by
+        // the settlement task post-match, but guard on the delta anyway so
+        // non-fill updates (if any are added later) don't emit a spurious fill.
         if new_amount < old_amount {
             let fill_amount = old_amount - new_amount;
             self.publish_fill(account_id, order, fill_amount, new_amount == 0);
@@ -651,6 +672,88 @@ pub(crate) mod test {
         let matching_pool = tx.get_matching_pool_for_order(&order.id).unwrap();
         let contains_order = matching_engine.contains_order(&order, matching_pool.clone());
         assert!(!contains_order);
+    }
+
+    /// Fix A: a settlement update that FULLY consumes an order (amount_in -> 0)
+    /// must REMOVE the order, not leave an amount-0 zombie. A retained zombie is
+    /// un-cancellable (its on-chain nonce is spent) and the quoter rebalance
+    /// re-detects it as a duplicate forever, flooding CancelOrder tasks.
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_update_order__full_consume_removes() {
+        let applicator = mock_applicator();
+        let order = mock_order();
+        let auth = mock_order_auth();
+        let mut balance = mock_balance();
+        balance.state_wrapper.inner.mint = order.input_token();
+        let matching_engine = applicator.matching_engine().clone();
+
+        let account = mock_empty_account();
+        applicator.create_account(&account).unwrap();
+        applicator.update_account_balance(account.id, &balance).unwrap();
+        applicator
+            .add_order_to_account(account.id, &order, &auth, GLOBAL_MATCHING_POOL.to_string())
+            .unwrap();
+
+        // Sanity: the order is present before the consuming update.
+        {
+            let tx = applicator.db().new_read_tx().unwrap();
+            assert!(tx.get_account(&account.id).unwrap().unwrap().orders.contains_key(&order.id));
+        }
+
+        // Fully consume the order, then apply the update.
+        let mut consumed = order.clone();
+        let full = consumed.amount_in();
+        consumed.decrement_amount_in(full);
+        assert_eq!(consumed.amount_in(), 0);
+        applicator.update_order(&consumed).unwrap();
+
+        // The order must be GONE everywhere (no zombie).
+        let tx = applicator.db().new_read_tx().unwrap();
+        assert!(
+            !tx.get_account(&account.id).unwrap().unwrap().orders.contains_key(&order.id),
+            "fully-consumed order must be removed, not left as an amount-0 zombie"
+        );
+        assert!(tx.get_order(&order.id).unwrap().is_none());
+        assert_eq!(tx.get_account_id_for_order(&order.id).unwrap(), None);
+        let pool = tx.get_matching_pool_for_order(&order.id).unwrap();
+        assert!(!matching_engine.contains_order(&order, pool));
+    }
+
+    /// A PARTIAL fill (amount_in decreases but stays > 0) must RETAIN the order
+    /// with its decremented amount — only full consumption removes it.
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_update_order__partial_fill_retains() {
+        let applicator = mock_applicator();
+        let order = mock_order();
+        let full = order.amount_in();
+        assert!(full >= 2, "mock_order amount should be large enough to partially fill");
+        let auth = mock_order_auth();
+        let mut balance = mock_balance();
+        balance.state_wrapper.inner.mint = order.input_token();
+
+        let account = mock_empty_account();
+        applicator.create_account(&account).unwrap();
+        applicator.update_account_balance(account.id, &balance).unwrap();
+        applicator
+            .add_order_to_account(account.id, &order, &auth, GLOBAL_MATCHING_POOL.to_string())
+            .unwrap();
+
+        // Partially consume (decrement by 1, still > 0), then apply.
+        let mut partial = order.clone();
+        partial.decrement_amount_in(1);
+        assert!(partial.amount_in() > 0);
+        applicator.update_order(&partial).unwrap();
+
+        // The order must still be present (only full consumption removes it).
+        let tx = applicator.db().new_read_tx().unwrap();
+        assert!(
+            tx.get_account(&account.id).unwrap().unwrap().orders.contains_key(&order.id),
+            "partially-filled order must be retained, not removed"
+        );
+        assert!(tx.get_order(&order.id).unwrap().is_some());
+        assert_eq!(tx.get_account_id_for_order(&order.id).unwrap(), Some(account.id));
     }
 
     /// Test updating an account balance
