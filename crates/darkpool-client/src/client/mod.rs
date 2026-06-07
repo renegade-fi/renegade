@@ -93,7 +93,13 @@ impl DarkpoolClientConfig {
         let key = self.private_key.clone();
         let provider = ProviderBuilder::new()
             .disable_recommended_fillers()
-            .with_simple_nonce_management()
+            // CachedNonceManager (locked, sequential nonces) rather than
+            // SimpleNonceManager (fetches `pending` per send). Under concurrent
+            // settle submission from this single shared signer, SimpleNonceManager
+            // handed two txs the same nonce -> one gapped/unmined -> no receipt ->
+            // the settle task hangs in `SubmittingTx` and retries forever, wedging
+            // the account's task queue (`deferred-queue full`, 0 internal fills).
+            .with_cached_nonce_management()
             .filler(ChainIdFiller::default())
             .filler(GasFiller)
             .filler(BlobGasFiller::default())
