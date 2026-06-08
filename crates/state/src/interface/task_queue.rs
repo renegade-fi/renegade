@@ -7,7 +7,7 @@ use types_tasks::{
     HistoricalTask, QueuedTask, QueuedTaskState, RefreshAccountTaskDescriptor, TaskDescriptor,
     TaskIdentifier, TaskQueueKey,
 };
-use util::{res_some, telemetry::helpers::backfill_trace_field};
+use util::{get_current_time_millis, res_some, telemetry::helpers::backfill_trace_field};
 
 use crate::{
     StateInner,
@@ -47,17 +47,34 @@ impl StateInner {
     }
 
     /// Self-heal task queues wedged in `SerialPreemptionQueued` by an orphaned
-    /// committed preemptive (settle) task -- the worker that was running the
-    /// settle restarted without completing it, so the queue stays paused and no
-    /// further settle can run (`deferred-queue full` forever). Clears each such
-    /// queue via the raft `ClearTaskQueue` proposal and enqueues a
-    /// `RefreshAccount` to re-sync wallet state. Leader-only and idempotent;
-    /// invoked once per node startup. Returns the number of queues cleared.
+    /// committed preemptive (settle) task -- the node that was running the
+    /// settle stopped driving it (worker churn, scale-down, or the seed
+    /// regenerating its p2p identity on restart) without completing it, so the
+    /// queue stays paused and no further settle can run (`deferred-queue full`
+    /// forever). Clears each such queue via the raft `ClearTaskQueue` proposal
+    /// and enqueues a `RefreshAccount` to re-sync wallet state. Leader-only and
+    /// idempotent. Returns the number of queues cleared.
     ///
     /// Does NOT re-run the orphaned settle (re-running a committed settle could
     /// double-settle on-chain); the match is re-derived by the matcher and the
     /// wallet reconciled by the refresh.
-    pub async fn clear_orphaned_preempted_queues(&self) -> Result<usize, StateError> {
+    ///
+    /// `min_head_age_millis` controls the safety gate for the two callers:
+    /// - `0` (node startup): clear any committed `SerialPreemptionQueued` head.
+    ///   Safe at boot because no task future is executing yet, so a committed
+    ///   head is necessarily orphaned.
+    /// - `> 0` (periodic timer): only clear a head whose task was created longer
+    ///   ago than this threshold. During steady-state operation a *healthy*
+    ///   in-flight settle also sits at committed `SubmittingTx` /
+    ///   `SerialPreemptionQueued` while it submits, so clearing on state alone
+    ///   would abandon it. A settle completes in seconds (even with the
+    ///   `send_tx` timeout and retries), so a committed head older than the
+    ///   threshold is stuck -- whether the executor departed (worker churn,
+    ///   seed p2p-identity change) or it is otherwise no longer being driven.
+    pub async fn clear_orphaned_preempted_queues(
+        &self,
+        min_head_age_millis: u64,
+    ) -> Result<usize, StateError> {
         // Only the leader reconciles; the clear is raft-proposed so it applies
         // cluster-wide. Avoids every node racing to clear the same queues.
         if !self.is_leader() {
@@ -72,6 +89,26 @@ impl StateInner {
                 self.with_read_tx(move |tx| Ok(tx.orphaned_preempt_head(&key)?)).await?;
             let Some(task_id) = wedged_head else { continue };
 
+            // Periodic path: skip heads younger than the staleness threshold --
+            // they may be healthy settles still legitimately submitting. A truly
+            // stuck head only grows older and is cleared on a later tick.
+            if min_head_age_millis > 0 {
+                let created_at = self
+                    .with_read_tx(move |tx| {
+                        Ok(tx.get_task_deserialized(&task_id)?.map(|t| t.created_at))
+                    })
+                    .await?;
+                match created_at {
+                    Some(ts) => {
+                        let age = get_current_time_millis().saturating_sub(ts);
+                        if age < min_head_age_millis {
+                            continue;
+                        }
+                    },
+                    None => continue, // task vanished; nothing to clear
+                }
+            }
+
             tracing::warn!(
                 %account_id,
                 %task_id,
@@ -85,7 +122,7 @@ impl StateInner {
         }
 
         if cleared > 0 {
-            tracing::warn!(count = cleared, "cleared orphaned preempted task queues at startup");
+            tracing::warn!(count = cleared, "cleared orphaned preempted task queues");
         }
         Ok(cleared)
     }

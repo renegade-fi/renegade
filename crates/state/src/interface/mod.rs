@@ -68,6 +68,17 @@ const MEMBERSHIP_SYNC_INTERVAL_MS: u64 = 10_000; // 10 seconds
 /// membership reconciliation. Bounding each tick guarantees the timer keeps
 /// running and surfaces the hang instead of silently wedging.
 const MEMBERSHIP_SYNC_TIMEOUT_MS: u64 = 20_000; // 20 seconds
+/// The frequency with which to self-heal orphaned serial-preemption queues
+const ORPHAN_SELFHEAL_INTERVAL_MS: u64 = 15_000; // 15 seconds
+/// The maximum time a single orphan-self-heal tick may run before it is
+/// abandoned. Like the membership-sync timer, callbacks run sequentially, so a
+/// hung clear would stop all future ticks; bounding keeps the timer alive.
+const ORPHAN_SELFHEAL_TIMEOUT_MS: u64 = 10_000; // 10 seconds
+/// The minimum age of a committed serial-preemption head before the periodic
+/// self-heal will clear it. A settle completes in seconds even with the
+/// `send_tx` timeout and retries, so a committed head older than this is stuck.
+/// Generous enough not to race a healthy in-flight settle.
+const ORPHAN_MIN_HEAD_AGE_MS: u64 = 120_000; // 2 minutes
 
 /// A type alias for a proposal queue of state transitions
 pub type ProposalQueue = UnboundedSender<Proposal>;
@@ -251,6 +262,7 @@ impl StateInner {
         this.setup_node_metadata(relayer_config).await?;
         this.setup_core_panic_timer(system_clock, failure_send).await?;
         this.setup_membership_sync_timer(system_clock).await?;
+        this.setup_orphaned_queue_selfheal_timer(system_clock).await?;
         this.setup_raft_metrics_timer(system_clock).await?;
         this.setup_peer_metrics_timer(system_clock).await?;
 
@@ -371,6 +383,67 @@ impl StateInner {
                                 Task::RaftLifecycle,
                                 Outcome::Failed,
                                 "membership sync tick timed out; skipping to keep the timer alive"
+                            );
+                            Ok(())
+                        },
+                    }
+                }
+            })
+            .await
+            .map_err(StateError::Clock)
+    }
+
+    /// Periodically self-heal task queues wedged in `SerialPreemptionQueued` by
+    /// an orphaned committed settle head.
+    ///
+    /// A `Settle Internal Match` commits its `Running { SubmittingTx }` state,
+    /// then the node assigned as its executor stops driving it (worker churn,
+    /// scale-down, or the seed regenerating its p2p identity on restart). The
+    /// head's executor no longer matches any live peer, so no `Run` job is ever
+    /// re-dispatched; the queue stays `SerialPreemptionQueued` forever and every
+    /// further settle is rejected (`deferred-queue full`, 0 fills). The startup
+    /// self-heal (`clear_orphaned_preempted_queues`) only runs once, so orphans
+    /// formed during steady-state operation persist until the next reboot. This
+    /// timer runs the same idempotent, leader-gated clear on a cadence so the
+    /// wedge is cleared continuously.
+    async fn setup_orphaned_queue_selfheal_timer(
+        &self,
+        clock: &SystemClock,
+    ) -> Result<(), StateError> {
+        let duration = Duration::from_millis(ORPHAN_SELFHEAL_INTERVAL_MS);
+        let name = "orphaned-queue-selfheal-loop".to_string();
+        let state = self.clone();
+
+        clock
+            .add_async_timer(name, duration, move || {
+                let state = state.clone();
+                async move {
+                    // Bounded so a hung clear can never wedge the timer
+                    // (callbacks run sequentially). On timeout, skip this tick
+                    // and keep the timer alive.
+                    match tokio::time::timeout(
+                        Duration::from_millis(ORPHAN_SELFHEAL_TIMEOUT_MS),
+                        state.clear_orphaned_preempted_queues(ORPHAN_MIN_HEAD_AGE_MS),
+                    )
+                    .await
+                    {
+                        Ok(Ok(n)) => {
+                            if n > 0 {
+                                log_task!(
+                                    Task::TaskQueue,
+                                    Outcome::Ok,
+                                    count = n,
+                                    "self-healed orphaned serial-preemption queues"
+                                );
+                            }
+                            Ok(())
+                        },
+                        Ok(Err(e)) => Err(e.to_string()),
+                        Err(_) => {
+                            log_task!(
+                                Task::TaskQueue,
+                                Outcome::Failed,
+                                "orphaned-queue self-heal tick timed out; skipping to keep the timer alive"
                             );
                             Ok(())
                         },
