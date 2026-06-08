@@ -40,6 +40,16 @@ mod event_indexing;
 /// The timeout for awaiting the receipt of a pending transaction
 const TX_RECEIPT_TIMEOUT: Duration = Duration::from_secs(15);
 
+/// The timeout for the submit path (gas-price fetch + tx broadcast).
+///
+/// Without this, a hung RPC on the send path leaves the task parked in
+/// `SubmittingTx` forever: `send()` never returns, so it never reaches the
+/// receipt timeout above, and the nonce-manager lock is held, blocking every
+/// other settle on this signer. That permanently wedges the account task queue
+/// (`deferred-queue full`, 0 internal fills). Bounding the send path lets a
+/// stuck RPC fail fast so the queue head pops and the next settle proceeds.
+const TX_SUBMIT_TIMEOUT: Duration = Duration::from_secs(20);
+
 /// The multiple of the gas price estimate we use for submitting a transaction
 const GAS_PRICE_MULTIPLIER: u128 = 2;
 
@@ -195,24 +205,44 @@ impl DarkpoolClient {
     where
         C: CallDecoder + Send + Sync,
     {
-        let gas_price = self.get_adjusted_gas_price().await?;
-
-        // DIAGNOSTIC: capture the executing host + the signer's pending nonce
-        // BEFORE submit, to detect cross-node nonce contention on the shared gas
-        // signer. Each relayer node runs a PER-PROCESS nonce manager, so if
-        // multiple nodes submit with the same key they can be handed the same
-        // nonce -> one tx gaps/stalls in SubmittingTx (the wedge). Same nonce
-        // logged from two different hosts == cross-node collision.
-        let diag_host = std::env::var("HOSTNAME").unwrap_or_else(|_| "?".to_string());
-        let diag_nonce = self
-            .darkpool
-            .provider()
-            .get_transaction_count(self.client_addr)
-            .pending()
+        // Bound the gas-price fetch so a hung RPC can't park the task here.
+        let gas_price = tokio::time::timeout(TX_SUBMIT_TIMEOUT, self.get_adjusted_gas_price())
             .await
-            .unwrap_or_default();
+            .map_err(|_| {
+                DarkpoolClientError::contract_interaction(format!(
+                    "gas price fetch timed out after {}s (client_addr = {:#x})",
+                    TX_SUBMIT_TIMEOUT.as_secs(),
+                    self.client_addr
+                ))
+            })??;
 
-        let pending_tx = tx.gas_price(gas_price).send().await;
+        let diag_host = std::env::var("HOSTNAME").unwrap_or_else(|_| "?".to_string());
+
+        // Bound the broadcast. A stuck `send()` otherwise holds the nonce-manager
+        // lock and freezes the queue head in `SubmittingTx` indefinitely.
+        let pending_tx = match tokio::time::timeout(
+            TX_SUBMIT_TIMEOUT,
+            tx.gas_price(gas_price).send(),
+        )
+        .await
+        {
+            Err(_) => {
+                log_task!(
+                    Task::SubmitTx,
+                    Outcome::Failed,
+                    host = %diag_host,
+                    signer = %self.client_addr,
+                    "tx submit timed out after {}s (not broadcast)",
+                    TX_SUBMIT_TIMEOUT.as_secs()
+                );
+                return Err(DarkpoolClientError::contract_interaction(format!(
+                    "tx submit timed out after {}s (client_addr = {:#x})",
+                    TX_SUBMIT_TIMEOUT.as_secs(),
+                    self.client_addr
+                )));
+            },
+            Ok(res) => res,
+        };
         let pending_tx = match pending_tx {
             Ok(tx) => tx,
             Err(ContractError::TransportError(TransportError::ErrorResp(err_payload))) => {
@@ -244,22 +274,19 @@ impl DarkpoolClient {
             subject = %tx_hash,
             host = %diag_host,
             signer = %self.client_addr,
-            nonce = diag_nonce,
             "submitting tx"
         );
         let receipt = match pending_tx.with_timeout(Some(TX_RECEIPT_TIMEOUT)).get_receipt().await {
             Ok(r) => r,
             Err(e) => {
-                // Tx not mined within the timeout — the SubmittingTx hang. Log
-                // host/signer/nonce so a cross-node collision (same nonce from a
-                // different host) is directly visible.
+                // Tx broadcast but not mined within the timeout. Distinct from
+                // the submit-timeout above (which never broadcasts).
                 log_task!(
                     Task::SubmitTx,
                     Outcome::Failed,
                     subject = %tx_hash,
                     host = %diag_host,
                     signer = %self.client_addr,
-                    nonce = diag_nonce,
                     "tx receipt timeout (not mined): {e}"
                 );
                 return Err(DarkpoolClientError::contract_interaction(e));
