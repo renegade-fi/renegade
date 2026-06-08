@@ -196,6 +196,22 @@ impl DarkpoolClient {
         C: CallDecoder + Send + Sync,
     {
         let gas_price = self.get_adjusted_gas_price().await?;
+
+        // DIAGNOSTIC: capture the executing host + the signer's pending nonce
+        // BEFORE submit, to detect cross-node nonce contention on the shared gas
+        // signer. Each relayer node runs a PER-PROCESS nonce manager, so if
+        // multiple nodes submit with the same key they can be handed the same
+        // nonce -> one tx gaps/stalls in SubmittingTx (the wedge). Same nonce
+        // logged from two different hosts == cross-node collision.
+        let diag_host = std::env::var("HOSTNAME").unwrap_or_else(|_| "?".to_string());
+        let diag_nonce = self
+            .darkpool
+            .provider()
+            .get_transaction_count(self.client_addr)
+            .pending()
+            .await
+            .unwrap_or_default();
+
         let pending_tx = tx.gas_price(gas_price).send().await;
         let pending_tx = match pending_tx {
             Ok(tx) => tx,
@@ -222,12 +238,33 @@ impl DarkpoolClient {
         };
 
         let tx_hash = format!("{:#x}", pending_tx.tx_hash());
-        log_task!(Task::SubmitTx, Outcome::Started, subject = %tx_hash, "submitting tx");
-        let receipt = pending_tx
-            .with_timeout(Some(TX_RECEIPT_TIMEOUT))
-            .get_receipt()
-            .await
-            .map_err(DarkpoolClientError::contract_interaction)?;
+        log_task!(
+            Task::SubmitTx,
+            Outcome::Started,
+            subject = %tx_hash,
+            host = %diag_host,
+            signer = %self.client_addr,
+            nonce = diag_nonce,
+            "submitting tx"
+        );
+        let receipt = match pending_tx.with_timeout(Some(TX_RECEIPT_TIMEOUT)).get_receipt().await {
+            Ok(r) => r,
+            Err(e) => {
+                // Tx not mined within the timeout — the SubmittingTx hang. Log
+                // host/signer/nonce so a cross-node collision (same nonce from a
+                // different host) is directly visible.
+                log_task!(
+                    Task::SubmitTx,
+                    Outcome::Failed,
+                    subject = %tx_hash,
+                    host = %diag_host,
+                    signer = %self.client_addr,
+                    nonce = diag_nonce,
+                    "tx receipt timeout (not mined): {e}"
+                );
+                return Err(DarkpoolClientError::contract_interaction(e));
+            },
+        };
 
         // Check for failure
         if !receipt.status() {
