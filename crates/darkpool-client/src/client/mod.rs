@@ -50,6 +50,11 @@ const TX_RECEIPT_TIMEOUT: Duration = Duration::from_secs(15);
 /// stuck RPC fail fast so the queue head pops and the next settle proceeds.
 const TX_SUBMIT_TIMEOUT: Duration = Duration::from_secs(20);
 
+/// Bound on the diagnostic pending-nonce fetch performed just before submit.
+/// Kept short and separate so the diagnostic can never reintroduce a send-path
+/// hang.
+const NONCE_DIAG_TIMEOUT: Duration = Duration::from_secs(5);
+
 /// The multiple of the gas price estimate we use for submitting a transaction
 const GAS_PRICE_MULTIPLIER: u128 = 2;
 
@@ -218,6 +223,21 @@ impl DarkpoolClient {
 
         let diag_host = std::env::var("HOSTNAME").unwrap_or_else(|_| "?".to_string());
 
+        // Diagnostic: the chain's view of this signer's next (pending) nonce,
+        // sampled just before submit and bounded so it can't hang the send path.
+        // Comparing this across submits surfaces nonce collisions (same nonce on
+        // multiple txs) or a cache lagging the chain -- the likely cause when a
+        // settle tx is accepted by the RPC but never mines. `-1` = fetch failed.
+        let diag_nonce: i64 = match tokio::time::timeout(
+            NONCE_DIAG_TIMEOUT,
+            self.darkpool.provider().get_transaction_count(self.client_addr).pending(),
+        )
+        .await
+        {
+            Ok(Ok(n)) => n as i64,
+            _ => -1,
+        };
+
         // Bound the broadcast. A stuck `send()` otherwise holds the nonce-manager
         // lock and freezes the queue head in `SubmittingTx` indefinitely.
         let pending_tx =
@@ -228,6 +248,7 @@ impl DarkpoolClient {
                         Outcome::Failed,
                         host = %diag_host,
                         signer = %self.client_addr,
+                        nonce = diag_nonce,
                         "tx submit timed out after {}s (not broadcast)",
                         TX_SUBMIT_TIMEOUT.as_secs()
                     );
@@ -270,6 +291,7 @@ impl DarkpoolClient {
             subject = %tx_hash,
             host = %diag_host,
             signer = %self.client_addr,
+            nonce = diag_nonce,
             "submitting tx"
         );
         let receipt = match pending_tx.with_timeout(Some(TX_RECEIPT_TIMEOUT)).get_receipt().await {
@@ -283,6 +305,7 @@ impl DarkpoolClient {
                     subject = %tx_hash,
                     host = %diag_host,
                     signer = %self.client_addr,
+                    nonce = diag_nonce,
                     "tx receipt timeout (not mined): {e}"
                 );
                 return Err(DarkpoolClientError::contract_interaction(e));
