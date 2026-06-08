@@ -53,6 +53,7 @@ serde = { version = "1.0.197" }
 
 # === Misc === #
 async-trait = "0.1"
+tokio = { workspace = true, features = ["time"] }
 itertools = "0.12"
 lazy_static = { workspace = true }
 thiserror = { workspace = true }
