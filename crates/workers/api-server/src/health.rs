@@ -44,9 +44,8 @@ impl HealthServer {
 
     /// Accept connections and answer every request with a 200, forever
     pub async fn execution_loop(self) -> Result<(), ApiServerError> {
-        let addr: SocketAddr = format!("0.0.0.0:{}", self.port)
-            .parse()
-            .map_err(ApiServerError::server_failure)?;
+        let addr: SocketAddr =
+            format!("0.0.0.0:{}", self.port).parse().map_err(ApiServerError::server_failure)?;
         let listener = TcpListener::bind(addr).await.map_err(ApiServerError::server_failure)?;
 
         loop {
