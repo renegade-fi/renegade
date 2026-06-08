@@ -11,6 +11,7 @@
 mod auth;
 mod compliance;
 pub mod error;
+mod health;
 pub mod http;
 mod logging;
 mod param_parsing;

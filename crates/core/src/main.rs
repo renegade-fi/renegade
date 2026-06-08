@@ -334,6 +334,11 @@ async fn main() -> Result<(), CoordinatorError> {
     let mut api_server = ApiServer::new(ApiServerConfig {
         http_port: args.http_port,
         websocket_port: args.websocket_port,
+        // Dedicated health-check port, served on its own runtime so the ELB
+        // /v2/ping check stays responsive under request load. Derived from the
+        // HTTP port (e.g. 3000 -> 3001); the ALB target groups health-check
+        // this port.
+        health_port: args.http_port + 1,
         admin_api_key: args.admin_api_key,
         min_transfer_amount: args.min_transfer_amount,
         min_order_size,

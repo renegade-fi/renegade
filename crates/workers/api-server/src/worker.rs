@@ -19,10 +19,18 @@ use tokio::{
 use types_core::{Chain, HmacKey};
 use types_runtime::{CancelChannel, Worker};
 
-use super::{error::ApiServerError, http::HttpServer, websocket::WebsocketServer};
+use super::{
+    error::ApiServerError, health::HealthServer, http::HttpServer, websocket::WebsocketServer,
+};
 
 /// The number of threads backing the HTTP server
 const API_SERVER_NUM_THREADS: usize = 4;
+
+/// The number of threads backing the dedicated health server.
+///
+/// The health server runs on its own runtime so the ELB `/v2/ping` check is
+/// answered even when the main api-server runtime is saturated by request load.
+const HEALTH_SERVER_NUM_THREADS: usize = 2;
 
 /// Accepts inbound HTTP requests and websocket subscriptions and
 /// serves requests from those connections
@@ -36,8 +44,13 @@ pub struct ApiServer {
     pub(super) http_server_join_handle: Option<TokioJoinHandle<ApiServerError>>,
     /// The join handle for the websocket server
     pub(super) websocket_server_join_handle: Option<TokioJoinHandle<ApiServerError>>,
-    /// The tokio runtime that the http server runs inside of
+    /// The join handle for the dedicated health server
+    pub(super) health_server_join_handle: Option<TokioJoinHandle<ApiServerError>>,
+    /// The tokio runtime that the http and websocket servers run inside of
     pub(super) server_runtime: Option<Runtime>,
+    /// The dedicated tokio runtime that the health server runs inside of, kept
+    /// separate so the ELB health check is never starved by request load
+    pub(super) health_runtime: Option<Runtime>,
 }
 
 impl Drop for ApiServer {
@@ -52,6 +65,9 @@ impl Drop for ApiServer {
         if let Some(runtime) = self.server_runtime.take() {
             runtime.shutdown_background();
         }
+        if let Some(runtime) = self.health_runtime.take() {
+            runtime.shutdown_background();
+        }
     }
 }
 
@@ -62,6 +78,10 @@ pub struct ApiServerConfig {
     pub http_port: u16,
     /// The port that the websocket server should listen on
     pub websocket_port: u16,
+    /// The port that the dedicated health server should listen on (the ELB
+    /// health check targets this port so liveness is independent of request
+    /// load on the main HTTP/WS runtime)
+    pub health_port: u16,
     /// The admin key, if one is set
     pub admin_api_key: Option<HmacKey>,
     /// The number of tasks per hour a given wallet is allowed to make
@@ -113,7 +133,9 @@ impl Worker for ApiServer {
             config,
             http_server_join_handle: None,
             websocket_server_join_handle: None,
+            health_server_join_handle: None,
             server_runtime: None,
+            health_runtime: None,
         })
     }
 
@@ -140,9 +162,25 @@ impl Worker for ApiServer {
             ApiServerError::WebsocketServerFailure(err.to_string())
         });
 
+        // Build a SEPARATE runtime for the health server so the ELB /v2/ping
+        // check is answered even when the main runtime above is saturated by
+        // request load (the cause of the relayer restart flap).
+        let health_runtime = TokioBuilder::new_multi_thread()
+            .worker_threads(HEALTH_SERVER_NUM_THREADS)
+            .enable_all()
+            .build()
+            .map_err(|err| ApiServerError::Setup(err.to_string()))?;
+        let health_server = HealthServer::new(self.config.health_port);
+        let health_thread_handle = health_runtime.spawn_blocking(move || {
+            let err = block_on(health_server.execution_loop()).err().unwrap();
+            ApiServerError::HttpServerFailure(err.to_string())
+        });
+
         self.http_server_join_handle = Some(http_thread_handle);
         self.websocket_server_join_handle = Some(websocket_thread_handle);
+        self.health_server_join_handle = Some(health_thread_handle);
         self.server_runtime = Some(tokio_runtime);
+        self.health_runtime = Some(health_runtime);
         Ok(())
     }
 
@@ -155,11 +193,13 @@ impl Worker for ApiServer {
         // TODO: We can probably do this without a wrapper thread
         let join_handle1 = self.http_server_join_handle.take().unwrap();
         let join_handle2 = self.websocket_server_join_handle.take().unwrap();
+        let join_handle3 = self.health_server_join_handle.take().unwrap();
 
         let wrapper1 = thread::spawn(move || block_on(join_handle1).unwrap());
         let wrapper2 = thread::spawn(move || block_on(join_handle2).unwrap());
+        let wrapper3 = thread::spawn(move || block_on(join_handle3).unwrap());
 
-        vec![wrapper1, wrapper2]
+        vec![wrapper1, wrapper2, wrapper3]
     }
 
     fn is_recoverable(&self) -> bool {
