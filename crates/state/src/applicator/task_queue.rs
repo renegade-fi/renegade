@@ -73,7 +73,7 @@ impl StateApplicator {
         executor: &WrappedPeerId,
     ) -> Result<ApplicatorReturnType> {
         let queue_key = task.descriptor.queue_key();
-        let tx = self.db().new_write_tx()?;
+        let tx = self.db().new_write_tx_with_retry()?;
 
         // Index the task
         tx.enqueue_serial_task(&queue_key, task)?;
@@ -91,7 +91,7 @@ impl StateApplicator {
     /// Apply a `PopTask` state transition
     #[instrument(skip_all, err, fields(task_id = %task_id))]
     pub fn pop_task(&self, task_id: TaskIdentifier, success: bool) -> Result<ApplicatorReturnType> {
-        let tx = self.db().new_write_tx()?;
+        let tx = self.db().new_write_tx_with_retry()?;
         let keys = tx.get_queue_keys_for_task(&task_id)?;
         if keys.is_empty() {
             return Err(StateApplicatorError::reject(ERR_NO_KEY));
@@ -140,7 +140,7 @@ impl StateApplicator {
         task_id: TaskIdentifier,
         state: QueuedTaskState,
     ) -> Result<ApplicatorReturnType> {
-        let tx = self.db().new_write_tx()?;
+        let tx = self.db().new_write_tx_with_retry()?;
         let keys = tx.get_queue_keys_for_task(&task_id)?;
 
         // Check that the task is running
@@ -165,7 +165,7 @@ impl StateApplicator {
     /// Clear the task queue, marking all tasks as failed
     #[instrument(skip_all, err, fields(queue_key = %key))]
     pub fn clear_queue(&self, key: TaskQueueKey) -> Result<ApplicatorReturnType> {
-        let tx = self.db().new_write_tx()?;
+        let tx = self.db().new_write_tx_with_retry()?;
         self.clear_task_queue(key, &tx)?;
         tx.commit()?;
 
@@ -180,7 +180,7 @@ impl StateApplicator {
         executor: &WrappedPeerId,
         is_serial: bool,
     ) -> Result<ApplicatorReturnType> {
-        let tx = self.db().new_write_tx()?;
+        let tx = self.db().new_write_tx_with_retry()?;
         // Enqueue the task on the given queues
         let outcome = self.try_preempt_queues(keys, task, is_serial, &tx)?;
 
@@ -209,7 +209,7 @@ impl StateApplicator {
         from: &WrappedPeerId,
         to: &WrappedPeerId,
     ) -> Result<ApplicatorReturnType> {
-        let tx = self.db().new_write_tx()?;
+        let tx = self.db().new_write_tx_with_retry()?;
         let reassigned_tasks = tx.reassign_tasks(from, to)?;
         if !reassigned_tasks.is_empty() {
             log_task!(

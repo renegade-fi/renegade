@@ -85,7 +85,7 @@ impl StateMachine {
     /// We do this when recovering to prevent accounts from being blocked on a
     /// task queue that failed
     fn clear_account_task_queues(&self) -> Result<(), ReplicationError> {
-        let tx = self.db().new_write_tx()?;
+        let tx = self.db().new_write_tx_with_retry()?;
         let account_ids = tx.get_all_account_ids()?;
         for account_id in account_ids {
             tx.clear_task_queue(&account_id)?;
