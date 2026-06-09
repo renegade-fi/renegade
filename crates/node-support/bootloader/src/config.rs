@@ -38,6 +38,10 @@ pub(crate) const ENV_INDEXER_SQS_QUEUE_URL: &str = "INDEXER_SQS_QUEUE_URL";
 /// node's identity, overriding any `p2p-key` already in the config file so the
 /// peer_id is durable across instance replacement.
 pub(crate) const ENV_P2P_KEY: &str = "P2P_KEY";
+/// The filesystem path at which a worker persists its p2p key so its peer_id
+/// (and thus raft node id) is stable across restarts. Set by the cluster startup
+/// script to a path on the node's persistent data volume.
+pub(crate) const ENV_P2P_KEY_PATH: &str = "P2P_KEY_PATH";
 
 // --- Constants --- //
 
@@ -176,8 +180,23 @@ fn set_p2p_key(config: &mut HashMap<String, Value>) -> Result<PeerId, String> {
         );
     }
 
-    // Non-seed (worker/learner): an ephemeral identity is acceptable -- learners
-    // are transient and re-adopted on each (re)start.
+    // Non-seed (worker/learner): load a PERSISTENT identity from P2P_KEY_PATH so
+    // the peer_id (and thus the raft node id, fxhash64(peer_id)) is stable across
+    // restarts. Without this the bootloader mints a fresh ephemeral key on every
+    // boot -- `fetch_config` re-downloads a pristine S3 config with no `p2p-key`
+    // each start -- which churns the node id, poisons the seed's raft membership
+    // with dead learners, and drives the 300s-adoption / ECS-health-kill restart
+    // loop. Mirrors `load_or_create_p2p_key` in the relayer config crate.
+    if is_env_var_set(ENV_P2P_KEY_PATH) {
+        let path = read_env_var::<String>(ENV_P2P_KEY_PATH)?;
+        let key_base64 = load_or_create_p2p_key_file(&path)?;
+        config.insert(CONFIG_P2P_KEY.to_string(), Value::String(key_base64));
+        return get_p2p_key(config)?
+            .ok_or_else(|| "failed to derive peer id from persisted p2p key".to_string());
+    }
+
+    // No key path configured: an ephemeral identity is acceptable -- learners are
+    // transient and re-adopted on each (re)start.
     let keypair = Keypair::generate_ed25519();
     let peer_id = keypair.public().to_peer_id();
 
@@ -187,4 +206,40 @@ fn set_p2p_key(config: &mut HashMap<String, Value>) -> Result<PeerId, String> {
     config.insert(CONFIG_P2P_KEY.to_string(), Value::String(encoded));
 
     Ok(peer_id)
+}
+
+/// Load a base64-protobuf p2p key from `path`, or generate one and persist it
+/// there (mode 0600). Mirrors `load_or_create_p2p_key` in the relayer config
+/// crate so a worker keeps a stable peer id / raft node id across restarts.
+fn load_or_create_p2p_key_file(path: &str) -> Result<String, String> {
+    use std::{fs, io::Write, os::unix::fs::OpenOptionsExt};
+
+    if std::path::Path::new(path).exists() {
+        let encoded =
+            fs::read_to_string(path).map_err(raw_err_str!("error reading p2p key file: {}"))?;
+        let trimmed = encoded.trim();
+        // Validate it decodes to a keypair before reusing it
+        let decoded = BASE64_STANDARD
+            .decode(trimmed)
+            .map_err(raw_err_str!("p2p key file formatted incorrectly: {}"))?;
+        Keypair::from_protobuf_encoding(&decoded)
+            .map_err(raw_err_str!("error parsing p2p key file: {}"))?;
+        return Ok(trimmed.to_string());
+    }
+
+    // Generate a fresh key and persist it for subsequent restarts
+    let keypair = Keypair::generate_ed25519();
+    let key_bytes =
+        keypair.to_protobuf_encoding().map_err(raw_err_str!("Failed to encode p2p key: {}"))?;
+    let encoded = BASE64_STANDARD.encode(key_bytes);
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(path)
+        .map_err(raw_err_str!("error creating p2p key file: {}"))?;
+    file.write_all(encoded.as_bytes())
+        .map_err(raw_err_str!("error writing p2p key file: {}"))?;
+    Ok(encoded)
 }
