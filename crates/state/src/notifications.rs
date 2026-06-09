@@ -3,12 +3,14 @@
 //!
 //! The underlying raft node will dequeue a proposal and apply it to the state
 //! machine. Only then will the notification be sent to the worker.
-use futures::{Future, ready};
+use futures::Future;
 use std::{
     collections::HashMap,
     pin::Pin,
     task::{Context, Poll},
+    time::Duration,
 };
+use tokio::time::{Sleep, sleep};
 use util::concurrency::{AsyncShared, new_async_shared};
 use uuid::Uuid;
 
@@ -16,6 +18,14 @@ use crate::{applicator::return_type::ApplicatorReturnType, error::StateError};
 
 /// Error message emitted when a proposal channel closes unexpectedly
 const ERR_PROPOSAL_CLOSED: &str = "Proposal channel closed unexpectedly";
+/// Error message emitted when a proposal is not applied within the deadline
+const ERR_PROPOSAL_TIMEOUT: &str = "Proposal was not applied within the timeout";
+/// The maximum time to wait for a proposal to be applied before failing the
+/// caller. A proposal that never applies (e.g. a write that never commits) must
+/// surface as a bounded, retryable error rather than parking the caller's task
+/// forever; accumulated, such parked tasks starve the api-server runtime and
+/// wedge port 3000.
+const PROPOSAL_WAITER_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// The id of a proposal
 pub type ProposalId = Uuid;
@@ -71,12 +81,15 @@ impl OpenNotifications {
 pub struct ProposalWaiter {
     /// The inner channel
     inner: ProposalResultReceiver,
+    /// A deadline after which the waiter resolves to an error instead of
+    /// parking the caller's task indefinitely
+    deadline: Pin<Box<Sleep>>,
 }
 
 impl ProposalWaiter {
     /// Create a new waiter from the given channel
     pub fn new(inner: ProposalResultReceiver) -> Self {
-        Self { inner }
+        Self { inner, deadline: Box::pin(sleep(PROPOSAL_WAITER_TIMEOUT)) }
     }
 }
 
@@ -84,8 +97,18 @@ impl Future for ProposalWaiter {
     type Output = ProposalReturnType;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let res = ready!(Pin::new(&mut self.get_mut().inner).poll(cx))
-            .map_err(|_| StateError::Proposal(ERR_PROPOSAL_CLOSED.to_string()))?;
-        Poll::Ready(res)
+        let this = self.get_mut();
+        // Resolve as soon as the proposal is applied...
+        if let Poll::Ready(res) = Pin::new(&mut this.inner).poll(cx) {
+            let res = res.map_err(|_| StateError::Proposal(ERR_PROPOSAL_CLOSED.to_string()))?;
+            return Poll::Ready(res);
+        }
+
+        // ...but never park forever: a proposal that is never applied resolves to
+        // a bounded, retryable error instead of hanging the caller's task.
+        if this.deadline.as_mut().poll(cx).is_ready() {
+            return Poll::Ready(Err(StateError::Proposal(ERR_PROPOSAL_TIMEOUT.to_string())));
+        }
+        Poll::Pending
     }
 }

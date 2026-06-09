@@ -1,6 +1,8 @@
 //! Gossip networking interface, acts as a shim between raft and our gossip
 //! layer
 
+use std::time::Duration;
+
 use async_trait::async_trait;
 use gossip_api::request_response::{GossipRequestType, GossipResponse, GossipResponseType};
 use job_types::network_manager::{NetworkManagerJob, NetworkManagerQueue};
@@ -19,6 +21,12 @@ use super::{P2PNetworkFactory, P2PRaftNetwork, P2PRaftNetworkWrapper, RaftReques
 
 /// The error message emitted when a response type is invalid
 const ERR_INVALID_RESPONSE: &str = "invalid response type from raft peer";
+
+/// The maximum time to wait for a reply to a raft RPC before failing it as a
+/// (recoverable, openraft-retried) network error. An unbounded await here lets a
+/// never-answering peer or leader hang the caller -- e.g. a forwarded client
+/// write -- indefinitely.
+const RAFT_RPC_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// The network shim
 #[derive(Clone)]
@@ -91,12 +99,18 @@ impl P2PRaftNetwork for GossipNetwork {
             ))
         })?;
 
-        // TODO: add a request timeout here as well.
-        let resp = rx.await.map_err(|_| {
-            new_network_error(ReplicationError::Raft(
-                "raft RPC response channel closed before a reply".to_string(),
-            ))
-        })?;
+        let resp = match tokio::time::timeout(RAFT_RPC_TIMEOUT, rx).await {
+            Ok(res) => res.map_err(|_| {
+                new_network_error(ReplicationError::Raft(
+                    "raft RPC response channel closed before a reply".to_string(),
+                ))
+            })?,
+            Err(_) => {
+                return Err(new_network_error(ReplicationError::Raft(
+                    "raft RPC response timed out".to_string(),
+                )));
+            },
+        };
         Self::to_raft_response(resp).map_err(new_network_error)
     }
 }

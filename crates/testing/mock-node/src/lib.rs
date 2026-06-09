@@ -531,6 +531,7 @@ impl MockNodeController {
         let conf = ApiServerConfig {
             http_port: config.http_port,
             websocket_port: config.websocket_port,
+            health_port: config.http_port + 1,
             admin_api_key: config.admin_api_key,
             min_transfer_amount: config.min_transfer_amount,
             min_order_size: config.min_fill_size_decimal_adjusted(),
