@@ -19,6 +19,7 @@ jobs:
             --tests
             --benches
             --workspace
+            --
             -D warnings 
             -D unsafe_code 
             -D missing_docs

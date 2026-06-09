@@ -38,6 +38,14 @@ impl DbConfig {
     }
 }
 
+/// The maximum number of concurrent MDBX reader slots.
+///
+/// Set explicitly (the MDBX default is 126); because the fork opens with
+/// `MDBX_NOTLS`, every live read txn holds a slot for its lifetime. Sizing this
+/// well above the runtime blocking-pool size means heavy read fan-out degrades
+/// to a clean `READERS_FULL` error instead of a confusing stall.
+const MAX_MDBX_READERS: u32 = 1024;
+
 /// The persistent storage layer for the relayer's state machine
 ///
 /// Contains a reference to an `mdbx` instance
@@ -51,8 +59,11 @@ pub struct DB {
 impl DB {
     /// Constructor
     pub fn new(config: &DbConfig) -> Result<Self, StorageError> {
-        let cfg =
-            DatabaseOptions { max_tables: Some(config.num_tables as u64), ..Default::default() };
+        let cfg = DatabaseOptions {
+            max_tables: Some(config.num_tables as u64),
+            max_readers: Some(MAX_MDBX_READERS),
+            ..Default::default()
+        };
 
         let db_path = Path::new(&config.path);
         let db = Database::open_with_options(db_path, cfg).map_err(StorageError::OpenDb)?;

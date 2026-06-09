@@ -22,8 +22,12 @@ impl StateInner {
     }
 
     /// Get the cluster ID of the local node
+    ///
+    /// Served from cached boot config (`StateConfig`) so the hot request path
+    /// (e.g. `/v2/network`) does not open an inline MDBX read tx on an api-server
+    /// worker thread.
     pub fn get_cluster_id(&self) -> Result<ClusterId, StateError> {
-        self.with_blocking_read_tx(|tx| tx.get_cluster_id().map_err(StateError::Db))
+        Ok(self.config.cluster_id.clone())
     }
 
     /// Get the libp2p keypair of the local node
@@ -37,14 +41,23 @@ impl StateInner {
     }
 
     /// Get the relayer fee for a given asset
+    ///
+    /// Served from cached boot config; a per-ticker override falling back to the
+    /// default fee, matching the on-disk `tx.get_relayer_fee` semantics.
     pub fn get_relayer_fee(&self, ticker: &str) -> Result<FixedPoint, StateError> {
-        let ticker = ticker.to_string(); // Take ownership
-        self.with_blocking_read_tx(move |tx| tx.get_relayer_fee(&ticker).map_err(StateError::Db))
+        Ok(self
+            .config
+            .per_asset_fees
+            .get(ticker)
+            .copied()
+            .unwrap_or(self.config.default_relayer_fee))
     }
 
     /// Get the local relayer's fee address
+    ///
+    /// Served from cached boot config (see `get_cluster_id`).
     pub fn get_relayer_fee_addr(&self) -> Result<Address, StateError> {
-        self.with_blocking_read_tx(|tx| tx.get_relayer_fee_addr().map_err(StateError::Db))
+        Ok(self.config.relayer_fee_addr)
     }
 
     /// Get the local relayer's historical state enabled flag
@@ -146,5 +159,37 @@ mod test {
             keypair.to_protobuf_encoding().unwrap(),
             config.p2p_key.to_protobuf_encoding().unwrap()
         );
+    }
+
+    /// Validate the cached node-metadata getters (Fix 3, Edit 1): `get_cluster_id`,
+    /// `get_relayer_fee_addr`, and `get_relayer_fee` are served from the cached
+    /// `StateConfig` (no inline MDBX read on the api-server worker thread), and the
+    /// per-ticker override / default fallback matches the on-disk semantics.
+    #[tokio::test]
+    async fn test_cached_node_metadata_getters() {
+        use std::time::Duration;
+
+        use alloy_primitives::Address;
+        use circuit_types::fixed_point::FixedPoint;
+
+        let mut config = mock_relayer_config();
+        config.relayer_fee_addr = Address::from([7u8; 20]);
+        config.default_match_fee = FixedPoint::from_f64_round_down(0.002);
+        let override_fee = FixedPoint::from_f64_round_down(0.001);
+        config.per_asset_fees.insert("WETH".to_string(), override_fee);
+
+        // Timeout-guard: `mock_state_with_config` spins a mock raft; never let the
+        // test itself hang (mock_state raft stalls at high concurrency).
+        let state = tokio::time::timeout(Duration::from_secs(60), mock_state_with_config(&config))
+            .await
+            .expect("mock state setup timed out");
+
+        // All three getters resolve from the cached StateConfig.
+        assert_eq!(state.get_cluster_id().unwrap(), config.cluster_id);
+        assert_eq!(state.get_relayer_fee_addr().unwrap(), config.relayer_fee_addr);
+        // Per-ticker override resolves to the configured value...
+        assert_eq!(state.get_relayer_fee("WETH").unwrap(), override_fee);
+        // ...and an unknown ticker falls back to the default fee.
+        assert_eq!(state.get_relayer_fee("NOPE").unwrap(), config.default_match_fee);
     }
 }

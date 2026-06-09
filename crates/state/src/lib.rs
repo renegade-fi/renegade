@@ -302,7 +302,7 @@ pub mod test_helpers {
         // underlying DB
         let client = node.get_client().clone();
         let db = node.clone_db();
-        let config = StateConfig { allow_local: true, ..Default::default() };
+        let config = StateConfig::new(&RelayerConfig { allow_local: true, ..Default::default() });
         let matching_engine = MatchingEngine::new();
         let state = StateInner {
             config,

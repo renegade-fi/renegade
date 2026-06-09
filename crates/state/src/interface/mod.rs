@@ -13,9 +13,12 @@ pub mod raft;
 mod raft_metrics;
 pub mod task_queue;
 
-use std::{sync::Arc, time::Duration};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
+use alloy_primitives::Address;
+use circuit_types::fixed_point::FixedPoint;
 use config::RelayerConfig;
+use types_gossip::ClusterId;
 use crossbeam::channel::Sender as UnboundedSender;
 use job_types::{
     event_manager::EventManagerQueue, matching_engine::MatchingEngineWorkerQueue,
@@ -62,6 +65,10 @@ const DEFAULT_MAX_ELECTION_MS: u64 = 15_000; // 15 seconds
 const PANIC_CHECK_MS: u64 = 10_000; // 10 seconds
 /// The frequency with which to check for missed expiry
 const MEMBERSHIP_SYNC_INTERVAL_MS: u64 = 10_000; // 10 seconds
+/// How often to emit the periodic raft-health gauge log. Throttled so it does not
+/// dominate the logs; the membership-sync tick itself still runs every
+/// `MEMBERSHIP_SYNC_INTERVAL_MS`.
+const RAFT_HEALTH_LOG_INTERVAL_MS: u64 = 60_000; // 60 seconds
 /// The maximum time a single membership-sync tick may run before it is
 /// abandoned. The clock schedules these callbacks sequentially, so a tick that
 /// hangs (e.g. on a wedged membership change) stops ALL future ticks and freezes
@@ -120,18 +127,41 @@ pub async fn create_global_state(
 }
 
 /// The runtime config of the state
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct StateConfig {
     /// Whether the state machine recovered from a snapshot
     pub(crate) recovered_from_snapshot: bool,
     /// Whether or not the node allows local peers when adding to the peer index
     pub(crate) allow_local: bool,
+    /// The local node's cluster id (static boot config). Cached here so hot
+    /// request-path getters (e.g. `/v2/network`) read it from memory instead of
+    /// opening an inline MDBX read tx on an api-server worker thread.
+    pub(crate) cluster_id: ClusterId,
+    /// The relayer's fee recipient address (static boot config).
+    pub(crate) relayer_fee_addr: Address,
+    /// The default per-match relayer fee (static boot config).
+    pub(crate) default_relayer_fee: FixedPoint,
+    /// Per-asset relayer fee overrides (static boot config), keyed by ticker.
+    pub(crate) per_asset_fees: HashMap<String, FixedPoint>,
 }
 
 impl StateConfig {
     /// Construct a new state config from a relayer config
     pub fn new(relayer_config: &RelayerConfig) -> Self {
-        Self { recovered_from_snapshot: false, allow_local: relayer_config.allow_local }
+        let per_asset_fees = relayer_config
+            .per_asset_fees
+            .clone()
+            .into_iter()
+            .map(|(ticker, fee)| (ticker.to_string(), fee))
+            .collect();
+        Self {
+            recovered_from_snapshot: false,
+            allow_local: relayer_config.allow_local,
+            cluster_id: relayer_config.cluster_id.clone(),
+            relayer_fee_addr: relayer_config.relayer_fee_addr,
+            default_relayer_fee: relayer_config.default_match_fee,
+            per_asset_fees,
+        }
     }
 }
 
@@ -343,16 +373,26 @@ impl StateInner {
         let client = self.raft.clone();
         let db = self.db.clone();
         let my_cluster = self.get_cluster_id()?;
+        // Throttle the raft-health gauge log to once per RAFT_HEALTH_LOG_INTERVAL_MS
+        // (membership sync itself still runs every tick).
+        let health_log_every = (RAFT_HEALTH_LOG_INTERVAL_MS / MEMBERSHIP_SYNC_INTERVAL_MS).max(1);
+        let health_tick = Arc::new(std::sync::atomic::AtomicU64::new(0));
 
         clock
             .add_async_timer(name, duration, move || {
                 let db = db.clone();
                 let client = client.clone();
                 let cluster_id = my_cluster.clone();
+                let health_tick = health_tick.clone();
 
                 async move {
-                    // Emit a raft-health gauge from this node every tick
-                    client.log_health();
+                    // Emit the raft-health gauge periodically (throttled), not every tick
+                    if health_tick.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                        % health_log_every
+                        == 0
+                    {
+                        client.log_health();
+                    }
 
                     // Fetch known cluster peers from the DB
                     let tx = db.new_read_tx().map_err(raw_err_str!("{}"))?;
