@@ -2097,7 +2097,7 @@ dependencies = [
  "bitflags 2.10.0",
  "cexpr",
  "clang-sys",
- "itertools 0.13.0",
+ "itertools 0.10.5",
  "proc-macro2",
  "quote",
  "regex",
@@ -3319,7 +3319,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ab67060fc6b8ef687992d439ca0fa36e7ed17e9a0b16b25b601e8757df720de"
 dependencies = [
  "data-encoding",
- "syn 2.0.114",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -5263,7 +5263,7 @@ checksum = "f9fbbcab51052fe104eb5e5d351cf728d30a5be1fe14d9be8a3b097481fb97de"
 [[package]]
 name = "libmdbx"
 version = "0.6.5"
-source = "git+https://github.com/renegade-fi/libmdbx-rs#bc6f7ea401fb3f0f50e854f68ee6f26c3be51a09"
+source = "git+https://github.com/renegade-fi/libmdbx-rs#67bba7935edd9b5c3fc1332d3159ef93376bb518"
 dependencies = [
  "bitflags 2.10.0",
  "derive_more 2.1.1",
@@ -5876,7 +5876,7 @@ dependencies = [
 [[package]]
 name = "mdbx-sys"
 version = "13.10.0"
-source = "git+https://github.com/renegade-fi/libmdbx-rs#bc6f7ea401fb3f0f50e854f68ee6f26c3be51a09"
+source = "git+https://github.com/renegade-fi/libmdbx-rs#67bba7935edd9b5c3fc1332d3159ef93376bb518"
 dependencies = [
  "bindgen",
  "cc",
