@@ -40,7 +40,7 @@ use crate::{
     applicator::{StateApplicator, StateApplicatorConfig},
     notifications::{OpenNotifications, ProposalWaiter},
     replication::{
-        RaftNode, get_raft_id,
+        RaftNode, boot_guard, get_raft_id,
         network::{P2PNetworkFactory, gossip::GossipNetwork},
         raft::{RaftClient, RaftClientConfig},
         state_machine::{StateMachine, StateMachineConfig},
@@ -262,6 +262,23 @@ impl StateInner {
         let tx = db.new_write_tx()?;
         tx.setup_tables()?;
         tx.commit()?;
+
+        // Boot guard: a non-seed node whose restored raft state is from a dead
+        // epoch (its own node-id is absent from the restored effective
+        // membership) can never be adopted by the seed -- the stale log's ids
+        // collide with the new epoch's entries and the adopting membership
+        // entry is silently swallowed. Purge the stale state here, BEFORE the
+        // state machine restores a snapshot and the raft core starts, so the
+        // node continues down the fresh-node path. See `boot_guard` for
+        // details; the seed never purges.
+        let is_seed = relayer_config.is_raft_seed() || relayer_config.bootstrap_mode;
+        boot_guard::purge_if_stale_epoch(
+            &db,
+            &relayer_config.raft_snapshot_path,
+            raft_config.id,
+            is_seed,
+        )
+        .map_err(StateError::Replication)?;
 
         // Setup the state machine
         let applicator_config = StateApplicatorConfig {

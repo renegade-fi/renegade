@@ -4,6 +4,8 @@
 mod recovery;
 mod snapshot;
 
+pub(crate) use snapshot::EXCLUDED_TABLES;
+
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
