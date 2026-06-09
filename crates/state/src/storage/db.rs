@@ -6,8 +6,8 @@
 
 use std::path::Path;
 
-use libmdbx::{Database, DatabaseOptions, RO, RW, WriteMap};
-use tracing::instrument;
+use libmdbx::{Database, DatabaseOptions, Error as MdbxError, RO, RW, WriteMap};
+use tracing::{instrument, warn};
 
 use crate::{
     NUM_TABLES,
@@ -156,6 +156,28 @@ impl DB {
     pub fn new_write_tx(&self) -> Result<StateTxn<RW>, StorageError> {
         let txn = self.new_raw_write_tx()?;
         Ok(StateTxn::new(txn))
+    }
+
+    /// Create a new read-write transaction, retrying if the begin times out
+    ///
+    /// Used on the raft replication path (log store, state applicator,
+    /// snapshots, recovery): dropping an apply because a write tx begin timed
+    /// out would diverge the local state machine from the raft log, which is
+    /// worse than retrying loudly. Each timeout is logged so a wedged write
+    /// path is visible rather than a silent park.
+    ///
+    /// Non-replication write paths should use `new_write_tx` and propagate
+    /// the error instead; it surfaces as a retryable error to the caller.
+    #[instrument(skip(self))]
+    pub fn new_write_tx_with_retry(&self) -> Result<StateTxn<RW>, StorageError> {
+        loop {
+            match self.new_write_tx() {
+                Err(StorageError::BeginTx(MdbxError::BeginTimeout)) => {
+                    warn!("write tx begin timed out, retrying...");
+                },
+                res => return res,
+            }
+        }
     }
 
     /// Create a new read-write transaction

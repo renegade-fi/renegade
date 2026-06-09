@@ -89,7 +89,7 @@ impl LogStore {
     {
         let db = self.db.clone();
         tokio::task::spawn_blocking(move || {
-            let tx = db.new_write_tx()?;
+            let tx = db.new_write_tx_with_retry()?;
             let res = f(&tx)?;
             tx.commit()?;
             Ok(res)
