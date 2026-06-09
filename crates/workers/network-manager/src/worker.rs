@@ -2,14 +2,15 @@
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::thread::{Builder, JoinHandle};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use futures::executor::block_on;
 use gossip_api::pubsub::orderbook::ORDER_BOOK_TOPIC;
 use job_types::gossip_server::GossipServerQueue;
 use job_types::network_manager::NetworkManagerReceiver;
-use libp2p::Swarm;
 use libp2p::gossipsub::Sha256Topic;
+use libp2p::{PeerId, Swarm};
 use libp2p::identity::Keypair as LibP2PKeypair;
 use state::State;
 use system_bus::SystemBus;
@@ -22,6 +23,8 @@ use libp2p::multiaddr::{Multiaddr, Protocol};
 use libp2p::quic::{Config as QuicConfig, tokio::Transport as QuicTransport};
 use libp2p_core::Transport;
 use libp2p_core::muxing::StreamMuxerBox;
+use libp2p_core::transport::Boxed;
+use libp2p_core::transport::timeout::TransportTimeout;
 use libp2p_swarm::SwarmBuilder;
 use tokio::runtime::Builder as TokioRuntimeBuilder;
 use util::log_task;
@@ -37,6 +40,26 @@ use super::{
 
 /// The number of threads backing the network
 const NETWORK_MANAGER_N_THREADS: usize = 3;
+
+/// The timeout for connection establishment (dial + handshake), in seconds
+///
+/// A dial to a blackholed address (e.g. a terminated host) receives no
+/// response packets and would otherwise be held open for the full
+/// request-response timeout; a pile-up of such dials starves the swarm
+const DIAL_TIMEOUT_SECS: u64 = 10;
+
+/// Build the QUIC transport for the swarm, bounding connection establishment
+/// with a dial timeout
+///
+/// The timeout applies only to connection setup (dial + QUIC handshake);
+/// established connections and open request streams are unaffected
+fn build_transport(keypair: &LibP2PKeypair) -> Boxed<(PeerId, StreamMuxerBox)> {
+    let config = QuicConfig::new(keypair);
+    let quic_transport = QuicTransport::new(config)
+        .map(|(peer_id, quic_conn), _| (peer_id, StreamMuxerBox::new(quic_conn)));
+
+    TransportTimeout::new(quic_transport, Duration::from_secs(DIAL_TIMEOUT_SECS)).boxed()
+}
 
 /// The worker configuration for the network manager
 #[derive(Clone)]
@@ -209,10 +232,7 @@ impl Worker for NetworkManager {
         let addr: Multiaddr = hostport.parse().unwrap();
 
         // Build the quic transport
-        let config = QuicConfig::new(&self.local_keypair);
-        let quic_transport = QuicTransport::new(config)
-            .map(|(peer_id, quic_conn), _| (peer_id, StreamMuxerBox::new(quic_conn)))
-            .boxed();
+        let quic_transport = build_transport(&self.local_keypair);
 
         // Defines the behaviors of the underlying networking stack: including gossip,
         // pubsub, address discovery, etc
@@ -273,5 +293,30 @@ impl Worker for NetworkManager {
 
     fn cleanup(&mut self) -> Result<(), Self::Error> {
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::time::Duration;
+
+    use libp2p::identity::Keypair;
+
+    use super::build_transport;
+
+    /// The timeout after which transport construction is considered hung
+    const TEST_TIMEOUT: Duration = Duration::from_secs(5);
+
+    /// Test that the dial-timeout-wrapped transport constructs successfully
+    #[test]
+    fn test_build_transport() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let keypair = Keypair::generate_ed25519();
+            let _transport = build_transport(&keypair);
+            tx.send(()).unwrap();
+        });
+
+        rx.recv_timeout(TEST_TIMEOUT).expect("transport construction timed out");
     }
 }
