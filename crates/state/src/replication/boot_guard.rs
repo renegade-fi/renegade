@@ -25,9 +25,9 @@ use std::fs;
 
 use libmdbx::TransactionKind;
 use openraft::{EntryPayload, LogId, Membership};
+use util::err_str;
 use util::log_task;
 use util::logging::Outcome;
-use util::err_str;
 
 use crate::{
     ALL_TABLES, RAFT_LOGS_TABLE, RAFT_METADATA_TABLE,
@@ -224,8 +224,7 @@ mod test {
     /// Build a membership whose nodes are the given ids, with the seed as the
     /// only voter (all other ids are learners)
     fn membership_of(ids: &[NodeId]) -> Membership<NodeId, Node> {
-        let nodes: BTreeMap<NodeId, Node> =
-            ids.iter().map(|id| (*id, Node::default())).collect();
+        let nodes: BTreeMap<NodeId, Node> = ids.iter().map(|id| (*id, Node::default())).collect();
         Membership::new(vec![BTreeSet::from([SEED_ID])], nodes)
     }
 
@@ -278,11 +277,7 @@ mod test {
         let account: Option<String> = db.read(ACCOUNTS_TABLE, &k).unwrap();
         assert_eq!(account, None, "replicated data must be purged");
         let node_local: Option<String> = db.read(NODE_METADATA_TABLE, &k).unwrap();
-        assert_eq!(
-            node_local,
-            Some(TEST_VALUE.to_string()),
-            "node-local data must be preserved"
-        );
+        assert_eq!(node_local, Some(TEST_VALUE.to_string()), "node-local data must be preserved");
     }
 
     /// Stale state whose membership is missing the local node-id is purged,
@@ -297,8 +292,7 @@ mod test {
         let archive = snapshot_zip_path(&snapshot_dir);
         fs::write(&archive, b"stale-snapshot").unwrap();
 
-        let purged =
-            purge_if_stale_epoch(&db, &snapshot_dir, MY_ID, false /* is_seed */).unwrap();
+        let purged = purge_if_stale_epoch(&db, &snapshot_dir, MY_ID, false /* is_seed */).unwrap();
         assert!(purged);
         assert_state_purged(&db);
         assert!(!archive.exists(), "stale snapshot archive must be deleted");
@@ -325,8 +319,7 @@ mod test {
         tx.set_last_vote(&Vote::new(1 /* term */, SEED_ID)).unwrap();
         tx.commit().unwrap();
 
-        let purged =
-            purge_if_stale_epoch(&db, &snapshot_dir, MY_ID, false /* is_seed */).unwrap();
+        let purged = purge_if_stale_epoch(&db, &snapshot_dir, MY_ID, false /* is_seed */).unwrap();
         assert!(purged);
 
         let tx = db.new_read_tx().unwrap();
@@ -343,8 +336,7 @@ mod test {
         let snapshot_dir = db.path().to_string();
         write_persisted_state(&db, &[SEED_ID, MY_ID]);
 
-        let purged =
-            purge_if_stale_epoch(&db, &snapshot_dir, MY_ID, false /* is_seed */).unwrap();
+        let purged = purge_if_stale_epoch(&db, &snapshot_dir, MY_ID, false /* is_seed */).unwrap();
         assert!(!purged);
         assert_state_intact(&db);
     }
@@ -373,8 +365,7 @@ mod test {
         tx.set_snapshot_metadata(&meta).unwrap();
         tx.commit().unwrap();
 
-        let purged =
-            purge_if_stale_epoch(&db, &snapshot_dir, MY_ID, false /* is_seed */).unwrap();
+        let purged = purge_if_stale_epoch(&db, &snapshot_dir, MY_ID, false /* is_seed */).unwrap();
         assert!(!purged);
         assert_state_intact(&db);
     }
@@ -385,8 +376,7 @@ mod test {
         let db = mock_db();
         let snapshot_dir = db.path().to_string();
 
-        let purged =
-            purge_if_stale_epoch(&db, &snapshot_dir, MY_ID, false /* is_seed */).unwrap();
+        let purged = purge_if_stale_epoch(&db, &snapshot_dir, MY_ID, false /* is_seed */).unwrap();
         assert!(!purged);
     }
 
@@ -398,8 +388,7 @@ mod test {
         let snapshot_dir = db.path().to_string();
         write_persisted_state(&db, &[SEED_ID, OLD_WORKER_ID]);
 
-        let purged =
-            purge_if_stale_epoch(&db, &snapshot_dir, MY_ID, true /* is_seed */).unwrap();
+        let purged = purge_if_stale_epoch(&db, &snapshot_dir, MY_ID, true /* is_seed */).unwrap();
         assert!(!purged);
         assert_state_intact(&db);
     }
