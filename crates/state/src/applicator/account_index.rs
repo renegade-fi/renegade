@@ -449,7 +449,13 @@ impl StateApplicator {
             self.publish_admin_balance_update(account_id, balance);
         }
         for (order, pool, update_type, matchable_amount) in deferred_order_updates {
-            self.publish_admin_order_update(account_id, &order, pool, update_type, matchable_amount);
+            self.publish_admin_order_update(
+                account_id,
+                &order,
+                pool,
+                update_type,
+                matchable_amount,
+            );
         }
 
         // Open a read transaction for matching engine updates
