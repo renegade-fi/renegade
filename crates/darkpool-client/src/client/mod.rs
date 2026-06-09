@@ -235,16 +235,17 @@ impl DarkpoolClient {
     where
         C: CallDecoder + Send + Sync,
     {
-        // Bound the gas-price fetch so a hung RPC can't park the task here.
-        let gas_price = tokio::time::timeout(TX_SUBMIT_TIMEOUT, self.get_adjusted_gas_price())
-            .await
-            .map_err(|_| {
-                DarkpoolClientError::contract_interaction(format!(
-                    "gas price fetch timed out after {}s (client_addr = {:#x})",
-                    TX_SUBMIT_TIMEOUT.as_secs(),
-                    self.client_addr
-                ))
-            })??;
+        // Bound the fee estimation so a hung RPC can't park the task here.
+        let (max_fee_per_gas, max_priority_fee_per_gas) =
+            tokio::time::timeout(TX_SUBMIT_TIMEOUT, self.get_adjusted_eip1559_fees())
+                .await
+                .map_err(|_| {
+                    DarkpoolClientError::contract_interaction(format!(
+                        "gas fee estimation timed out after {}s (client_addr = {:#x})",
+                        TX_SUBMIT_TIMEOUT.as_secs(),
+                        self.client_addr
+                    ))
+                })??;
 
         let diag_host = std::env::var("HOSTNAME").unwrap_or_else(|_| "?".to_string());
 
@@ -266,7 +267,14 @@ impl DarkpoolClient {
         // Bound the broadcast. A stuck `send()` otherwise holds the nonce-manager
         // lock and freezes the queue head in `SubmittingTx` indefinitely.
         let pending_tx =
-            match tokio::time::timeout(TX_SUBMIT_TIMEOUT, tx.gas_price(gas_price).send()).await {
+            match tokio::time::timeout(
+                TX_SUBMIT_TIMEOUT,
+                tx.max_fee_per_gas(max_fee_per_gas)
+                    .max_priority_fee_per_gas(max_priority_fee_per_gas)
+                    .send(),
+            )
+            .await
+            {
                 Err(_) => {
                     log_task!(
                         Task::SubmitTx,
@@ -349,13 +357,19 @@ impl DarkpoolClient {
         Ok(receipt)
     }
 
-    /// Get the adjusted gas price for submitting a transaction
+    /// Get EIP-1559 fees for submitting a transaction.
     ///
-    /// We double the latest basefee to prevent reverts
-    async fn get_adjusted_gas_price(&self) -> Result<u128, DarkpoolClientError> {
-        let gas_price = self.provider().get_gas_price().await.map_err(DarkpoolClientError::rpc)?;
-        let adjusted_gas_price = gas_price * GAS_PRICE_MULTIPLIER;
-        Ok(adjusted_gas_price)
+    /// base-sepolia (and other OP-stack chains) expect dynamic-fee (type-2)
+    /// transactions; legacy `gas_price` txs were being accepted by the RPC but
+    /// never mined. We take the provider's basefee+priority estimate and inflate
+    /// the max-fee CAP by `GAS_PRICE_MULTIPLIER` to tolerate basefee growth
+    /// between estimation and inclusion (the cap is a ceiling, not the amount
+    /// paid). Returns `(max_fee_per_gas, max_priority_fee_per_gas)`.
+    async fn get_adjusted_eip1559_fees(&self) -> Result<(u128, u128), DarkpoolClientError> {
+        let est =
+            self.provider().estimate_eip1559_fees().await.map_err(DarkpoolClientError::rpc)?;
+        let max_fee_per_gas = est.max_fee_per_gas * GAS_PRICE_MULTIPLIER;
+        Ok((max_fee_per_gas, est.max_priority_fee_per_gas))
     }
 
     /// Resets the deploy block to the current block number.
