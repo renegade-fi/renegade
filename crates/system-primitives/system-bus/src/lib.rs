@@ -38,6 +38,22 @@ type Shared<T> = Arc<RwLock<T>>;
 /// The number of messages to buffer inside a single topic's bus
 const BUS_BUFFER_SIZE: usize = 10;
 
+/// The interval at which a publish retries when the topic's buffer is full
+const PUBLISH_RETRY_INTERVAL: Duration = Duration::from_millis(10);
+
+/// The maximum total time a publish waits on a full topic buffer before
+/// dropping the message.
+///
+/// Publishing must NEVER block unboundedly: `bus::Bus::broadcast` parks until
+/// every reader drains a slot, so a single stalled subscriber (e.g. an admin
+/// websocket whose peer stopped reading) wedges the publisher forever. Some
+/// publishers hold the MDBX write transaction (the state applicator), so an
+/// unbounded publish starves every writer in the process -- raft log appends
+/// included (observed 2026-06-09: relayer-wide write wedge). Delivery here is
+/// best-effort under sustained backpressure: dropping a message for a reader
+/// that is minutes behind is strictly better than deadlocking the node.
+const PUBLISH_MAX_WAIT: Duration = Duration::from_millis(500);
+
 /// A wrapper around `BusReader` that allows us to store topic-relevant
 /// information, add reference counts, and build poll-able methods around
 /// reading
@@ -214,11 +230,39 @@ impl<M: Clone + Sync> TopicFabric<M> {
     }
 
     /// Write a message onto the topic bus
+    ///
+    /// Bounded: retries a full buffer for up to `PUBLISH_MAX_WAIT`, then drops
+    /// the message with a warning. See `PUBLISH_MAX_WAIT` for why this must
+    /// never block unboundedly.
     pub fn write_message(&mut self, message: M) {
-        // Push the message onto the bus
-        self.bus.broadcast(message);
+        let deadline = std::time::Instant::now() + PUBLISH_MAX_WAIT;
+        let mut message = message;
+        loop {
+            match self.bus.try_broadcast(message) {
+                Ok(()) => break,
+                Err(returned) => {
+                    if std::time::Instant::now() >= deadline {
+                        tracing::warn!(
+                            topic = self.topic_name,
+                            num_readers = self.num_readers(),
+                            "topic buffer full for {}ms (stalled subscriber?); dropping message",
+                            PUBLISH_MAX_WAIT.as_millis()
+                        );
+                        return;
+                    }
+                    message = returned;
+                    // Wake readers so a parked-but-healthy subscriber can drain
+                    self.wake_readers();
+                    std::thread::sleep(PUBLISH_RETRY_INTERVAL);
+                },
+            }
+        }
 
-        // Wake all the readers waiting on a message
+        self.wake_readers();
+    }
+
+    /// Wake all the readers waiting on a message
+    fn wake_readers(&self) {
         let mut locked_wakers = self.wakers.write().expect("wakers lock poisoned");
         for waker in locked_wakers.drain(0..) {
             waker.wake()

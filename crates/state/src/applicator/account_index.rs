@@ -354,14 +354,19 @@ impl StateApplicator {
             return Err(StateApplicatorError::reject("account not found"));
         }
 
-        // Update all balances
+        // Update all balances. Publishes are deferred until after commit: a
+        // bus publish can block on a stalled subscriber, and blocking while
+        // holding the write tx starves every writer in the process (raft log
+        // appends included).
         for balance in balances {
             tx.update_balance(&account_id, balance)?;
-            self.publish_admin_balance_update(account_id, balance);
         }
 
         // Collect order IDs from the refresh set
         let refresh_order_ids: HashSet<OrderId> = orders.iter().map(|o| o.order.id).collect();
+
+        // Admin order-update events deferred until the write tx commits
+        let mut deferred_order_updates = Vec::new();
 
         // Get current orders and identify stale ones to remove
         let current_orders = tx.get_account_orders(&account_id)?;
@@ -434,10 +439,18 @@ impl StateApplicator {
             } else {
                 AdminOrderUpdateType::Created
             };
-            self.publish_admin_order_update(account_id, order, pool, update_type, matchable_amount);
+            deferred_order_updates.push((order.clone(), pool, update_type, matchable_amount));
         }
 
         tx.commit()?;
+
+        // Publish the deferred events now that the write tx is released
+        for balance in balances {
+            self.publish_admin_balance_update(account_id, balance);
+        }
+        for (order, pool, update_type, matchable_amount) in deferred_order_updates {
+            self.publish_admin_order_update(account_id, &order, pool, update_type, matchable_amount);
+        }
 
         // Open a read transaction for matching engine updates
         let engine = self.matching_engine();

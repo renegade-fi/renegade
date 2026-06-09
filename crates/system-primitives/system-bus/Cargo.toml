@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 # === Threading Model + Runtime === #
 bus = { version = "2.3" }
+tracing = { workspace = true }
 futures = { workspace = true }
 serde = { workspace = true }
 tokio = { workspace = true, features = ["rt", "macros"] }
