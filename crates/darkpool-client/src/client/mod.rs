@@ -32,6 +32,9 @@ use crate::logging::Task;
 mod contract_interaction;
 pub mod erc20;
 mod event_indexing;
+mod nonce;
+
+use nonce::ResyncNonceManager;
 
 // -------------
 // | Constants |
@@ -66,6 +69,17 @@ const RPC_READ_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// The multiple of the gas price estimate we use for submitting a transaction
 const GAS_PRICE_MULTIPLIER: u128 = 2;
+
+/// The minimum max-priority-fee we attach to a transaction, in wei (0.001
+/// gwei).
+///
+/// alloy's default EIP-1559 estimator floors the priority fee at 1 WEI when
+/// the recent blocks' reward percentiles are zero (quiet testnet blocks); a
+/// 1-wei tip can leave a tx accepted but never included. Both sepolia
+/// testnets include comfortably at a 0.001-gwei tip, and on mainnets this
+/// floor is far below real tips, so it only ever raises pathological
+/// estimates.
+const MIN_PRIORITY_FEE_WEI: u128 = 1_000_000;
 
 /// A type alias for the RPC client, which is an alloy middleware stack that
 /// includes a signer derived from a raw private key, and a provider that
@@ -111,19 +125,27 @@ impl DarkpoolClientConfig {
 
     /// Constructs RPC clients capable of signing transactions from the
     /// configuration
-    pub fn get_provider(&self) -> Result<RenegadeProvider, DarkpoolClientConfigError> {
+    ///
+    /// Takes the nonce manager from the caller so the `DarkpoolClient` keeps a
+    /// handle for poisoning the cache after a failed submission.
+    pub fn get_provider(
+        &self,
+        nonce_manager: ResyncNonceManager,
+    ) -> Result<RenegadeProvider, DarkpoolClientConfigError> {
         let url = Url::parse(&self.rpc_url)
             .map_err(err_str!(DarkpoolClientConfigError::RpcClientInitialization))?;
         let key = self.private_key.clone();
         let provider = ProviderBuilder::new()
             .disable_recommended_fillers()
-            // CachedNonceManager (locked, sequential nonces) rather than
+            // A cached nonce manager (locked, sequential nonces) rather than
             // SimpleNonceManager (fetches `pending` per send). Under concurrent
             // settle submission from this single shared signer, SimpleNonceManager
             // handed two txs the same nonce -> one gapped/unmined -> no receipt ->
             // the settle task hangs in `SubmittingTx` and retries forever, wedging
             // the account's task queue (`deferred-queue full`, 0 internal fills).
-            .with_cached_nonce_management()
+            // ResyncNonceManager adds cache invalidation after a failed submit so
+            // a lost head tx cannot nonce-gap the signer until process restart.
+            .with_nonce_management(nonce_manager)
             .filler(ChainIdFiller::default())
             .filler(GasFiller)
             .filler(BlobGasFiller::default())
@@ -147,6 +169,9 @@ pub struct DarkpoolClient {
     permit2_addr: Address,
     /// The address of the gas wallet used for signing transactions
     client_addr: Address,
+    /// Handle to the provider's nonce cache, used to force a resync from the
+    /// chain after a failed submission (see `ResyncNonceManager`)
+    nonce_manager: ResyncNonceManager,
 }
 
 impl DarkpoolClient {
@@ -154,10 +179,25 @@ impl DarkpoolClient {
     #[allow(clippy::needless_pass_by_value)]
     pub fn new(config: DarkpoolClientConfig) -> Result<Self, DarkpoolClientError> {
         let client_addr = config.private_key.address();
-        let provider = config.get_provider()?;
+        let nonce_manager = ResyncNonceManager::default();
+        let provider = config.get_provider(nonce_manager.clone())?;
         let darkpool = IDarkpoolV2Instance::new(config.darkpool_addr, provider);
         let deploy_block = config.get_deploy_block();
-        Ok(Self { darkpool, deploy_block, permit2_addr: config.permit2_addr, client_addr })
+        Ok(Self {
+            darkpool,
+            deploy_block,
+            permit2_addr: config.permit2_addr,
+            client_addr,
+            nonce_manager,
+        })
+    }
+
+    /// Mark the signer's cached nonce stale after a failed submission, so the
+    /// next submit refetches the chain's pending count. One lost head tx
+    /// otherwise nonce-gaps every subsequent tx from this signer until process
+    /// restart.
+    fn resync_nonce_on_failure(&self) {
+        self.nonce_manager.poison(self.client_addr);
     }
 
     /// Get a reference to the darkpool contract instance
@@ -275,13 +315,16 @@ impl DarkpoolClient {
         .await
         {
             Err(_) => {
+                // The nonce filler may or may not have consumed a nonce before
+                // the timeout dropped the send future; resync either way
+                self.resync_nonce_on_failure();
                 log_task!(
                     Task::SubmitTx,
                     Outcome::Failed,
                     host = %diag_host,
                     signer = %self.client_addr,
                     nonce = diag_nonce,
-                    "tx submit timed out after {}s (not broadcast)",
+                    "tx submit timed out after {}s (not broadcast); nonce cache resynced",
                     TX_SUBMIT_TIMEOUT.as_secs()
                 );
                 return Err(DarkpoolClientError::contract_interaction(format!(
@@ -295,6 +338,9 @@ impl DarkpoolClient {
         let pending_tx = match pending_tx {
             Ok(tx) => tx,
             Err(ContractError::TransportError(TransportError::ErrorResp(err_payload))) => {
+                // Broadcast rejected after the filler consumed a nonce: the
+                // cache is now one ahead of the chain
+                self.resync_nonce_on_failure();
                 // Decode the error payload if possible using the ABI
                 let decoded =
                     err_payload.as_decoded_interface_error::<IDarkpoolV2::IDarkpoolV2Errors>();
@@ -309,6 +355,9 @@ impl DarkpoolClient {
                 )));
             },
             Err(e) => {
+                // Same as above: a nonce may have been consumed for a tx that
+                // never made it to the pool
+                self.resync_nonce_on_failure();
                 return Err(DarkpoolClientError::contract_interaction(format!(
                     "{e} (client_addr = {:#x})",
                     self.client_addr
@@ -330,7 +379,13 @@ impl DarkpoolClient {
             Ok(r) => r,
             Err(e) => {
                 // Tx broadcast but not mined within the timeout. Distinct from
-                // the submit-timeout above (which never broadcasts).
+                // the submit-timeout above (which never broadcasts). The tx may
+                // have been dropped by the RPC after ack (observed 2026-06-09:
+                // hashes acked then absent from the public pool) -- the cached
+                // nonce is then permanently ahead of the chain, gapping every
+                // later tx from this signer; resync so the next submit refetches
+                // pending and refills the gap.
+                self.resync_nonce_on_failure();
                 log_task!(
                     Task::SubmitTx,
                     Outcome::Failed,
@@ -338,7 +393,7 @@ impl DarkpoolClient {
                     host = %diag_host,
                     signer = %self.client_addr,
                     nonce = diag_nonce,
-                    "tx receipt timeout (not mined): {e}"
+                    "tx receipt timeout (not mined); nonce cache resynced: {e}"
                 );
                 return Err(DarkpoolClientError::contract_interaction(e));
             },
@@ -367,8 +422,15 @@ impl DarkpoolClient {
     async fn get_adjusted_eip1559_fees(&self) -> Result<(u128, u128), DarkpoolClientError> {
         let est =
             self.provider().estimate_eip1559_fees().await.map_err(DarkpoolClientError::rpc)?;
-        let max_fee_per_gas = est.max_fee_per_gas * GAS_PRICE_MULTIPLIER;
-        Ok((max_fee_per_gas, est.max_priority_fee_per_gas))
+        // Floor the tip: alloy's estimator returns 1 WEI when recent blocks
+        // show zero reward percentiles (quiet testnet), which can leave a tx
+        // accepted but never included
+        let max_priority_fee_per_gas = est.max_priority_fee_per_gas.max(MIN_PRIORITY_FEE_WEI);
+        // The cap must cover the (possibly floored) tip on top of basefee
+        // growth; overshooting the cap costs nothing (it is a ceiling)
+        let max_fee_per_gas =
+            est.max_fee_per_gas * GAS_PRICE_MULTIPLIER + max_priority_fee_per_gas;
+        Ok((max_fee_per_gas, max_priority_fee_per_gas))
     }
 
     /// Resets the deploy block to the current block number.

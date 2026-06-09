@@ -166,14 +166,34 @@ impl DB {
     /// worse than retrying loudly. Each timeout is logged so a wedged write
     /// path is visible rather than a silent park.
     ///
+    /// `purpose` names the blocked operation (e.g. the applicator handler) in
+    /// the warning, and labels the transaction for the held-past-threshold
+    /// warning at commit time. Note this is a DB transaction begin, not a
+    /// chain tx -- there is no tx hash; the writer HOLDING the manager is
+    /// named separately by `StateTxn::commit`'s long-hold warning.
+    ///
     /// Non-replication write paths should use `new_write_tx` and propagate
     /// the error instead; it surfaces as a retryable error to the caller.
     #[instrument(skip(self))]
-    pub fn new_write_tx_with_retry(&self) -> Result<StateTxn<RW>, StorageError> {
+    pub fn new_write_tx_with_retry(
+        &self,
+        purpose: &'static str,
+    ) -> Result<StateTxn<RW>, StorageError> {
+        let mut attempt: u32 = 0;
         loop {
             match self.new_write_tx() {
                 Err(StorageError::BeginTx(MdbxError::BeginTimeout)) => {
-                    warn!("write tx begin timed out, retrying...");
+                    attempt += 1;
+                    warn!(
+                        purpose,
+                        attempt,
+                        blocked_secs = attempt as u64 * 30,
+                        "write tx begin timed out (another writer holds the db); retrying"
+                    );
+                },
+                Ok(mut tx) => {
+                    tx.set_purpose(purpose);
+                    return Ok(tx);
                 },
                 res => return res,
             }

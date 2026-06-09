@@ -20,7 +20,7 @@ impl StateApplicator {
         &self,
         pool_name: &str,
     ) -> Result<ApplicatorReturnType, StateApplicatorError> {
-        let tx = self.db().new_write_tx_with_retry()?;
+        let tx = self.db().new_write_tx_with_retry("matching_pools::create_matching_pool")?;
         tx.create_matching_pool(pool_name)?;
         tx.commit()?;
 
@@ -32,7 +32,7 @@ impl StateApplicator {
         &self,
         pool_name: &str,
     ) -> Result<ApplicatorReturnType, StateApplicatorError> {
-        let tx = self.db().new_write_tx_with_retry()?;
+        let tx = self.db().new_write_tx_with_retry("matching_pools::destroy_matching_pool")?;
 
         if !tx.matching_pool_exists(pool_name)? {
             return Err(StateApplicatorError::reject(MATCHING_POOL_DOES_NOT_EXIST_ERR));
@@ -50,7 +50,7 @@ impl StateApplicator {
         order_id: OrderId,
         new_pool: &MatchingPoolName,
     ) -> Result<ApplicatorReturnType, StateApplicatorError> {
-        let tx = self.db().new_write_tx_with_retry()?;
+        let tx = self.db().new_write_tx_with_retry("matching_pools::assign_order_to_matching_pool")?;
 
         // Reject (non-fatally) if the target pool does not exist. Without this
         // guard the assignment falls through to the storage layer, which raises
@@ -79,7 +79,7 @@ impl StateApplicator {
         account_id: AccountId,
         pool: Option<&str>,
     ) -> Result<ApplicatorReturnType, StateApplicatorError> {
-        let tx = self.db().new_write_tx_with_retry()?;
+        let tx = self.db().new_write_tx_with_retry("matching_pools::set_account_default_matching_pool")?;
         if !tx.contains_account(&account_id)? {
             return Err(StateApplicatorError::reject("account not found"));
         }

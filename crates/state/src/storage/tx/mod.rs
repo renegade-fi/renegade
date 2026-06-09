@@ -26,6 +26,8 @@ pub mod task_queue;
 use libmdbx::{
     Error as MdbxError, RW, Table, TableFlags, Transaction, TransactionKind, WriteFlags, WriteMap,
 };
+use std::time::{Duration, Instant};
+
 use tracing::instrument;
 
 use crate::{ALL_TABLES, storage::cursor::DbCursor};
@@ -43,16 +45,33 @@ use super::{
 /// A high level read-write transaction in the database
 pub type RwTxn<'db> = StateTxn<'db, RW>;
 
+/// The hold duration past which committing a transaction logs a warning.
+///
+/// A long-held RW transaction blocks every other writer process-wide (the
+/// MDBX txn manager is single-writer), and was the unidentified holder behind
+/// the 2026-06-09 base-sepolia write-stall wedges; this names the holder.
+const HELD_TX_WARN_THRESHOLD: Duration = Duration::from_secs(5);
+
 /// A high level transaction in the database
 pub struct StateTxn<'db, T: TransactionKind> {
     /// The underlying `mdbx` transaction
     inner: DbTxn<'db, T>,
+    /// When the transaction was opened, for hold-time accounting
+    opened: Instant,
+    /// A short description of what the transaction is for, included in the
+    /// long-hold warning to identify the holder
+    purpose: Option<&'static str>,
 }
 
 impl<'db, T: TransactionKind> StateTxn<'db, T> {
     /// Constructor
     pub fn new(tx: DbTxn<'db, T>) -> Self {
-        Self { inner: tx }
+        Self { inner: tx, opened: Instant::now(), purpose: None }
+    }
+
+    /// Attach a purpose label, included in the long-hold warning
+    pub fn set_purpose(&mut self, purpose: &'static str) {
+        self.purpose = Some(purpose);
     }
 
     /// Get the inner raw `DbTxn`
@@ -63,6 +82,15 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
     /// Commit the transaction
     #[instrument(skip(self))]
     pub fn commit(self) -> Result<(), StorageError> {
+        let held = self.opened.elapsed();
+        if held > HELD_TX_WARN_THRESHOLD {
+            tracing::warn!(
+                held_ms = held.as_millis() as u64,
+                purpose = self.purpose.unwrap_or("unlabeled"),
+                kind = std::any::type_name::<T>(),
+                "db transaction held past threshold before commit"
+            );
+        }
         self.inner.commit()
     }
 }

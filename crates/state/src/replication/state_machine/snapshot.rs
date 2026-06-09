@@ -106,7 +106,7 @@ impl StateMachine {
         &self,
         meta: &SnapshotMeta<NodeId, Node>,
     ) -> Result<(), ReplicationError> {
-        let tx = self.db().new_write_tx_with_retry().map_err(ReplicationError::Storage)?;
+        let tx = self.db().new_write_tx_with_retry("snapshot::write_snapshot_metadata").map_err(ReplicationError::Storage)?;
         tx.set_snapshot_metadata(meta)?;
         tx.commit().map_err(ReplicationError::Storage)?;
 
@@ -323,7 +323,7 @@ impl StateMachine {
             }
 
             // Clear the table on the destination
-            let dest_tx = dest.new_write_tx_with_retry()?;
+            let dest_tx = dest.new_write_tx_with_retry("snapshot::copy_db_data")?;
             dest_tx.clear_table(table)?;
 
             // Copy all keys and values

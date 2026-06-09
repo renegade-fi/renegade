@@ -59,7 +59,7 @@ impl StateApplicator {
         locator: &ValidityProofLocator,
         bundle: &ValidityProofBundle,
     ) -> Result<ApplicatorReturnType> {
-        let tx = self.db().new_write_tx_with_retry()?;
+        let tx = self.db().new_write_tx_with_retry("order_book::add_validity_proof")?;
 
         // For intent-located proofs, ensure the order exists before writing
         if let ValidityProofLocator::Intent { order_id } = locator

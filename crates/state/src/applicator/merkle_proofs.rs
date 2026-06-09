@@ -17,7 +17,7 @@ impl StateApplicator {
         proof_type: MerkleProofType,
         proof: MerkleAuthenticationPath,
     ) -> Result<ApplicatorReturnType> {
-        let tx = self.db().new_write_tx_with_retry()?;
+        let tx = self.db().new_write_tx_with_retry("merkle_proofs::add_merkle_proof")?;
         tx.set_merkle_proof(&proof_type, &proof)?;
         tx.commit()?;
 

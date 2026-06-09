@@ -81,7 +81,7 @@ impl StateApplicator {
         }
 
         // Add the account to the account indices
-        let tx = self.db().new_write_tx_with_retry()?;
+        let tx = self.db().new_write_tx_with_retry("account_index::create_account")?;
 
         // Write the account (new accounts are empty, so no intents to index)
         tx.new_account(account)?;
@@ -98,7 +98,7 @@ impl StateApplicator {
         pool: MatchingPoolName,
     ) -> Result<ApplicatorReturnType> {
         // Create write transaction
-        let tx = self.db().new_write_tx_with_retry()?;
+        let tx = self.db().new_write_tx_with_retry("account_index::add_order_to_account")?;
 
         // Verify account exists
         if !tx.contains_account(&account_id)? {
@@ -165,7 +165,7 @@ impl StateApplicator {
         order_id: OrderId,
     ) -> Result<ApplicatorReturnType> {
         // Create write transaction
-        let tx = self.db().new_write_tx_with_retry()?;
+        let tx = self.db().new_write_tx_with_retry("account_index::remove_order_from_account")?;
 
         // Verify account exists
         if !tx.contains_account(&account_id)? {
@@ -262,7 +262,7 @@ impl StateApplicator {
             return self.remove_order_from_account(account_id, order_id);
         }
 
-        let tx = self.db().new_write_tx_with_retry()?;
+        let tx = self.db().new_write_tx_with_retry("account_index::update_order")?;
 
         // Update the order in storage
         tx.update_order(&account_id, order)?;
@@ -308,7 +308,7 @@ impl StateApplicator {
         balance: &Balance,
     ) -> Result<ApplicatorReturnType> {
         // Create write transaction
-        let tx = self.db().new_write_tx_with_retry()?;
+        let tx = self.db().new_write_tx_with_retry("account_index::update_account_balance")?;
         if !tx.contains_account(&account_id)? {
             return Err(StateApplicatorError::reject("account not found"));
         }
@@ -332,7 +332,7 @@ impl StateApplicator {
         account_id: AccountId,
         keychain: &KeyChain,
     ) -> Result<ApplicatorReturnType> {
-        let tx = self.db().new_write_tx_with_retry()?;
+        let tx = self.db().new_write_tx_with_retry("account_index::update_account_keychain")?;
         if !tx.contains_account(&account_id)? {
             return Err(StateApplicatorError::reject("account not found"));
         }
@@ -349,7 +349,7 @@ impl StateApplicator {
         balances: &[Balance],
     ) -> Result<ApplicatorReturnType> {
         // Create write transaction
-        let tx = self.db().new_write_tx_with_retry()?;
+        let tx = self.db().new_write_tx_with_retry("account_index::refresh_account")?;
         if !tx.contains_account(&account_id)? {
             return Err(StateApplicatorError::reject("account not found"));
         }
