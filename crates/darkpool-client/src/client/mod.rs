@@ -266,33 +266,32 @@ impl DarkpoolClient {
 
         // Bound the broadcast. A stuck `send()` otherwise holds the nonce-manager
         // lock and freezes the queue head in `SubmittingTx` indefinitely.
-        let pending_tx =
-            match tokio::time::timeout(
-                TX_SUBMIT_TIMEOUT,
-                tx.max_fee_per_gas(max_fee_per_gas)
-                    .max_priority_fee_per_gas(max_priority_fee_per_gas)
-                    .send(),
-            )
-            .await
-            {
-                Err(_) => {
-                    log_task!(
-                        Task::SubmitTx,
-                        Outcome::Failed,
-                        host = %diag_host,
-                        signer = %self.client_addr,
-                        nonce = diag_nonce,
-                        "tx submit timed out after {}s (not broadcast)",
-                        TX_SUBMIT_TIMEOUT.as_secs()
-                    );
-                    return Err(DarkpoolClientError::contract_interaction(format!(
-                        "tx submit timed out after {}s (client_addr = {:#x})",
-                        TX_SUBMIT_TIMEOUT.as_secs(),
-                        self.client_addr
-                    )));
-                },
-                Ok(res) => res,
-            };
+        let pending_tx = match tokio::time::timeout(
+            TX_SUBMIT_TIMEOUT,
+            tx.max_fee_per_gas(max_fee_per_gas)
+                .max_priority_fee_per_gas(max_priority_fee_per_gas)
+                .send(),
+        )
+        .await
+        {
+            Err(_) => {
+                log_task!(
+                    Task::SubmitTx,
+                    Outcome::Failed,
+                    host = %diag_host,
+                    signer = %self.client_addr,
+                    nonce = diag_nonce,
+                    "tx submit timed out after {}s (not broadcast)",
+                    TX_SUBMIT_TIMEOUT.as_secs()
+                );
+                return Err(DarkpoolClientError::contract_interaction(format!(
+                    "tx submit timed out after {}s (client_addr = {:#x})",
+                    TX_SUBMIT_TIMEOUT.as_secs(),
+                    self.client_addr
+                )));
+            },
+            Ok(res) => res,
+        };
         let pending_tx = match pending_tx {
             Ok(tx) => tx,
             Err(ContractError::TransportError(TransportError::ErrorResp(err_payload))) => {
