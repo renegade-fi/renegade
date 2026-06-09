@@ -16,7 +16,7 @@ use types_account::{
     account::{Account, OrderId},
     balance::Balance,
     keychain::KeyChain,
-    order::Order,
+    order::{Order, PrivacyRing},
     order_auth::OrderAuth,
 };
 use types_core::AccountId;
@@ -345,7 +345,7 @@ impl StateApplicator {
     pub fn refresh_account(
         &self,
         account_id: AccountId,
-        orders: Vec<OrderRefreshData>,
+        mut orders: Vec<OrderRefreshData>,
         balances: &[Balance],
     ) -> Result<ApplicatorReturnType> {
         // Create write transaction
@@ -376,15 +376,43 @@ impl StateApplicator {
 
         // Update all orders, their auth, and matching pool assignments
         // Track which orders are new vs updated
-        for OrderRefreshData { order, matching_pool, auth } in &orders {
+        for OrderRefreshData { order, matching_pool, auth } in &mut orders {
             // Reject (non-fatally) before any writes if the target pool does
             // not exist, so the assignment below cannot quit the raft core.
             if !tx.matching_pool_exists(matching_pool)? {
                 return Err(StateApplicatorError::reject(MATCHING_POOL_DOES_NOT_EXIST_ERR));
             }
 
-            // Check if the order exists
-            let order_exists = tx.get_order(&order.id)?.is_some();
+            // Read the currently-stored order (if any). Used both to decide
+            // create-vs-update and to floor-clamp a lagging refresh below.
+            let stored = match tx.get_order(&order.id)? {
+                Some(archived) => Some(Order::from_archived(&archived)?),
+                None => None,
+            };
+            let order_exists = stored.is_some();
+
+            // Monotonic floor-clamp (Ring0 only): the indexer can lag behind a
+            // fill this node already settled (self-settle decrements amount_in
+            // locally; RefreshAccountHook fires on a reverted settle against a
+            // possibly-stale indexer). Once an order has been filled, never let a
+            // refresh RAISE amount_in above the locally-stored remaining -- else
+            // matchable = min(balance, amount_in) re-inflates, the engine
+            // re-offers phantom liquidity, and the next match builds an
+            // over-sized obligation -> InvalidObligationAmountIn. Use
+            // decrement_amount_in so inner.amount_in and public_share.amount_in
+            // stay consistent. Gated to Ring0: Ring1+ also reencrypt/advance
+            // streams, so a decrement-only clamp would desync their Merkle leaf
+            // from the value the indexer just read. Unfilled orders (and
+            // same-or-smaller refreshes) pass through unchanged.
+            if let Some(stored) = &stored {
+                if order.ring == PrivacyRing::Ring0
+                    && stored.metadata.has_been_filled
+                    && order.amount_in() > stored.amount_in()
+                {
+                    let delta = order.amount_in() - stored.amount_in();
+                    order.decrement_amount_in(delta);
+                }
+            }
 
             // Write the order auth and assign to the matching pool first so
             // matchable_amount is accurate
@@ -754,6 +782,96 @@ pub(crate) mod test {
         );
         assert!(tx.get_order(&order.id).unwrap().is_some());
         assert_eq!(tx.get_account_id_for_order(&order.id).unwrap(), Some(account.id));
+    }
+
+    /// Regression: refresh_account must NOT re-inflate amount_in for an order
+    /// already filled locally (indexer lag). A blind SET re-arms phantom
+    /// liquidity -> the next match builds an over-sized obligation ->
+    /// InvalidObligationAmountIn revert. The RefreshAccountHook on a reverted
+    /// settle made this a self-perpetuating loop.
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_refresh_account__no_reinflate_filled_order() {
+        use types_account::OrderRefreshData;
+
+        let applicator = mock_applicator();
+        let matching_engine = applicator.matching_engine().clone();
+        let mut order = mock_order();
+        let full = order.amount_in();
+        assert!(full >= 4, "need headroom to partial-fill");
+        let auth = mock_order_auth();
+        let mut balance = mock_balance();
+        balance.state_wrapper.inner.mint = order.input_token();
+        balance.state_wrapper.inner.amount = 1_000_000_000; // pin large for determinism
+
+        let account = mock_empty_account();
+        applicator.create_account(&account).unwrap();
+        applicator.update_account_balance(account.id, &balance).unwrap();
+        applicator
+            .add_order_to_account(account.id, &order, &auth, GLOBAL_MATCHING_POOL.to_string())
+            .unwrap();
+
+        // Simulate a self-settled fill to dust: amount_in -> 1, marked filled.
+        let mut filled = order.clone();
+        filled.decrement_amount_in(full - 1);
+        filled.metadata.mark_filled();
+        applicator.update_order(&filled).unwrap();
+
+        // Indexer LAGS: the refresh carries the original (pre-fill) amount.
+        order.metadata.mark_filled();
+        let refresh = OrderRefreshData {
+            order: order.clone(),
+            matching_pool: GLOBAL_MATCHING_POOL.to_string(),
+            auth: auth.clone(),
+        };
+        applicator.refresh_account(account.id, vec![refresh], &[balance.clone()]).unwrap();
+
+        // Matchable (= min(balance, amount_in)) must stay clamped to the post-fill
+        // remaining (1), not re-inflate to `full`.
+        let tx = applicator.db().new_read_tx().unwrap();
+        let matchable = tx.get_order_matchable_amount(&order.id).unwrap().unwrap_or_default();
+        assert_eq!(matchable, 1, "refresh must not re-inflate a filled order's matchable");
+        assert!(matching_engine.contains_order(&order, GLOBAL_MATCHING_POOL.to_string()));
+    }
+
+    /// Companion: an UNFILLED order must still refresh UPWARD (legit re-index /
+    /// top-up). The clamp is scoped strictly to already-filled orders.
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_refresh_account__unfilled_order_refreshes_up() {
+        use types_account::OrderRefreshData;
+
+        let applicator = mock_applicator();
+        let order = mock_order(); // has_been_filled = false
+        let full = order.amount_in();
+        assert!(full >= 2, "need headroom");
+        let auth = mock_order_auth();
+        let mut balance = mock_balance();
+        balance.state_wrapper.inner.mint = order.input_token();
+        balance.state_wrapper.inner.amount = 1_000_000_000;
+
+        let account = mock_empty_account();
+        applicator.create_account(&account).unwrap();
+        applicator.update_account_balance(account.id, &balance).unwrap();
+
+        // Store at a LOWER amount_in, NOT marked filled.
+        let mut lower = order.clone();
+        lower.decrement_amount_in(full - 1); // stored remaining = 1, unfilled
+        applicator
+            .add_order_to_account(account.id, &lower, &auth, GLOBAL_MATCHING_POOL.to_string())
+            .unwrap();
+
+        // Refresh carries the higher amount; unfilled -> the clamp does not apply.
+        let refresh = OrderRefreshData {
+            order: order.clone(),
+            matching_pool: GLOBAL_MATCHING_POOL.to_string(),
+            auth: auth.clone(),
+        };
+        applicator.refresh_account(account.id, vec![refresh], &[balance.clone()]).unwrap();
+
+        let tx = applicator.db().new_read_tx().unwrap();
+        let matchable = tx.get_order_matchable_amount(&order.id).unwrap().unwrap_or_default();
+        assert!(matchable > 1, "unfilled order must refresh up from the stored remaining");
     }
 
     /// Test updating an account balance
