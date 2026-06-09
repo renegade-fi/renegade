@@ -42,6 +42,25 @@ impl StateInner {
         membership.voter_ids().any(|v| v == id) || membership.learner_ids().any(|l| l == id)
     }
 
+    /// Whether the local node is ready to serve API requests: a raft leader is
+    /// known AND the local node is present in the current membership.
+    ///
+    /// This mirrors the sole-voter adoption condition awaited in
+    /// `await_promotion` (replication/raft.rs), so the ELB `/v2/ping` health
+    /// check can reflect "this node is an adopted, replicating cluster member"
+    /// rather than merely "the process is up". A node that has not yet been
+    /// adopted (still joining), or that has dropped out of membership / lost the
+    /// leader, returns false so the load balancer drains it instead of routing
+    /// requests it cannot serve -- which otherwise surface to clients as 504
+    /// Gateway Timeouts. Reads only the non-blocking raft metrics watch channel,
+    /// so it is safe to call from the dedicated (near-idle) health runtime.
+    pub fn is_raft_ready(&self) -> bool {
+        let id = self.raft.node_id();
+        let metrics = self.raft.metrics();
+        metrics.current_leader.is_some()
+            && metrics.membership_config.membership().get_node(&id).is_some()
+    }
+
     /// Whether the local node is the leader
     pub fn is_leader(&self) -> bool {
         self.raft.is_leader()
