@@ -74,8 +74,7 @@ impl HealthServer {
             let state = state.clone();
             async move {
                 let ready = state.is_raft_ready();
-                let status =
-                    if ready { StatusCode::OK } else { StatusCode::SERVICE_UNAVAILABLE };
+                let status = if ready { StatusCode::OK } else { StatusCode::SERVICE_UNAVAILABLE };
                 let body =
                     format!("{{\"timestamp\":{},\"ready\":{ready}}}", get_current_time_millis());
                 let resp = Response::builder()
