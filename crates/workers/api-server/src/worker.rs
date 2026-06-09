@@ -170,7 +170,11 @@ impl Worker for ApiServer {
             .enable_all()
             .build()
             .map_err(|err| ApiServerError::Setup(err.to_string()))?;
-        let health_server = HealthServer::new(self.config.health_port, self.config.state.clone());
+        let health_server = HealthServer::new(
+            self.config.health_port,
+            self.config.http_port,
+            self.config.state.clone(),
+        );
         let health_thread_handle = health_runtime.spawn_blocking(move || {
             let err = block_on(health_server.execution_loop()).err().unwrap();
             ApiServerError::HttpServerFailure(err.to_string())

@@ -10,17 +10,27 @@
 //! working, producing a restart flap. Serving the health check from a separate,
 //! near-idle runtime decouples liveness from request load and stops the flap.
 //!
-//! The handler does one cheap, non-blocking thing beyond replying: it reads the
-//! raft readiness signal (`State::is_raft_ready`, a lock-free read of the raft
-//! metrics watch channel) and answers 200 only when this node is an adopted,
-//! replicating cluster member. A node that is up but not in the leader's
-//! membership (still joining, or dropped out after a leader restart) answers 503
-//! so the ELB drains it, instead of staying in rotation and serving requests it
-//! cannot complete -- which surface to clients as 504 Gateway Timeouts. A
-//! busy-but-adopted node still answers 200 promptly because this runtime is not
-//! starved by request load, preserving the anti-flap property above.
+//! The handler answers 200 only when BOTH conditions hold:
+//!   1. Raft readiness (`State::is_raft_ready`, a lock-free read of the raft
+//!      metrics watch channel): this node is an adopted, replicating member. A
+//!      node that is up but not in the leader's membership (still joining, or
+//!      dropped after a leader restart) answers 503 so the ELB drains it instead
+//!      of staying in rotation and 504ing the requests routed to it.
+//!   2. Main-runtime liveness: a bounded self-probe (a short-timeout HTTP GET to
+//!      the main server's `/v2/network` on `127.0.0.1`) succeeds. The main
+//!      api-server runtime can wedge (an unbounded await/lock starving its worker
+//!      threads, or a stalled shared state read) while raft stays healthy on its
+//!      own runtime -- so raft readiness ALONE does not prove the node can serve.
+//!      If the self-probe times out, the main runtime is wedged; we answer 503 so
+//!      the ELB fails the check and ECS restarts the task, restoring the self-heal
+//!      that the dedicated health runtime would otherwise mask.
+//!
+//! Because this health runtime is separate and near-idle, neither the readiness
+//! read nor the self-probe is starved by request load, so a busy-but-healthy node
+//! still answers 200 promptly -- preserving the anti-flap property above; only a
+//! real wedge (or a real loss of membership) trips the 503.
 
-use std::net::SocketAddr;
+use std::{net::SocketAddr, time::Duration};
 
 use http_body_util::Full;
 use hyper::{
@@ -36,20 +46,36 @@ use util::get_current_time_millis;
 
 use crate::error::ApiServerError;
 
+/// Timeout for the self-probe of the main HTTP server. Kept well under the ELB
+/// health-check timeout so a wedged main runtime is reported as 503 within a
+/// single check, but long enough that normal request latency never trips it.
+const MAIN_SERVER_PROBE_TIMEOUT: Duration = Duration::from_secs(2);
+
 /// A minimal HTTP server that answers the ELB health check on a dedicated port.
 #[derive(Clone)]
 pub struct HealthServer {
     /// The port the health server listens on
     port: u16,
+    /// The port the main HTTP server listens on, self-probed to detect a wedged
+    /// request-serving runtime (see module docs).
+    http_port: u16,
     /// Handle on global state, used to report raft readiness so the ELB drains a
     /// node that is up but not an adopted, replicating cluster member.
     state: State,
+    /// HTTP client used to self-probe the main server. A bounded request that
+    /// errors or times out means the main request-serving runtime is wedged.
+    probe_client: reqwest::Client,
 }
 
 impl HealthServer {
-    /// Create a new health server bound to the given port
-    pub fn new(port: u16, state: State) -> Self {
-        Self { port, state }
+    /// Create a new health server bound to `port` that self-probes the main HTTP
+    /// server on `http_port`
+    pub fn new(port: u16, http_port: u16, state: State) -> Self {
+        let probe_client = reqwest::Client::builder()
+            .timeout(MAIN_SERVER_PROBE_TIMEOUT)
+            .build()
+            .expect("building the health probe client cannot fail");
+        Self { port, http_port, state, probe_client }
     }
 
     /// Accept connections and answer the health check, forever
@@ -60,23 +86,42 @@ impl HealthServer {
 
         loop {
             let (stream, _) = listener.accept().await.map_err(ApiServerError::server_failure)?;
-            let state = self.state.clone();
+            let server = self.clone();
             tokio::spawn(async move {
-                let _ = Self::handle_stream(stream, state).await;
+                let _ = server.handle_stream(stream).await;
             });
         }
     }
 
-    /// Serve a single connection, replying 200 when this node is a ready raft
-    /// member and 503 otherwise so the load balancer drains an unready node
-    async fn handle_stream(stream: TcpStream, state: State) -> Result<(), ApiServerError> {
+    /// Serve a single connection, replying 200 only when this node is both a
+    /// ready raft member AND its main request-serving runtime answers a bounded
+    /// self-probe; 503 otherwise so the load balancer drains (and ECS recycles)
+    /// an unready or wedged node.
+    async fn handle_stream(self, stream: TcpStream) -> Result<(), ApiServerError> {
+        let state = self.state.clone();
+        let probe_client = self.probe_client.clone();
+        let http_port = self.http_port;
         let service = service_fn(move |_req: Request<IncomingBody>| {
             let state = state.clone();
+            let probe_client = probe_client.clone();
             async move {
-                let ready = state.is_raft_ready();
-                let status = if ready { StatusCode::OK } else { StatusCode::SERVICE_UNAVAILABLE };
-                let body =
-                    format!("{{\"timestamp\":{},\"ready\":{ready}}}", get_current_time_millis());
+                let raft_ready = state.is_raft_ready();
+                // Only probe once adopted: before then the main server has not
+                // bound its port yet, so a failed probe would be expected noise.
+                let serving = if raft_ready {
+                    let url = format!("http://127.0.0.1:{http_port}/v2/network");
+                    // Any HTTP response (even an error status) proves the main
+                    // runtime is making progress; a timeout/error means it is wedged.
+                    probe_client.get(url).send().await.is_ok()
+                } else {
+                    false
+                };
+                let ok = raft_ready && serving;
+                let status = if ok { StatusCode::OK } else { StatusCode::SERVICE_UNAVAILABLE };
+                let body = format!(
+                    "{{\"timestamp\":{},\"ready\":{raft_ready},\"serving\":{serving}}}",
+                    get_current_time_millis()
+                );
                 let resp = Response::builder()
                     .status(status)
                     .body(Full::new(BytesBody::from(body)))
