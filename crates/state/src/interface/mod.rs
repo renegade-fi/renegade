@@ -18,7 +18,6 @@ use std::{collections::HashMap, sync::Arc, time::Duration};
 use alloy_primitives::Address;
 use circuit_types::fixed_point::FixedPoint;
 use config::RelayerConfig;
-use types_gossip::ClusterId;
 use crossbeam::channel::Sender as UnboundedSender;
 use job_types::{
     event_manager::EventManagerQueue, matching_engine::MatchingEngineWorkerQueue,
@@ -29,6 +28,7 @@ use system_bus::SystemBus;
 use system_clock::SystemClock;
 use tracing::{Span, info_span, instrument};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
+use types_gossip::ClusterId;
 use types_runtime::WorkerFailureSender;
 use util::log_task;
 use util::logging::Outcome;
