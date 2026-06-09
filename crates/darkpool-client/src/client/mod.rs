@@ -55,6 +55,15 @@ const TX_SUBMIT_TIMEOUT: Duration = Duration::from_secs(20);
 /// hang.
 const NONCE_DIAG_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// Timeout for read-only RPC calls (e.g. `eth_blockNumber`, `eth_chainId`).
+///
+/// The HTTP provider is built without a transport timeout, and read calls
+/// (unlike the submit path, bounded by `TX_SUBMIT_TIMEOUT`) were unbounded. A
+/// stalled RPC on `block_number()` in `SettleExternalMatchTask::generate_calldata`
+/// hung the settle task forever. Bounding read calls makes a stalled RPC surface
+/// as a (retryable=false) RPC error instead of an infinite await.
+const RPC_READ_TIMEOUT: Duration = Duration::from_secs(10);
+
 /// The multiple of the gas price estimate we use for submitting a transaction
 const GAS_PRICE_MULTIPLIER: u128 = 2;
 
@@ -178,12 +187,28 @@ impl DarkpoolClient {
 
     /// Get the chain ID
     pub async fn chain_id(&self) -> Result<ChainId, DarkpoolClientError> {
-        self.provider().get_chain_id().await.map_err(err_str!(DarkpoolClientError::Rpc))
+        tokio::time::timeout(RPC_READ_TIMEOUT, self.provider().get_chain_id())
+            .await
+            .map_err(|_| {
+                DarkpoolClientError::Rpc(format!(
+                    "chain_id RPC timed out after {}s",
+                    RPC_READ_TIMEOUT.as_secs()
+                ))
+            })?
+            .map_err(err_str!(DarkpoolClientError::Rpc))
     }
 
     /// Get the current block number
     pub async fn block_number(&self) -> Result<BlockNumber, DarkpoolClientError> {
-        self.provider().get_block_number().await.map_err(err_str!(DarkpoolClientError::Rpc))
+        tokio::time::timeout(RPC_READ_TIMEOUT, self.provider().get_block_number())
+            .await
+            .map_err(|_| {
+                DarkpoolClientError::Rpc(format!(
+                    "block_number RPC timed out after {}s",
+                    RPC_READ_TIMEOUT.as_secs()
+                ))
+            })?
+            .map_err(err_str!(DarkpoolClientError::Rpc))
     }
 
     /// Create an event filter

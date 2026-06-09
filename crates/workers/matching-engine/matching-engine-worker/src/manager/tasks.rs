@@ -25,6 +25,13 @@ const SERIAL_PREEMPTION_REJECTED: &str = "serial preemption not allowed";
 /// outlast a normal commit window plus the settle task's own on-chain latency.
 const DEFERRED_SETTLE_TIMEOUT_MS: u64 = 30_000;
 
+/// Max time to await a bypass-queue (external-match) settle's completion.
+/// Sized below the api-server bus wait (`MATCHING_ENGINE_RESPONSE_TIMEOUT`=30s,
+/// processor.rs) so a stuck settle yields a settle-specific result to the client
+/// before the bus wait elapses, rather than hanging this matching-engine task --
+/// and its worker slot -- forever (e.g. on a stalled RPC in calldata generation).
+const EXTERNAL_SETTLE_TIMEOUT_MS: u64 = 20_000;
+
 impl MatchingEngineExecutor {
     /// Enqueue a serial task and await its completion
     pub async fn forward_queued_task(
@@ -153,9 +160,23 @@ impl MatchingEngineExecutor {
         let (job, rx) = TaskDriverJob::run_with_notification(queued);
         self.task_queue.send(job).map_err(MatchingEngineError::send_message)?;
 
-        // Await a completion notification from the task driver
-        rx.await
-            .map_err(MatchingEngineError::task)? // RecvError
-            .map_err(MatchingEngineError::task) // TaskDriverError
+        // Await a completion notification from the task driver, bounded so a
+        // stuck settle (e.g. a stalled RPC in calldata generation) cannot hang
+        // this matching-engine task -- and its worker slot -- indefinitely.
+        // Mirrors the deferred/raft path's DEFERRED_SETTLE_TIMEOUT_MS bound.
+        let await_completion = async move {
+            rx.await
+                .map_err(MatchingEngineError::task)? // RecvError
+                .map_err(MatchingEngineError::task) // TaskDriverError
+        };
+        match tokio::time::timeout(
+            Duration::from_millis(EXTERNAL_SETTLE_TIMEOUT_MS),
+            await_completion,
+        )
+        .await
+        {
+            Ok(res) => res,
+            Err(_elapsed) => Err(MatchingEngineError::task("external settlement timed out")),
+        }
     }
 }

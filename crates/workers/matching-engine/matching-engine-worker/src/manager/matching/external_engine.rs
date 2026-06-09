@@ -81,7 +81,19 @@ impl MatchingEngineExecutor {
             self.forward_quote(response_topic.clone(), successful_match);
             Ok(())
         } else {
-            self.try_settle_external_match(successful_match, response_topic, &options).await
+            let res = self
+                .try_settle_external_match(successful_match, response_topic.clone(), &options)
+                .await;
+            // If settlement failed/timed out, the SettleExternalMatchTask never
+            // published an ExternalOrderBundle on `response_topic`. Publish a
+            // no-match so the api-server bus wait resolves promptly instead of
+            // hanging to its 30s timeout. No tx is broadcast server-side (the
+            // relayer only forwards client-submitted calldata on success), so
+            // this cannot tell a client "settled" when it was not.
+            if res.is_err() {
+                self.handle_no_match(response_topic);
+            }
+            res
         }
     }
 
