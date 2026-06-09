@@ -79,8 +79,7 @@ impl NonceManager for ResyncNonceManager {
             prev => {
                 // First use, or resync after a lost tx: the chain's pending
                 // count is exactly the next nonce that can mine
-                let pending =
-                    provider.get_transaction_count(address).pending().await?;
+                let pending = provider.get_transaction_count(address).pending().await?;
                 if resync {
                     info!(
                         signer = %address,

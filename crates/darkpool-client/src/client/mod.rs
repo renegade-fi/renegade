@@ -428,8 +428,7 @@ impl DarkpoolClient {
         let max_priority_fee_per_gas = est.max_priority_fee_per_gas.max(MIN_PRIORITY_FEE_WEI);
         // The cap must cover the (possibly floored) tip on top of basefee
         // growth; overshooting the cap costs nothing (it is a ceiling)
-        let max_fee_per_gas =
-            est.max_fee_per_gas * GAS_PRICE_MULTIPLIER + max_priority_fee_per_gas;
+        let max_fee_per_gas = est.max_fee_per_gas * GAS_PRICE_MULTIPLIER + max_priority_fee_per_gas;
         Ok((max_fee_per_gas, max_priority_fee_per_gas))
     }
 
