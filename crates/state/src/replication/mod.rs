@@ -5,6 +5,7 @@
 //! state transitions and persist these to the raft log to the raft log
 #![allow(unexpected_cfgs)]
 
+pub(crate) mod boot_guard;
 pub mod error;
 mod log_store;
 #[cfg(any(test, feature = "mocks"))]

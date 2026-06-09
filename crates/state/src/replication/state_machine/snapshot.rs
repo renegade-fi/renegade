@@ -32,7 +32,7 @@ const MDBX_DATA_FILE: &str = "mdbx.dat";
 ///
 /// These are tables whose values are not set through consensus, are node
 /// specific, or otherwise contain volatile state not worth snapshotting
-const EXCLUDED_TABLES: &[&str] = &[
+pub(crate) const EXCLUDED_TABLES: &[&str] = &[
     RAFT_LOGS_TABLE,
     RAFT_METADATA_TABLE,
     PEER_INFO_TABLE,
