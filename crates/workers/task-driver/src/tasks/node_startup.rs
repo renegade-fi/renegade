@@ -24,7 +24,7 @@ use util::log_task;
 use util::logging::Outcome;
 use util::{
     err_str,
-    on_chain::{set_chain_id, set_default_protocol_fee, set_protocol_fee, set_protocol_pubkey},
+    on_chain::{set_default_protocol_fee, set_protocol_fee, set_protocol_pubkey},
 };
 
 use crate::{
@@ -300,11 +300,9 @@ impl NodeStartupTask {
         // Fetch the external match fee overrides for each mint
         self.setup_external_match_fees().await?;
 
-        // Set the chain ID
-        let chain_id = self.darkpool_client.chain_id().await?;
-        set_chain_id(chain_id);
-
-        // Set the values in their constant refs
+        // Set the values in their constant refs.
+        // NOTE: the chain ID is set unconditionally at startup in core/main.rs
+        // (works for bootstrap-mode seeds too); do not set it here.
         set_default_protocol_fee(protocol_fee);
         set_protocol_pubkey(protocol_key);
         Ok(())

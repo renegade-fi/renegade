@@ -137,6 +137,12 @@ async fn main() -> Result<(), CoordinatorError> {
     )
     .await?;
 
+    // Set the chain ID in the global static from static config. Bootstrap-mode
+    // nodes (seeds) skip fetch_contract_constants(), so they would otherwise
+    // never set CHAIN_ID and panic in get_chain_id() (e.g. ring0 settle
+    // helpers). The numeric chain id is known statically and needs no RPC.
+    util::on_chain::set_chain_id(args.chain_id.chain_id());
+
     // Construct a darkpool client that workers will use for submitting txs
     let darkpool_client_config = DarkpoolClientConfig {
         darkpool_addr: args.contract_address,
