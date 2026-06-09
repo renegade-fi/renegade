@@ -239,7 +239,6 @@ fn load_or_create_p2p_key_file(path: &str) -> Result<String, String> {
         .mode(0o600)
         .open(path)
         .map_err(raw_err_str!("error creating p2p key file: {}"))?;
-    file.write_all(encoded.as_bytes())
-        .map_err(raw_err_str!("error writing p2p key file: {}"))?;
+    file.write_all(encoded.as_bytes()).map_err(raw_err_str!("error writing p2p key file: {}"))?;
     Ok(encoded)
 }
