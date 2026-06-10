@@ -37,15 +37,18 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/build/target \
     mkdir -p /build/bin && \
-    cargo build --release --package bootloader && \
-    cargo build --release --package snapshot-sidecar && \
-    cargo build --release --package event-export-sidecar && \
-    cargo build --release --package indexer-message-sidecar && \
-    cargo build --release --bin renegade-relayer --features "$CARGO_FEATURES" && \
-    cp target/release/bootloader \
-       target/release/snapshot-sidecar \
-       target/release/event-export-sidecar \
-       target/release/indexer-message-sidecar \
+    # The sidecars and bootloader are off the matching hot path, so they use
+    # release-fast: skipping their fat-LTO codegen-units=1 links saves ~13min
+    # per image build. The relayer keeps the fully optimized release profile.
+    cargo build --locked --profile release-fast --package bootloader && \
+    cargo build --locked --profile release-fast --package snapshot-sidecar && \
+    cargo build --locked --profile release-fast --package event-export-sidecar && \
+    cargo build --locked --profile release-fast --package indexer-message-sidecar && \
+    cargo build --locked --release --bin renegade-relayer --features "$CARGO_FEATURES" && \
+    cp target/release-fast/bootloader \
+       target/release-fast/snapshot-sidecar \
+       target/release-fast/event-export-sidecar \
+       target/release-fast/indexer-message-sidecar \
        target/release/renegade-relayer \
        /build/bin/
 
