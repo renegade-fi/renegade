@@ -2,5 +2,6 @@
 
 mod account_tasks;
 pub mod error;
+pub mod oracle;
 
-pub use account_tasks::simulate_account_tasks;
+pub use account_tasks::{SimulationReport, simulate_account_tasks};

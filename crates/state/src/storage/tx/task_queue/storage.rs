@@ -92,6 +92,7 @@ const ENABLE_ORDER_YIELD: bool = true;
 /// allowed to commit (per-queue fairness; prevents requote starvation).
 const MAX_CONSECUTIVE_YIELDS: u32 = 3;
 
+/// Whether Stage 2 order-yield preemption is enabled
 #[cfg(not(test))]
 #[inline]
 fn order_yield_enabled() -> bool {
@@ -151,6 +152,7 @@ pub(crate) fn set_test_order_yield(enabled: bool) {
 #[cfg_attr(test, allow(dead_code))]
 const ENABLE_SETTLE_FAIRNESS: bool = false;
 
+/// Whether settle-fairness scheduling is enabled
 #[cfg(not(test))]
 #[inline]
 fn fairness_enabled() -> bool {

@@ -28,16 +28,21 @@ use alloy_primitives::Address;
 use tokio::sync::Mutex;
 use tracing::info;
 
+/// The last-used nonce for a signer, `None` until first fetch.
+///
+/// The tokio mutex serializes nonce assignment per signer, mirroring alloy's
+/// `CachedNonceManager`.
+type NonceSlot = Arc<Mutex<Option<u64>>>;
+
 /// A per-signer cached nonce manager whose cache can be invalidated
 /// (poisoned) after a failed submission
 #[derive(Clone, Debug, Default)]
 pub struct ResyncNonceManager {
-    /// The cached last-used nonce per signer, `None` until first fetch.
+    /// The cached nonce slot per signer.
     ///
-    /// The outer std mutex is held only to clone the inner `Arc` (never across
-    /// an await); the inner tokio mutex serializes nonce assignment per
-    /// signer, mirroring alloy's `CachedNonceManager`.
-    nonces: Arc<StdMutex<HashMap<Address, Arc<Mutex<Option<u64>>>>>>,
+    /// The std mutex is held only to clone the inner `Arc`, never across an
+    /// await.
+    nonces: Arc<StdMutex<HashMap<Address, NonceSlot>>>,
     /// Signers whose cache must be refetched from the chain on next use
     poisoned: Arc<StdMutex<HashMap<Address, bool>>>,
 }
@@ -55,7 +60,7 @@ impl ResyncNonceManager {
     }
 
     /// Get the per-signer nonce slot
-    fn nonce_slot(&self, address: Address) -> Arc<Mutex<Option<u64>>> {
+    fn nonce_slot(&self, address: Address) -> NonceSlot {
         let mut map = self.nonces.lock().expect("nonce map lock");
         Arc::clone(map.entry(address).or_default())
     }

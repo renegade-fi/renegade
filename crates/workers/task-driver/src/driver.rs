@@ -20,6 +20,7 @@ use crate::{
     error::TaskDriverError,
     logging::Task as LogTask,
     running_task::RunnableTask,
+    simulation::oracle::SimulationOracle,
     tasks::{
         cancel_order::CancelOrderTask,
         create_balance::CreateBalanceTask,
@@ -237,6 +238,10 @@ impl TaskExecutor {
             notifications_locked.entry(id).or_default().push(c);
         }
 
+        // Capture a projection of the task's effect for post-completion
+        // divergence checking; a no-op unless RENEGADE_SIMULATION_ORACLE is set
+        let oracle = SimulationOracle::capture(self.state(), &task, &affected_accounts).await;
+
         // Construct the task from the descriptor
         let res: Result<(), TaskDriverError> = match task.descriptor {
             TaskDescriptor::NewAccount(desc) => {
@@ -280,6 +285,14 @@ impl TaskExecutor {
         // do not surface the yield as a job error.
         if matches!(res, Err(TaskDriverError::Preempted)) {
             return Ok(());
+        }
+
+        // Verify the captured projection against actual post-task state
+        // (debugging oracle; logs divergences, never affects the result)
+        if res.is_ok() {
+            if let Some(oracle) = oracle {
+                oracle.verify(self.state()).await;
+            }
         }
 
         // Notify any listeners that the task has completed

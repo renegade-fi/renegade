@@ -5,7 +5,12 @@
 // | Task State |
 // --------------
 
-use std::{error::Error, fmt::Display, iter, time::Duration};
+use std::{
+    error::Error,
+    fmt::Display,
+    iter,
+    time::{Duration, Instant},
+};
 
 use async_trait::async_trait;
 use constants::{NATIVE_ASSET_ADDRESS, in_bootstrap_mode};
@@ -39,6 +44,18 @@ const NODE_STARTUP_TASK_NAME: &str = "node-startup";
 
 /// Error sending a job to another worker
 const ERR_SEND_JOB: &str = "error sending job";
+
+/// The minimum gossip warmup duration (floor)
+///
+/// Even when a cluster peer is discovered immediately, wait at least this long
+/// so the gossipsub mesh has a moment to start forming before the network
+/// manager flushes its buffered outbound pubsub. Flushing into an empty mesh
+/// would silently drop those messages.
+const GOSSIP_WARMUP_FLOOR: Duration = Duration::from_secs(2);
+
+/// The interval at which `warmup_gossip` polls the peer index for a
+/// same-cluster peer while waiting between the floor and the ceiling.
+const GOSSIP_WARMUP_POLL_INTERVAL: Duration = Duration::from_millis(250);
 
 /// Defines the state of the node startup task
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -309,6 +326,23 @@ impl NodeStartupTask {
     }
 
     /// Warmup the gossip layer into the network
+    ///
+    /// The warmup gates exactly one thing: the network manager's flush of its
+    /// own buffered outbound pubsub (gossipsub mesh-formation grace). It does
+    /// NOT gate peer discovery, the bootstrap dial/request, or the seed's
+    /// adoption of this node as a raft learner -- those run concurrently in the
+    /// gossip server, which starts before this task. So the historical fixed
+    /// 30s sleep here was mostly dead time on the worker-adoption path (see
+    /// tickets/2026-06-08-v2-relayer-worker-identity-persistent-volume/
+    /// gossip-warmup-wait-analysis.md).
+    ///
+    /// Instead of an unconditional sleep we wait on a condition: a ~2s floor
+    /// (so the mesh has a moment to form before the flush), then poll the local
+    /// peer index until a same-cluster peer is discovered, with the configured
+    /// `gossip_warmup_ms` (default 30s) repurposed as a ceiling/backstop. This
+    /// only changes WHEN the flush fires; it cannot affect the downstream
+    /// `await_promotion` / boot-guard adoption path, so it cannot newly trip the
+    /// 300s adoption timeout.
     pub async fn warmup_gossip(&mut self) -> Result<(), NodeStartupTaskError> {
         log_task!(
             LogTask::NodeStartup,
@@ -316,8 +350,43 @@ impl NodeStartupTask {
             warmup_ms = self.gossip_warmup_ms,
             "warming up gossip layer"
         );
-        let wait_time = Duration::from_millis(self.gossip_warmup_ms);
-        tokio::time::sleep(wait_time).await;
+
+        let start = Instant::now();
+        let ceiling = Duration::from_millis(self.gossip_warmup_ms);
+
+        // Always wait at least the floor for the gossipsub mesh to start forming
+        tokio::time::sleep(GOSSIP_WARMUP_FLOOR).await;
+
+        // Poll the peer index until a same-cluster peer is discovered (i.e. the
+        // seed/cluster is reachable), or fall through at the ceiling. The seed
+        // has no cluster to discover, so it will fall through at the ceiling --
+        // but the ceiling is unchanged from the prior fixed sleep, so the seed's
+        // startup is not regressed beyond its prior behavior.
+        let mut resolved_early = false;
+        while start.elapsed() < ceiling {
+            if self.has_cluster_peer().await? {
+                resolved_early = true;
+                break;
+            }
+            tokio::time::sleep(GOSSIP_WARMUP_POLL_INTERVAL).await;
+        }
+
+        let waited_ms = start.elapsed().as_millis();
+        if resolved_early {
+            log_task!(
+                LogTask::NodeStartup,
+                Outcome::Ok,
+                waited_ms = waited_ms as u64,
+                "gossip warmup resolved early (same-cluster peer discovered)"
+            );
+        } else {
+            log_task!(
+                LogTask::NodeStartup,
+                Outcome::Ok,
+                waited_ms = waited_ms as u64,
+                "gossip warmup fell through on ceiling (no same-cluster peer discovered)"
+            );
+        }
 
         // Indicate to the network manager that warmup is complete
         let msg = NetworkManagerJob::internal(NetworkManagerControlSignal::GossipWarmupComplete);
@@ -329,6 +398,19 @@ impl NodeStartupTask {
         self.task_state = self.choose_raft_startup_state().await?;
 
         Ok(())
+    }
+
+    /// Returns whether the local peer index contains at least one same-cluster
+    /// peer other than the local node.
+    ///
+    /// The local node indexes itself into its own cluster membership at startup,
+    /// so we must exclude it; otherwise the condition would be trivially true on
+    /// a node that has discovered no one (notably the seed).
+    async fn has_cluster_peer(&self) -> Result<bool, NodeStartupTaskError> {
+        let cluster_id = self.state.get_cluster_id()?;
+        let my_peer_id = self.state.get_peer_id()?;
+        let peers = self.state.get_cluster_peers(&cluster_id).await?;
+        Ok(peers.into_iter().any(|p| p != my_peer_id))
     }
 
     /// Decide whether the node should bootstrap a new raft or join an existing

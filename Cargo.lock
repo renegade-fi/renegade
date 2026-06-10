@@ -9179,6 +9179,7 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "tokio",
+ "tracing",
  "types-account",
  "types-core",
  "types-gossip",

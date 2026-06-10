@@ -531,6 +531,7 @@ impl RaftClient {
         }
     }
 
+    /// Add the given learners to the raft membership
     async fn handle_add_learners(
         &self,
         learners: Vec<(NodeId, RaftNode)>,
