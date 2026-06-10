@@ -276,11 +276,11 @@ impl RaftClient {
         );
     }
 
-    /// Build the compact, leader-only per-target replication summary used by the
-    /// health gauge: `<peer_id>=lag:<n>` for a tracked follower / learner, or
-    /// `<peer_id>=unreachable` when the leader holds no acknowledged match index
-    /// for it. Empty on non-leaders -- openraft only populates `replication` on
-    /// the leader.
+    /// Build the compact, leader-only per-target replication summary used by
+    /// the health gauge: `<peer_id>=lag:<n>` for a tracked follower /
+    /// learner, or `<peer_id>=unreachable` when the leader holds no
+    /// acknowledged match index for it. Empty on non-leaders -- openraft
+    /// only populates `replication` on the leader.
     ///
     /// Converts openraft's opaque "AppendEntries <id>-><id> timeout" (the
     /// `RPCError` spam from an unreachable learner) into a peer-attributable,
@@ -769,17 +769,16 @@ impl RaftClient {
         // openraft permits only one membership change at a time, so we make at
         // most one change per tick and return after it. The ORDER matters:
         //
-        //   1. Expire dead VOTERS first -- a dead voter counts against quorum,
-        //      so reclaiming it protects liveness.
-        //   2. Promote caught-up learners -- this must come BEFORE expiring
-        //      dead learners. If expiry runs first and there is always a peer
-        //      to expire (e.g. stale ids left by restarts with ephemeral p2p
-        //      identities), promotion is never reached: joining workers sit as
-        //      learners until the await_promotion timeout, then restart, which
-        //      creates another stale id to expire -- a self-sustaining churn
-        //      loop. Promotion only promotes learners caught up within
-        //      `learner_promotion_threshold`, so dead/lagging ids are never
-        //      wrongly promoted; they fall through to step 4.
+        //   1. Expire dead VOTERS first -- a dead voter counts against quorum, so
+        //      reclaiming it protects liveness.
+        //   2. Promote caught-up learners -- this must come BEFORE expiring dead
+        //      learners. If expiry runs first and there is always a peer to expire
+        //      (e.g. stale ids left by restarts with ephemeral p2p identities),
+        //      promotion is never reached: joining workers sit as learners until the
+        //      await_promotion timeout, then restart, which creates another stale id to
+        //      expire -- a self-sustaining churn loop. Promotion only promotes learners
+        //      caught up within `learner_promotion_threshold`, so dead/lagging ids are
+        //      never wrongly promoted; they fall through to step 4.
         //   3. Add newly-discovered learners from gossip.
         //   4. Expire dead learners last (no quorum impact).
         if self.expire_peers(&expirable, ExpireScope::VotersOnly).await? > 0 {

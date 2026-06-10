@@ -24,8 +24,8 @@ impl StateInner {
     /// Get the cluster ID of the local node
     ///
     /// Served from cached boot config (`StateConfig`) so the hot request path
-    /// (e.g. `/v2/network`) does not open an inline MDBX read tx on an api-server
-    /// worker thread.
+    /// (e.g. `/v2/network`) does not open an inline MDBX read tx on an
+    /// api-server worker thread.
     pub fn get_cluster_id(&self) -> Result<ClusterId, StateError> {
         Ok(self.config.cluster_id.clone())
     }
@@ -42,8 +42,9 @@ impl StateInner {
 
     /// Get the relayer fee for a given asset
     ///
-    /// Served from cached boot config; a per-ticker override falling back to the
-    /// default fee, matching the on-disk `tx.get_relayer_fee` semantics.
+    /// Served from cached boot config; a per-ticker override falling back to
+    /// the default fee, matching the on-disk `tx.get_relayer_fee`
+    /// semantics.
     pub fn get_relayer_fee(&self, ticker: &str) -> Result<FixedPoint, StateError> {
         Ok(self
             .config
@@ -161,10 +162,11 @@ mod test {
         );
     }
 
-    /// Validate the cached node-metadata getters (Fix 3, Edit 1): `get_cluster_id`,
-    /// `get_relayer_fee_addr`, and `get_relayer_fee` are served from the cached
-    /// `StateConfig` (no inline MDBX read on the api-server worker thread), and the
-    /// per-ticker override / default fallback matches the on-disk semantics.
+    /// Validate the cached node-metadata getters (Fix 3, Edit 1):
+    /// `get_cluster_id`, `get_relayer_fee_addr`, and `get_relayer_fee` are
+    /// served from the cached `StateConfig` (no inline MDBX read on the
+    /// api-server worker thread), and the per-ticker override / default
+    /// fallback matches the on-disk semantics.
     #[tokio::test]
     async fn test_cached_node_metadata_getters() {
         use std::time::Duration;

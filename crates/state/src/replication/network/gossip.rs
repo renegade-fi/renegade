@@ -26,8 +26,8 @@ use super::{P2PNetworkFactory, P2PRaftNetwork, P2PRaftNetworkWrapper, RaftReques
 const ERR_INVALID_RESPONSE: &str = "invalid response type from raft peer";
 
 /// The maximum time to wait for a reply to a raft RPC before failing it as a
-/// (recoverable, openraft-retried) network error. An unbounded await here lets a
-/// never-answering peer or leader hang the caller -- e.g. a forwarded client
+/// (recoverable, openraft-retried) network error. An unbounded await here lets
+/// a never-answering peer or leader hang the caller -- e.g. a forwarded client
 /// write -- indefinitely.
 const RAFT_RPC_TIMEOUT: Duration = Duration::from_secs(30);
 

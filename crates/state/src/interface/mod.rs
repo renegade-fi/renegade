@@ -65,15 +65,15 @@ const DEFAULT_MAX_ELECTION_MS: u64 = 15_000; // 15 seconds
 const PANIC_CHECK_MS: u64 = 10_000; // 10 seconds
 /// The frequency with which to check for missed expiry
 const MEMBERSHIP_SYNC_INTERVAL_MS: u64 = 10_000; // 10 seconds
-/// How often to emit the periodic raft-health gauge log. Throttled so it does not
-/// dominate the logs; the membership-sync tick itself still runs every
+/// How often to emit the periodic raft-health gauge log. Throttled so it does
+/// not dominate the logs; the membership-sync tick itself still runs every
 /// `MEMBERSHIP_SYNC_INTERVAL_MS`.
 const RAFT_HEALTH_LOG_INTERVAL_MS: u64 = 60_000; // 60 seconds
 /// The maximum time a single membership-sync tick may run before it is
 /// abandoned. The clock schedules these callbacks sequentially, so a tick that
-/// hangs (e.g. on a wedged membership change) stops ALL future ticks and freezes
-/// membership reconciliation. Bounding each tick guarantees the timer keeps
-/// running and surfaces the hang instead of silently wedging.
+/// hangs (e.g. on a wedged membership change) stops ALL future ticks and
+/// freezes membership reconciliation. Bounding each tick guarantees the timer
+/// keeps running and surfaces the hang instead of silently wedging.
 const MEMBERSHIP_SYNC_TIMEOUT_MS: u64 = 20_000; // 20 seconds
 /// The frequency with which to self-heal orphaned serial-preemption queues
 const ORPHAN_SELFHEAL_INTERVAL_MS: u64 = 15_000; // 15 seconds
@@ -457,12 +457,12 @@ impl StateInner {
     /// then the node assigned as its executor stops driving it (worker churn,
     /// scale-down, or the seed regenerating its p2p identity on restart). The
     /// head's executor no longer matches any live peer, so no `Run` job is ever
-    /// re-dispatched; the queue stays `SerialPreemptionQueued` forever and every
-    /// further settle is rejected (`deferred-queue full`, 0 fills). The startup
-    /// self-heal (`clear_orphaned_preempted_queues`) only runs once, so orphans
-    /// formed during steady-state operation persist until the next reboot. This
-    /// timer runs the same idempotent, leader-gated clear on a cadence so the
-    /// wedge is cleared continuously.
+    /// re-dispatched; the queue stays `SerialPreemptionQueued` forever and
+    /// every further settle is rejected (`deferred-queue full`, 0 fills).
+    /// The startup self-heal (`clear_orphaned_preempted_queues`) only runs
+    /// once, so orphans formed during steady-state operation persist until
+    /// the next reboot. This timer runs the same idempotent, leader-gated
+    /// clear on a cadence so the wedge is cleared continuously.
     async fn setup_orphaned_queue_selfheal_timer(
         &self,
         clock: &SystemClock,

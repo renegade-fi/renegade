@@ -396,8 +396,8 @@ impl StateApplicator {
     /// rejection if this fails.
     ///
     /// Returns the preemption outcome: `Preempted` if the queues were taken, or
-    /// `Deferred` if a committed head blocked a serial preemption and the settle
-    /// was recorded as pending (only possible on the serial path).
+    /// `Deferred` if a committed head blocked a serial preemption and the
+    /// settle was recorded as pending (only possible on the serial path).
     fn try_preempt_queues(
         &self,
         keys: &[TaskQueueKey],
@@ -415,16 +415,17 @@ impl StateApplicator {
         Ok(outcome)
     }
 
-    /// Run any deferred serial preemption recorded against a queue that has just
-    /// become unblocked by a task completion.
+    /// Run any deferred serial preemption recorded against a queue that has
+    /// just become unblocked by a task completion.
     ///
     /// Invoked from the pop path after a task is removed from `key`. Re-checks
     /// that every queue the pending settle targets is now safe and, if so, runs
-    /// the real preemption and clears the pending records. All-or-nothing: while
-    /// any target queue is still committed the records are left in place to
-    /// re-trigger on the next completion. Panic-free: any inconsistency results
-    /// in a no-op (or a transition rejection that rolls back the tx), never a
-    /// panic, since this runs on the apply path on every node.
+    /// the real preemption and clears the pending records. All-or-nothing:
+    /// while any target queue is still committed the records are left in
+    /// place to re-trigger on the next completion. Panic-free: any
+    /// inconsistency results in a no-op (or a transition rejection that
+    /// rolls back the tx), never a panic, since this runs on the apply path
+    /// on every node.
     fn run_unblocked_preemptions(
         &self,
         key: TaskQueueKey,
@@ -571,7 +572,8 @@ mod test {
 
     /// Tests Stage 1 defer-not-reject end-to-end through the applicator: a
     /// preemptive settle blocked by a committed head defers, then runs
-    /// automatically via the pop-time completion hook when the blocker finishes.
+    /// automatically via the pop-time completion hook when the blocker
+    /// finishes.
     #[test]
     #[allow(non_snake_case)]
     fn test_enqueue_preemptive__defer_then_resume_on_completion() -> Result<()> {
@@ -631,9 +633,10 @@ mod test {
     }
 
     /// Tests Stage 1 defer-not-reject across BOTH counterparty queues -- the
-    /// shape that actually occurs in settlement. Both queue heads are committed,
-    /// so the settle defers. Completing one blocker must NOT run it (the other
-    /// queue is still committed); completing the second runs it exactly once.
+    /// shape that actually occurs in settlement. Both queue heads are
+    /// committed, so the settle defers. Completing one blocker must NOT run
+    /// it (the other queue is still committed); completing the second runs
+    /// it exactly once.
     #[test]
     #[allow(non_snake_case)]
     fn test_enqueue_preemptive__defer_two_queues_all_or_nothing() -> Result<()> {
@@ -767,9 +770,9 @@ mod test {
     }
 
     /// Stage 4 fairness: with no pending preemptions on any target queue, the
-    /// immediate fast path is preserved -- a single-queue settle on a free queue
-    /// still preempts and runs immediately (no latency regression in the
-    /// uncontended common case).
+    /// immediate fast path is preserved -- a single-queue settle on a free
+    /// queue still preempts and runs immediately (no latency regression in
+    /// the uncontended common case).
     #[test]
     #[allow(non_snake_case)]
     fn test_fairness__uncontended_fast_path_intact() -> Result<()> {
@@ -809,11 +812,12 @@ mod test {
     /// Each round: a two-queue INTERNAL settle `[Q, U]` is enqueued while its
     /// counterparty `U` is busy (a committed order task), so it DEFERS and sits
     /// pending at the head of the hot quoter queue `Q` — ready, just waiting on
-    /// `U`. Then a burst of single-queue EXTERNAL settles `[Q]` arrives. Without
-    /// fairness each external takes the immediate fast path and settles AHEAD of
-    /// the waiting internal (a "bypass" — exactly how external flow starves
-    /// internal flow in prod). With fairness, each external instead defers behind
-    /// the pending internal, so when `U` frees the internal settles first.
+    /// `U`. Then a burst of single-queue EXTERNAL settles `[Q]` arrives.
+    /// Without fairness each external takes the immediate fast path and
+    /// settles AHEAD of the waiting internal (a "bypass" — exactly how
+    /// external flow starves internal flow in prod). With fairness, each
+    /// external instead defers behind the pending internal, so when `U`
+    /// frees the internal settles first.
     ///
     /// The metric is bypasses: external settles that jumped a ready-and-waiting
     /// internal settle. Fairness must drive it to zero.
@@ -901,11 +905,12 @@ mod test {
 
     /// Stage 4 REGRESSION: the deferred-preemption FIFO only drains on
     /// `pop_task` (via `run_unblocked_preemptions`). With fairness ON, a settle
-    /// whose target queue is FREE but whose FIFO is non-empty is DEFERRED rather
-    /// than run. If nothing then pops that queue (it's idle), the drain never
-    /// triggers and the deferred settle is stuck forever — the production wedge
-    /// observed after the cancel-flood fix made quoter queues idle (every settle
-    /// defers, nothing pops, FIFO never drains -> 0 fills).
+    /// whose target queue is FREE but whose FIFO is non-empty is DEFERRED
+    /// rather than run. If nothing then pops that queue (it's idle), the
+    /// drain never triggers and the deferred settle is stuck forever — the
+    /// production wedge observed after the cancel-flood fix made quoter
+    /// queues idle (every settle defers, nothing pops, FIFO never drains ->
+    /// 0 fills).
     ///
     /// Returns whether the single-queue settle on the free queue actually ran.
     fn ran_on_free_queue_with_pending(fairness: bool) -> Result<bool> {
@@ -999,27 +1004,34 @@ mod test {
         Ok(())
     }
 
-    /// Path B detector: `orphaned_preempt_head` flags a queue stuck in
-    /// SerialPreemptionQueued by a COMMITTED head (orphaned settle), and only
-    /// then. A non-committed head (settle still on its way to running) and a
-    /// healthy NotPreempted queue are not flagged.
+    /// Path B detector: `orphaned_preempt_head` surfaces the head of a queue
+    /// stuck in `SerialPreemptionQueued` paired with its commit status -- both
+    /// an uncommitted head (a settle never driven past `Pending`) and a
+    /// committed head (a settle orphaned mid-submit). A healthy
+    /// `NotPreempted` queue is never flagged. The caller
+    /// (`clear_orphaned_preempted_queues`) decides which to reap and when
+    /// via the age gate.
     #[test]
     #[allow(non_snake_case)]
-    fn test_orphaned_preempt_head__detects_committed_wedge() -> Result<()> {
+    fn test_orphaned_preempt_head__surfaces_head_and_commit_status() -> Result<()> {
         let (applicator, task_recv) = setup_mock_applicator_with_driver_queue();
         let peer = get_local_peer_id(&applicator);
         let acct = AccountId::new_v4();
 
         // Preempt the empty queue with a serial settle -> runs immediately
-        // (SerialPreemptionQueued, head not yet committed).
+        // (SerialPreemptionQueued, head not yet committed). The head is surfaced
+        // as uncommitted so the caller's age gate can reap it if it never
+        // advances (orphaned at `Pending`).
         let settle = mock_queued_task(acct);
         applicator.enqueue_preemptive_task(&[acct], &settle, &peer, true)?;
         assert_run_task(task_recv.recv()?, settle.id);
-
-        // Head not committed yet -> not a wedge.
         {
             let tx = applicator.db().new_read_tx()?;
-            assert_eq!(tx.orphaned_preempt_head(&acct)?, None);
+            assert_eq!(
+                tx.orphaned_preempt_head(&acct)?,
+                Some((settle.id, false)),
+                "uncommitted SerialPreemptionQueued head must be surfaced as not-committed"
+            );
         }
 
         // Settle commits (reaches submit); its worker then "dies" (never pops).
@@ -1031,8 +1043,8 @@ mod test {
             let tx = applicator.db().new_read_tx()?;
             assert_eq!(
                 tx.orphaned_preempt_head(&acct)?,
-                Some(settle.id),
-                "committed SerialPreemptionQueued head must be flagged as an orphaned wedge"
+                Some((settle.id, true)),
+                "committed SerialPreemptionQueued head must be surfaced as committed"
             );
         }
 

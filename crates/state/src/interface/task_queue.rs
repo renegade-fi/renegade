@@ -20,6 +20,29 @@ use crate::{
     },
 };
 
+/// Decide whether a wedged `SerialPreemptionQueued` head should be reaped by
+/// `clear_orphaned_preempted_queues`, given its commit status, the caller's
+/// age gate (`min_head_age_millis`; `0` == boot path), and the head's age
+/// (`None` on the boot path, which carries no age signal).
+///
+/// - Boot (`gate == 0`): reap a committed head (necessarily orphaned -- no task
+///   future is executing yet), but never an uncommitted one (no age signal to
+///   separate a healthy just-reloaded settle from an orphan).
+/// - Periodic (`gate > 0`): reap any head, committed or not, once it has aged
+///   past the gate -- a healthy settle leaves `Pending` in ms and commits its
+///   submit in seconds, so an older head is stuck.
+fn should_reap_wedged_head(
+    committed: bool,
+    min_head_age_millis: u64,
+    age_millis: Option<u64>,
+) -> bool {
+    match (committed, min_head_age_millis) {
+        (true, 0) => true,
+        (false, 0) => false,
+        (_, gate) => matches!(age_millis, Some(age) if age >= gate),
+    }
+}
+
 impl StateInner {
     // -----------
     // | Getters |
@@ -47,30 +70,36 @@ impl StateInner {
     }
 
     /// Self-heal task queues wedged in `SerialPreemptionQueued` by an orphaned
-    /// committed preemptive (settle) task -- the node that was running the
-    /// settle stopped driving it (worker churn, scale-down, or the seed
-    /// regenerating its p2p identity on restart) without completing it, so the
-    /// queue stays paused and no further settle can run (`deferred-queue full`
-    /// forever). Clears each such queue via the raft `ClearTaskQueue` proposal
-    /// and enqueues a `RefreshAccount` to re-sync wallet state. Leader-only and
+    /// preemptive (settle) task -- the node that was running the settle stopped
+    /// driving it (worker churn, scale-down, or the seed regenerating its p2p
+    /// identity on restart) without completing it, so the queue stays paused
+    /// and no further settle can run (`deferred-queue full` forever). The
+    /// wedged head may be COMMITTED (the settle reached its on-chain
+    /// submit) or UNCOMMITTED (a settle that never advanced past `Pending`
+    /// because its executor departed before stepping it even once). Clears
+    /// each such queue via the raft `ClearTaskQueue` proposal and enqueues
+    /// a `RefreshAccount` to re-sync wallet state. Leader-only and
     /// idempotent. Returns the number of queues cleared.
     ///
     /// Does NOT re-run the orphaned settle (re-running a committed settle could
     /// double-settle on-chain); the match is re-derived by the matcher and the
-    /// wallet reconciled by the refresh.
+    /// wallet reconciled by the refresh. An uncommitted head took no on-chain
+    /// action, so clearing it is strictly safe.
     ///
-    /// `min_head_age_millis` controls the safety gate for the two callers:
-    /// - `0` (node startup): clear any committed `SerialPreemptionQueued` head.
-    ///   Safe at boot because no task future is executing yet, so a committed
-    ///   head is necessarily orphaned.
-    /// - `> 0` (periodic timer): only clear a head whose task was created longer
-    ///   ago than this threshold. During steady-state operation a *healthy*
-    ///   in-flight settle also sits at committed `SubmittingTx` /
-    ///   `SerialPreemptionQueued` while it submits, so clearing on state alone
-    ///   would abandon it. A settle completes in seconds (even with the
-    ///   `send_tx` timeout and retries), so a committed head older than the
-    ///   threshold is stuck -- whether the executor departed (worker churn,
-    ///   seed p2p-identity change) or it is otherwise no longer being driven.
+    /// `min_head_age_millis` selects the safety gate, dispatched in
+    /// `should_reap_wedged_head`:
+    /// - `0` (node startup): clear a COMMITTED head unconditionally (no task
+    ///   future is executing yet, so a committed head is necessarily orphaned),
+    ///   but NEVER an uncommitted head -- at boot there is no age signal to
+    ///   tell a healthy just-reloaded settle from an orphan, and the periodic
+    ///   timer catches it shortly after.
+    /// - `> 0` (periodic timer): clear a head (committed or uncommitted) only
+    ///   once its task was created longer ago than this threshold. A *healthy*
+    ///   in-flight settle sits at committed `SubmittingTx` while it submits
+    ///   (seconds) and a healthy enqueued settle leaves `Pending` in
+    ///   milliseconds, so a head older than the threshold is stuck regardless
+    ///   of commit state -- the executor departed or it is otherwise no longer
+    ///   being driven.
     pub async fn clear_orphaned_preempted_queues(
         &self,
         min_head_age_millis: u64,
@@ -87,32 +116,34 @@ impl StateInner {
             let key = account_id;
             let wedged_head =
                 self.with_read_tx(move |tx| Ok(tx.orphaned_preempt_head(&key)?)).await?;
-            let Some(task_id) = wedged_head else { continue };
+            let Some((task_id, committed)) = wedged_head else { continue };
 
-            // Periodic path: skip heads younger than the staleness threshold --
-            // they may be healthy settles still legitimately submitting. A truly
-            // stuck head only grows older and is cleared on a later tick.
-            if min_head_age_millis > 0 {
+            // Compute the head's age for the periodic gate. The boot path
+            // (`min_head_age_millis == 0`) has no age signal and ignores it; a
+            // vanished task has nothing to clear.
+            let age_millis = if min_head_age_millis > 0 {
                 let created_at = self
                     .with_read_tx(move |tx| {
                         Ok(tx.get_task_deserialized(&task_id)?.map(|t| t.created_at))
                     })
                     .await?;
                 match created_at {
-                    Some(ts) => {
-                        let age = get_current_time_millis().saturating_sub(ts);
-                        if age < min_head_age_millis {
-                            continue;
-                        }
-                    },
+                    Some(ts) => Some(get_current_time_millis().saturating_sub(ts)),
                     None => continue, // task vanished; nothing to clear
                 }
+            } else {
+                None
+            };
+
+            if !should_reap_wedged_head(committed, min_head_age_millis, age_millis) {
+                continue;
             }
 
             tracing::warn!(
                 %account_id,
                 %task_id,
-                "clearing orphaned SerialPreemptionQueued task queue (wedged committed settle head)"
+                committed,
+                "clearing orphaned SerialPreemptionQueued task queue (wedged settle head)"
             );
             self.clear_task_queue(&account_id).await?.await?;
             if let Err(e) = self.append_account_refresh_task(account_id).await {
@@ -340,6 +371,30 @@ mod test {
 
     use crate::test_helpers::{mock_db, mock_state};
 
+    /// `should_reap_wedged_head` truth table: the boot path reaps only
+    /// committed heads; the periodic gate reaps any head once aged, never a
+    /// fresh one.
+    #[test]
+    fn test_should_reap_wedged_head() {
+        use super::should_reap_wedged_head as reap;
+        const GATE: u64 = 120_000;
+
+        // Boot path (gate == 0): committed orphan -> reap; uncommitted -> never
+        // (no age signal to tell a healthy just-reloaded settle from an orphan).
+        assert!(reap(true, 0, None));
+        assert!(!reap(false, 0, None));
+
+        // Periodic path (gate > 0): reap a head -- committed or uncommitted --
+        // only once it has aged past the gate.
+        assert!(!reap(true, GATE, Some(GATE - 1)));
+        assert!(reap(true, GATE, Some(GATE)));
+        assert!(!reap(false, GATE, Some(GATE - 1)));
+        assert!(reap(false, GATE, Some(GATE + 1)));
+        // No age available -> cannot reap on the periodic path.
+        assert!(!reap(false, GATE, None));
+        assert!(!reap(true, GATE, None));
+    }
+
     /// Tests getter methods on an empty queue
     #[tokio::test]
     async fn test_empty_queue() {
@@ -439,22 +494,24 @@ mod test {
         w3.await.unwrap();
     }
 
-    /// Reproduction for ticket 2026-06-02-relayer-matching-settlement-concurrency-audit:
+    /// Reproduction for ticket
+    /// 2026-06-02-relayer-matching-settlement-concurrency-audit:
     /// the settlement-starvation that drops market-maker internal-match fills.
     ///
     /// A market-maker wallet's serial task queue is held by a COMMITTED
-    /// order-management task (a quote the MM just placed) at the instant a match
-    /// against it settles. Settlement is a serial PREEMPTION over both
-    /// counterparties' queues, which the state layer rejects while a committed
-    /// task is at the queue head (storage::is_serial_preemption_safe). In
-    /// production a single immediate attempt is made, so the fill is dropped.
+    /// order-management task (a quote the MM just placed) at the instant a
+    /// match against it settles. Settlement is a serial PREEMPTION over
+    /// both counterparties' queues, which the state layer rejects while a
+    /// committed task is at the queue head
+    /// (storage::is_serial_preemption_safe). In production a single
+    /// immediate attempt is made, so the fill is dropped.
     ///
     /// This test shows the rejection is TRANSIENT: once the committed task
     /// completes and clears the queue, the same preemption succeeds — so a
     /// bounded retry-with-backoff that outlasts the commit window resolves it
-    /// (matching-engine-worker `manager/tasks.rs`, "Approach A"). It runs entirely
-    /// in-process against the real preemptive task-queue state machine — the lab
-    /// loop that replaces deploy-and-grep.
+    /// (matching-engine-worker `manager/tasks.rs`, "Approach A"). It runs
+    /// entirely in-process against the real preemptive task-queue state
+    /// machine — the lab loop that replaces deploy-and-grep.
     #[tokio::test]
     async fn test_settlement_starved_by_committed_order_task() {
         // Timeout-guarded so a queue/preemption deadlock fails fast instead of
@@ -492,7 +549,7 @@ mod test {
                 .enqueue_preemptive_task(
                     vec![mm, taker],
                     mock_task_descriptor(mm),
-                    true, /* serial */
+                    true, // serial
                 )
                 .await
             {
@@ -521,11 +578,12 @@ mod test {
     /// 2026-06-02-relayer-matching-settlement-concurrency-audit.
     ///
     /// Reproduces market-maker internal-match settlement starvation under order
-    /// churn and A/Bs give-up vs retry, driving the preemptive task queue DIRECTLY
-    /// via a write tx — NOT mock_state/raft, which stalls and leaks threads at the
-    /// volume a sim needs (the raft path is exercised by the L0 interface test).
-    /// The MM is "busy" (a committed order task at its queue head) for COMMIT_TICKS,
-    /// then free for GAP_TICKS; matches arrive every MATCH_EVERY ticks. Synchronous
+    /// churn and A/Bs give-up vs retry, driving the preemptive task queue
+    /// DIRECTLY via a write tx — NOT mock_state/raft, which stalls and
+    /// leaks threads at the volume a sim needs (the raft path is exercised
+    /// by the L0 interface test). The MM is "busy" (a committed order task
+    /// at its queue head) for COMMIT_TICKS, then free for GAP_TICKS;
+    /// matches arrive every MATCH_EVERY ticks. Synchronous
     /// and deterministic, so it can't hang — no timeout guard needed.
     #[test]
     fn sim_settlement_starvation_ab() {
@@ -604,12 +662,13 @@ mod test {
         );
     }
 
-    /// L4 — settlement-strategy comparison across a small churn sweep, for ticket
-    /// 2026-06-02-relayer-matching-settlement-concurrency-audit. Scores candidate
-    /// strategies on the SAME workload at rising MM contention. give-up + retry are
-    /// MEASURED against the real preemptive queue (tx-direct); priority-preempt and
-    /// separate-lane are PROJECTED (they need state-machine changes not yet built)
-    /// to show whether they're worth implementing. Synchronous + deterministic.
+    /// L4 — settlement-strategy comparison across a small churn sweep, for
+    /// ticket 2026-06-02-relayer-matching-settlement-concurrency-audit.
+    /// Scores candidate strategies on the SAME workload at rising MM
+    /// contention. give-up + retry are MEASURED against the real preemptive
+    /// queue (tx-direct); priority-preempt and separate-lane are PROJECTED
+    /// (they need state-machine changes not yet built) to show whether
+    /// they're worth implementing. Synchronous + deterministic.
     #[test]
     fn sim_strategy_comparison() {
         const TICKS: usize = 60;
@@ -786,14 +845,14 @@ mod test {
         );
         // DEFER findings (these CORRECT the ticket's draft, which claimed defer
         // settles 100% under saturation):
-        //  - defer captures at least as many free windows as the engine-side
-        //    retry (it's deterministic / state-layer-held, can't be raced or
-        //    lost), so it never settles fewer; and
-        //  - defer is STILL bounded by the wallet's free-window capacity — it
-        //    cannot preempt a committed head (Rule 1) — so it does NOT reach
-        //    total under saturation. Only priority (order-yield, at a rollback
-        //    cost) or a separate lane settle all. Defer's value is determinism
-        //    and zero-drop, NOT raw saturation throughput.
+        //  - defer captures at least as many free windows as the engine-side retry
+        //    (it's deterministic / state-layer-held, can't be raced or lost), so it
+        //    never settles fewer; and
+        //  - defer is STILL bounded by the wallet's free-window capacity — it cannot
+        //    preempt a committed head (Rule 1) — so it does NOT reach total under
+        //    saturation. Only priority (order-yield, at a rollback cost) or a separate
+        //    lane settle all. Defer's value is determinism and zero-drop, NOT raw
+        //    saturation throughput.
         assert!(
             sat_defer >= sat_retry,
             "defer must capture at least as many windows as retry (sat_defer={sat_defer}, sat_retry={sat_retry})"
@@ -813,13 +872,14 @@ mod test {
              (sat_priority={sat_priority}, sat_defer={sat_defer})"
         );
         // ROI ranking (relaxed goal: improve rates, not strictly 100%):
-        //  - retry: simplest (one-file engine retry), 0 rollback, recovers most loss
-        //    at low/moderate contention; collapses to give-up only at full saturation.
+        //  - retry: simplest (one-file engine retry), 0 rollback, recovers most loss at
+        //    low/moderate contention; collapses to give-up only at full saturation.
         //  - defer: retry made deterministic/lossless (state-machine change); same
         //    throughput.
         //  - priority: highest single-lane rate (preempts non-committed orders) but
         //    pays rollbacks; needs order-yield-before-commit plumbing.
-        //  - lane: the ceiling (no rollback) but needs the disjoint-state proof + rework.
+        //  - lane: the ceiling (no rollback) but needs the disjoint-state proof +
+        //    rework.
         // => ship retry first (high ROI, low risk); escalate to priority/lane only if
         //    the saturated tail stays material.
         eprintln!(

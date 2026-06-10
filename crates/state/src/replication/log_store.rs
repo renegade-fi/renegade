@@ -249,9 +249,10 @@ mod test {
 
     /// A node whose head logs are compacted but whose persisted
     /// `last_purged_log_id` is missing must still report a non-None purge point
-    /// from `get_log_state`. Otherwise openraft's `LogIdList::load_log_ids` calls
-    /// `get_log_id(0)` and crash-loops with `'LogIndex(0)' violates: try to get
-    /// log at index 0`. Regression test for the seed reboot crash-loop.
+    /// from `get_log_state`. Otherwise openraft's `LogIdList::load_log_ids`
+    /// calls `get_log_id(0)` and crash-loops with `'LogIndex(0)' violates:
+    /// try to get log at index 0`. Regression test for the seed reboot
+    /// crash-loop.
     #[tokio::test]
     async fn test_get_log_state_reconstructs_missing_purge_point() {
         let applicator = mock_applicator();

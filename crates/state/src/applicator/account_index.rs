@@ -722,9 +722,10 @@ pub(crate) mod test {
     }
 
     /// Fix A: a settlement update that FULLY consumes an order (amount_in -> 0)
-    /// must REMOVE the order, not leave an amount-0 zombie. A retained zombie is
-    /// un-cancellable (its on-chain nonce is spent) and the quoter rebalance
-    /// re-detects it as a duplicate forever, flooding CancelOrder tasks.
+    /// must REMOVE the order, not leave an amount-0 zombie. A retained zombie
+    /// is un-cancellable (its on-chain nonce is spent) and the quoter
+    /// rebalance re-detects it as a duplicate forever, flooding CancelOrder
+    /// tasks.
     #[test]
     #[allow(non_snake_case)]
     fn test_update_order__full_consume_removes() {

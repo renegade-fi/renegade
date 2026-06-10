@@ -45,9 +45,10 @@ const ERR_CANNOT_CONCURRENTLY_PREEMPT: &str = "concurrent preemption not allowed
 /// `false`: land the (additive) defer machinery with zero behavior change, then
 /// flip this to `true` in a one-line follow-up commit once verified on testnet.
 /// Every node MUST run the same value (a mixed-version window diverges, as with
-/// any apply-path change). This `const` is not per-chain: a build with it `true`
-/// enables defer on any cluster that takes the image, so mainnet is gated by
-/// deploy targeting (only push the new image to sepolia-v2 until proven).
+/// any apply-path change). This `const` is not per-chain: a build with it
+/// `true` enables defer on any cluster that takes the image, so mainnet is
+/// gated by deploy targeting (only push the new image to sepolia-v2 until
+/// proven).
 #[cfg_attr(test, allow(dead_code))]
 const ENABLE_SETTLE_DEFER: bool = true;
 
@@ -83,8 +84,8 @@ pub(crate) fn set_test_settle_defer(enabled: bool) {
 /// rollback) -- so settlement isn't starved by a perpetually-requoting wallet.
 /// Bounded per queue by `MAX_CONSECUTIVE_YIELDS` so requotes aren't starved in
 /// turn. Off by default: this is an apply-path behavior change (land dark, flip
-/// after testnet) and also requires the task-driver to abort a yielded committed
-/// order task.
+/// after testnet) and also requires the task-driver to abort a yielded
+/// committed order task.
 #[cfg_attr(test, allow(dead_code))]
 const ENABLE_ORDER_YIELD: bool = true;
 
@@ -117,37 +118,37 @@ pub(crate) fn set_test_order_yield(enabled: bool) {
 /// Feature flag gating Stage 4 "two-queue settle fairness".
 ///
 /// A `SettleExternalMatch` preempts ONE queue (the taker is off-chain), while a
-/// `SettleInternalMatch`/`SettlePrivateMatch` preempts TWO (both counterparties,
-/// all-or-nothing). When the shared (quoter) queue is momentarily free, an
-/// arriving single-queue settle takes the immediate fast path and runs even
-/// though a lower-`seq` two-queue settle is already waiting in that queue's
-/// pending FIFO for its OTHER queue to free -- the single-queue settle keeps
-/// stealing the window, so the two-queue settle starves (observed: internal +
-/// MM matches at ~100% `deferred-queue full`, 0 fills).
+/// `SettleInternalMatch`/`SettlePrivateMatch` preempts TWO (both
+/// counterparties, all-or-nothing). When the shared (quoter) queue is
+/// momentarily free, an arriving single-queue settle takes the immediate fast
+/// path and runs even though a lower-`seq` two-queue settle is already waiting
+/// in that queue's pending FIFO for its OTHER queue to free -- the single-queue
+/// settle keeps stealing the window, so the two-queue settle starves (observed:
+/// internal + MM matches at ~100% `deferred-queue full`, 0 fills).
 ///
 /// When enabled, an arriving serial preemption that shares a queue with any
 /// already-pending (lower-`seq`) preemption must NOT take the immediate fast
 /// path -- it defers into the FIFO behind the waiting entries, so the queue
 /// stays free for the older two-queue settle to drain in `seq` order. No
-/// liquidity fragmentation; orders stay dual-book. Requires `ENABLE_SETTLE_DEFER`
-/// (the FIFO is the defer machinery). Reverse starvation (a single-queue settle
-/// behind a two-queue settle whose other queue is busy) is naturally bounded by
-/// the counterparty's task duration -- the two-queue settle becomes runnable
-/// within one task of both queues being free; an explicit cap can be added if
-/// telemetry shows external-settle regression.
+/// liquidity fragmentation; orders stay dual-book. Requires
+/// `ENABLE_SETTLE_DEFER` (the FIFO is the defer machinery). Reverse starvation
+/// (a single-queue settle behind a two-queue settle whose other queue is busy)
+/// is naturally bounded by the counterparty's task duration -- the two-queue
+/// settle becomes runnable within one task of both queues being free; an
+/// explicit cap can be added if telemetry shows external-settle regression.
 ///
 /// Apply-path behavior change on raft-replicated state: every node MUST run the
 /// same value; gated to sepolia-v2 by deploy targeting (not per-chain in code).
 ///
 /// Disabled 2026-06-07: once the cancel-flood fixes (remove-consumed-orders +
 /// idempotent/yieldable cancel + per-quoter rebalance lock) made quoter queues
-/// idle, fairness WEDGED settlement. The deferred-preemption FIFO drains ONLY on
-/// `pop_task`; with fairness on, a runnable settle on a FREE queue still defers
-/// (FIFO non-empty), and with the queue idle nothing pops -> the drain never
-/// fires -> 0 fills (see `sim_stage4_idle_queue_wedge`). Disabling restores the
-/// fast path: a settle on a free queue runs immediately and its completion pops,
-/// draining the FIFO. Re-enable only after the drain also triggers on
-/// enqueue-when-safe (not just on pop).
+/// idle, fairness WEDGED settlement. The deferred-preemption FIFO drains ONLY
+/// on `pop_task`; with fairness on, a runnable settle on a FREE queue still
+/// defers (FIFO non-empty), and with the queue idle nothing pops -> the drain
+/// never fires -> 0 fills (see `sim_stage4_idle_queue_wedge`). Disabling
+/// restores the fast path: a settle on a free queue runs immediately and its
+/// completion pops, draining the FIFO. Re-enable only after the drain also
+/// triggers on enqueue-when-safe (not just on pop).
 #[cfg_attr(test, allow(dead_code))]
 const ENABLE_SETTLE_FAIRNESS: bool = false;
 
@@ -167,7 +168,8 @@ fn fairness_enabled() -> bool {
     TEST_SETTLE_FAIRNESS.with(|c| c.get())
 }
 
-/// Test-only: enable or disable two-queue settle fairness for the current thread
+/// Test-only: enable or disable two-queue settle fairness for the current
+/// thread
 #[cfg(test)]
 pub(crate) fn set_test_settle_fairness(enabled: bool) {
     TEST_SETTLE_FAIRNESS.with(|c| c.set(enabled));
@@ -187,10 +189,10 @@ pub enum PreemptOutcome {
 /// FIFO). Bounds buildup: a target queue at this depth rejects further serial
 /// preemptions as backpressure rather than buffering without limit.
 ///
-/// Raised 16 -> 64: testnet hot quoter accounts saturated the 16-deep FIFO under
-/// real internal-match flow (`serial preemption deferred-queue full` rejects),
-/// so absorb larger bursts. This only buys headroom; the underlying limit is
-/// per-account serial settlement throughput (1/T).
+/// Raised 16 -> 64: testnet hot quoter accounts saturated the 16-deep FIFO
+/// under real internal-match flow (`serial preemption deferred-queue full`
+/// rejects), so absorb larger bursts. This only buys headroom; the underlying
+/// limit is per-account serial settlement throughput (1/T).
 const MAX_PENDING_PER_QUEUE: usize = 64;
 
 /// A deferred (pending) serial preemption, recorded against every queue it must
@@ -203,8 +205,8 @@ const MAX_PENDING_PER_QUEUE: usize = 64;
 /// all those queues are serial-preemption-safe. The global total order means
 /// the globally-lowest pending settle is always the head of all its queues, so
 /// progress is guaranteed and the "two settles each waiting on the other's
-/// queue" deadlock -- which the previous one-pending-per-queue rule prevented --
-/// cannot occur.
+/// queue" deadlock -- which the previous one-pending-per-queue rule prevented
+/// -- cannot occur.
 #[derive(Clone, Debug, Archive, RkyvSerialize, RkyvDeserialize)]
 pub(crate) struct PendingEntry {
     /// The deferred preemptive (settle) task
@@ -394,19 +396,28 @@ impl<T: TransactionKind> StateTxn<'_, T> {
         Ok(can_preempt)
     }
 
-    /// If this queue is wedged in `SerialPreemptionQueued` by a COMMITTED head
-    /// preemptive task, return that task id, else `None`.
+    /// If this queue is wedged in `SerialPreemptionQueued`, return its head
+    /// preemptive task id paired with whether that head is committed, else
+    /// `None`.
     ///
-    /// This is the orphaned-settle wedge: a settle preempts the queue and
-    /// commits, then its worker restarts (new p2p id) without completing the
-    /// task. The queue stays `SerialPreemptionQueued` forever, so
-    /// `can_preempt_serial()` is false and no further settle can run. A
-    /// NON-committed head is excluded -- that is a settle still legitimately on
-    /// its way to running, not a wedge.
+    /// Two distinct orphaned-settle wedges leave a queue stuck here forever
+    /// (`can_preempt_serial()` false, no further settle can run):
+    /// - COMMITTED head: a settle preempted the queue and reached its on-chain
+    ///   submit, then its worker departed (restart / new p2p id) without
+    ///   completing the task.
+    /// - UNCOMMITTED head: a settle preempted the queue but was never driven
+    ///   past `Pending` -- its assigned executor departed (worker churn, seed
+    ///   p2p-identity change on `-replace`) before stepping it even once, so it
+    ///   never committed and never completes.
+    ///
+    /// The caller distinguishes a wedged uncommitted head from a healthy settle
+    /// still legitimately on its way to running, using the head's age (a driven
+    /// settle leaves `Pending` in milliseconds). The commit flag is returned so
+    /// the caller can apply the right safety gate to each case.
     pub(crate) fn orphaned_preempt_head(
         &self,
         key: &TaskQueueKey,
-    ) -> Result<Option<TaskIdentifier>, StorageError> {
+    ) -> Result<Option<(TaskIdentifier, bool)>, StorageError> {
         let queue = self.get_task_queue_deserialized(key)?;
         if queue.preemption_state != TaskQueuePreemptionState::SerialPreemptionQueued {
             return Ok(None);
@@ -417,12 +428,13 @@ impl<T: TransactionKind> StateTxn<'_, T> {
         let Some(task) = self.get_task_deserialized(&head_id)? else {
             return Ok(None);
         };
-        Ok(if task.state.is_committed() { Some(head_id) } else { None })
+        Ok(Some((head_id, task.state.is_committed())))
     }
 
-    /// Whether the committed head of a queue is a YIELDABLE order-management task
-    /// (Stage 2 order-yield). False for an empty queue, a non-committed head, or
-    /// a non-yieldable head (settlement / account op).
+    /// Whether the committed head of a queue is a YIELDABLE order-management
+    /// task (Stage 2 order-yield). False for an empty queue, a
+    /// non-committed head, or a non-yieldable head (settlement / account
+    /// op).
     pub(crate) fn head_is_yieldable(&self, key: &TaskQueueKey) -> Result<bool, StorageError> {
         let Some(queue) = self.get_task_queue(key)? else {
             return Ok(false);
@@ -539,10 +551,11 @@ impl StateTxn<'_, RW> {
     /// Preempt a set of queues with a serial task.
     ///
     /// The preemption spans all `queues` and is all-or-nothing: if any target
-    /// queue head is committed, no queue is preempted. With `ENABLE_SETTLE_DEFER`
-    /// off, that case is rejected (`Err`). With it on, the task is recorded as a
-    /// pending preemption against every target queue and `Deferred` is returned;
-    /// the completion hook re-runs it once the committing task(s) finish.
+    /// queue head is committed, no queue is preempted. With
+    /// `ENABLE_SETTLE_DEFER` off, that case is rejected (`Err`). With it
+    /// on, the task is recorded as a pending preemption against every
+    /// target queue and `Deferred` is returned; the completion hook re-runs
+    /// it once the committing task(s) finish.
     pub fn preempt_queue_with_serial(
         &self,
         queues: &[TaskQueueKey],
@@ -685,9 +698,9 @@ impl StateTxn<'_, RW> {
     /// Preempt a set of queues with a serial task.
     ///
     /// With `allow_yield` (Stage 2), a committed head that is a yieldable
-    /// order-management task is preempted anyway: it is requeued (re-run) rather
-    /// than blocking. Re-checks safety defensively and rejects rather than
-    /// corrupting state.
+    /// order-management task is preempted anyway: it is requeued (re-run)
+    /// rather than blocking. Re-checks safety defensively and rejects
+    /// rather than corrupting state.
     fn do_preempt_serial_inner(
         &self,
         queues: &[TaskQueueKey],
@@ -696,8 +709,8 @@ impl StateTxn<'_, RW> {
     ) -> Result<(), StorageError> {
         // Index the task into the queues
         for queue_key in queues.iter() {
-            // 1. Check the queue can be preempted -- or, under order-yield, that
-            //    its committed head is a yieldable order-management task.
+            // 1. Check the queue can be preempted -- or, under order-yield, that its
+            //    committed head is a yieldable order-management task.
             if !self.is_serial_preemption_safe(queue_key)?
                 && !(allow_yield && self.head_is_yieldable(queue_key)?)
             {
@@ -813,8 +826,8 @@ impl StateTxn<'_, RW> {
 
     /// Allocate the next global pending-preemption sequence number.
     ///
-    /// Deterministic across raft nodes: enqueues apply in committed-log order, so
-    /// every node assigns the same `seq` to the same settle.
+    /// Deterministic across raft nodes: enqueues apply in committed-log order,
+    /// so every node assigns the same `seq` to the same settle.
     pub(crate) fn next_pending_seq(&self) -> Result<u64, StorageError> {
         let seq_key = pending_preempt_seq_key();
         let cur = self
@@ -840,8 +853,9 @@ impl StateTxn<'_, RW> {
         self.inner().write(TASK_QUEUE_TABLE, &list_key, &list)
     }
 
-    /// Remove a deferred preemptive settle (matched by `seq`) from every queue it
-    /// targets, so no orphaned copy is left to block another queue's head.
+    /// Remove a deferred preemptive settle (matched by `seq`) from every queue
+    /// it targets, so no orphaned copy is left to block another queue's
+    /// head.
     pub(crate) fn remove_pending_preemption_entry(
         &self,
         entry: &PendingEntry,

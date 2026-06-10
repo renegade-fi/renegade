@@ -347,8 +347,8 @@ mod test {
         storage::{RaftSnapshotBuilder, RaftStateMachine},
     };
 
-    /// Tests that recovering from a snapshot restores the real applied log-id and
-    /// membership rather than a dummy `(None, Default)`.
+    /// Tests that recovering from a snapshot restores the real applied log-id
+    /// and membership rather than a dummy `(None, Default)`.
     ///
     /// Regression test for the `'LogIndex(0)' violates ... try to get log at
     /// index 0` crash-loop: recovery used to report nothing applied, so on boot
