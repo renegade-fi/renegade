@@ -29,6 +29,8 @@ pub type PeerIdValue<'a> = ArchivedValue<'a, WrappedPeerId>;
 
 /// The prefix for the peer-to-task index keys
 const ASSIGNED_TASK_PREFIX: &str = "assigned-task/";
+/// The prefix for the task-to-peer lookup keys
+const TASK_ASSIGNMENT_PREFIX: &str = "task-assignment/";
 
 /// Get the key for a single task assignment (peer -> task mapping)
 fn assigned_task_key(peer_id: &WrappedPeerId, task_id: &TaskIdentifier) -> String {
@@ -42,7 +44,7 @@ fn assigned_task_prefix(peer_id: &WrappedPeerId) -> String {
 
 /// Get the key for a task's assignment (task -> peer lookup)
 fn task_assignment_key(task_id: &TaskIdentifier) -> String {
-    format!("task-assignment/{task_id}")
+    format!("{TASK_ASSIGNMENT_PREFIX}{task_id}")
 }
 
 /// Parse a task identifier from an assigned task key
@@ -90,6 +92,27 @@ impl<T: TransactionKind> StateTxn<'_, T> {
     ) -> Result<Option<PeerIdValue>, StorageError> {
         let key = task_assignment_key(task_id);
         self.inner().read::<_, WrappedPeerId>(TASK_ASSIGNMENT_TABLE, &key)
+    }
+
+    /// Get the executor peers across all live task assignments
+    ///
+    /// This uses a cursor scan over the `task-assignment/` prefix. This
+    /// operation is O(n) in the number of live task assignments, which is
+    /// bounded by the number of in-flight tasks (small); it is used by the
+    /// ghost-assignment sweeper.
+    pub fn get_all_assigned_executors(&self) -> Result<Vec<WrappedPeerId>, StorageError> {
+        let cursor = self
+            .inner()
+            .cursor::<String, WrappedPeerId>(TASK_ASSIGNMENT_TABLE)?
+            .with_key_prefix(TASK_ASSIGNMENT_PREFIX);
+
+        let mut executors = Vec::new();
+        for entry in cursor.into_iter() {
+            let (_, peer_id) = entry?;
+            executors.push(peer_id.deserialize()?);
+        }
+
+        Ok(executors)
     }
 }
 

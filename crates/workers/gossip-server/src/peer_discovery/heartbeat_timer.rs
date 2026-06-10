@@ -4,8 +4,13 @@ use std::{thread, time::Duration};
 
 use job_types::gossip_server::{GossipServerJob, GossipServerQueue};
 use state::State;
+use tracing::warn;
 
 use crate::errors::GossipError;
+
+/// The interval at which to sweep for tasks assigned to ghost executors
+/// (peers absent from the peer index)
+const GHOST_TASK_SWEEP_INTERVAL_MS: u64 = 30_000;
 
 /// HeartbeatTimer handles the process of enqueuing jobs to perform
 /// a heartbeat on regular intervals
@@ -41,6 +46,7 @@ impl HeartbeatTimer {
             })
             .unwrap();
 
+        let global_state_clone = global_state.clone();
         thread::Builder::new()
             .name("non-cluster-heartbeat-timer".to_string())
             .spawn(move || {
@@ -48,12 +54,40 @@ impl HeartbeatTimer {
                     false, // intra_cluster
                     job_queue,
                     inter_cluster_wait_period,
-                    global_state,
+                    global_state_clone,
                 )
             })
             .unwrap();
 
+        thread::Builder::new()
+            .name("ghost-task-sweeper".to_string())
+            .spawn(move || Self::ghost_task_sweep_loop(global_state))
+            .unwrap();
+
         Self {}
+    }
+
+    /// Periodically reassign tasks whose executor is absent from the peer
+    /// index
+    ///
+    /// Task reassignment otherwise only occurs on heartbeat expiry of an
+    /// indexed peer; an executor that disappears without an expiry event
+    /// (e.g. amid an operator rebuild) would wedge its task queues forever.
+    /// Errors are logged and the loop continues.
+    #[allow(clippy::needless_pass_by_value)]
+    fn ghost_task_sweep_loop(global_state: State) {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("failed to build tokio runtime");
+        let wait_period = Duration::from_millis(GHOST_TASK_SWEEP_INTERVAL_MS);
+
+        loop {
+            thread::sleep(wait_period);
+            if let Err(e) = rt.block_on(global_state.reassign_ghost_tasks()) {
+                warn!("ghost task sweep failed: {e}");
+            }
+        }
     }
 
     /// Main timing loop for heartbeats sent to nodes

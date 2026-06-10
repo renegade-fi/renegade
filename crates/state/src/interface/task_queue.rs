@@ -1,6 +1,6 @@
 //! The interface for interacting with the task queue
 
-use tracing::instrument;
+use tracing::{instrument, warn};
 use types_core::AccountId;
 use types_gossip::WrappedPeerId;
 use types_tasks::{
@@ -245,6 +245,40 @@ impl StateInner {
         let local_peer = self.get_peer_id()?;
         let proposal = StateTransition::ReassignTasks { from: *failed_peer, to: local_peer };
         self.send_proposal(proposal).await
+    }
+
+    /// Reassign tasks assigned to "ghost" executors to the local peer
+    ///
+    /// A ghost executor is a peer that holds task assignments but is absent
+    /// from the peer index. Only a task's executor runs it, and reassignment
+    /// otherwise occurs solely on heartbeat expiry of an indexed peer — so an
+    /// executor that disappears without an expiry event (e.g. amid an
+    /// operator rebuild) would wedge its task queues forever.
+    ///
+    /// Returns the number of ghost executors whose tasks were reassigned.
+    pub async fn reassign_ghost_tasks(&self) -> Result<usize, StateError> {
+        let local_peer = self.get_peer_id()?;
+        let mut ghosts = self
+            .with_read_tx(move |tx| {
+                let mut ghosts = Vec::new();
+                for executor in tx.get_all_assigned_executors()? {
+                    if executor != local_peer && tx.get_peer_info(&executor)?.is_none() {
+                        ghosts.push(executor);
+                    }
+                }
+                Ok(ghosts)
+            })
+            .await?;
+
+        ghosts.sort_unstable();
+        ghosts.dedup();
+        for ghost in ghosts.iter() {
+            warn!("reassigning tasks from ghost executor {ghost} to local peer");
+            let waiter = self.reassign_tasks(ghost).await?;
+            waiter.await?;
+        }
+
+        Ok(ghosts.len())
     }
 }
 
