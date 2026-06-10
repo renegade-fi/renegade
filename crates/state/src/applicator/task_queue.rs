@@ -1014,6 +1014,7 @@ mod test {
     #[test]
     #[allow(non_snake_case)]
     fn test_orphaned_preempt_head__surfaces_head_and_commit_status() -> Result<()> {
+        use crate::storage::tx::task_queue::WedgedHeadKind;
         let (applicator, task_recv) = setup_mock_applicator_with_driver_queue();
         let peer = get_local_peer_id(&applicator);
         let acct = AccountId::new_v4();
@@ -1029,8 +1030,8 @@ mod test {
             let tx = applicator.db().new_read_tx()?;
             assert_eq!(
                 tx.orphaned_preempt_head(&acct)?,
-                Some((settle.id, false)),
-                "uncommitted SerialPreemptionQueued head must be surfaced as not-committed"
+                Some((settle.id, WedgedHeadKind::Uncommitted)),
+                "uncommitted SerialPreemptionQueued head must be surfaced as Uncommitted"
             );
         }
 
@@ -1043,8 +1044,8 @@ mod test {
             let tx = applicator.db().new_read_tx()?;
             assert_eq!(
                 tx.orphaned_preempt_head(&acct)?,
-                Some((settle.id, true)),
-                "committed SerialPreemptionQueued head must be surfaced as committed"
+                Some((settle.id, WedgedHeadKind::Committed)),
+                "committed SerialPreemptionQueued head must be surfaced as Committed"
             );
         }
 
@@ -1055,6 +1056,47 @@ mod test {
         {
             let tx = applicator.db().new_read_tx()?;
             assert_eq!(tx.orphaned_preempt_head(&other)?, None);
+        }
+        Ok(())
+    }
+
+    /// Clear-purge: clearing one queue of a multi-queue serial settle must also
+    /// remove the settle from its OTHER counterparty queue. Otherwise that
+    /// queue is left with a dangling head id (the settle's task is deleted)
+    /// -- it stays `SerialPreemptionQueued` forever and rejects every
+    /// transition with `task not found`. This is the root cause of the
+    /// post-clear settle storm.
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_clear_task_queue__purges_multi_queue_settle_from_counterparty() -> Result<()> {
+        let (applicator, task_recv) = setup_mock_applicator_with_driver_queue();
+        let peer = get_local_peer_id(&applicator);
+        let a = AccountId::new_v4();
+        let b = AccountId::new_v4();
+
+        // A serial settle preempts BOTH counterparties' queues.
+        let settle = mock_queued_task(a);
+        applicator.enqueue_preemptive_task(&[a, b], &settle, &peer, true)?;
+        assert_run_task(task_recv.recv()?, settle.id);
+
+        // Both queues are wedged on the settle head.
+        {
+            let tx = applicator.db().new_read_tx()?;
+            assert_eq!(tx.orphaned_preempt_head(&a)?.map(|(id, _)| id), Some(settle.id));
+            assert_eq!(tx.orphaned_preempt_head(&b)?.map(|(id, _)| id), Some(settle.id));
+        }
+
+        // Clear queue A (as the orphaned-queue self-heal would). The settle's
+        // task is deleted; queue B must be purged, not left dangling.
+        applicator.clear_queue(a)?;
+        {
+            let tx = applicator.db().new_read_tx()?;
+            assert!(tx.get_task(&settle.id)?.is_none(), "settle task should be deleted");
+            assert_eq!(
+                tx.orphaned_preempt_head(&b)?,
+                None,
+                "counterparty queue B must be purged (NotPreempted), not left with a dangling head"
+            );
         }
         Ok(())
     }

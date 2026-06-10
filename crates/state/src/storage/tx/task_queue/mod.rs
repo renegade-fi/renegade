@@ -13,4 +13,4 @@ pub mod queue_type;
 pub mod storage;
 
 pub use queue_type::TaskQueuePreemptionState;
-pub use storage::{PreemptOutcome, task_queue_key};
+pub use storage::{PreemptOutcome, WedgedHeadKind, task_queue_key};

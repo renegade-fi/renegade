@@ -185,6 +185,22 @@ pub enum PreemptOutcome {
     Deferred,
 }
 
+/// The disposition of a queue's `SerialPreemptionQueued` head, classified by
+/// `orphaned_preempt_head` so the self-heal can apply the right safety gate.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WedgedHeadKind {
+    /// Head task exists and is committed -- a settle orphaned mid-submit.
+    Committed,
+    /// Head task exists but is not committed -- a settle never driven past
+    /// `Pending` because its executor departed before stepping it.
+    Uncommitted,
+    /// Head id is present in `serial_tasks` but has NO backing task -- a
+    /// dangling reference left when a multi-queue settle's task was deleted
+    /// by a clear of its other counterparty queue. Unambiguously broken
+    /// (the head can never pop; transitions reject `task not found`).
+    Dangling,
+}
+
 /// Max deferred settle preemptions retained per queue (Stage 3 multi-pending
 /// FIFO). Bounds buildup: a target queue at this depth rejects further serial
 /// preemptions as backpressure rather than buffering without limit.
@@ -397,27 +413,30 @@ impl<T: TransactionKind> StateTxn<'_, T> {
     }
 
     /// If this queue is wedged in `SerialPreemptionQueued`, return its head
-    /// preemptive task id paired with whether that head is committed, else
-    /// `None`.
+    /// preemptive task id paired with the head's disposition, else `None`.
     ///
-    /// Two distinct orphaned-settle wedges leave a queue stuck here forever
+    /// Three orphaned-settle wedges leave a queue stuck here forever
     /// (`can_preempt_serial()` false, no further settle can run):
-    /// - COMMITTED head: a settle preempted the queue and reached its on-chain
+    /// - `Committed`: a settle preempted the queue and reached its on-chain
     ///   submit, then its worker departed (restart / new p2p id) without
     ///   completing the task.
-    /// - UNCOMMITTED head: a settle preempted the queue but was never driven
-    ///   past `Pending` -- its assigned executor departed (worker churn, seed
+    /// - `Uncommitted`: a settle preempted the queue but was never driven past
+    ///   `Pending` -- its assigned executor departed (worker churn, seed
     ///   p2p-identity change on `-replace`) before stepping it even once, so it
     ///   never committed and never completes.
+    /// - `Dangling`: the head id is present but has NO backing task -- a settle
+    ///   that preempted both counterparties' queues had its task deleted by a
+    ///   clear of the *other* queue, leaving this queue's head a dead reference
+    ///   that can never pop and rejects every transition with `task not found`.
     ///
-    /// The caller distinguishes a wedged uncommitted head from a healthy settle
-    /// still legitimately on its way to running, using the head's age (a driven
-    /// settle leaves `Pending` in milliseconds). The commit flag is returned so
-    /// the caller can apply the right safety gate to each case.
+    /// The caller applies the right safety gate per kind (see
+    /// `should_reap_wedged_head`): an uncommitted head needs an age gate to
+    /// distinguish it from a healthy settle still on its way to running, while
+    /// a dangling head is unambiguously broken and reaped unconditionally.
     pub(crate) fn orphaned_preempt_head(
         &self,
         key: &TaskQueueKey,
-    ) -> Result<Option<(TaskIdentifier, bool)>, StorageError> {
+    ) -> Result<Option<(TaskIdentifier, WedgedHeadKind)>, StorageError> {
         let queue = self.get_task_queue_deserialized(key)?;
         if queue.preemption_state != TaskQueuePreemptionState::SerialPreemptionQueued {
             return Ok(None);
@@ -425,10 +444,12 @@ impl<T: TransactionKind> StateTxn<'_, T> {
         let Some(head_id) = queue.serial_tasks.first().copied() else {
             return Ok(None);
         };
-        let Some(task) = self.get_task_deserialized(&head_id)? else {
-            return Ok(None);
+        let kind = match self.get_task_deserialized(&head_id)? {
+            Some(task) if task.state.is_committed() => WedgedHeadKind::Committed,
+            Some(_) => WedgedHeadKind::Uncommitted,
+            None => WedgedHeadKind::Dangling,
         };
-        Ok(Some((head_id, task.state.is_committed())))
+        Ok(Some((head_id, kind)))
     }
 
     /// Whether the committed head of a queue is a YIELDABLE order-management
@@ -777,6 +798,23 @@ impl StateTxn<'_, RW> {
         let all_task_ids = queue.map(|q| q.all_tasks()).unwrap_or_default();
         let mut all_tasks = Vec::with_capacity(all_task_ids.len());
         for task_id in all_task_ids.iter() {
+            // A serial settle preempts BOTH counterparties' queues, so a task in
+            // this queue may also sit in another account's queue. Purge it from
+            // every OTHER queue it spans before deleting it -- otherwise that
+            // queue keeps a head id with no backing task (a `Dangling` wedge):
+            // it stays `SerialPreemptionQueued` forever and rejects transitions
+            // with `task not found`. `key` itself is reset to default below, so
+            // skip it here. `pop_task` restores the other queue's preemption
+            // state (NotPreempted) when the dead settle was its serial head.
+            for other_key in self.get_queue_keys_for_task(task_id)? {
+                if &other_key == key {
+                    continue;
+                }
+                let mut other = self.get_task_queue_deserialized(&other_key)?;
+                if other.pop_task(task_id) {
+                    self.write_task_queue(&other_key, &other)?;
+                }
+            }
             if let Some(task) = self.delete_task(task_id)? {
                 all_tasks.push(task);
             }

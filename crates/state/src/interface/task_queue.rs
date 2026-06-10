@@ -15,31 +15,39 @@ use crate::{
     notifications::ProposalWaiter,
     state_transition::StateTransition,
     storage::{
-        error::StorageError, traits::RkyvValue,
-        tx::task_queue::queue_type::ArchivedTaskQueuePreemptionState,
+        error::StorageError,
+        traits::RkyvValue,
+        tx::task_queue::{WedgedHeadKind, queue_type::ArchivedTaskQueuePreemptionState},
     },
 };
 
 /// Decide whether a wedged `SerialPreemptionQueued` head should be reaped by
-/// `clear_orphaned_preempted_queues`, given its commit status, the caller's
-/// age gate (`min_head_age_millis`; `0` == boot path), and the head's age
-/// (`None` on the boot path, which carries no age signal).
+/// `clear_orphaned_preempted_queues`, given its kind, the caller's age gate
+/// (`min_head_age_millis`; `0` == boot path), and the head's age (`None` on the
+/// boot path or for a dangling head, which has no backing task to age).
 ///
-/// - Boot (`gate == 0`): reap a committed head (necessarily orphaned -- no task
-///   future is executing yet), but never an uncommitted one (no age signal to
-///   separate a healthy just-reloaded settle from an orphan).
-/// - Periodic (`gate > 0`): reap any head, committed or not, once it has aged
-///   past the gate -- a healthy settle leaves `Pending` in ms and commits its
-///   submit in seconds, so an older head is stuck.
+/// - `Dangling` (head id with no backing task): unambiguously broken -- reap
+///   always, boot and periodic.
+/// - `Committed`: reap at boot (necessarily orphaned -- no task future is
+///   executing yet), and on the periodic path once aged past the gate.
+/// - `Uncommitted`: never reap at boot (no age signal to separate a healthy
+///   just-reloaded settle from an orphan); on the periodic path, reap once
+///   aged.
 fn should_reap_wedged_head(
-    committed: bool,
+    kind: WedgedHeadKind,
     min_head_age_millis: u64,
     age_millis: Option<u64>,
 ) -> bool {
-    match (committed, min_head_age_millis) {
-        (true, 0) => true,
-        (false, 0) => false,
-        (_, gate) => matches!(age_millis, Some(age) if age >= gate),
+    match kind {
+        WedgedHeadKind::Dangling => true,
+        WedgedHeadKind::Committed => match min_head_age_millis {
+            0 => true,
+            gate => matches!(age_millis, Some(age) if age >= gate),
+        },
+        WedgedHeadKind::Uncommitted => match min_head_age_millis {
+            0 => false,
+            gate => matches!(age_millis, Some(age) if age >= gate),
+        },
     }
 }
 
@@ -74,9 +82,11 @@ impl StateInner {
     /// driving it (worker churn, scale-down, or the seed regenerating its p2p
     /// identity on restart) without completing it, so the queue stays paused
     /// and no further settle can run (`deferred-queue full` forever). The
-    /// wedged head may be COMMITTED (the settle reached its on-chain
-    /// submit) or UNCOMMITTED (a settle that never advanced past `Pending`
-    /// because its executor departed before stepping it even once). Clears
+    /// wedged head may be COMMITTED (the settle reached its on-chain submit),
+    /// UNCOMMITTED (a settle never driven past `Pending` because its executor
+    /// departed before stepping it), or DANGLING (a multi-queue settle whose
+    /// task was deleted by a clear of its other counterparty queue, leaving a
+    /// dead head id that rejects every transition `task not found`). Clears
     /// each such queue via the raft `ClearTaskQueue` proposal and enqueues
     /// a `RefreshAccount` to re-sync wallet state. Leader-only and
     /// idempotent. Returns the number of queues cleared.
@@ -116,12 +126,15 @@ impl StateInner {
             let key = account_id;
             let wedged_head =
                 self.with_read_tx(move |tx| Ok(tx.orphaned_preempt_head(&key)?)).await?;
-            let Some((task_id, committed)) = wedged_head else { continue };
+            let Some((task_id, kind)) = wedged_head else { continue };
 
-            // Compute the head's age for the periodic gate. The boot path
-            // (`min_head_age_millis == 0`) has no age signal and ignores it; a
-            // vanished task has nothing to clear.
-            let age_millis = if min_head_age_millis > 0 {
+            // A `Dangling` head has no backing task to age and is unconditionally
+            // broken, so skip the age read. Otherwise compute the head's age for
+            // the periodic gate (the boot path, `min_head_age_millis == 0`, has
+            // no age signal and ignores it; a vanished task has nothing to age).
+            let age_millis = if kind == WedgedHeadKind::Dangling {
+                None
+            } else if min_head_age_millis > 0 {
                 let created_at = self
                     .with_read_tx(move |tx| {
                         Ok(tx.get_task_deserialized(&task_id)?.map(|t| t.created_at))
@@ -135,14 +148,14 @@ impl StateInner {
                 None
             };
 
-            if !should_reap_wedged_head(committed, min_head_age_millis, age_millis) {
+            if !should_reap_wedged_head(kind, min_head_age_millis, age_millis) {
                 continue;
             }
 
             tracing::warn!(
                 %account_id,
                 %task_id,
-                committed,
+                ?kind,
                 "clearing orphaned SerialPreemptionQueued task queue (wedged settle head)"
             );
             self.clear_task_queue(&account_id).await?.await?;
@@ -371,28 +384,32 @@ mod test {
 
     use crate::test_helpers::{mock_db, mock_state};
 
-    /// `should_reap_wedged_head` truth table: the boot path reaps only
-    /// committed heads; the periodic gate reaps any head once aged, never a
-    /// fresh one.
+    /// `should_reap_wedged_head` truth table: dangling heads reap always; the
+    /// boot path reaps committed heads only; the periodic gate reaps committed
+    /// or uncommitted heads once aged, never a fresh one.
     #[test]
     fn test_should_reap_wedged_head() {
-        use super::should_reap_wedged_head as reap;
+        use super::{WedgedHeadKind::*, should_reap_wedged_head as reap};
         const GATE: u64 = 120_000;
+
+        // Dangling (head id with no backing task) -> reap unconditionally.
+        assert!(reap(Dangling, 0, None));
+        assert!(reap(Dangling, GATE, None));
 
         // Boot path (gate == 0): committed orphan -> reap; uncommitted -> never
         // (no age signal to tell a healthy just-reloaded settle from an orphan).
-        assert!(reap(true, 0, None));
-        assert!(!reap(false, 0, None));
+        assert!(reap(Committed, 0, None));
+        assert!(!reap(Uncommitted, 0, None));
 
-        // Periodic path (gate > 0): reap a head -- committed or uncommitted --
-        // only once it has aged past the gate.
-        assert!(!reap(true, GATE, Some(GATE - 1)));
-        assert!(reap(true, GATE, Some(GATE)));
-        assert!(!reap(false, GATE, Some(GATE - 1)));
-        assert!(reap(false, GATE, Some(GATE + 1)));
-        // No age available -> cannot reap on the periodic path.
-        assert!(!reap(false, GATE, None));
-        assert!(!reap(true, GATE, None));
+        // Periodic path (gate > 0): reap a committed or uncommitted head only
+        // once it has aged past the gate.
+        assert!(!reap(Committed, GATE, Some(GATE - 1)));
+        assert!(reap(Committed, GATE, Some(GATE)));
+        assert!(!reap(Uncommitted, GATE, Some(GATE - 1)));
+        assert!(reap(Uncommitted, GATE, Some(GATE + 1)));
+        // No age available -> cannot reap a committed/uncommitted head.
+        assert!(!reap(Uncommitted, GATE, None));
+        assert!(!reap(Committed, GATE, None));
     }
 
     /// Tests getter methods on an empty queue
