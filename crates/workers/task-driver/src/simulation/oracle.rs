@@ -154,8 +154,9 @@ fn diff_accounts(projected: &Account, actual: &Account) -> Vec<String> {
             Some(actual_order) => {
                 let (p_amt, a_amt) = (projected_order.amount_in(), actual_order.amount_in());
                 if p_amt != a_amt {
-                    divergences
-                        .push(format!("order {order_id}: amount_in projected {p_amt} actual {a_amt}"));
+                    divergences.push(format!(
+                        "order {order_id}: amount_in projected {p_amt} actual {a_amt}"
+                    ));
                 }
 
                 let (p_fill, a_fill) = (
