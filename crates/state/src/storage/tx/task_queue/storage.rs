@@ -812,7 +812,23 @@ impl StateTxn<'_, RW> {
                 }
                 let mut other = self.get_task_queue_deserialized(&other_key)?;
                 if other.pop_task(task_id) {
-                    self.write_task_queue(&other_key, &other)?;
+                    // Non-fatal write: popping the serial settle head sets
+                    // `other` to NotPreempted, which violates check_invariants if
+                    // B still holds a concurrent preemption alongside the serial
+                    // settle (not produced in prod -- all preemptive callers are
+                    // serial -- but representable). A propagated Err here would be
+                    // fatal on the recovery path (recovery.rs clears every
+                    // account in one tx), crash-looping the cluster. Skip the
+                    // purge for that queue instead; the deleted task leaves a
+                    // dangling head that the dangling-head self-heal reconciles.
+                    if let Err(e) = self.write_task_queue(&other_key, &other) {
+                        tracing::warn!(
+                            queue = %other_key,
+                            error = %e,
+                            "skipped cross-queue purge of a multi-queue task (counterparty \
+                             queue invariant); dangling-head self-heal will reconcile"
+                        );
+                    }
                 }
             }
             if let Some(task) = self.delete_task(task_id)? {
