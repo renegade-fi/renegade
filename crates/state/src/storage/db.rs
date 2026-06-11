@@ -46,6 +46,14 @@ impl DbConfig {
 /// to a clean `READERS_FULL` error instead of a confusing stall.
 const MAX_MDBX_READERS: u32 = 1024;
 
+/// Max consecutive write-tx begin timeouts (`new_write_tx_with_retry`) before
+/// returning the error instead of spinning forever. Each timeout is ~30s (the
+/// libmdbx begin recv bound), so this caps the retry at ~90s. See
+/// `new_write_tx_with_retry` for why the bounded fail-and-restart is safe (no
+/// state divergence) and necessary (the unbounded spin was the Fix-B residual
+/// wedge that starved the apply loop under a stuck writer).
+const MAX_BEGIN_TIMEOUT_RETRIES: u32 = 3;
+
 /// The persistent storage layer for the relayer's state machine
 ///
 /// Contains a reference to an `mdbx` instance
@@ -158,13 +166,27 @@ impl DB {
         Ok(StateTxn::new(txn))
     }
 
-    /// Create a new read-write transaction, retrying if the begin times out
+    /// Create a new read-write transaction, retrying a BOUNDED number of times
+    /// if the begin times out.
     ///
     /// Used on the raft replication path (log store, state applicator,
-    /// snapshots, recovery): dropping an apply because a write tx begin timed
-    /// out would diverge the local state machine from the raft log, which is
-    /// worse than retrying loudly. Each timeout is logged so a wedged write
-    /// path is visible rather than a silent park.
+    /// snapshots, recovery). A write-tx begin times out (~30s, the libmdbx
+    /// begin recv bound) only when another writer holds the single MDBX
+    /// writer. We retry up to `MAX_BEGIN_TIMEOUT_RETRIES` (~90s total)
+    /// because a transient holder usually clears; each timeout is logged so
+    /// a wedged write path is visible rather than a silent park.
+    ///
+    /// After the cap we RETURN the `BeginTimeout` error rather than spinning
+    /// forever. On the apply path this is a non-`Rejected` applicator error, so
+    /// `apply()` (replication/state_machine/mod.rs) returns a fatal apply error
+    /// that halts the node; it then restarts (`--restart always` / ECS) and
+    /// re-applies the un-persisted entry cleanly -- the begin timed out, so
+    /// neither the entry's writes nor `last_applied` were persisted, hence NO
+    /// divergence. That loud fail-and-restart is strictly better than the
+    /// previous UNBOUNDED spin, which pinned a blocking-pool thread per stuck
+    /// apply and silently wedged the coordinator runtime (the Fix-B residual
+    /// wedge: a single stuck writer starved the apply loop + every leader-only
+    /// self-heal/proposal behind it forever).
     ///
     /// `purpose` names the blocked operation (e.g. the applicator handler) in
     /// the warning, and labels the transaction for the held-past-threshold
@@ -182,14 +204,24 @@ impl DB {
         let mut attempt: u32 = 0;
         loop {
             match self.new_write_tx() {
-                Err(StorageError::BeginTx(MdbxError::BeginTimeout)) => {
+                Err(e @ StorageError::BeginTx(MdbxError::BeginTimeout)) => {
                     attempt += 1;
                     warn!(
                         purpose,
                         attempt,
+                        max_attempts = MAX_BEGIN_TIMEOUT_RETRIES,
                         blocked_secs = attempt as u64 * 30,
                         "write tx begin timed out (another writer holds the db); retrying"
                     );
+                    if attempt >= MAX_BEGIN_TIMEOUT_RETRIES {
+                        warn!(
+                            purpose,
+                            attempt,
+                            "write tx begin still timing out after max retries; returning error \
+                             (apply fails fast and the node restarts rather than spinning forever)"
+                        );
+                        return Err(e);
+                    }
                 },
                 Ok(mut tx) => {
                     tx.set_purpose(purpose);

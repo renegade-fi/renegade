@@ -26,6 +26,12 @@ use super::{
 /// The number of threads backing the HTTP server
 const API_SERVER_NUM_THREADS: usize = 4;
 
+/// Max blocking-pool threads on the api-server runtime (spawned `with_read_tx` /
+/// `with_write_tx` state ops behind http/ws handlers). Bounded explicitly below
+/// the tokio default 512 so a stuck DB writer cannot grow the pool until the
+/// request runtime is starved; generous enough for normal read fan-out.
+const API_SERVER_MAX_BLOCKING_THREADS: usize = 256;
+
 /// The number of threads backing the dedicated health server.
 ///
 /// The health server runs on its own runtime so the ELB `/v2/ping` check is
@@ -144,6 +150,7 @@ impl Worker for ApiServer {
         // for the http server, another for the websocket server
         let tokio_runtime = TokioBuilder::new_multi_thread()
             .worker_threads(API_SERVER_NUM_THREADS)
+            .max_blocking_threads(API_SERVER_MAX_BLOCKING_THREADS)
             .enable_all()
             .build()
             .map_err(|err| ApiServerError::Setup(err.to_string()))?;

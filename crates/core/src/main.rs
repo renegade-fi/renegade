@@ -70,8 +70,24 @@ const TERMINATION_TIMEOUT_MS: u64 = 10_000; // 10 seconds
 ///        execution
 ///     3. Allocate and start the worker's execution
 ///     4. Allocate a thread to monitor the worker for faults
-#[tokio::main]
-async fn main() -> Result<(), CoordinatorError> {
+/// Max blocking-pool threads on the coordinator runtime, which owns the raft
+/// apply loop (`spawn_blocking` per Normal entry) and all `spawn_blocking` state
+/// reads/writes. Set explicitly (below the tokio default 512) so a stuck-writer
+/// cascade -- now also fail-fast-capped in `new_write_tx_with_retry` -- hits a
+/// known ceiling rather than growing the pool until the runtime is starved.
+/// Kept generous so normal MDBX read fan-out (max_readers=1024) is not throttled.
+const COORDINATOR_MAX_BLOCKING_THREADS: usize = 256;
+
+fn main() -> Result<(), CoordinatorError> {
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .max_blocking_threads(COORDINATOR_MAX_BLOCKING_THREADS)
+        .build()
+        .expect("failed to build coordinator runtime")
+        .block_on(async_main())
+}
+
+async fn async_main() -> Result<(), CoordinatorError> {
     // Set the default crypto provider for the process, this will be used by
     // websocket listeners
     rustls::crypto::ring::default_provider()
