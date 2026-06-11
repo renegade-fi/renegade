@@ -6,7 +6,10 @@
 
 use std::path::Path;
 
-use libmdbx::{Database, DatabaseOptions, Error as MdbxError, RO, RW, WriteMap};
+use libmdbx::{
+    Database, DatabaseOptions, Error as MdbxError, Mode, RO, RW, ReadWriteOptions, SyncMode,
+    WriteMap,
+};
 use tracing::{instrument, warn};
 
 use crate::{
@@ -70,6 +73,20 @@ impl DB {
         let cfg = DatabaseOptions {
             max_tables: Some(config.num_tables as u64),
             max_readers: Some(MAX_MDBX_READERS),
+            // Skip the per-commit metadata-page fsync (data-page writes are kept).
+            // This roughly doubles write throughput, which is what keeps the
+            // strictly-sequential raft apply loop from blowing the 30s
+            // `ProposalWaiter` under burst load (quoter boot rebalance + concurrent
+            // settles). Durability tradeoff: a host-level crash (power loss / kernel
+            // panic) can drop only the single last committed txn; the node recovers
+            // it from the replicated raft log on restart, and the writes are
+            // idempotent on re-apply. ECS SIGKILL / normal process exit lose nothing
+            // -- the data is already in the OS page cache. No torn writes, no DB
+            // corruption (ACID minus last-txn durability on a system crash).
+            mode: Mode::ReadWrite(ReadWriteOptions {
+                sync_mode: SyncMode::NoMetaSync,
+                ..Default::default()
+            }),
             ..Default::default()
         };
 
