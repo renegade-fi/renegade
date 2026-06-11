@@ -607,6 +607,10 @@ mod test {
             let tx = applicator.db().new_read_tx()?;
             assert!(tx.get_task(&settle.id)?.is_none());
             assert!(tx.has_pending_preemption(&account_id)?);
+            // A deferred settle has no task record yet, but must be recognized as
+            // existing so a completion-notification waiter is not told `task not
+            // found` and drop the internal fill (the 0-fills settle bug).
+            assert!(tx.task_in_pending_preemption(&settle.id)?);
         }
         assert!(task_recv.is_empty());
 

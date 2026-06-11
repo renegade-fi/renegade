@@ -248,10 +248,13 @@ fn task_to_queue_key(id: &TaskIdentifier) -> String {
     format!("task-to-queue-{id}")
 }
 
+/// Key prefix for a queue's ordered list of deferred preemptive settles.
+const PENDING_PREEMPT_LIST_PREFIX: &str = "pending-preempt-list-";
+
 /// Get the storage key for a queue's ordered list of deferred preemptive
 /// settles (Stage 3 multi-pending FIFO)
 fn pending_preempt_list_key(key: &TaskQueueKey) -> String {
-    format!("pending-preempt-list-{key}")
+    format!("{PENDING_PREEMPT_LIST_PREFIX}{key}")
 }
 
 /// Get the storage key for the global pending-preemption sequence counter
@@ -492,6 +495,31 @@ impl<T: TransactionKind> StateTxn<'_, T> {
             .map(|archived| archived.deserialize())
             .transpose()?
             .unwrap_or_default())
+    }
+
+    /// Whether `task_id` is recorded in any queue's pending-preemption FIFO.
+    ///
+    /// A deferred serial preemption (a settle blocked by a committed head) is
+    /// stored ONLY as a `PendingEntry` here -- its task is NOT written to the
+    /// task store until the completion hook runs it. A completion-notification
+    /// waiter must still treat such a task as existing; otherwise the deferred
+    /// settle is reported `task not found` and the internal fill is dropped.
+    pub(crate) fn task_in_pending_preemption(
+        &self,
+        task_id: &TaskIdentifier,
+    ) -> Result<bool, StorageError> {
+        let cursor = self
+            .inner()
+            .cursor::<String, Vec<PendingEntry>>(TASK_QUEUE_TABLE)?
+            .with_key_prefix(PENDING_PREEMPT_LIST_PREFIX);
+        for entry in cursor.into_iter() {
+            let (_key, value) = entry?;
+            let list = value.deserialize()?;
+            if list.iter().any(|e| e.task.id == *task_id) {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 
     /// The lowest-`seq` (head) deferred settle on a queue, if any.

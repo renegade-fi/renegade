@@ -57,9 +57,17 @@ impl StateInner {
     // -----------
 
     /// Whether or not the task queue contains a specific task
+    ///
+    /// Also true for a task recorded as a DEFERRED preemption (pending, not yet
+    /// written to the task store): a completion-notification waiter on a
+    /// deferred internal-match settle must not be told `task not found`, or the
+    /// settle is dropped before the completion hook ever runs it.
     pub async fn contains_task(&self, task_id: &TaskIdentifier) -> Result<bool, StateError> {
         let tid = *task_id;
-        self.with_read_tx(move |tx| Ok(tx.get_task(&tid)?.is_some())).await
+        self.with_read_tx(move |tx| {
+            Ok(tx.get_task(&tid)?.is_some() || tx.task_in_pending_preemption(&tid)?)
+        })
+        .await
     }
 
     /// Whether the queue is paused by a serial task
