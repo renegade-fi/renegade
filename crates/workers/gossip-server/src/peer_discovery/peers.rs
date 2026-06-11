@@ -101,29 +101,20 @@ impl GossipProtocolExecutor {
         &self,
         sender: WrappedPeerId,
         peer_id: WrappedPeerId,
-        last_heartbeat: u64,
+        _last_heartbeat: u64,
     ) -> Result<(), GossipError> {
         log_task!(Task::PeerExpiry, Outcome::Ok, subject = %peer_id, sender = %sender, "received reject expiry request");
-        // Remove from the expiry buffer if present
+        // Remove from the expiry buffer if present.
+        //
+        // We intentionally do NOT refresh the peer's `last_heartbeat` from the
+        // reject payload. That timestamp is propagated between nodes and is not
+        // backed by a direct heartbeat to this node; refreshing it here keeps a
+        // dead, terminated-instance learner "recent" forever, which prevents its
+        // expiry (and the raft-learner removal gated behind it). Live-but-slow
+        // peers stay protected: the reject still cancels the local pending expiry
+        // below, and a rejecter only rejects based on its own direct-heartbeat
+        // timestamp (`handle_propose_expiry`).
         self.expiry_buffer.remove_expiry_candidate(peer_id).await;
-
-        // Update the latest heartbeat for the peer
-        let maybe_info = self.state.get_peer_info(&peer_id).await?;
-        let mut info = match maybe_info {
-            Some(info) => info,
-            None => {
-                log_task!(
-                    Task::PeerExpiry, Outcome::Skipped, subject = %peer_id, sender = %sender,
-                    "received reject expiry request, but peer is not in the peer index"
-                );
-                return Ok(());
-            },
-        };
-
-        if info.last_heartbeat < last_heartbeat {
-            info.last_heartbeat = last_heartbeat;
-            self.state.set_peer_info(info).await?;
-        }
 
         Ok(())
     }

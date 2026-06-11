@@ -170,9 +170,21 @@ impl StateInner {
                         continue;
                     }
 
-                    // We only gossip around live peers, so it's safe to optimistically give the
-                    // peer a fresh heartbeat
-                    peer.successful_heartbeat();
+                    // Only stamp a fresh heartbeat on FIRST insert. Re-indexing a
+                    // peer that is merely gossiped around (not directly heartbeated)
+                    // must NOT reset its liveness clock; otherwise a dead,
+                    // terminated-instance peer is kept "recent" forever and can never
+                    // be expired (so its raft learner is never reclaimed). Direct
+                    // liveness is recorded only by `record_heartbeat()` on a direct
+                    // inbound heartbeat.
+                    match tx.get_peer_info(&peer.peer_id)? {
+                        Some(existing) => {
+                            peer.last_heartbeat = existing.deserialize()?.last_heartbeat;
+                        },
+                        None => {
+                            peer.successful_heartbeat();
+                        },
+                    }
 
                     // Add the peer to the store
                     tx.write_peer(&peer)?;
