@@ -91,6 +91,16 @@ impl ProposalWaiter {
     pub fn new(inner: ProposalResultReceiver) -> Self {
         Self { inner, deadline: Box::pin(sleep(PROPOSAL_WAITER_TIMEOUT)) }
     }
+
+    /// Create a waiter that is already resolved to the given result, for an
+    /// operation that short-circuits without enqueueing a proposal (e.g. an
+    /// idempotent create whose target already exists). Resolves immediately on
+    /// the first poll, so the caller never touches the raft apply path.
+    pub fn resolved(result: ProposalReturnType) -> Self {
+        let (tx, rx) = new_proposal_result_channel();
+        let _ = tx.send(result);
+        Self::new(rx)
+    }
 }
 
 impl Future for ProposalWaiter {
