@@ -71,12 +71,17 @@ const TERMINATION_TIMEOUT_MS: u64 = 10_000; // 10 seconds
 ///     3. Allocate and start the worker's execution
 ///     4. Allocate a thread to monitor the worker for faults
 /// Max blocking-pool threads on the coordinator runtime, which owns the raft
-/// apply loop (`spawn_blocking` per Normal entry) and all `spawn_blocking` state
-/// reads/writes. Set explicitly (below the tokio default 512) so a stuck-writer
-/// cascade -- now also fail-fast-capped in `new_write_tx_with_retry` -- hits a
-/// known ceiling rather than growing the pool until the runtime is starved.
-/// Kept generous so normal MDBX read fan-out (max_readers=1024) is not throttled.
-const COORDINATOR_MAX_BLOCKING_THREADS: usize = 256;
+/// apply loop (`spawn_blocking` per Normal entry) AND every `with_read_tx` /
+/// `with_write_tx` / log-store `spawn_blocking`. Kept at the tokio default 512.
+///
+/// A 256 cap here regressed internal-fill settlement (RCA 2026-06-11): under read
+/// fan-out the shared pool fills and the strictly-sequential apply loop's
+/// `spawn_blocking` queues behind reads -> apply latency exceeds the 30s
+/// ProposalWaiter deadline -> assign-order proposals time out -> 0 fills. The
+/// original reason for an explicit cap (a stuck writer spinning a pool thread
+/// forever) is already bounded independently by `new_write_tx_with_retry`'s
+/// `MAX_BEGIN_TIMEOUT_RETRIES` fail-fast, so this cap was pure downside.
+const COORDINATOR_MAX_BLOCKING_THREADS: usize = 512;
 
 fn main() -> Result<(), CoordinatorError> {
     tokio::runtime::Builder::new_multi_thread()

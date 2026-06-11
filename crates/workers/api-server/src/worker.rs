@@ -27,10 +27,12 @@ use super::{
 const API_SERVER_NUM_THREADS: usize = 4;
 
 /// Max blocking-pool threads on the api-server runtime (spawned `with_read_tx` /
-/// `with_write_tx` state ops behind http/ws handlers). Bounded explicitly below
-/// the tokio default 512 so a stuck DB writer cannot grow the pool until the
-/// request runtime is starved; generous enough for normal read fan-out.
-const API_SERVER_MAX_BLOCKING_THREADS: usize = 256;
+/// `with_write_tx` state ops behind http/ws handlers). Kept at the tokio default
+/// 512: a 256 cap (with only 4 worker threads here) starves request-path state
+/// reads under quoter load and contributed to the internal-fill settlement
+/// regression (RCA 2026-06-11). A stuck writer is bounded by
+/// `new_write_tx_with_retry`'s begin-retry fail-fast, not by this pool cap.
+const API_SERVER_MAX_BLOCKING_THREADS: usize = 512;
 
 /// The number of threads backing the dedicated health server.
 ///
