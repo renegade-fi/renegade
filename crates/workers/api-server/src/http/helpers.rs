@@ -23,13 +23,24 @@ use crate::{
     http::account::account_not_found,
 };
 
-/// The timeout for awaiting a blocking task completion
-const BLOCKING_TASK_TIMEOUT: Duration = Duration::from_secs(30);
+/// The timeout for awaiting a blocking task completion.
+///
+/// A blocking task (e.g. wallet update / set Permit2 allowance / create order)
+/// spans several raft proposals plus on-chain + proof steps, so it is inherently
+/// slower than a single proposal and must time out comfortably ABOVE the
+/// `PROPOSAL_WAITER_TIMEOUT` (60s, in state/notifications.rs). At 30s, under a
+/// write burst (quoter boot rebalance + concurrent client setup) the task queue
+/// backed up and these completions exceeded 30s, so the client got "task
+/// timeout", retried, and the retries piled more tasks on — the same
+/// timeout->retry->more-load storm the proposal-waiter bump addresses, one layer
+/// up. It kept the synthetic tester from finishing setup (Permit2 allowance /
+/// wallet sync) and thus from ever placing orders. 90s lets a queued task drain.
+const BLOCKING_TASK_TIMEOUT: Duration = Duration::from_secs(90);
 
 /// Append a task to the task queue
 ///
 /// If `blocking` is true, the function will await the task's completion
-/// with a 30-second timeout.
+/// with a `BLOCKING_TASK_TIMEOUT` timeout.
 pub async fn append_task(
     task: TaskDescriptor,
     blocking: bool,
