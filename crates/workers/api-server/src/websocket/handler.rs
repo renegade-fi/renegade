@@ -73,6 +73,11 @@ impl WebsocketTopicHandler for DefaultHandler {
             None => topic,
         };
 
+        // (diagnostic) Confirms the server registered a reader on the *system-bus*
+        // topic (post-remap). If the quoter's admin-ws is deaf but this logs the
+        // admin topic, the subscription IS registered and the gap is upstream
+        // (the applicator not publishing on this node) rather than registration.
+        tracing::info!(topic = %bus_topic, "ws subscribe: allocating system-bus reader");
         Ok(self.system_bus.subscribe(bus_topic))
     }
 

@@ -97,7 +97,15 @@ impl AuthMiddleware {
         }
 
         let admin_key = self.admin_key.as_ref().unwrap();
-        validate_expiring_auth(path, headers, payload, admin_key)?;
+        // (diagnostic) Surface admin-auth rejections with the path. A silently
+        // rejected admin ws subscribe (e.g. "/v2/admin/orders") is one candidate
+        // cause of the quoter's "deaf" admin-ws: the client subscribes optimistically
+        // (no server ack) and logs success, but the server never registered the
+        // subscription, so no events are ever delivered.
+        if let Err(e) = validate_expiring_auth(path, headers, payload, admin_key) {
+            tracing::warn!(path = %path, "admin auth REJECTED: {e}");
+            return Err(e.into());
+        }
         Ok(())
     }
 }

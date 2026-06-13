@@ -342,6 +342,15 @@ impl WebsocketServer {
         event: SystemBusMessage,
         write_stream: &mut SplitSink<WebSocketStream<TcpStream>, Message>,
     ) -> Result<(), ApiServerError> {
+        // (diagnostic) Logs each admin event actually pushed to a subscriber. If
+        // the quoter's admin-ws is deaf, this NEVER fires for "/v2/admin/orders"
+        // even while user orders are being created → the worker this client is on
+        // isn't applying/publishing the update locally (deaf at the source, not
+        // the wire). If it DOES fire, delivery works and the gap is client-side.
+        if topic.starts_with("/v2/admin") {
+            tracing::info!(topic = %topic, "ws push: delivering admin event to subscriber");
+        }
+
         // Convert the system bus message to a websocket message body
         let body = system_bus_message_to_websocket_body(event);
 

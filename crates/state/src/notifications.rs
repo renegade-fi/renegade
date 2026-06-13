@@ -25,7 +25,17 @@ const ERR_PROPOSAL_TIMEOUT: &str = "Proposal was not applied within the timeout"
 /// surface as a bounded, retryable error rather than parking the caller's task
 /// forever; accumulated, such parked tasks starve the api-server runtime and
 /// wedge port 3000.
-const PROPOSAL_WAITER_TIMEOUT: Duration = Duration::from_secs(30);
+///
+/// Sized above the 30s that the serial apply loop can fall behind under a write
+/// burst (quoter boot rebalance + concurrent client setup): at 30s, slow-but-
+/// progressing proposals failed and the callers retried, and the retries piled
+/// MORE proposals onto the same serial apply path — a self-reinforcing timeout
+/// storm that prevented the book/orders from ever landing. 60s lets a queued
+/// proposal drain before the caller gives up, breaking that feedback loop.
+/// Genuinely-stuck writes are still bounded separately by the write-tx begin cap
+/// (`MAX_BEGIN_TIMEOUT_RETRIES`, ~90s fail-fast-restart in storage/db.rs), so a
+/// longer waiter here does not reintroduce the runtime-wedge it guards against.
+const PROPOSAL_WAITER_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// The id of a proposal
 pub type ProposalId = Uuid;
