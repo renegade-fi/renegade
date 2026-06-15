@@ -109,6 +109,11 @@ impl<T> TracedTokioReceiver<T> {
         self.inner.is_empty()
     }
 
+    /// Get the number of messages currently buffered in the channel
+    pub fn len(&self) -> usize {
+        self.inner.len()
+    }
+
     /// Receive a message from the channel
     pub async fn recv(&mut self) -> Option<TracedMessage<T>> {
         self.inner.recv().await

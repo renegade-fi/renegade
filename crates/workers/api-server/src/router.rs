@@ -295,7 +295,21 @@ impl Router {
                 let params = matched_path.params;
                 match self.handle_req_inner(route, params, *auth, req, handler.as_ref()).await {
                     Ok(res) => res,
-                    Err(e) => e.into(),
+                    Err(e) => {
+                        // Surface server errors that would otherwise be returned to the
+                        // client as a 500 with no relayer log. `http.route`/`http.method`
+                        // are already recorded on this span, so they appear on the event.
+                        let resp: Response<ResponseBody> = e.into();
+                        if resp.status().is_server_error() {
+                            log_task!(
+                                Task::HandleRequest,
+                                Outcome::Failed,
+                                status = resp.status().as_u16(),
+                                "handler returned a server error response"
+                            );
+                        }
+                        resp
+                    },
                 }
             } else {
                 build_404_response(format!("Route {route} for method {method} not found"))

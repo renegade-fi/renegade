@@ -16,6 +16,10 @@ pub enum Task {
     RefreshTokenMapping,
     /// Refreshing the match fees from the darkpool contract.
     RefreshMatchFees,
+    /// Forwarding a job to the matching engine and awaiting its response.
+    ForwardMatchingEngineJob,
+    /// Serving an inbound HTTP request through the router.
+    HandleRequest,
 }
 
 impl LogTask for Task {
@@ -24,6 +28,8 @@ impl LogTask for Task {
             Task::RegisterRoute => "register-route",
             Task::RefreshTokenMapping => "refresh-token-mapping",
             Task::RefreshMatchFees => "refresh-match-fees",
+            Task::ForwardMatchingEngineJob => "forward-matching-engine-job",
+            Task::HandleRequest => "handle-request",
         }
     }
 }
