@@ -28,11 +28,14 @@ use state::State;
 use system_bus::{SystemBus, SystemBusMessage};
 use types_account::{order::Order, pair::Pair};
 use types_core::{HmacKey, TimestampedPrice, TimestampedPriceFp};
+use util::log_task;
+use util::logging::Outcome;
 use util::{get_current_time_millis, on_chain::get_protocol_fee};
 
 use crate::{
     error::{ApiServerError, internal_error, no_content, unauthorized},
     http::asset_filter::AssetFilter,
+    logging::Task,
 };
 
 // -------------
@@ -454,14 +457,42 @@ impl ExternalMatchProcessor {
         job: MatchingEngineWorkerJob,
         topic: String,
     ) -> Result<SystemBusMessage, ApiServerError> {
-        self.matching_engine_worker_queue.send(job).map_err(internal_error)?;
-        let msg = self
-            .bus
-            .next_message_with_timeout(topic, MATCHING_ENGINE_RESPONSE_TIMEOUT)
-            .await
-            .map_err(internal_error)?;
+        // Subscribe to the response topic BEFORE sending the job. The matching
+        // engine publishes the response by `publish`-ing on `topic`, which is a
+        // no-op if the topic has no registered readers (see `SystemBus::publish`).
+        // If we sent the job first, a fast engine could publish the response
+        // before this subscription registered a reader, dropping the message and
+        // forcing the caller to wait the full `MATCHING_ENGINE_RESPONSE_TIMEOUT`
+        // before returning a 500. Registering the reader here, happens-before the
+        // send below, closes that lost-wakeup race. `subscribe` is idempotent.
+        let mut reader = self.bus.subscribe(topic.clone());
 
-        Ok(msg)
+        // Now enqueue the job; any response published after this point is
+        // guaranteed to be observed by `reader`.
+        self.matching_engine_worker_queue.send(job).map_err(internal_error)?;
+
+        // Wait for the matching engine to publish a response on `topic`. The only
+        // failure mode here is `Elapsed`, i.e. the engine did not answer within
+        // `MATCHING_ENGINE_RESPONSE_TIMEOUT`. This previously mapped to a catch-all
+        // HTTP 500 with no log line, making a stalled matching engine invisible on
+        // the relayer side (the only signal was the auth-server's 500 counter). Log
+        // and surface the timeout explicitly.
+        match tokio::time::timeout(MATCHING_ENGINE_RESPONSE_TIMEOUT, reader.next_message()).await {
+            Ok(msg) => Ok(msg),
+            Err(_elapsed) => {
+                log_task!(
+                    Task::ForwardMatchingEngineJob,
+                    Outcome::Failed,
+                    response_topic = %topic,
+                    timeout_ms = MATCHING_ENGINE_RESPONSE_TIMEOUT.as_millis() as u64,
+                    "matching engine did not respond within timeout; returning 500"
+                );
+                Err(internal_error(format!(
+                    "matching engine response timed out after {}ms",
+                    MATCHING_ENGINE_RESPONSE_TIMEOUT.as_millis()
+                )))
+            },
+        }
     }
 
     /// Get the fee rates for a match pair

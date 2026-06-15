@@ -53,6 +53,18 @@ pub const NUM_EVENT_SEND_FAILURES_METRIC: &str = "num_event_send_failures";
 /// manager
 pub const NUM_EVENT_EXPORT_FAILURES_METRIC: &str = "num_event_export_failures";
 
+// Matching engine metrics
+
+/// Gauge of matching engine jobs that have been dequeued and spawned but have
+/// not yet completed. A stalled engine (e.g. a saturated blocking pool) shows up
+/// here as in-flight jobs piling up, even when the job channel stays short.
+pub const MATCHING_ENGINE_INFLIGHT_JOBS_METRIC: &str = "matching_engine_inflight_jobs";
+/// Gauge of the matching engine job channel length, sampled on each dequeue.
+pub const MATCHING_ENGINE_QUEUE_LENGTH_METRIC: &str = "matching_engine_queue_length";
+/// Histogram of matching engine job handling duration, in milliseconds, measured
+/// from dequeue to completion.
+pub const MATCHING_ENGINE_JOB_DURATION_MS_METRIC: &str = "matching_engine_job_duration_ms";
+
 // ---------------
 // | METRIC TAGS |
 // ---------------
