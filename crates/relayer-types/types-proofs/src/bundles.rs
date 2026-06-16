@@ -18,6 +18,7 @@ use circuits_core::zk_circuits::{
         intent_and_balance_public_settlement::IntentAndBalancePublicSettlementStatement,
         intent_only_bounded_settlement::IntentOnlyBoundedSettlementStatement,
         intent_only_public_settlement::IntentOnlyPublicSettlementStatement,
+        batched_settlement::BatchedSettlementStatement,
     },
     valid_balance_create::ValidBalanceCreateStatement,
     valid_deposit::ValidDepositStatement,
@@ -385,6 +386,9 @@ pub type IntentOnlyBoundedSettlementBundle =
 /// A proof bundle for `INTENT ONLY PUBLIC SETTLEMENT`
 pub type IntentOnlyPublicSettlementBundle =
     IntentOnlySettlementProofBundle<IntentOnlyPublicSettlementStatement>;
+
+/// A proof bundle for `BATCHED SETTLEMENT`
+pub type BatchedSettlementBundle = ProofBundle<BatchedSettlementStatement>;
 
 // -----------------------
 // | Fee Circuit Bundles |

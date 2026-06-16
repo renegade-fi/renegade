@@ -11,6 +11,9 @@ mod error;
 mod logging;
 mod setup;
 
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 use std::{thread, time::Duration};
 
 use api_server::worker::{ApiServer, ApiServerConfig};

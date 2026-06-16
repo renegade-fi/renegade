@@ -3,3 +3,4 @@
 
 pub mod matching;
 pub mod tasks;
+pub mod batching;
