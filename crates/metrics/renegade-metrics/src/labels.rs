@@ -79,6 +79,10 @@ pub const EXTERNAL_MATCH_METRIC_TAG: &str = "is_external_match";
 pub const MATCHING_POOL_METRIC_TAG: &str = "matching_pool";
 /// Metric tag for an internal-match settlement outcome (`settled` | `failed`)
 pub const SETTLE_OUTCOME_METRIC_TAG: &str = "outcome";
+/// Metric tag for the type of a matching engine job
+/// (`internal` | `external_quote` | `external_settle`). Lets the duration
+/// histogram and slow/timeout logs attribute the latency tail to a job kind.
+pub const MATCHING_ENGINE_JOB_TYPE_TAG: &str = "job_type";
 /// Helper to generate wallet ID tag names
 pub fn wallet_id_tag(n: usize) -> String {
     format!("wallet_id{}", n)

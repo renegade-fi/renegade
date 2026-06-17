@@ -53,12 +53,15 @@ const MATCHING_ENGINE_SLOW_JOB_THRESHOLD: Duration = Duration::from_secs(10);
 struct JobMetricsGuard {
     /// The time at which the job started, in milliseconds since the epoch
     started_ms: u64,
+    /// The job kind (`internal` | `external_quote` | `external_settle`), used to
+    /// tag the duration histogram so the latency tail is attributable
+    job_type: &'static str,
 }
 
 impl Drop for JobMetricsGuard {
     fn drop(&mut self) {
         let elapsed_ms = get_current_time_millis().saturating_sub(self.started_ms);
-        record_matching_engine_job_finished(elapsed_ms as f64);
+        record_matching_engine_job_finished(elapsed_ms as f64, self.job_type);
     }
 }
 
@@ -144,21 +147,27 @@ impl MatchingEngineExecutor {
                     let started_ms = get_current_time_millis();
                     let self_clone = self.clone();
 
-                    // Peek the external response topic (if any) before consuming the job, so
-                    // that on a per-job timeout we can publish a clean no-match response to the
-                    // waiting caller instead of letting it hang for the full api-server timeout.
-                    let response_topic = match &job.message {
-                        MatchingEngineWorkerJob::ExternalMatchingEngine { response_topic, .. } => {
-                            Some(response_topic.clone())
+                    // Classify the job so the duration histogram and slow/timeout logs can
+                    // attribute the latency tail to a kind. Also peek the external response
+                    // topic (if any) so that on a per-job timeout we can publish a clean
+                    // no-match response to the waiting caller instead of letting it hang for
+                    // the full api-server timeout.
+                    let (job_type, response_topic) = match &job.message {
+                        MatchingEngineWorkerJob::ExternalMatchingEngine {
+                            response_topic, options, ..
+                        } => {
+                            let kind =
+                                if options.only_quote { "external_quote" } else { "external_settle" };
+                            (kind, Some(response_topic.clone()))
                         },
-                        MatchingEngineWorkerJob::InternalMatchingEngine { .. } => None,
+                        MatchingEngineWorkerJob::InternalMatchingEngine { .. } => ("internal", None),
                     };
                     let system_bus = self.system_bus.clone();
 
                     tokio::task::spawn(async move {
                         // Record job-finished metrics on drop so the in-flight gauge is
                         // decremented and the duration is recorded even if the job panics.
-                        let _metrics_guard = JobMetricsGuard { started_ms };
+                        let _metrics_guard = JobMetricsGuard { started_ms, job_type };
 
                         // Bound the job execution. A stuck job (e.g. a wedged downstream
                         // dependency) otherwise pins a worker-thread slot indefinitely and the
@@ -173,6 +182,7 @@ impl MatchingEngineExecutor {
                                 log_task!(
                                     Task::RunMatchingEngine,
                                     Outcome::Failed,
+                                    job_type = job_type,
                                     timeout_ms = MATCHING_ENGINE_JOB_TIMEOUT.as_millis() as u64,
                                     elapsed_ms = elapsed_ms,
                                     "matching-engine job timed out"
@@ -189,6 +199,7 @@ impl MatchingEngineExecutor {
                             log_task!(
                                 Task::RunMatchingEngine,
                                 Outcome::Skipped,
+                                job_type = job_type,
                                 elapsed_ms = elapsed_ms,
                                 threshold_ms = MATCHING_ENGINE_SLOW_JOB_THRESHOLD.as_millis() as u64,
                                 "matching-engine job exceeded slow-job threshold"
