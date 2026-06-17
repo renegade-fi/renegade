@@ -5,12 +5,15 @@ use darkpool_types::settlement_obligation::SettlementObligation;
 use types_core::{AccountId, MatchResult, Token};
 use util::hex::address_to_hex_string;
 
-use crate::labels::{
-    ASSET_METRIC_TAG, BASE_ASSET_METRIC_TAG, EXTERNAL_MATCH_METRIC_TAG, FEES_COLLECTED_METRIC,
-    INTERNAL_MATCH_SETTLE_METRIC, MATCH_BASE_VOLUME_METRIC, MATCH_QUOTE_VOLUME_METRIC,
-    MATCHING_ENGINE_INFLIGHT_JOBS_METRIC, MATCHING_ENGINE_JOB_DURATION_MS_METRIC,
-    MATCHING_ENGINE_QUEUE_LENGTH_METRIC, MATCHING_POOL_METRIC_TAG, SETTLE_OUTCOME_METRIC_TAG,
-    wallet_id_tag,
+use crate::{
+    global_metrics::MATCHING_ENGINE_INFLIGHT_JOBS,
+    labels::{
+        ASSET_METRIC_TAG, BASE_ASSET_METRIC_TAG, EXTERNAL_MATCH_METRIC_TAG, FEES_COLLECTED_METRIC,
+        INTERNAL_MATCH_SETTLE_METRIC, MATCH_BASE_VOLUME_METRIC, MATCH_QUOTE_VOLUME_METRIC,
+        MATCHING_ENGINE_JOB_DURATION_MS_METRIC, MATCHING_ENGINE_JOB_TYPE_TAG,
+        MATCHING_ENGINE_QUEUE_LENGTH_METRIC, MATCHING_POOL_METRIC_TAG, SETTLE_OUTCOME_METRIC_TAG,
+        wallet_id_tag,
+    },
 };
 
 /// Get the human-readable asset and volume of
@@ -104,17 +107,25 @@ pub fn record_internal_match_settle(matching_pool: &str, settled: bool) {
 ///
 /// Increments the in-flight gauge; pair with [`record_matching_engine_job_finished`]
 /// on completion. `queue_len` is the channel length sampled at dequeue.
+///
+/// The in-flight gauge uses the atomic [`Gauge`](crate::gauge::Gauge) wrapper
+/// (`.set()` of an internally tracked count) because the StatsD exporter drops
+/// raw gauge increment/decrement deltas and only exports absolute `.set()`
+/// values — the queue-length gauge below works for the same reason.
 pub fn record_matching_engine_job_started(queue_len: usize) {
     metrics::gauge!(MATCHING_ENGINE_QUEUE_LENGTH_METRIC).set(queue_len as f64);
-    metrics::gauge!(MATCHING_ENGINE_INFLIGHT_JOBS_METRIC).increment(1.0);
+    MATCHING_ENGINE_INFLIGHT_JOBS.increment(1.0);
 }
 
 /// Record that a matching engine job has finished, with its handling duration.
 ///
-/// Decrements the in-flight gauge and records the duration histogram.
-pub fn record_matching_engine_job_finished(duration_ms: f64) {
-    metrics::gauge!(MATCHING_ENGINE_INFLIGHT_JOBS_METRIC).decrement(1.0);
-    metrics::histogram!(MATCHING_ENGINE_JOB_DURATION_MS_METRIC).record(duration_ms);
+/// Decrements the in-flight gauge and records the duration histogram, tagged by
+/// `job_type` (`internal` | `external_quote` | `external_settle`) so the latency
+/// tail can be attributed to a job kind.
+pub fn record_matching_engine_job_finished(duration_ms: f64, job_type: &str) {
+    MATCHING_ENGINE_INFLIGHT_JOBS.decrement(1.0);
+    let labels = [(MATCHING_ENGINE_JOB_TYPE_TAG.to_string(), job_type.to_string())];
+    metrics::histogram!(MATCHING_ENGINE_JOB_DURATION_MS_METRIC, &labels).record(duration_ms);
 }
 
 /// Derive (base_mint, base_amount, quote_mint, quote_amount) from an
