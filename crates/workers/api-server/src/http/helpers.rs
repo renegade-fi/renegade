@@ -51,7 +51,19 @@ pub async fn append_task(
         Ok(Ok(Ok(()))) => Ok(tid),
         Ok(Ok(Err(e))) => Err(internal_error(e)),
         Ok(Err(_recv_err)) => Err(internal_error("task notification channel closed unexpectedly")),
-        Err(_timeout) => Err(internal_error("task timeout")),
+        Err(_timeout) => {
+            // `internal_error` does not log, so a blocking-task timeout is
+            // otherwise invisible on the relayer (it surfaces only in the SDK
+            // caller's 500). Log it so a wedged write path (e.g. a stalled
+            // RefreshAccount on a chain whose raft cannot apply proposals) is
+            // diagnosable from relayer logs.
+            tracing::warn!(
+                task_id = ?tid,
+                timeout_secs = BLOCKING_TASK_TIMEOUT.as_secs(),
+                "blocking task wait timed out"
+            );
+            Err(internal_error("task timeout"))
+        },
     }
 }
 
