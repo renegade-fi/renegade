@@ -104,10 +104,19 @@ pub enum SettleInternalMatchTaskError {
     /// A validity proof generation error
     #[error("validity proof error: {0}")]
     ValidityProofs(String),
+    /// The order's intent nullifier was already spent on-chain, so the locally
+    /// stored order is stale. The match is abandoned before submission to avoid
+    /// an on-chain `NonceAlreadySpent` revert; the failure hook refreshes the
+    /// account so a subsequent match rebuilds from fresh state.
+    #[error("stale intent: {0}")]
+    StaleIntent(String),
 }
 
 impl TaskError for SettleInternalMatchTaskError {
     fn retryable(&self) -> bool {
+        // `StaleIntent` is intentionally NOT retryable: retrying without a state
+        // refresh would rebuild the same stale bundle. Failing terminally runs
+        // the failure hook (`RefreshAccountHook`) which re-syncs the accounts.
         matches!(self, SettleInternalMatchTaskError::State(_))
     }
 }
@@ -290,6 +299,15 @@ impl SettleInternalMatchTask {
     /// receipt for any Ring 1+ orders so subsequent validity proofs can
     /// reference the new Merkle leaf.
     async fn submit_tx(&mut self) -> Result<()> {
+        // Pre-flight: if either party's intent nullifier is already spent
+        // on-chain, the locally stored order is stale and `settle_match` would
+        // revert `NonceAlreadySpent` — a non-retryable darkpool error that drops
+        // the match after burning gas and an on-chain revert (the dominant
+        // internal-settle failure on base-mainnet-v2, ~3.7k/4h). Detect it first
+        // and fail fast so the failure hook re-syncs the stale accounts before
+        // the engine re-matches.
+        self.ensure_intents_unspent().await?;
+
         let obligation_bundle = self.processor.public_obligation_bundle(&self.match_result);
         let obligation0 = self.get_obligation(PARTY0)?.clone();
         let obligation1 = self.get_obligation(PARTY1)?.clone();
@@ -504,6 +522,26 @@ impl SettleInternalMatchTask {
             &self.match_result.party1_obligation
         );
         Ok(obligation)
+    }
+
+    /// Verify neither party's intent nullifier has already been spent on-chain.
+    ///
+    /// A spent nullifier means the locally stored order is stale (its intent was
+    /// consumed by a prior settlement). Returns `StaleIntent` so the task fails
+    /// non-retryably and the failure hook (`RefreshAccountHook`) re-syncs the
+    /// accounts, rather than submitting a doomed tx that reverts on-chain.
+    async fn ensure_intents_unspent(&self) -> Result<()> {
+        for order_id in [self.order_id, self.other_order_id] {
+            let Some(nullifier) = self.ctx.state.get_nullifier_for_order(&order_id).await? else {
+                continue;
+            };
+            if self.ctx.darkpool_client.is_nullifier_spent(nullifier).await? {
+                return Err(SettleInternalMatchTaskError::StaleIntent(format!(
+                    "order {order_id} intent nullifier already spent on-chain"
+                )));
+            }
+        }
+        Ok(())
     }
 
     /// Build updated input and output balances for a Ring 2 party
