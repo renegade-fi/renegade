@@ -604,7 +604,14 @@ impl ExternalMatchProcessor {
         base: &Token,
         quote: &Token,
     ) -> Result<FixedPoint, ApiServerError> {
-        let ts_price = self.price_streams.peek_timestamped_price(base)?;
+        // Route through the validated price-reporter state instead of the raw
+        // atomic price. `get_state` rejects a non-positive, stale (>20s), or
+        // excessively-deviating price; the raw `peek_timestamped_price` returns
+        // the slot value unchecked, which is 0.0 when a stream has never reported
+        // or was cleared. A 0.0 price flows through as FixedPoint(0) and panics
+        // downstream integer division (the divisor is the price), killing the node.
+        let ts_price =
+            self.price_streams.get_state(base, quote).price().map_err(internal_error)?;
         let price = ts_price.get_decimal_corrected_price(base, quote).map_err(internal_error)?;
         Ok(price.as_fixed_point())
     }
