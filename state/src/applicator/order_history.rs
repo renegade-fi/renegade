@@ -6,9 +6,7 @@ use super::{StateApplicator, error::StateApplicatorError, return_type::Applicato
 use common::types::wallet::order_metadata::OrderMetadata;
 use external_api::bus_message::{SystemBusMessage, wallet_order_history_topic};
 use libmdbx::RW;
-
-/// Error emitted when a wallet cannot be found for an order
-const ERR_MISSING_WALLET: &str = "wallet not found";
+use tracing::warn;
 
 impl StateApplicator {
     /// Handle an update to an order's metadata
@@ -30,9 +28,17 @@ impl StateApplicator {
         meta: OrderMetadata,
         tx: &StateTxn<RW>,
     ) -> Result<(), StateApplicatorError> {
-        let wallet = tx
-            .get_wallet_id_for_order(&meta.id)?
-            .ok_or(StateApplicatorError::MissingEntry(ERR_MISSING_WALLET))?;
+        let wallet = match tx.get_wallet_id_for_order(&meta.id)? {
+            Some(wallet) => wallet,
+            // A missing order -> wallet index is not fatal: skip the metadata
+            // update rather than crashing the raft apply loop. This can happen
+            // when applying a replicated update against a state baseline that
+            // does not contain the order (e.g. snapshot recovery on cold start).
+            None => {
+                warn!("wallet not found for order {}, skipping metadata update", meta.id);
+                return Ok(());
+            },
+        };
 
         let old_meta = tx.get_order_metadata(wallet, meta.id)?;
         match old_meta {
@@ -113,5 +119,29 @@ mod tests {
         let tx = db.new_read_tx().unwrap();
         let md = tx.get_order_metadata(wallet_id, order_id).unwrap().unwrap();
         assert_eq!(md.total_filled(), 1);
+    }
+
+    /// Tests that updating metadata for an order with no wallet index does not
+    /// error.
+    ///
+    /// Regression test: a missing order -> wallet index must not crash the raft
+    /// apply loop. Previously this returned a fatal `MissingEntry` error, which
+    /// openraft escalated to `Fatal`, tearing down the node on replay.
+    #[test]
+    fn test_update_metadata_missing_wallet() {
+        let applicator = mock_applicator();
+        let order_id = Uuid::new_v4();
+
+        // Metadata for an order that was never indexed to any wallet
+        let md = OrderMetadata {
+            id: order_id,
+            data: mock_order(),
+            state: OrderState::Created,
+            fills: vec![],
+            created: 1,
+        };
+
+        // Must not error even though no wallet owns the order
+        applicator.update_order_metadata(md).unwrap();
     }
 }
