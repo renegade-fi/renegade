@@ -29,3 +29,4 @@ secrets.env
 
 # macos
 **/.DS_Store
+.cargo/
