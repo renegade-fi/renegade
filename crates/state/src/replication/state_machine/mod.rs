@@ -101,15 +101,7 @@ impl StateMachine {
             applicator,
         };
 
-        // Do not error on an invalid snapshot
-        if let Err(e) = this.maybe_recover_snapshot().await {
-            log_task!(
-                Task::SnapshotRecovery,
-                Outcome::Failed,
-                error = ?e,
-                "failed to recover from snapshot"
-            );
-        }
+        this.maybe_recover_snapshot().await?;
 
         Ok(this)
     }
@@ -338,6 +330,7 @@ impl RaftStateMachine<TypeConfig> for StateMachine {
 mod test {
     use std::collections::{BTreeMap, BTreeSet};
 
+    use super::StateMachine;
     use crate::{
         replication::{Node, NodeId, mock_raft::mock_state_machine},
         state_transition::{Proposal, StateTransition},
@@ -390,6 +383,38 @@ mod test {
             &Some(mem_log_id),
             "membership must be restored anchored at its real log-id"
         );
+    }
+
+    /// Startup propagates a corrupt snapshot instead of returning a usable state machine.
+    #[tokio::test]
+    async fn test_startup_rejects_corrupt_snapshot() {
+        let mut sm = mock_state_machine().await;
+        sm.build_snapshot().await.unwrap();
+        let path = sm.snapshot_archive_path();
+        tokio::fs::write(path, b"invalid gzip header").await.unwrap();
+
+        let result = StateMachine::new(sm.config, sm.notifications, sm.applicator).await;
+        let error = result.err().unwrap();
+        let message = error.to_string();
+        assert_eq!(message, "error snapshotting: invalid gzip header");
+    }
+
+    /// A snapshot without its applied-log and membership metadata cannot be recovered safely.
+    #[tokio::test]
+    async fn test_startup_rejects_snapshot_without_metadata() {
+        use crate::storage::tx::raft_log::SNAPSHOT_METADATA_KEY;
+
+        let mut sm = mock_state_machine().await;
+        sm.build_snapshot().await.unwrap();
+        let tx = sm.db().new_write_tx().unwrap();
+        let key = SNAPSHOT_METADATA_KEY.to_string();
+        tx.inner().delete(crate::RAFT_METADATA_TABLE, &key).unwrap();
+        tx.commit().unwrap();
+
+        let result = StateMachine::new(sm.config, sm.notifications, sm.applicator).await;
+        let error = result.err().unwrap();
+        let message = error.to_string();
+        assert_eq!(message, "error snapshotting: snapshot data present but metadata missing");
     }
 
     /// Tests applying a log with a waiter on the state

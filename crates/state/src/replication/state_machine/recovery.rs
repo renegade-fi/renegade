@@ -56,28 +56,14 @@ impl StateMachine {
 
     /// Read the persisted snapshot metadata used to anchor the recovered state
     /// machine's applied log-id and membership.
-    ///
-    /// Falls back to an empty meta only if no metadata is stored, which should
-    /// not happen once any snapshot has been built (`build_snapshot` and
-    /// `update_from_snapshot` both persist it).
     fn recover_snapshot_meta(&self) -> Result<SnapshotMeta<NodeId, Node>, ReplicationError> {
         let tx = self.db().new_read_tx()?;
-        match tx.get_snapshot_metadata()? {
-            Some(archived) => Ok(archived.deserialize_with()?),
-            None => {
-                log_task!(
-                    Task::SnapshotRecovery,
-                    Outcome::Failed,
-                    "snapshot data present but metadata missing; recovering without an \
-                     applied-log anchor"
-                );
-                Ok(SnapshotMeta {
-                    last_log_id: None,
-                    last_membership: Default::default(),
-                    snapshot_id: "recovery".to_string(),
-                })
-            },
-        }
+        let archived = tx.get_snapshot_metadata()?;
+        let archived = archived.ok_or_else(|| {
+            ReplicationError::Snapshot("snapshot data present but metadata missing".to_string())
+        })?;
+        let meta = archived.deserialize_with()?;
+        Ok(meta)
     }
 
     /// Clear all account task queues

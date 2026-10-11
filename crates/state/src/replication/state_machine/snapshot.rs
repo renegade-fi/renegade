@@ -19,6 +19,7 @@ use util::{err_str, get_current_time_millis};
 use crate::logging::Task;
 use crate::replication::error::{ReplicationError, new_snapshot_error};
 use crate::storage::db::{DB, DbConfig};
+use crate::storage::tx::RwTxn;
 use crate::{
     ALL_TABLES, CLUSTER_MEMBERSHIP_TABLE, NODE_METADATA_TABLE, PEER_INFO_TABLE, RAFT_LOGS_TABLE,
     RAFT_METADATA_TABLE, RELAYER_FEES_TABLE,
@@ -251,17 +252,22 @@ impl StateMachine {
         meta: &SnapshotMeta<NodeId, Node>,
         snapshot_db: DB,
     ) -> Result<(), ReplicationError> {
-        self.last_applied_log = meta.last_log_id;
-        self.last_membership = meta.last_membership.clone();
-        self.write_snapshot_metadata(meta)?;
-
         let db_clone = self.db_owned();
         let engine = self.applicator.matching_engine();
+        let snapshot_meta = meta.clone();
         let jh = tokio::task::spawn_blocking(move || {
-            Self::copy_db_data(&snapshot_db, &db_clone)?;
+            let tx = db_clone.new_write_tx_with_retry("snapshot::update_from_snapshot")?;
+            Self::copy_db_data(&snapshot_db, &tx)?;
+            tx.set_snapshot_metadata(&snapshot_meta)?;
+            tx.commit()?;
             Self::hydrate_matching_engine(&db_clone, &engine)
         });
-        jh.await.map_err(|_| ReplicationError::Snapshot(ERR_AWAIT_INSTALL.to_string()))?
+        let result =
+            jh.await.map_err(|_| ReplicationError::Snapshot(ERR_AWAIT_INSTALL.to_string()))?;
+        result?;
+        self.last_applied_log = meta.last_log_id;
+        self.last_membership = meta.last_membership.clone();
+        Ok(())
     }
 
     /// Hydrate the matching engine from the database
@@ -312,8 +318,8 @@ impl StateMachine {
             .map(|_| ())
     }
 
-    /// Copy all data from one DB to another
-    pub(crate) fn copy_db_data(src: &DB, dest: &DB) -> Result<(), ReplicationError> {
+    /// Copy all snapshot tables into a single destination transaction
+    pub(crate) fn copy_db_data(src: &DB, dest_tx: &RwTxn<'_>) -> Result<(), ReplicationError> {
         let src_tx = src.new_read_tx()?;
         for table in ALL_TABLES.iter() {
             if EXCLUDED_TABLES.contains(table) {
@@ -326,13 +332,11 @@ impl StateMachine {
             }
 
             // Clear the table on the destination
-            let dest_tx = dest.new_write_tx_with_retry("snapshot::copy_db_data")?;
             dest_tx.clear_table(table)?;
 
             // Copy all keys and values
             let src_cursor = src_tx.inner().cursor(table)?;
             dest_tx.inner().copy_cursor_to_table(table, src_cursor)?;
-            dest_tx.commit()?;
         }
 
         src_tx.commit()?;
@@ -357,10 +361,12 @@ impl StateMachine {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::{BTreeMap, BTreeSet};
     use std::sync::Arc;
 
     use constants::GLOBAL_MATCHING_POOL;
     use libmdbx::Error as MdbxError;
+    use openraft::storage::RaftStateMachine;
     use types_account::MatchingPoolName;
     use types_account::account::{Account, mocks::mock_empty_account};
     use types_account::{
@@ -368,7 +374,7 @@ mod tests {
     };
 
     use crate::{
-        ACCOUNTS_TABLE, replication::mock_raft::mock_state_machine,
+        ACCOUNTS_TABLE, MERKLE_PROOFS_TABLE, replication::mock_raft::mock_state_machine,
         state_transition::StateTransition, storage::error::StorageError, test_helpers::mock_db,
     };
 
@@ -513,7 +519,9 @@ mod tests {
         src_db.write(INCLUDED_TABLE, &k4, &v4).unwrap();
 
         // Copy the contents of one db to another
-        StateMachine::copy_db_data(&src_db, &dest_db).unwrap();
+        let dest_tx = dest_db.new_write_tx().unwrap();
+        StateMachine::copy_db_data(&src_db, &dest_tx).unwrap();
+        dest_tx.commit().unwrap();
 
         // The destination should have (k3, v3) overwritten and (k2, v2) should remain.
         // k1 should not be present
@@ -538,7 +546,16 @@ mod tests {
 
         let mut state_machine = mock_state_machine().await;
         let snapshot_db = mock_db();
-        let meta = SnapshotMeta::default();
+        let log_id = LogId::new(openraft::LeaderId::new(2, 1), 10);
+        let nodes = BTreeMap::from([(1, Node::default())]);
+        let membership = openraft::Membership::new(vec![BTreeSet::from([1])], nodes);
+        let meta = SnapshotMeta {
+            last_log_id: Some(log_id),
+            last_membership: StoredMembership::new(Some(log_id), membership),
+            snapshot_id: "installed snapshot".to_string(),
+        };
+        let stale_key = "stale key".to_string();
+        state_machine.db().write(INCLUDED_TABLE, &stale_key, &v1).unwrap();
 
         // Write to the DB
         snapshot_db.write(INCLUDED_TABLE, &k1, &v1).unwrap();
@@ -551,9 +568,76 @@ mod tests {
         let sm_db = state_machine.db();
         let value1: String = sm_db.read(INCLUDED_TABLE, &k1).unwrap().unwrap();
         let value2: Option<String> = sm_db.read(EXCLUDED_TABLE, &k2).unwrap();
+        let stale_value: Option<String> = sm_db.read(INCLUDED_TABLE, &stale_key).unwrap();
+        let tx = sm_db.new_read_tx().unwrap();
+        let archived_meta = tx.get_snapshot_metadata().unwrap().unwrap();
+        let persisted_meta = archived_meta.deserialize_with().unwrap();
 
         assert_eq!(value1, v1);
         assert_eq!(value2, None);
+        assert_eq!(stale_value, None);
+        assert_eq!(persisted_meta, meta);
+        drop(tx);
+        let applied = state_machine.applied_state().await.unwrap();
+        let expected = (meta.last_log_id, meta.last_membership);
+        assert_eq!(applied, expected);
+    }
+
+    /// A failed table copy preserves the old data and both persisted and in-memory metadata.
+    #[tokio::test]
+    async fn test_apply_snapshot_rollback() {
+        let mut state_machine = mock_state_machine().await;
+        let snapshot_db = mock_db();
+        let dest_dir = tempfile::tempdir().unwrap();
+        let dest_path = dest_dir.path().to_str().unwrap();
+        let config = DbConfig::new_with_path(dest_path);
+        let dest_db = DB::new(&config).unwrap();
+        dest_db.create_table(ACCOUNTS_TABLE).unwrap();
+        dest_db.create_table(RAFT_METADATA_TABLE).unwrap();
+
+        let key = "account".to_string();
+        let old_value = "old account".to_string();
+        let new_value = "new account".to_string();
+        dest_db.write(ACCOUNTS_TABLE, &key, &old_value).unwrap();
+        snapshot_db.write(ACCOUNTS_TABLE, &key, &new_value).unwrap();
+        // This later table is absent from the destination, forcing a copy failure.
+        snapshot_db.write(MERKLE_PROOFS_TABLE, &key, &new_value).unwrap();
+
+        let old_log_id = LogId::new(openraft::LeaderId::new(1, 0), 5);
+        let old_meta = SnapshotMeta { last_log_id: Some(old_log_id), ..Default::default() };
+        let tx = dest_db.new_write_tx().unwrap();
+        tx.set_snapshot_metadata(&old_meta).unwrap();
+        tx.commit().unwrap();
+        state_machine.applicator.config.db = Arc::new(dest_db);
+        state_machine.last_applied_log = old_meta.last_log_id;
+        state_machine.last_membership = old_meta.last_membership.clone();
+
+        let new_log_id = LogId::new(openraft::LeaderId::new(2, 1), 10);
+        let nodes = BTreeMap::from([(1, Node::default())]);
+        let membership = openraft::Membership::new(vec![BTreeSet::from([1])], nodes);
+        let new_meta = SnapshotMeta {
+            last_log_id: Some(new_log_id),
+            last_membership: StoredMembership::new(Some(new_log_id), membership),
+            snapshot_id: "new snapshot".to_string(),
+        };
+        let result = state_machine.update_from_snapshot(&new_meta, snapshot_db).await;
+        let error = result.err().unwrap();
+        let ReplicationError::Storage(StorageError::OpenTable(table, MdbxError::NotFound)) = error
+        else {
+            panic!("unexpected snapshot error: {error}");
+        };
+        assert_eq!(table, MERKLE_PROOFS_TABLE);
+
+        let db = state_machine.db();
+        let value: Option<String> = db.read(ACCOUNTS_TABLE, &key).unwrap();
+        assert_eq!(value, Some(old_value));
+        let tx = db.new_read_tx().unwrap();
+        let archived_meta = tx.get_snapshot_metadata().unwrap().unwrap();
+        let persisted_meta = archived_meta.deserialize_with().unwrap();
+        assert_eq!(persisted_meta, old_meta);
+        let applied = state_machine.last_applied_log;
+        assert_eq!(applied, old_meta.last_log_id);
+        assert_eq!(state_machine.last_membership, old_meta.last_membership);
     }
 
     /// Tests that applying a snapshot properly preserves accounts and matching
